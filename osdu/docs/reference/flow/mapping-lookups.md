@@ -91,7 +91,7 @@ Reads as: the id of the cached `UnitOfMeasure` whose `Code`, or else whose `Name
 | Written as | Gives |
 | --- | --- |
 | `<Type>.id` | The record's OSDU id, with the trailing `:` OSDU relationships use (`dev:reference-data--UnitOfMeasure:m:`). |
-| `<Type>.<field>` | A field the cache keeps for the record, such as `Name`, or a path inside a field cached whole (`NameAliases.AliasName`). |
+| `<Type>.<field>` | A field the cache keeps for the record, such as `Name`, or a path inside a field cached whole (`NameAliases.AliasName`). A field holding an object (an OSDU path that yields one, or a lookup table's column read with [`decode: json`](cache-origins.md#a-column-holding-a-json-object)) is written whole where the template takes an object, such as the record's `tags`. |
 
 The type is the name the cache flow gives it (`types[].name`). A node without `$findBy` or `$findAll` is refused:
 `a $cache node needs $findBy, which says which record to read, ...`.

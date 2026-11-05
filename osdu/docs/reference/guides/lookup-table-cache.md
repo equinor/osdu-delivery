@@ -221,7 +221,7 @@ What a refresh keeps of the table:
 | Rows | Every row the ing flow has not marked deleted (`DeletedDate_DW` empty, when the table has the column). |
 | Keys | Trimmed; not empty; at most 256 characters; no control characters; unique once trimmed. Keys compare exactly, so `GAPI` and `gapi` are two rows. One bad key refuses the whole capture, naming the first five bad keys and the first five duplicates. |
 | Size | At most 100,000 rows; a larger table refuses the capture. |
-| Values | Text, as the delivery reader gives it; a NULL is not kept and reads as no value. |
+| Values | Text, as the delivery reader gives it; a NULL is not kept and reads as no value. A column holding a JSON object's text (a well's tags, say) is kept as that object with `{ column: tags, as: Tags, decode: json }`, so a mapping writes it whole ([a column holding a JSON object](../flow/cache-origins.md#a-column-holding-a-json-object)). |
 | Names | Neither the key nor a field may be called `id`; the key is not listed among the fields. |
 | Owner | One cache flow of a partition declares a given lookup table. |
 

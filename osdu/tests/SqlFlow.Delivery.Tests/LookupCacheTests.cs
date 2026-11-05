@@ -311,7 +311,7 @@ public sealed class LookupCacheTests : IDisposable
         Assert.Contains("types[0].key is required", Refused(Tables.Replace("    key: mnemonic\n", string.Empty, StringComparison.Ordinal)), StringComparison.Ordinal);
         Assert.Contains("names a column '[mnemonic]'", Refused(Tables.Replace("key: mnemonic", "key: \"[mnemonic]\"", StringComparison.Ordinal)), StringComparison.Ordinal);
         Assert.Contains("which takes no 'query'", Refused(Tables.Replace("    key: mnemonic\n", "    key: mnemonic\n    query: \"*\"\n", StringComparison.Ordinal)), StringComparison.Ordinal);
-        Assert.Contains("a table column takes 'column' and 'as'", Refused(Tables.Replace("{ column: curve_main_family, as: mainFamily }", "{ path: curve_main_family }", StringComparison.Ordinal)), StringComparison.Ordinal);
+        Assert.Contains("a table column takes 'column', 'as' and 'decode'", Refused(Tables.Replace("{ column: curve_main_family, as: mainFamily }", "{ path: curve_main_family }", StringComparison.Ordinal)), StringComparison.Ordinal);
         Assert.Contains("names more than one origin", Refused(Tables.Replace("  - table: OsduData.arc.CurveDictionary\n", "  - table: OsduData.arc.CurveDictionary\n    dictionary: UnitAlias\n", StringComparison.Ordinal)), StringComparison.Ordinal);
 
         // A connection with no table to read, and a key on a type of OSDU records, are settings that would do nothing.

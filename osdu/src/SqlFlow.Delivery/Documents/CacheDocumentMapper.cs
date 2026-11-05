@@ -506,7 +506,10 @@ internal static class CacheMapper
         };
     }
 
-    /// <summary>A table type's columns: each a column name, kept under it, or a column with the name to keep it under.</summary>
+    /// <summary>
+    /// A table type's columns: each a column name, kept under it, or a column with the name to keep it under and what its
+    /// values are decoded from (<c>{ column: tags, as: Tags, decode: json }</c>).
+    /// </summary>
     private static List<ReferenceFieldSpec> MapColumns(IReadOnlyList<object>? fields, string where, string table, string source)
     {
         if (fields is null || fields.Count == 0)
@@ -519,6 +522,7 @@ internal static class CacheMapper
         {
             string? column = null;
             string? name = null;
+            var decode = CacheColumnDecode.None;
             switch (fields[i])
             {
                 case string bare:
@@ -535,8 +539,14 @@ internal static class CacheMapper
                             case "as":
                                 name = value?.ToString();
                                 break;
+                            case "decode":
+                                decode = value is string text && !string.IsNullOrWhiteSpace(text)
+                                    ? FlowMapper.ParseEnum<CacheColumnDecode>(text.Trim(), $"{where}[{i}].decode", source)
+                                    : throw new FlowValidationException(
+                                        $"{source}: {where}[{i}].decode takes one word, json, to keep each value of the column as the JSON object its text holds; leave it out to keep the text.");
+                                break;
                             default:
-                                throw new FlowValidationException($"{source}: {where}[{i}] has no '{settingKey}' setting; a table column takes 'column' and 'as'.");
+                                throw new FlowValidationException($"{source}: {where}[{i}] has no '{settingKey}' setting; a table column takes 'column', 'as' and 'decode'.");
                         }
                     }
 
@@ -551,7 +561,7 @@ internal static class CacheMapper
             }
 
             FlowMapper.CheckColumn(column, $"{where}[{i}]", source);
-            mapped.Add(new ReferenceFieldSpec(column, string.IsNullOrWhiteSpace(name) ? column : name.Trim()));
+            mapped.Add(new ReferenceFieldSpec(column, string.IsNullOrWhiteSpace(name) ? column : name.Trim(), decode));
         }
 
         return mapped;

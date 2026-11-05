@@ -14,8 +14,10 @@ namespace SqlFlow.Delivery.Engine.Snapshots;
 /// Reads a table type out of its ingestion table: the key column and the columns the type keeps, every row the table holds
 /// that its ingestion flow has not marked deleted. The connection is the flow's <c>source.connection</c>, opened the way a
 /// delivery flow opens its own, and every value is kept as the text the delivery reader gives it, so a value read from a
-/// cached table and the same value read from a dataset are the same text. A key the cache could not hold refuses the
-/// capture, naming the keys: nothing of a table is captured unless all of it can be.
+/// cached table and the same value read from a dataset are the same text; a column the type decodes as JSON
+/// (<see cref="CacheColumnDecode.Json"/>) is kept as the JSON object its text holds (<see cref="JsonColumnValue"/>). A key
+/// the cache could not hold, or a decoded value that holds no JSON object, refuses the capture, naming the rows: nothing
+/// of a table is captured unless all of it can be.
 /// </summary>
 internal static class TableCapture
 {
@@ -45,6 +47,8 @@ internal static class TableCapture
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
         var problems = new List<string>();
         var duplicates = new List<string>();
+        var undecoded = new List<string>();
+        var undecodedCount = 0;
         var rowNumber = 0;
         try
         {
@@ -84,9 +88,28 @@ internal static class TableCapture
                 var fields = new Dictionary<string, ReferenceValue>(StringComparer.OrdinalIgnoreCase) { [type.Key!] = ReferenceValue.Of(key!) };
                 for (var i = 0; i < type.Fields.Count; i++)
                 {
-                    if (SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(i + 1))) is { } value)
+                    if (SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(i + 1))) is not { } value)
                     {
-                        fields[type.Fields[i].Name] = ReferenceValue.Of(value);
+                        continue;
+                    }
+
+                    var field = type.Fields[i];
+                    if (field.Decode != CacheColumnDecode.Json)
+                    {
+                        fields[field.Name] = ReferenceValue.Of(value);
+                    }
+                    else if (JsonColumnValue.Decode(value, out var undecodable) is { } decoded)
+                    {
+                        fields[field.Name] = ReferenceValue.From(decoded);
+                    }
+                    else
+                    {
+                        undecodedCount++;
+                        if (undecoded.Count < NamedKeys)
+                        {
+                            var kept = string.Equals(field.Path, field.Name, StringComparison.Ordinal) ? string.Empty : $" (kept as {field.Name})";
+                            undecoded.Add($"row '{key}', column '{field.Path}'{kept}: the value {undecodable}");
+                        }
                     }
                 }
 
@@ -114,6 +137,15 @@ internal static class TableCapture
 
             throw new DeliveryException(
                 $"Cache flow '{flow.Name}': table {table} has rows type {type.Name} could not be keyed by {type.Key}, so nothing was captured: {reasons}. A lookup row is found by its key, so every row needs one of its own.");
+        }
+
+        if (undecodedCount > 0)
+        {
+            var named = undecodedCount > undecoded.Count
+                ? $"the first {undecoded.Count.ToString(CultureInfo.InvariantCulture)}: "
+                : string.Empty;
+            throw new DeliveryException(
+                $"Cache flow '{flow.Name}': table {table} has {undecodedCount.ToString(CultureInfo.InvariantCulture)} {(undecodedCount == 1 ? "value" : "values")} type {type.Name} decodes as JSON that {(undecodedCount == 1 ? "holds" : "hold")} no JSON object, so nothing was captured: {named}{string.Join("; ", undecoded)}. A column read with decode: json holds the text of one JSON object in each row, or NULL where a row has none.");
         }
 
         logger.LogInformation("Captured {Count} {Type} row(s) from table {Table}, keyed by {Key}.", rows.Count, type.Name, table, type.Key);
@@ -189,6 +221,16 @@ internal static class TableCapture
         {
             throw new DeliveryException(
                 $"Cache flow '{flow.Name}': type {type.Name} keeps {(missing.Count == 1 ? "column" : "columns")} {string.Join(", ", missing)}, which table {table} does not hold. Columns: {known}.");
+        }
+
+        var untexted = type.Fields
+            .Where(f => f.Decode == CacheColumnDecode.Json && !columns[f.Path].IsText)
+            .Select(f => $"'{f.Path}' ({columns[f.Path].SqlType})")
+            .ToList();
+        if (untexted.Count > 0)
+        {
+            throw new DeliveryException(
+                $"Cache flow '{flow.Name}': type {type.Name} decodes {(untexted.Count == 1 ? "column" : "columns")} {string.Join(", ", untexted)} of table {table} as JSON, and only a text column holds the text of a JSON object: char, varchar, nchar, nvarchar, text, ntext or json. Read the column that holds the object's text, or leave decode out to keep the value as text.");
         }
 
         var select = string.Join(", ", type.Fields.Select(f => SourceObjectName.Quote(columns[f.Path].Name)).Prepend(SourceObjectName.Quote(key.Name)));

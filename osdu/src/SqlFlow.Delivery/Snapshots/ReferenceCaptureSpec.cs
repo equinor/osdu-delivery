@@ -18,6 +18,22 @@ public enum CacheChangeMode
     Auto,
 }
 
+/// <summary>
+/// What a table type's column is decoded from before the cache keeps it (<c>types[].fields[].decode</c>,
+/// osdu/docs/reference/flow/cache-origins.md, A column holding a JSON object).
+/// </summary>
+public enum CacheColumnDecode
+{
+    /// <summary>Nothing: the value is kept as the text the delivery reader gives it.</summary>
+    None,
+
+    /// <summary>
+    /// The text of one JSON object, kept as that object, so a mapping reads it whole or by a path into it. A value that is
+    /// not valid JSON, or is JSON of anything but an object, refuses the capture.
+    /// </summary>
+    Json,
+}
+
 /// <summary>What a capture reads into a version of a cache: one entry per reference or master-data type.</summary>
 public sealed record ReferenceCaptureSpec
 {
@@ -161,6 +177,7 @@ public sealed record ReferenceTypeSpec
         Refuse(Key, "key");
         Refuse(Dictionary, "dictionary");
         Refuse(Dimension, "dimension");
+        RefuseDecode();
         if (Fields.Count == 0)
         {
             throw new FlowValidationException($"Cached type '{Name}' declares no fields to capture.");
@@ -241,6 +258,7 @@ public sealed record ReferenceTypeSpec
         Refuse(Table, "table");
         Refuse(Dimension, "dimension");
         RefuseQuery();
+        RefuseDecode();
         ValidateLookupEntityType();
 
         // As a cache flow declares it, a dictionary type names only its dictionary; once the document is read, it carries
@@ -274,6 +292,7 @@ public sealed record ReferenceTypeSpec
         Refuse(Table, "table");
         Refuse(Dictionary, "dictionary");
         RefuseQuery();
+        RefuseDecode();
         ValidateLookupEntityType();
         if (!string.Equals(Key, DimensionColumns.Value, StringComparison.Ordinal)
             || !Fields.Take(DimensionColumns.Fields.Count).Select(f => f.Name).SequenceEqual(DimensionColumns.Fields, StringComparer.Ordinal)
@@ -321,6 +340,19 @@ public sealed record ReferenceTypeSpec
         }
     }
 
+    /// <summary>
+    /// Only a column of an ingestion table holds text to decode: an OSDU record's path yields its JSON as it is, and a
+    /// dictionary's entries and a dimension's values are kept as their document or build gives them.
+    /// </summary>
+    private void RefuseDecode()
+    {
+        if (Fields.FirstOrDefault(f => f.Decode != CacheColumnDecode.None) is { } decoded)
+        {
+            throw new FlowValidationException(
+                $"Cached type '{Name}' comes from {Describe()}, which takes no 'decode' ({decoded.Name}): only a column of an ingestion table holds text to decode.");
+        }
+    }
+
     private void RefuseQuery()
     {
         if (!string.IsNullOrWhiteSpace(Query) && Query.Trim() != "*")
@@ -352,11 +384,12 @@ public sealed record ReferenceFieldSpec
     /// <summary>What an attribute's definition text starts with, which no path of a record does.</summary>
     private const string AttributeOpen = "{ path: ";
 
-    public ReferenceFieldSpec(string path, string? name = null)
+    public ReferenceFieldSpec(string path, string? name = null, CacheColumnDecode decode = CacheColumnDecode.None)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         Path = path.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? ReferenceField.Normalize(Path) : name.Trim();
+        Decode = decode;
     }
 
     /// <summary>An attribute read as a dimension's is, the records of an entity type its steps reach looked up in <paramref name="lookupKinds"/>.</summary>
@@ -388,6 +421,12 @@ public sealed record ReferenceFieldSpec
     /// <summary>For an attribute: how it is read, as a dimension's attribute is; null for a path of the record.</summary>
     public DimensionAttributeSpec? Attribute { get; }
 
+    /// <summary>
+    /// For a table type's column: what each value is decoded from before it is kept (<see cref="CacheColumnDecode.Json"/>, the
+    /// text of a JSON object); <see cref="CacheColumnDecode.None"/> for every other field, which no other origin takes.
+    /// </summary>
+    public CacheColumnDecode Decode { get; }
+
     /// <summary>For an attribute: the kind the records of each entity type its steps reach are looked up in, by entity type.</summary>
     public IReadOnlyDictionary<string, string> LookupKinds { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -397,20 +436,30 @@ public sealed record ReferenceFieldSpec
     /// <summary>The lookup kinds as one text, so attributes read with the same ones are read together.</summary>
     public string LookupSignature => string.Join(',', LookupKinds.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Value));
 
-    /// <summary>Two fields are one when they cache one name from one definition: the path, or every setting of an attribute.</summary>
+    /// <summary>
+    /// Two fields are one when they cache one name from one definition: the path and how its value is decoded, or every
+    /// setting of an attribute.
+    /// </summary>
     public bool Equals(ReferenceFieldSpec? other)
         => other is not null && string.Equals(Path, other.Path, StringComparison.Ordinal) && string.Equals(Name, other.Name, StringComparison.Ordinal)
-           && IsAttribute == other.IsAttribute;
+           && IsAttribute == other.IsAttribute && Decode == other.Decode;
 
-    public override int GetHashCode() => HashCode.Combine(Path, Name, IsAttribute);
+    public override int GetHashCode() => HashCode.Combine(Path, Name, IsAttribute, Decode);
 
     /// <summary>
-    /// The field as the catalog keeps it: <c>{ "path": ..., "as": ... }</c>, and for an attribute its steps and settings under
-    /// <c>attribute</c> and the kinds it looks records up in under <c>lookupKinds</c>.
+    /// The field as the catalog keeps it: <c>{ "path": ..., "as": ... }</c>, with <c>decode</c> for a column decoded before it
+    /// is kept, and for an attribute its steps and settings under <c>attribute</c> and the kinds it looks records up in under
+    /// <c>lookupKinds</c>. A field decoded from nothing writes no <c>decode</c>, so it is stored as it was before columns were
+    /// decoded.
     /// </summary>
     public JsonObject ToJson()
     {
         var json = new JsonObject { ["path"] = Path, ["as"] = Name };
+        if (Decode != CacheColumnDecode.None)
+        {
+            json["decode"] = Text(Decode);
+        }
+
         if (Attribute is { } attribute)
         {
             json["attribute"] = new JsonObject
@@ -432,7 +481,7 @@ public sealed record ReferenceFieldSpec
     }
 
     /// <summary>A field as <see cref="ToJson"/> writes it; null for an entry holding no path, which names no field.</summary>
-    /// <exception cref="FormatException">An attribute's settings are not ones <see cref="ToJson"/> writes.</exception>
+    /// <exception cref="FormatException">An attribute's settings, or a column's decoding, are not ones <see cref="ToJson"/> writes.</exception>
     public static ReferenceFieldSpec? FromJson(JsonObject json)
     {
         ArgumentNullException.ThrowIfNull(json);
@@ -444,7 +493,7 @@ public sealed record ReferenceFieldSpec
         var name = json["as"] is JsonValue alias && alias.TryGetValue<string>(out var given) && !string.IsNullOrWhiteSpace(given) ? given : null;
         if (json["attribute"] is not JsonObject attribute)
         {
-            return new ReferenceFieldSpec(text, name);
+            return new ReferenceFieldSpec(text, name, Parse(json["decode"], CacheColumnDecode.None, $"Field {name ?? text}"));
         }
 
         if (name is null)
@@ -467,9 +516,9 @@ public sealed record ReferenceFieldSpec
         return new ReferenceFieldSpec(
             new DimensionAttributeSpec(
                 name, steps!, null,
-                Parse<DimensionValueKeep>(attribute["keep"], DimensionValueKeep.Value, name),
-                Parse<DimensionValueMany>(attribute["many"], DimensionValueMany.First, name),
-                Parse<DimensionValueDecode>(attribute["decode"], DimensionValueDecode.None, name),
+                Parse<DimensionValueKeep>(attribute["keep"], DimensionValueKeep.Value, $"Attribute {name}"),
+                Parse<DimensionValueMany>(attribute["many"], DimensionValueMany.First, $"Attribute {name}"),
+                Parse<DimensionValueDecode>(attribute["decode"], DimensionValueDecode.None, $"Attribute {name}"),
                 attribute["maxReferences"] is JsonValue max && max.TryGetValue<int>(out var most) ? most : DimensionAttributeSpec.DefaultMaxReferences,
                 attribute["trim"] is not JsonValue trim || !trim.TryGetValue<bool>(out var trims) || trims),
             kinds);
@@ -525,7 +574,8 @@ public sealed record ReferenceFieldSpec
         return char.ToLowerInvariant(name[0]) + name[1..];
     }
 
-    private static T Parse<T>(JsonNode? node, T fallback, string name) where T : struct, Enum
+    /// <summary>A setting as <see cref="Text{T}"/> writes it, <paramref name="fallback"/> when the catalog holds none; <paramref name="owner"/> names what holds it.</summary>
+    private static T Parse<T>(JsonNode? node, T fallback, string owner) where T : struct, Enum
     {
         if (node is not JsonValue value || !value.TryGetValue<string>(out var text))
         {
@@ -534,7 +584,7 @@ public sealed record ReferenceFieldSpec
 
         return Enum.TryParse<T>(text, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)
             ? parsed
-            : throw new FormatException($"Attribute {name} holds '{text}', which is no {typeof(T).Name}.");
+            : throw new FormatException($"{owner} holds '{text}', which is no {typeof(T).Name}.");
     }
 }
 

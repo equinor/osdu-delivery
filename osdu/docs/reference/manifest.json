@@ -3729,7 +3729,12 @@
         "100000 rows",
         "key column",
         "no item carried",
-        "search matched no record"
+        "search matched no record",
+        "decode: json",
+        "json column",
+        "json object in a lookup table",
+        "tags from a lookup table",
+        "holds no JSON object"
       ],
       "yamlPath": "types[]",
       "related": [
@@ -3746,6 +3751,7 @@
         "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/TableCapture.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/JsonColumnValue.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/DimensionCapture.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs"
       ]

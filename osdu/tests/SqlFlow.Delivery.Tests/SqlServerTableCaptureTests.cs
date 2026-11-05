@@ -1,7 +1,9 @@
+using System.Text.Json.Nodes;
 using Microsoft.Data.SqlClient;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Rendering;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -41,7 +43,8 @@ public sealed class SqlServerTableCaptureTests : IAsyncLifetime, IDisposable
                 curve_version int NULL,
                 sampled datetime2 NULL,
                 DeletedDate_DW datetime2 NULL,
-                notes ntext NULL);
+                notes ntext NULL,
+                tags nvarchar(max) NULL);
             """);
     }
 
@@ -166,7 +169,7 @@ public sealed class SqlServerTableCaptureTests : IAsyncLifetime, IDisposable
     {
         var missing = await Assert.ThrowsAsync<DeliveryException>(() => RefreshAsync(Flow(fields: "[curve_family, colour]")));
         Assert.Contains("keeps column 'colour', which table", missing.Message, StringComparison.Ordinal);
-        Assert.Contains("Columns: DeletedDate_DW, curve_family, curve_version, mnemonic, notes, sampled", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("Columns: DeletedDate_DW, curve_family, curve_version, mnemonic, notes, sampled, tags", missing.Message, StringComparison.Ordinal);
 
         var key = await Assert.ThrowsAsync<DeliveryException>(() => RefreshAsync(Flow(key: "code")));
         Assert.Contains("is keyed by column 'code', which table", key.Message, StringComparison.Ordinal);
@@ -178,6 +181,64 @@ public sealed class SqlServerTableCaptureTests : IAsyncLifetime, IDisposable
         var absent = await Assert.ThrowsAsync<DeliveryException>(() => RefreshAsync(Flow()));
         Assert.Contains("was not found on the source database, or the identity this node connects with cannot see it", absent.Message, StringComparison.Ordinal);
         Assert.Empty(await _db.Caches().ListVersionsAsync("dev"));
+    }
+
+    [Fact]
+    public async Task A_column_decoded_as_json_is_kept_as_its_object_through_the_store_and_a_mapping_writes_it_whole()
+    {
+        await ExecuteAsync($$"""
+            INSERT INTO [{{Schema}}].[CurveDictionary] (mnemonic, curve_family, tags) VALUES
+                (N'GR', N'Gamma Ray', N'{ "lra.dataID": "LRA-17", "Source": "welldb", "Region": "North" }'),
+                (N'RHOB', N'Bulk Density', NULL);
+            """);
+        var flow = Flow(fields: "[curve_family, { column: tags, as: Tags, decode: json }]");
+
+        var outcome = await RefreshAsync(flow);
+        Assert.True(outcome.Written);
+
+        // Read through a store that has never seen it, so the object comes back from the database.
+        var loaded = (await _db.Caches().LoadAsync("dev", outcome.Version))!;
+        var cached = loaded.Type("CurveClasses")!;
+        var tags = Assert.IsType<JsonObject>(cached.Value(cached.Match("mnemonic", "GR")!, "Tags")!.Node);
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{ "Region": "North", "Source": "welldb", "lra.dataID": "LRA-17" }"""), tags));
+        Assert.Equal("Gamma Ray", cached.Value(cached.Match("mnemonic", "GR")!, "curve_family")!.Text);
+        Assert.Null(cached.Value(cached.Match("mnemonic", "RHOB")!, "Tags"));
+
+        // The scenario the setting is for: the whole object written where the template takes one, its dotted name included.
+        var mapping = TestSchema.Mapping(record: """
+            tags:
+              $cache: CurveClasses.Tags
+              $findBy: mnemonic = name
+            """);
+        var rendered = new MappingRenderer(mapping, TestSchema.Build(), loaded, TestSchema.Context() with { CacheVersion = outcome.Version })
+            .Render(new SourceRecord
+            {
+                Row = SourceRow.FromStrings(new Dictionary<string, string?> { ["name"] = "GR", ["depth"] = "1" }),
+                Scopes = new Dictionary<string, IReadOnlyList<SourceRow>>(StringComparer.OrdinalIgnoreCase),
+            });
+        Assert.False(rendered.IsHeld, string.Join("; ", rendered.Holds));
+        Assert.Equal("LRA-17", rendered.Document["tags"]!["lra.dataID"]!.GetValue<string>());
+
+        // The same object again writes no version, however the column spells it.
+        await ExecuteAsync($$"""UPDATE [{{Schema}}].[CurveDictionary] SET tags = N'{"Source":"welldb","lra.dataID":"LRA-17","Region":"North"}' WHERE mnemonic = N'GR';""");
+        Assert.False((await RefreshAsync(flow)).Written);
+
+        // A value that holds no object refuses the capture, naming the type, each row's key and the column.
+        await ExecuteAsync($$"""
+            UPDATE [{{Schema}}].[CurveDictionary] SET tags = N'["welldb"]' WHERE mnemonic = N'RHOB';
+            INSERT INTO [{{Schema}}].[CurveDictionary] (mnemonic, curve_family, tags) VALUES (N'NPHI', N'Neutron', N'{ "Source": ');
+            """);
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => RefreshAsync(flow));
+        Assert.Contains("has 2 values type CurveClasses decodes as JSON that hold no JSON object, so nothing was captured: ", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("row 'RHOB', column 'tags' (kept as Tags): the value is a JSON array, not an object", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("row 'NPHI', column 'tags' (kept as Tags): the value is not valid JSON (", refused.Message, StringComparison.Ordinal);
+        Assert.Single(await _db.Caches().ListVersionsAsync("dev"));
+
+        // A column that holds no text holds no JSON object's text, and is refused before a row is read, by a plan too.
+        var number = await Assert.ThrowsAsync<DeliveryException>(() => Refresher().PlanAsync(
+            Flow(fields: "[{ column: curve_version, decode: json }]"), new Dictionary<string, string>(), CancellationToken.None));
+        Assert.Contains("type CurveClasses decodes column 'curve_version' (int) of table", number.Message, StringComparison.Ordinal);
+        Assert.Contains("only a text column holds the text of a JSON object", number.Message, StringComparison.Ordinal);
     }
 
     [Fact]

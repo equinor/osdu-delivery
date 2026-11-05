@@ -40,6 +40,9 @@ internal sealed record SourceColumn(string Name, string TypeName, short MaxLengt
     /// </summary>
     public bool IsWholeNumber => IsInteger || (TypeName.ToLowerInvariant() is "decimal" or "numeric" && Scale == 0 && Precision <= 18);
 
+    /// <summary>Whether the column holds text: a character type, or SQL Server's own json type, which reads as its text.</summary>
+    public bool IsText => TypeName.ToLowerInvariant() is "char" or "varchar" or "nchar" or "nvarchar" or "text" or "ntext" or "json";
+
     /// <summary>Whether the column holds a date and time.</summary>
     public bool IsMoment => TypeName.ToLowerInvariant() is "datetime" or "datetime2" or "smalldatetime" or "datetimeoffset" or "date";
 

@@ -1975,7 +1975,7 @@ internal static partial class EntryValues
                     };
                 case SchemaType.Object:
                 case SchemaType.Array:
-                    throw new FormatException($"a single value cannot be written where the template takes a {Name(type)}");
+                    throw new FormatException($"a single value cannot be written where the template takes an {Name(type)}");
                 default:
                     return JsonValue.Create(Clr(raw));
             }

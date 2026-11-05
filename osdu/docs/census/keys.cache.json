@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/cache.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 94,
+  "keyCount": 95,
   "keys": [
     {
       "path": "batch",
@@ -571,9 +571,8 @@
       "path": "types[].fields[]",
       "type": "object",
       "required": false,
-      "description": "One kept value. For an OSDU type: a path such as `data.Code` (cached as `Code`), or `{ path: ..., as: ... }`. For a table type: a column name (kept under its own name), or `{ column: ..., as: ... }`. Whatever a path yields is cached as it is: a scalar, a set of values, or a nested object.",
-      "appliesWhen": "OSDU and table origins; a dictionary type lists none.",
-      "freeForm": true
+      "description": "One kept value. For an OSDU type: a path such as `data.Code` (cached as `Code`), or `{ path: ..., as: ... }`. For a table type: a column name (kept under its own name), or `{ column: ..., as: ..., decode: ... }`. Whatever a path yields is cached as it is: a scalar, a set of values, or a nested object; a table column is kept as text, or with `decode: json` as the JSON object its text holds.",
+      "appliesWhen": "OSDU and table origins; a dictionary type lists none."
     },
     {
       "path": "types[].fields[].path",
@@ -595,6 +594,18 @@
       "required": false,
       "description": "A column of the table to keep beside the key: 1 to 128 characters, without brackets, control characters or surrounding space. The key column is not listed among the fields, since it is kept under its own name already.",
       "appliesWhen": "Table origin only: a type with `table`, read from an ingestion table. Required in the `{ column: ..., as: ... }` form."
+    },
+    {
+      "path": "types[].fields[].decode",
+      "type": "enum(none|json)",
+      "required": false,
+      "description": "What each value of the column is decoded from before the cache keeps it. `none` keeps the text the delivery reader gives. `json` keeps the JSON object the text holds, so a mapping writes it whole where the template takes an object (`tags: { $cache: WellTags.Tags, $findBy: well_id = id }`) or reads a path into it: every property name kept exactly, a dotted one such as `lra.dataID` included, and every value keeps its JSON type; properties are kept in name order and a property holding null is left out. A NULL column reads as no value. Text that is not valid JSON, is empty, holds anything but an object, or names a property twice refuses the whole capture, naming the type, each row's key and the column. Only a text column (char, varchar, nchar, nvarchar, text, ntext or json) takes it.",
+      "enumValues": [
+        "none",
+        "json"
+      ],
+      "default": "none",
+      "appliesWhen": "Table origin only, in the `{ column: ..., decode: json }` form; refused on an OSDU type's path, whose JSON is kept as it is."
     },
     {
       "path": "types[].key",

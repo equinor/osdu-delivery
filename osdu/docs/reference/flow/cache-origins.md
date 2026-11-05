@@ -14,6 +14,11 @@ keywords:
   - key column
   - no item carried
   - search matched no record
+  - "decode: json"
+  - json column
+  - json object in a lookup table
+  - tags from a lookup table
+  - holds no JSON object
 yamlPath: "types[]"
 related:
   - delivery-flow-cache
@@ -28,6 +33,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/TableCapture.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Snapshots/JsonColumnValue.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/DimensionCapture.cs
   - osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs
 ---
@@ -79,7 +85,8 @@ reads the table over `source.connection`:
   holds at most that many: every row is loaded with the cache version a render reads. ...`): join a table that large into
   the ingestion tables the delivery flow reads instead.
 - **Every value as text,** as the delivery reader gives it, so a value read from the cache and the same value read from a
-  dataset are the same text. A NULL column is not kept, and reads as no value.
+  dataset are the same text. A NULL column is not kept, and reads as no value. A column read with `decode: json` is kept
+  as the JSON object its text holds instead ([A column holding a JSON object](#a-column-holding-a-json-object)).
 - **The key column must be comparable:** a text or number column of bounded length. A missing column fails naming the
   columns the table has; a missing table fails with `the table <table>, which type <name> reads, was not found on the
   source database, or the identity this node connects with cannot see it. Check the ingestion flow that loads it has run,
@@ -87,6 +94,56 @@ reads the table over `source.connection`:
 
 Neither the key nor a field may be called `id` in any casing, and the key is not listed among the fields. A table type
 takes no `entityType` or `query`. Only one cache flow of a partition may declare a given lookup table.
+
+### A column holding a JSON object
+
+A column whose text is a JSON object, such as the tags of each well kept in an `nvarchar(max)` column, is kept as that
+object when the type reads it with `decode: json`. A mapping then writes the object whole where the template takes an
+object, or reads a path into it, as it would an object an OSDU type caches:
+
+```yaml
+types:
+  - table: OsduData.silver.WellTags
+    key: well_id
+    fields:
+      - well_name
+      - { column: tags, as: Tags, decode: json }
+```
+
+```yaml
+record:
+  tags:
+    $cache: WellTags.Tags
+    $findBy: well_id = well_id
+```
+
+A row whose `tags` holds `{ "lra.dataID": "LRA-17", "Source": "welldb" }` writes exactly those two properties into the
+record's `tags`. Without `decode`, the column is kept as text, and the mapping is held with `a single value cannot be
+written where the template takes an object`.
+
+- **Opt in, per column.** Only the columns that name `decode: json` are decoded; every other column stays text. Only a
+  table type's column takes it: an OSDU type's path yields its JSON as it is, and `decode` there is refused.
+- **Names and types as the column holds them.** Every property name is kept exactly, a name holding a dot (`lra.dataID`)
+  included, and every string, number, boolean, array and object keeps its JSON type. The object is kept as the cache
+  keeps every object: its properties in ordinal order of their names, a property holding `null` left out, and each number
+  in its shortest form (`1.50` is `1.5`). So a row whose text changes only in spacing or property order is the same value,
+  and writes no new version.
+- **A NULL column reads as no value,** as any column does.
+- **A value that holds no JSON object refuses the capture.** Text that is not valid JSON, empty text, JSON of anything
+  but an object (an array, a string, a number, `true`, `null`), an object naming one property twice, or a number beyond
+  the range JSON numbers are kept in fails the whole type, naming the first five values by row key and column, and nothing
+  of the table is captured: `Cache flow '<flow>': table <table> has 2 values type WellTags decodes as JSON that hold no JSON
+  object, so nothing was captured: row 'W-2', column 'tags' (kept as Tags): the value is a JSON array, not an object;
+  row 'W-7', column 'tags' (kept as Tags): the value is not valid JSON (...). A column read with decode: json holds the
+  text of one JSON object in each row, or NULL where a row has none.` The reason says where the text breaks, as the JSON
+  reader reports it, rather than repeating the text.
+- **A text column only.** A `decode: json` column that is not `char`, `varchar`, `nchar`, `nvarchar`, `text`, `ntext` or
+  `json` is refused before a row is read, by a refresh and a plan alike: `type WellTags decodes column 'revision' (int) of
+  table ... as JSON, and only a text column holds the text of a JSON object: ...`.
+- **Any other word** fails the flow when it is read: `'types[0].fields[1].decode' value 'xml' is not one of none, json.`
+
+A pipeline whose `cache` block brings the type up to date reads the column the same way ([cache](delivery.md#cache)),
+since the catalog keeps each column's `decode` with the cache flow's declaration.
 
 ## Dictionary documents (`dictionary`)
 
