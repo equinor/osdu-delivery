@@ -505,9 +505,9 @@ public interface IDeliveryProtocol
 
     /// <summary>
     /// How the route reads and replaces its records' access in OSDU (osdu/docs/reference/concepts/access-restriction.md), or
-    /// null for a route whose records' access is not one storage ACL: a route that registers datasets beside the record, keeps
-    /// rows or objects outside storage, or cannot reach the storage service. Which records of a route that answers it can be
-    /// restricted is <c>RestrictionRoute</c>'s to say, before anything is asked of OSDU.
+    /// null for a route whose records' access is not storage ACLs alone: a route that registers datasets beside the record
+    /// under ids the ledger does not keep, keeps rows or objects outside storage, or cannot reach the storage service. Which
+    /// records of a route that answers it can be restricted is <c>RestrictionRoute</c>'s to say, before anything is asked of OSDU.
     /// </summary>
     IRecordAccess? Access => null;
 
@@ -516,6 +516,14 @@ public interface IDeliveryProtocol
     /// clause a refusal carries; null when it says nothing beyond its route.
     /// </summary>
     string? AccessRefusal => null;
+
+    /// <summary>
+    /// The records OSDU holds beside the record <paramref name="targetId"/> that restricting it reaches too, as the record's
+    /// target state names them (osdu/docs/reference/concepts/access-restriction.md, What a restriction reaches): the records
+    /// the mapping's enrichments add, the datasets of its files among them, which carry an ACL of their own. Empty for a route
+    /// that writes nothing beside its records.
+    /// </summary>
+    IReadOnlyList<string> AccessBeside(string targetId, IReadOnlyDictionary<string, string>? targetState) => [];
 }
 
 /// <summary>One record a reversal writes back: its OSDU id, the version to write back as OSDU held it, and what OSDU holds now.</summary>

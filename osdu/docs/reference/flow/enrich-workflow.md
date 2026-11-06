@@ -97,7 +97,9 @@ runs never share a name.
 - A delivery that does not complete is undone by the workflow route: a run is waited for and kept, and the records it
   created are removed reversibly.
 - Removing the record takes the records the runs created with it, at the same scope, when `results.remove` is true (the
-  default).
+  default). A flow that keeps them so is refused a restriction of its records' access, since a search finds them again
+  rather than the ledger naming each ([Restricting access](../concepts/access-restriction.md#which-routes)); with
+  `results.remove: false` a restriction leaves them as they are.
 - The probe asks the Workflow service whether the partition registers every workflow the stages name.
 
 What the runs created is not linked into the record: the record is its mapping and its enrichments, rendered. A workflow that

@@ -139,6 +139,120 @@ public sealed class AccessRestrictionContractTests
         Assert.Contains(Hold, groups.Groups);
     }
 
+    [Fact]
+    public void What_a_restriction_replaced_keeps_each_record_beside_it_with_the_acl_it_had_and_a_record_alone_keeps_its_acl_as_before()
+    {
+        var own = new RecordAcl(["data.welldb.viewers@dev.example.com"], ["data.welldb.owners@dev.example.com"]);
+        var other = new RecordAcl(["data.welldb.viewers@dev.example.com", "data.extra.viewers@dev.example.com"], ["data.welldb.owners@dev.example.com"]);
+        var access = RestrictedAccess.Of(own, [("dev:dataset--File.Generic:a", own), ("dev:dataset--File.Generic:b", other), ("dev:dataset--File.Generic:c", own)]);
+
+        // The records sharing the record's ACL are kept without it; one that had its own keeps it.
+        Assert.Equal(2, access.Beside.Count);
+        Assert.Equal(["dev:dataset--File.Generic:a", "dev:dataset--File.Generic:c"], access.Beside[0].Ids);
+        Assert.Null(access.Beside[0].Acl);
+        Assert.True(access.Beside[1].Acl!.SameAs(other));
+        var read = RestrictedAccess.Parse(access.ToJson());
+        Assert.True(read.Record.SameAs(own));
+        Assert.Equal(access.BesideIds, read.BesideIds);
+        Assert.All(read.BesideAcls, b => Assert.True(b.Acl.SameAs(b.Id.EndsWith(":b", StringComparison.Ordinal) ? other : own)));
+        Assert.Contains("2 record(s) beside it with the same", read.Describe(), StringComparison.Ordinal);
+
+        // A record with nothing beside it keeps what it always kept, and what a record kept before reads as its ACL alone.
+        Assert.Equal(own.ToJson(), new RestrictedAccess(own).ToJson());
+        Assert.Empty(RestrictedAccess.Parse(own.ToJson()).Beside);
+        Assert.True(RecordAcl.Parse(access.ToJson()).SameAs(own));
+
+        Assert.Throws<DeliveryException>(() => RestrictedAccess.Parse("""{"viewers":["a@x.com"],"owners":["b@x.com"],"beside":{"ids":[]}}"""));
+        Assert.Throws<DeliveryException>(() => RestrictedAccess.Parse("""{"viewers":["a@x.com"],"owners":["b@x.com"],"beside":[{"viewers":["a@x.com"]}]}"""));
+        Assert.Throws<DeliveryException>(() => RestrictedAccess.Parse("""{"viewers":["a@x.com"],"owners":["b@x.com"],"beside":[{"ids":["x"],"viewers":["a@x.com"]}]}"""));
+    }
+
+    [Fact]
+    public void A_flow_whose_enrichments_add_records_restricts_them_with_the_record_unless_a_workflow_creates_records_the_record_keeps()
+    {
+        using var platform = new FakeOsduPlatform();
+        using var rig = new Rig(platform);
+        var beside = rig.Enriched.AccessBeside(
+            "dev:work-product-component--WellLog:1",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [Rendering.EnrichParts.RegisteredValue] = """["dev:dataset--File.Generic:las","dev:work-product-component--WellLog:1","dev:dataset--File.Generic:las"]""",
+            });
+        Assert.Equal(["dev:dataset--File.Generic:las"], beside);
+        Assert.NotNull(rig.Enriched.Access);
+        Assert.Null(rig.Enriched.AccessRefusal);
+        Assert.Empty(rig.Enriched.AccessBeside("dev:work-product-component--WellLog:1", null));
+
+        var storage = Flow(DeliveryProtocol.Storage);
+        var stage = new WorkflowStage { Workflow = "las_ingest", Context = new System.Text.Json.Nodes.JsonObject() };
+        var kept = storage with { EnrichWorkflows = new Dictionary<string, WorkflowRoute>(StringComparer.Ordinal) { ["lasfile"] = new() { Anchor = WorkflowAnchor.Dataset, Stages = [stage] } } };
+        var refused = RestrictionRoute.Of(kept, "osdu:wks:work-product-component--WellLog:1.4.0");
+        Assert.False(refused.Restricts);
+        Assert.Contains("'lasfile'", refused.Refusal, StringComparison.Ordinal);
+        Assert.Contains("results.remove", refused.Refusal, StringComparison.Ordinal);
+        Assert.Equal(refused.Refusal, RestrictionRoute.BesideRefusal(kept));
+
+        var notTheirs = storage with
+        {
+            EnrichWorkflows = new Dictionary<string, WorkflowRoute>(StringComparer.Ordinal)
+            {
+                ["lasfile"] = new() { Anchor = WorkflowAnchor.Dataset, Stages = [stage], Results = new WorkflowResults { Remove = false } },
+            },
+        };
+        Assert.True(RestrictionRoute.Of(notTheirs, "osdu:wks:work-product-component--WellLog:1.4.0").Restricts);
+    }
+
+    [Fact]
+    public async Task The_check_says_for_each_restriction_whether_the_flow_could_lift_it_asking_entitlements_once()
+    {
+        using var platform = new FakeOsduPlatform();
+        using var rig = new Rig(platform);
+        var flow = Flow(DeliveryProtocol.Storage);
+        var owned = Restriction(1, "legal-hold", Hold);
+        var foreign = Restriction(2, "foreign", "data.someone-else@dev.dataservices.energy");
+        var invalid = Restriction(3, "not-a-group", "users.data.root@dev.dataservices.energy");
+
+        var check = await RecordRestrictions.CheckAsync(flow, rig.Storage, [owned, foreign, invalid], CancellationToken.None);
+        Assert.Equal((platform.MemberEmail, (string?)null), (check.Identity, check.Refusal));
+        Assert.Equal([true, false, false], check.Uses.Select(u => u.Usable));
+        Assert.Contains("could never be given its access back", check.Uses[1].Refusal, StringComparison.Ordinal);
+        Assert.Contains("does not accept in an ACL", check.Uses[2].Refusal, StringComparison.Ordinal);
+        Assert.Single(platform.Calls, c => c.Uri.AbsolutePath == StorageRecordAccess.DefaultGroupsPath);
+
+        // Entitlements not answering leaves each unknown, which the run would refuse.
+        platform.GroupsFail = HttpStatusCode.ServiceUnavailable;
+        var unknown = await RecordRestrictions.CheckAsync(flow, rig.Storage, [owned], CancellationToken.None);
+        Assert.Contains("Entitlements could not say", Assert.Single(unknown.Uses).Refusal, StringComparison.Ordinal);
+        var thrown = await Assert.ThrowsAsync<DeliveryException>(() => RecordRestrictions.EnsureLiftableAsync(flow, rig.Storage, owned, CancellationToken.None));
+        Assert.EndsWith("Nothing was restricted.", thrown.Message, StringComparison.Ordinal);
+        platform.GroupsFail = null;
+
+        // A flow that restricts nothing is refused whole, asking OSDU nothing.
+        var calls = platform.Calls.Count;
+        var stage = new WorkflowStage { Workflow = "las_ingest", Context = new System.Text.Json.Nodes.JsonObject() };
+        var kept = flow with { EnrichWorkflows = new Dictionary<string, WorkflowRoute>(StringComparer.Ordinal) { ["lasfile"] = new() { Anchor = WorkflowAnchor.Dataset, Stages = [stage] } } };
+        var refused = await RecordRestrictions.CheckAsync(kept, rig.Storage, [owned, foreign], CancellationToken.None);
+        Assert.Null(refused.Identity);
+        Assert.Contains("cannot restrict its records' access", refused.Refusal, StringComparison.Ordinal);
+        Assert.All(refused.Uses, u => Assert.Equal(refused.Refusal, u.Refusal));
+        Assert.Equal(calls, platform.Calls.Count);
+        Assert.Empty((await RecordRestrictions.CheckAsync(flow, rig.Storage, [], CancellationToken.None)).Uses);
+        Assert.Equal(calls, platform.Calls.Count);
+    }
+
+    [Fact]
+    public void A_check_names_its_restrictions_by_id_each_once()
+    {
+        Assert.Equal([3, 1], CheckAccessRestrictionsOperation.Ids(" 3, 1,3 ,"));
+        Assert.Empty(CheckAccessRestrictionsOperation.Ids(null));
+        Assert.Throws<SqlFlowException>(() => CheckAccessRestrictionsOperation.Ids("1,x"));
+        Assert.Throws<SqlFlowException>(() => CheckAccessRestrictionsOperation.Ids("0"));
+        Assert.Throws<SqlFlowException>(() => CheckAccessRestrictionsOperation.Ids(string.Join(',', Enumerable.Range(1, CheckAccessRestrictionsOperation.MaxRestrictions + 1))));
+    }
+
+    private static Ledger.AccessRestrictionState Restriction(int id, string name, string group)
+        => new(id, "dev", name, null, new RecordAcl([group], [group]), DateTime.UtcNow, "test", DateTime.UtcNow, "test");
+
     private static FlowDefinition Flow(DeliveryProtocol protocol)
     {
         var flow = Samples.LocalFlow(Path.GetTempPath());
@@ -158,10 +272,18 @@ public sealed class AccessRestrictionContractTests
             var client = new OsduHttpClient(
                 _runtime, FakeOsduPlatform.Endpoint, new TargetAuth { Type = TargetAuthType.None },
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" });
-            Access = new OsduRecordProtocol(client, new ProtocolOptions()).Access!;
+            Storage = new OsduRecordProtocol(client, new ProtocolOptions());
+            Access = Storage.Access!;
+            Enriched = new EnrichPartsProtocol(Storage, client, new ProtocolOptions());
         }
 
         public IRecordAccess Access { get; }
+
+        /// <summary>The storage route itself.</summary>
+        public OsduRecordProtocol Storage { get; }
+
+        /// <summary>The storage route as a flow whose mapping's enrichments add records wraps it.</summary>
+        public EnrichPartsProtocol Enriched { get; }
 
         public void Dispose() => _runtime.Dispose();
     }

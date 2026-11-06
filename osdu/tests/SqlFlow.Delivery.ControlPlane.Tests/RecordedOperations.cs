@@ -16,6 +16,7 @@ internal sealed class RecordedOperations
     public static readonly string[] Names =
     [
         ProbeTargetOperation.OperationName,
+        CheckAccessRestrictionsOperation.OperationName,
         ReadRecordOperation.OperationName,
         ReadSourceRowOperation.OperationName,
         PreviewRecordOperation.OperationName,

@@ -498,7 +498,8 @@ files, datasets, runs, rows or objects beside it.
 A restriction of records' access ([Restricting access](../concepts/access-restriction.md)) replaces their ACL through the
 storage service's metadata patch (`PATCH /api/storage/v2/records`) on the same two routes: `storage`, on its record path,
 and `ddms` for Wellbore DDMS records under a platform endpoint, whose bulk data the DDMS serves only to whoever may read the
-record. Every other route refuses, since the datasets, runs, rows or objects beside its records carry access of their own.
+record, each with the records its mapping's enrichments add beside it. Every other route refuses, since the datasets, runs,
+rows or objects beside its records carry access of their own.
 
 ## Errors
 

@@ -4,8 +4,37 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  aclText, groupsOf, groupsProblem, isDataGroup, MAX_RESTRICTION_GROUPS, nameProblem,
+  aclText, groupsOf, groupsProblem, isDataGroup, MAX_RESTRICTION_GROUPS, nameProblem, restrictionUse,
 } from "../src/features/delivery/accessRestrictionText.ts";
+
+describe("restrictionUse", () => {
+  const check = {
+    restrictions: [
+      { restrictionId: 1, usable: true },
+      { restrictionId: 2, usable: false, refusal: "The flow's identity is a member of none of its owner groups." },
+      { restrictionId: 3, usable: false },
+    ],
+  };
+
+  it("says a restriction the flow can lift is usable", () => {
+    assert.deepEqual(restrictionUse(check, 1), { usable: true, refusal: null });
+  });
+
+  it("refuses one the flow could not lift, in the check's words", () => {
+    assert.deepEqual(restrictionUse(check, 2), { usable: false, refusal: "The flow's identity is a member of none of its owner groups." });
+    assert.deepEqual(restrictionUse(check, 3), { usable: false, refusal: "The flow cannot lift it again." });
+  });
+
+  it("refuses every restriction of a flow that restricts nothing", () => {
+    const refused = { ...check, refusal: "'logs' cannot restrict its records' access." };
+    assert.deepEqual(restrictionUse(refused, 1), { usable: false, refusal: "'logs' cannot restrict its records' access." });
+  });
+
+  it("waits while no answer names the restriction", () => {
+    assert.equal(restrictionUse(undefined, 1), null);
+    assert.equal(restrictionUse(check, 9), null);
+  });
+});
 
 describe("isDataGroup", () => {
   it("takes a data group's email as storage does", () => {

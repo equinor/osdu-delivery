@@ -626,12 +626,24 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         => _inner.RestoreBatchAsync(restores, ct);
 
     /// <summary>
-    /// None: each record this route writes has records its enrichments add beside it, each with an ACL of its own, so
-    /// restricting the record alone would leave what was added to it readable (osdu/docs/reference/concepts/access-restriction.md).
+    /// The flow's route's: the records an enrichment adds are written through storage, under the flow's endpoint and
+    /// credentials, so their ACL is replaced the way the record's is, beside it (<see cref="AccessBeside"/>).
     /// </summary>
-    public IRecordAccess? Access => null;
+    public IRecordAccess? Access => _inner.Access;
 
-    public string? AccessRefusal => "the mapping's enrichments add records beside each of the flow's records, each with an ACL of its own, which restricting the record alone would leave readable";
+    public string? AccessRefusal => _inner.AccessRefusal;
+
+    /// <summary>
+    /// The records the record's enrichments added and the record links, as its target state lists them (<see cref="EnrichParts.Records"/>),
+    /// beside what the flow's route writes beside it: a dataset an enrichment registers with its files is read through storage
+    /// under the caller's token, and its files are handed out only to whoever may read it (osdu/specs/core/INTEGRATION.md, 2.5),
+    /// so replacing its ACL keeps them from everyone the record is kept from.
+    /// </summary>
+    public IReadOnlyList<string> AccessBeside(string targetId, IReadOnlyDictionary<string, string>? targetState)
+        => [.. _inner.AccessBeside(targetId, targetState)
+            .Concat(EnrichParts.Records(targetState))
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !string.Equals(id, targetId, StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)];
 
     /// <summary>A part staged to be written: its record's plan, its place among the record's parts, the part, and the record to write.</summary>
     private sealed record StagedPart(Plan Plan, int Index, EnrichPart Part, JsonObject Record);

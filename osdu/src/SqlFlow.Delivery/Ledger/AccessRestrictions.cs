@@ -32,8 +32,11 @@ public sealed record AccessRestrictionState(
         => JsonSerializer.Deserialize<List<string>>(json) ?? throw new DeliveryException($"An access restriction's groups '{json}' are not a list of group emails.");
 }
 
-/// <summary>A record whose restriction is asked, with the ACL OSDU held for it before, which lifting the restriction writes back.</summary>
-public sealed record RestrictionAsked(DeliveryKey Key, RecordAcl From);
+/// <summary>
+/// A record whose restriction is asked, with the ACL OSDU held for it and for each record beside it the restriction reaches
+/// before, which lifting the restriction writes back.
+/// </summary>
+public sealed record RestrictionAsked(DeliveryKey Key, RestrictedAccess From);
 
 /// <summary>A record whose restriction OSDU confirmed, with what the record's result says of it.</summary>
 public sealed record RestrictionConfirmed(DeliveryKey Key, string Detail);

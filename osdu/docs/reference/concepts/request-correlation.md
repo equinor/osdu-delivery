@@ -163,6 +163,7 @@ that flow is in:
 | Code | Operation |
 | --- | --- |
 | `probe` | A target probe (`delivery-probe`), a person's or the scheduled one's. |
+| `access` | Whether a flow could lift each access restriction of its partition (`delivery-access-check`), asked by the removal dialog. |
 | `read` | A record read back from OSDU for its record page (`delivery-read`). |
 | `explore` | The explorer's reads of a partition (`delivery-explore`): types, searches, a record, validation, dimension samples. |
 | `preview` | A record rendered from its source row and sent nowhere (`delivery-preview`). |

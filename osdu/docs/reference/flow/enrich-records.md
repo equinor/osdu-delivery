@@ -235,6 +235,9 @@ A removal at the `record` scope takes the record out and leaves what its enrichm
 restored record finds again. `history` removes the record's history alone. `everything` purges the record and every record its
 enrichments added.
 
+Restricting the record's access reaches every record its enrichments added: each is restricted with the record, a dataset's
+files with it, and lifting gives each the ACL it had ([What a restriction reaches](../concepts/access-restriction.md#what-a-restriction-reaches)).
+
 ## Preserved keys
 
 Other systems list datasets of a record too, so a flow may carry the list over from the record OSDU holds

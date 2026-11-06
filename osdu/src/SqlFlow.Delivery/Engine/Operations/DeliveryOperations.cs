@@ -219,6 +219,99 @@ public sealed class ProbeTargetOperation : DeliveryOperation
 }
 
 /// <summary>
+/// <c>delivery-access-check</c>: whether the flow could restrict its records under each of the access restrictions the task
+/// names (<c>restrictions</c>, their registry ids, comma-separated) and lift it again, asking OSDU for nothing but the flow's
+/// own groups (<see cref="Restrictions.RecordRestrictions.CheckAsync"/>; osdu/docs/reference/concepts/access-restriction.md,
+/// Checked before it is queued). The removal dialog asks it before a restriction is queued, so a choice the run would refuse
+/// is refused there in the run's own words. A restriction the registry no longer holds, or holds for another partition than
+/// the flow's, is answered as one the flow cannot use.
+/// </summary>
+public sealed class CheckAccessRestrictionsOperation : DeliveryOperation
+{
+    public const string OperationName = "delivery-access-check";
+
+    /// <summary>The task argument naming the restrictions checked, by their registry ids, comma-separated.</summary>
+    public const string RestrictionsArgument = "restrictions";
+
+    /// <summary>The most restrictions one check names: more than a partition registers for one purpose.</summary>
+    public const int MaxRestrictions = 200;
+
+    public CheckAccessRestrictionsOperation(EngineContext context)
+        : base(context)
+    {
+    }
+
+    public override string Name => OperationName;
+
+    public override string CorrelationOperation => "access";
+
+    protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
+    {
+        var ids = Ids(payload.Argument(RestrictionsArgument));
+        var found = ids.Count == 0
+            ? new Dictionary<int, AccessRestrictionState>()
+            : await RequireLedger().AccessRestrictionsAsync(ids, ct).ConfigureAwait(false);
+        var partition = DeliveryDestination.BoundPartition(flow) is { } named && !named.Contains("${", StringComparison.Ordinal) ? named : null;
+        var checkable = ids.Where(found.ContainsKey).Select(id => found[id]).Where(r => partition is null || string.Equals(r.Partition, partition, StringComparison.Ordinal)).ToList();
+        using var target = await OpenTargetAsync(context, flow, ct).ConfigureAwait(false);
+        var protocol = await target.ProtocolAsync(ct).ConfigureAwait(false);
+        var check = await Restrictions.RecordRestrictions.CheckAsync(flow, protocol, checkable, ct).ConfigureAwait(false);
+        var byId = check.Uses.ToDictionary(u => u.Restriction.RestrictionId);
+        return new
+        {
+            flow = flow.Label,
+            identity = check.Identity,
+            refusal = Sentence(check.Refusal),
+            restrictions = ids.Select(id => Use(id, byId, found, partition)).ToList(),
+            checkedUtc = context.Time.GetUtcNow().UtcDateTime,
+        };
+    }
+
+    /// <summary>What the check says of the restriction <paramref name="id"/>: its own answer, or why it was not checked.</summary>
+    private static CheckedRestriction Use(int id, Dictionary<int, Restrictions.RestrictionUse> checkedOnes, IReadOnlyDictionary<int, AccessRestrictionState> found, string? partition)
+    {
+        if (checkedOnes.TryGetValue(id, out var use))
+        {
+            return new CheckedRestriction(id, use.Restriction.Name, use.Usable, Sentence(use.Refusal));
+        }
+
+        return found.TryGetValue(id, out var elsewhere)
+            ? new CheckedRestriction(id, elsewhere.Name, false, Sentence($"access restriction '{elsewhere.Name}' is registered for partition '{elsewhere.Partition}', not '{partition}', which the flow delivers to"))
+            : new CheckedRestriction(id, null, false, Sentence(string.Create(CultureInfo.InvariantCulture, $"no access restriction {id} is registered any more")));
+    }
+
+    /// <summary>One restriction as the check answers it: whether the flow can restrict under it, and why not.</summary>
+    private sealed record CheckedRestriction(int RestrictionId, string? Name, bool Usable, string? Refusal);
+
+    /// <summary>The restriction ids <paramref name="text"/> names, each once, in the order named.</summary>
+    /// <exception cref="SqlFlowException">An id is not a positive whole number, or there are more than <see cref="MaxRestrictions"/>.</exception>
+    internal static IReadOnlyList<int> Ids(string? text)
+    {
+        var ids = new List<int>();
+        foreach (var part in (text ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0)
+            {
+                throw new SqlFlowException($"'{part}' in '{RestrictionsArgument}' is not an access restriction's id (a positive whole number).");
+            }
+
+            if (!ids.Contains(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids.Count <= MaxRestrictions
+            ? ids
+            : throw new SqlFlowException(string.Create(CultureInfo.InvariantCulture, $"'{RestrictionsArgument}' names {ids.Count} access restrictions; one check takes at most {MaxRestrictions}."));
+    }
+
+    /// <summary>A refusal as the dialog shows it: a sentence of its own, or null.</summary>
+    private static string? Sentence(string? refusal)
+        => string.IsNullOrEmpty(refusal) ? null : $"{char.ToUpperInvariant(refusal[0])}{refusal[1..]}{(refusal.EndsWith('.') ? string.Empty : ".")}";
+}
+
+/// <summary>
 /// <c>delivery-read</c>: the record as OSDU holds it right now, for a record's detail page, with the versions the
 /// target keeps of it. Takes the ledger's <c>deliveryKey</c> (resolved to the target id) or a <c>targetId</c> directly,
 /// and a <c>version</c> to read the record as it was at that version instead of its latest.

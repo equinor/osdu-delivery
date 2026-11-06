@@ -20,6 +20,9 @@ keywords:
   - acl.viewers
   - acl.owners
   - RestrictionId
+  - restrict a dataset
+  - enrichment records acl
+  - access check
 related:
   - delivery-concept-removal-and-reversal
   - delivery-concept-record-lifecycle
@@ -29,10 +32,13 @@ related:
   - delivery-flow-routes
   - delivery-cli-run
   - delivery-concept-api
+  - delivery-flow-enrich-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Restrictions/RecordRestrictions.cs
   - osdu/src/SqlFlow.Delivery/Engine/Restrictions/RestrictionRoute.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/StorageRecordAccess.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs
   - osdu/src/SqlFlow.Delivery/Protocols/RecordAccess.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/RecordRemoval.cs
@@ -45,6 +51,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/RemovalDialog.tsx
   - osdu/gui/src/features/delivery/AccessRestrictionsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordPage.tsx
+  - osdu/gui/src/features/delivery/accessRestrictionText.ts
 ---
 
 # Restricting access: replacing a delivered record's ACL in OSDU with a registered restriction's groups, and lifting it
@@ -87,6 +94,7 @@ so before a restriction changes anything, the run asks Entitlements for the flow
 with the flow's credentials) and refuses unless the identity is a member of one of the restriction's owner groups (compared
 by the name before `@`, as storage compares them) or a data manager (`users.data.root`):
 `<identity> is a member of none of access restriction '<name>''s owner groups (...), nor a data manager, so a record restricted under it could never be given its access back by '<flow>' ... Nothing was restricted.`
+The removal dialog asks the same check before anything is queued ([Checked before it is queued](#checked-before-it-is-queued)).
 
 Who still reads a restricted record: the members of the restriction's groups (the flow's identity among them, so a verify and
 an inventory still find it), and the partition's data managers, whom storage lets read and change every record.
@@ -101,12 +109,13 @@ removal does, it first undoes what unfinished deliveries of the records left. Fo
 1. The ledger alone passes over a record removed from OSDU, one OSDU holds no version of that the flow delivered, one
    restricted already (under this restriction, or another: lift that one first), and one its route cannot restrict
    ([Which routes](#which-routes)).
-2. What OSDU holds of the others is read with the batched read every route verifies with (`POST /api/storage/v2/query/records`),
-   which answers each record with the ACL storage holds for it now. A record OSDU no longer serves is passed over.
-3. Each is marked restricted in the ledger, keeping the ACL OSDU held (`RestrictedFromAcl`), before OSDU is asked: the work
-   queued for it is dropped (a pending or waiting record stands delivered at the version OSDU holds), and nothing is planned
-   for it.
-4. Its ACL is replaced through storage's metadata patch, `PATCH /api/storage/v2/records` with an `application/json` body
+2. What OSDU holds of the others, and of the records beside each ([What a restriction reaches](#what-a-restriction-reaches)),
+   is read with the batched read every route verifies with (`POST /api/storage/v2/query/records`), which answers each record
+   with the ACL storage holds for it now. A record OSDU no longer serves is passed over.
+3. Each is marked restricted in the ledger, keeping the ACL OSDU held for it and for each record beside it
+   (`RestrictedFromAcl`), before OSDU is asked: the work queued for it is dropped (a pending or waiting record stands
+   delivered at the version OSDU holds), and nothing is planned for it.
+4. Its ACL, and that of each record beside it, is replaced through storage's metadata patch, `PATCH /api/storage/v2/records` with an `application/json` body
    of up to 500 ids, `{"query": {"ids": [...]}, "ops": [{"op": "replace", "path": "/acl/viewers", "value": [...]},
    {"op": "replace", "path": "/acl/owners", "value": [...]}]}`. Storage replaces the ACL in place, writes no version, governs
    every version of the record with it, and publishes the change, so the search index follows; it checks owner access per
@@ -116,8 +125,9 @@ removal does, it first undoes what unfinished deliveries of the records left. Fo
 
 | OSDU answered | The record | Result |
 | --- | --- | --- |
-| Changed | Restricted as of now (`RestrictedUtc`), with an attempt (outcome `restricted`, phase `restrict`) naming the restriction, the ACL set and the ACL replaced. | `restricted` |
-| Holds no record of the id, or refused it (the flow's identity is not an owner, an ACL refused) | No longer restricted, and asked to be planned again, since step 3 dropped its queued work. | `skipped` or `failed`, with why |
+| Changed, for it and every record beside it | Restricted as of now (`RestrictedUtc`), with an attempt (outcome `restricted`, phase `restrict`) naming the restriction, the ACL set and the ACLs replaced. | `restricted` |
+| Holds no record of the id, or refused it (the flow's identity is not an owner, an ACL refused), and changed none beside it | No longer restricted, and asked to be planned again, since step 3 dropped its queued work. | `skipped` or `failed`, with why |
+| Changed some of the record and the records beside it, and refused the others | What it changed is given back at once and the restriction withdrawn, so a record is restricted whole or not at all. Should that give-back not go through, the record stays restricted, unconfirmed, as below. | `failed`, naming each id refused |
 | Nothing that says (the answer was lost, the service failed) | Kept restricted, unconfirmed, with the ACL it had: OSDU may hold either ACL, and a restricted record is never shown by mistake. Asking again finishes it; lifting gives it the ACL it had. | `failed`, with why |
 
 A restriction asked again of a record whose answer was lost uses the ACL the ledger kept, not the one OSDU holds now. A record
@@ -137,6 +147,23 @@ The API takes it as a removal does: `POST /api/v1/delivery/flows/{pipelineId}/re
 run checks it again. The preview counts the selection's restricted records (`restricted`), and the target names the call
 a restriction makes for the flow (`restrictPath`) or why the route cannot (`restrictRefusal`). Each record restricted or
 lifted emits `record.restricted` or `record.unrestricted`.
+
+## What a restriction reaches
+
+A restriction hides the record and every record OSDU holds beside it that the ledger names in the record's target state:
+the records the mapping's enrichments add ([Records an enrichment adds](../flow/enrich-records.md)), such as the
+`dataset--File.Generic` an enrichment registers for each well log's LAS file. Each is a storage record with an ACL of its own
+(a copy of the record's when it was written, which a change of the record's ACL alone does not write again), so each is
+patched with the record in one request, and the ledger keeps the ACL each had: `RestrictedFromAcl` holds the record's ACL,
+and the records beside it in groups, each group with the ACL it had when that was not the record's. Lifting gives each the
+ACL it had.
+
+A dataset's files are reached through it: the Dataset service's retrieval instructions and the File service's download URL
+read the dataset record through storage under the caller's token, and leave out a record the caller cannot read
+([osdu/specs/core INTEGRATION.md](../../../specs/core/INTEGRATION.md), 2.4 and 2.5), so once its ACL is the restriction's no
+one else is handed its files. A record beside it that OSDU no longer serves to the flow, or that holds the restriction's
+groups already, set outside it, is left as it is and said in the record's result. A record whose ACLs, with those beside it,
+take more than the ledger keeps (4,000 characters) is passed over, saying so: remove it instead.
 
 ## What a restriction holds off
 
@@ -159,16 +186,18 @@ is hidden, and its new row waits until both are settled.
 ## Lifting a restriction
 
 A removal of scope `unrestrict` (**Lift the restriction**) gives each restricted record of the selection back the ACL it had,
-through the same metadata patch, one patch per distinct ACL; a record not restricted is passed over. A record removed from
-OSDU while restricted asks nothing of OSDU. Each record lifted gets an attempt (outcome `unrestricted`, phase
+through the same metadata patch, one patch per distinct ACL, and each record beside it the ACL it had; a record not
+restricted is passed over. A record removed from OSDU while restricted asks nothing of OSDU for itself, and the records beside
+it, which removing the record alone leaves in OSDU, are given back their access. Each record lifted gets an attempt (outcome `unrestricted`, phase
 `lift-restriction`), is no longer restricted, and is asked to be planned again, so it follows its source from here: the work
 its restriction dropped, and any change of its row since, goes out with the next run, under the ACL its mapping gives. A
-record OSDU no longer holds is lifted and marked missing, so that run sends it again under its id. One OSDU refuses (the flow's
-identity is no longer an owner of it, for instance) stays restricted, with why.
+record OSDU no longer holds is lifted and marked missing, so that run sends it again under its id. One OSDU refuses, for
+itself or a record beside it (the flow's identity is no longer an owner of it, for instance), stays restricted, with why.
+Lifting it again once that is settled finishes it.
 
 ## Which routes
 
-A record's access is restricted only where one storage ACL is all of it:
+A record's access is restricted only where storage ACLs the ledger names are all of it:
 
 | Route | Restricts | Why |
 | --- | --- | --- |
@@ -177,18 +206,47 @@ A record's access is restricted only where one storage ACL is all of it:
 | `ddms`, another DDMS, or a DDMS endpoint | No | Data the DDMS keeps beside the record has access of its own; a DDMS endpoint has no storage service under it. |
 | `file`, `dataset`, `manifest`, `workflow`, `fileAndDdms`, `manifestAndDdms` | No | Datasets or a workflow's records beside each record carry ACLs of their own. Remove the record instead. |
 | `dspdm`, `etp` | No | Rows and Energistics objects carry no OSDU ACL. |
-| A flow whose mapping's enrichments add records | No | The records added beside each record carry ACLs of their own. |
+| A flow whose mapping's enrichments add records (on a route above that restricts) | Yes, with the records they add | Each record beside it is restricted with it ([What a restriction reaches](#what-a-restriction-reaches)). |
+| A flow that runs a workflow over an enrichment whose created records the record keeps (`results.remove`, the default) | No | A search finds the records the runs created again; the ledger does not name each, so a restriction could not be sure to reach them all. Set `results.remove: false` where they are not the record's own ([Workflows over enrichments](../flow/enrich-workflow.md)). |
 
-The removal dialog shows the call, or why the flow cannot make it, before anything is queued.
+## Checked before it is queued
+
+The removal dialog shows the call a restriction makes for the flow, or why its route cannot make it (`restrictRefusal`), before
+anything is queued, and the control plane refuses a restriction its route cannot make with 400 `Cannot restrict`
+(`'<flow>' cannot restrict its records' access: ... Nothing was queued.`). Once **Restrict access** is chosen, the dialog asks
+whether the flow could lift each of the partition's restrictions again:
+
+| Route | Who | Does |
+| --- | --- | --- |
+| `POST /api/v1/delivery/flows/{pipelineId}/access-check?interface=&partition=` | operate | Runs `delivery-access-check` in the control plane under the flow's own credentials, asking Entitlements for the flow's groups once, and answers each restriction registered for the flow's partition, by name. A partition that registers none is answered with none, and nothing is asked of OSDU. |
+
+```json
+{
+  "flow": "welldb-welllog-03-delivery",
+  "identity": "osdu-delivery@opendes.contoso.com",
+  "restrictions": [
+    { "restrictionId": 1, "name": "legal-hold", "usable": true },
+    { "restrictionId": 2, "name": "quality-quarantine", "usable": false, "refusal": "The flow's identity (...) is a member of none of access restriction 'quality-quarantine''s owner groups (...), nor a data manager, ..." }
+  ],
+  "checkedUtc": "2026-11-06T12:00:00Z"
+}
+```
+
+`refusal` beside `restrictions` says why the flow restricts nothing at all; `identity` is left out when Entitlements was not
+asked. The dialog offers a restriction the flow could not lift disabled, says of the picked one whether the flow's identity
+can lift it, and confirms **Restrict access** only for one it can. The run asks the same check again before it changes
+anything, so a membership changed since is refused there in the same words.
 
 ## In the GUI
 
 - **Remove**, on a record's page and on a flow's Records tab selection, offers **Restrict access** with the partition's
   registered restrictions to pick from (one alone is shown without a picker; with none, the choice says so and points to
-  **Access restrictions**), and **Lift the restriction** when the selection holds a restricted record. Neither offers
-  **Delete from the ledger**, and both say why when the flow's route cannot restrict.
+  **Access restrictions**; one the flow could not lift again is offered disabled, and the picked one says whether the flow can),
+  and **Lift the restriction** when the selection holds a restricted record. Neither offers **Delete from the ledger**, and
+  both say why when the flow's route cannot restrict.
 - A restricted record's page carries a **restricted** badge and a line naming the restriction, its groups and since when (or
-  that it is asked and not confirmed), with **Lift the restriction**; the ACL it gives back is on hover. **Release** and
+  that it is asked and not confirmed) and the records beside it restricted with it, with **Lift the restriction**; the ACL
+  it gives back, and the ids of the records beside it, are on hover. **Release** and
   **Redeliver** say why they do nothing for it. Its timeline shows the `restrict` and `lift-restriction` attempts with the
   ACL set and replaced.
 - A flow's Records tab and the Records page narrow to **Restricted** records, the grid marks each one, and a flow's card
@@ -200,7 +258,10 @@ The removal dialog shows the call, or why the flow cannot make it, before anythi
 - It changes the ACL alone: the legal tags, the data and the version stay.
 - Another instance whose ledger delivers the same OSDU ids ([linked instances](../guides/linked-records.md)) writes the ACL its
   mapping gives with its next write of the record. Restrict the record in every instance that delivers it, or remove it.
-- It hides from search and storage reads; an export or a copy someone made before is theirs.
+- It hides from search and storage reads; an export or a copy someone made before is theirs, and a download URL the File
+  or Dataset service signed for a file before stays valid until it expires (an hour by default, at most seven days).
+- Records a workflow over an enrichment created, where `results.remove` is false, are not the record's, and are left as
+  they are.
 
 ## Related pages
 

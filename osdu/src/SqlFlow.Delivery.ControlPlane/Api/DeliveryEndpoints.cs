@@ -149,12 +149,13 @@ public sealed record DeliveryRecordDto(
 
 /// <summary>
 /// The access restriction a record carries (osdu/docs/reference/concepts/access-restriction.md): the registered restriction,
-/// its groups (null when the registry no longer names it), when OSDU confirmed it (null while it is asked and unanswered), and
-/// the ACL the record had before, which lifting it writes back.
+/// its groups (null when the registry no longer names it), when OSDU confirmed it (null while it is asked and unanswered), the
+/// ACL the record had before, which lifting it writes back, and the records beside it the restriction reached with it (the
+/// records the mapping's enrichments add), which lifting gives the ACL each had.
 /// </summary>
 public sealed record DeliveryRecordRestrictionDto(
     int RestrictionId, string? Name, string? Description, IReadOnlyList<string>? Viewers, IReadOnlyList<string>? Owners, DateTime? RestrictedUtc,
-    IReadOnlyList<string>? FormerViewers, IReadOnlyList<string>? FormerOwners);
+    IReadOnlyList<string>? FormerViewers, IReadOnlyList<string>? FormerOwners, IReadOnlyList<string>? Beside = null);
 
 /// <summary>An OSDU id a record's pending document refers to, and the property of the record holding it.</summary>
 public sealed record DeliveryRecordReferenceDto(string Id, string Property);
@@ -683,6 +684,7 @@ public static class DeliveryEndpoints
         delivery.MapPost("/flows/{pipelineId:guid}/rerender", RerenderFlowAsync).WithName("BringDeliveryFlowRecordsUpToDate");
         delivery.MapPost("/flows/{pipelineId:guid}/rerender/preview", PreviewRerenderAsync).WithName("PreviewBringingDeliveryFlowRecordsUpToDate");
         delivery.MapPost("/flows/{pipelineId:guid}/probe", ProbeAsync).WithName("ProbeDeliveryTarget");
+        delivery.MapPost("/flows/{pipelineId:guid}/access-check", CheckAccessRestrictionsAsync).WithName("CheckDeliveryAccessRestrictions");
         delivery.MapPost("/cache/tags/decide", DecideUpdateTagsAsync).WithName("DecideDeliveryUpdateTags");
         delivery.MapPost("/records/{flowId:guid}/{key:guid}/release", ReleaseRecordAsync).WithName("ReleaseDeliveryRecord");
         delivery.MapPost("/records/{flowId:guid}/{key:guid}/adopt", AdoptRecordAsync).WithName("AdoptDeliveryRecord");
@@ -1348,12 +1350,12 @@ public static class DeliveryEndpoints
         }
 
         var registered = (await ledger.AccessRestrictionsAsync([id], ct).ConfigureAwait(false)).GetValueOrDefault(id);
-        RecordAcl? former = null;
+        RestrictedAccess? former = null;
         if (record.RestrictedFromAcl is { } kept)
         {
             try
             {
-                former = RecordAcl.Parse(kept);
+                former = RestrictedAccess.Parse(kept);
             }
             catch (DeliveryException)
             {
@@ -1363,7 +1365,8 @@ public static class DeliveryEndpoints
         }
 
         return new DeliveryRecordRestrictionDto(
-            id, registered?.Name, registered?.Description, registered?.Acl.Viewers, registered?.Acl.Owners, record.RestrictedUtc, former?.Viewers, former?.Owners);
+            id, registered?.Name, registered?.Description, registered?.Acl.Viewers, registered?.Acl.Owners, record.RestrictedUtc,
+            former?.Record.Viewers, former?.Record.Owners, former is { BesideIds.Count: > 0 } ? former.BesideIds : null);
     }
 
     /// <summary>
@@ -3418,6 +3421,15 @@ public static class DeliveryEndpoints
                 statusCode: StatusCodes.Status400BadRequest, title: "No restriction named");
         }
 
+        // What the flow's route, and what it runs beside it, cannot restrict is refused here, as the removal dialog refuses it.
+        var kind = DeliveryProtocols.ReachesDdms(flow.Flow.Target.Protocol) ? await MappingKindAsync(osdu, flow, ct).ConfigureAwait(false) : null;
+        if (SqlFlow.Delivery.Engine.Restrictions.RestrictionRoute.Of(flow.Flow, string.IsNullOrEmpty(kind) ? null : kind).Refusal is { } cannot)
+        {
+            return TypedResults.Problem(
+                detail: $"'{flow.Flow.Label}' cannot restrict its records' access: {cannot}. Nothing was queued.",
+                statusCode: StatusCodes.Status400BadRequest, title: "Cannot restrict");
+        }
+
         // A flow bound to a partition names it; one whose partition is its header's names it there, unless as a reference the
         // node resolves, in which case the node finds the restriction in the partition it runs in.
         var partition = DeliveryDestination.BoundPartition(flow.Flow);
@@ -3479,6 +3491,52 @@ public static class DeliveryEndpoints
         => string.IsNullOrEmpty(kind)
             ? "The DDMS collection is chosen by the kind the flow's mapping renders, which the repository sync has not read yet."
             : DdmsRouting.Of(flow).Explain(kind);
+
+    /// <summary>
+    /// Whether the flow can restrict its records under each access restriction registered for its partition, and lift it
+    /// again (osdu/docs/reference/concepts/access-restriction.md, Checked before it is queued): run in this process under the
+    /// flow's own credentials (<see cref="CheckAccessRestrictionsOperation"/>), asking OSDU for the flow's own groups alone, so
+    /// the removal dialog refuses what the run would refuse, in its words. A partition that registers none is answered with
+    /// none, asking OSDU nothing.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> CheckAccessRestrictionsAsync(
+        Guid pipelineId, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers,
+        ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (flow, problem) = await ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        var bound = DeliveryDestination.BoundPartition(flow.Flow);
+        if (string.IsNullOrWhiteSpace(bound) || bound.Contains("${", StringComparison.Ordinal))
+        {
+            return TypedResults.Problem(
+                detail: $"'{flow.Flow.Label}' names its partition as a reference a run resolves, so which access restrictions it can use is known once a run settles it.",
+                statusCode: StatusCodes.Status422UnprocessableEntity, title: "Partition not known");
+        }
+
+        var ids = await osdu.DeliveryAccessRestrictions.AsNoTracking()
+            .Where(a => a.Partition == bound)
+            .OrderBy(a => a.Name)
+            .Select(a => a.RestrictionId)
+            .Take(CheckAccessRestrictionsOperation.MaxRestrictions)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        if (ids.Count == 0)
+        {
+            return TypedResults.Content(
+                JsonSerializer.Serialize(new { flow = flow.Flow.Label, restrictions = Array.Empty<object>() }, JsonSerializerOptions.Web),
+                "application/json");
+        }
+
+        return await DirectOperationRunner.RunAsync(
+            db, config, direct, flow, CheckAccessRestrictionsOperation.OperationName,
+            new Dictionary<string, string>(StringComparer.Ordinal) { [CheckAccessRestrictionsOperation.RestrictionsArgument] = string.Join(',', ids) },
+            user, loggers, ct).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// The operator's "Probe target", asked from the GUI, the API or the MCP tool: one interface's target probed in this

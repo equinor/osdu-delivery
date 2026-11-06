@@ -3,11 +3,16 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
+using SqlFlow.Core.Identity;
 using SqlFlow.Delivery.ControlPlane;
 using SqlFlow.Delivery.ControlPlane.Api;
 using SqlFlow.Delivery.Data;
+using SqlFlow.Delivery.Engine.Operations;
+using SqlFlow.Delivery.Identity;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Tests;
 using Xunit;
 
@@ -117,11 +122,123 @@ public sealed class AccessRestrictionApiTests
         }
     }
 
-    private static async Task<JsonElement> JsonAsync(HttpClient client, string token, string path)
+    [Fact]
+    public async Task The_dialog_asks_whether_the_flow_can_lift_each_of_its_partitions_restrictions_and_a_route_that_cannot_restrict_is_refused_before_queueing()
     {
-        using var response = await SendAsync(client, token, HttpMethod.Get, path);
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var partition = "ac" + suffix;
+        var flowName = "api-access-" + suffix;
+        var repoId = FlowIdentity.FromName("repo/cp-access-" + suffix);
+        var pipelineId = CatalogIdentity.Pipeline(repoId, flowName);
+        var now = DateTime.UtcNow;
+        var yaml = $$"""
+            flowType: delivery
+            name: {{flowName}}
+            source:
+              connection: ${env:OSDU_DATA_DB}
+              record: { object: OsduData.silver.WellLog, key: [source_project, log_id] }
+              work: ../.work
+            render:
+              mapping: WellLog@1.4.0
+            target:
+              endpoint: ${env:OSDU_URL}
+              protocol: ddms
+              headers: { data-partition-id: {{partition}} }
+              protocolOptions: { ddmsRoot: /api/os-wellbore-ddms }
+            """;
+
+        int legal, quarantine;
+        await using (var osdu = SampleEstate.Context(cs))
+        {
+            osdu.DeliveryPartitions.Add(new DeliveryPartition { Name = partition, CreatedBy = "tests", UpdatedBy = "tests", CreatedUtc = now, UpdatedUtc = now });
+            await osdu.SaveChangesAsync();
+            var groups = AccessRestrictionState.GroupsJson([Hold]);
+            var first = new DeliveryAccessRestriction { Partition = partition, Name = "quarantine", Viewers = groups, Owners = groups, CreatedUtc = now, CreatedBy = "tests", UpdatedUtc = now, UpdatedBy = "tests" };
+            var second = new DeliveryAccessRestriction { Partition = partition, Name = "legal-hold", Viewers = groups, Owners = groups, CreatedUtc = now, CreatedBy = "tests", UpdatedUtc = now, UpdatedBy = "tests" };
+            osdu.DeliveryAccessRestrictions.AddRange(first, second);
+            await osdu.SaveChangesAsync();
+            (legal, quarantine) = (second.RestrictionId, first.RestrictionId);
+        }
+
+        await using (var db = CatalogDatabase.Create(cs))
+        {
+            db.Repos.Add(new CatalogRepo { Id = repoId, Name = "cp-access-" + suffix, RemoteUrl = "https://example/cp-access.git", RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now });
+            db.Pipelines.Add(new CatalogPipeline
+            {
+                Id = pipelineId, RepoId = repoId, Name = flowName, Kind = "delivery", RelativePath = "flows/" + flowName + ".yaml",
+                ContentHash = new string('0', 64), Yaml = yaml, DefinitionJson = $$"""{"name":"{{flowName}}","flowKind":"delivery"}""",
+                Active = true, Wave = 0, FirstSeenUtc = now, LastSeenUtc = now,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var operations = new RecordedOperations();
+        try
+        {
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false")
+                .WithServices(services => services.AddSingleton(operations.Registry()));
+            using var client = factory.CreateClient();
+            var operate = await TokenAsync(client, ["read", "operate"]);
+
+            // The check is run in this process for the partition's restrictions, by name, under the flow's own credentials.
+            using (var checkedOnes = await SendAsync(client, operate, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/access-check"))
+            {
+                var body = await checkedOnes.Content.ReadAsStringAsync();
+                Assert.True(checkedOnes.StatusCode == HttpStatusCode.OK, body);
+            }
+
+            var given = operations.Last();
+            Assert.Equal((CheckAccessRestrictionsOperation.OperationName, flowName), (given.Operation, given.SourceRef));
+            Assert.Equal($"{legal},{quarantine}", given.Argument(CheckAccessRestrictionsOperation.RestrictionsArgument));
+
+            // A restriction the route cannot make (the collection is not known while no mapping of the flow is synced) is refused
+            // before a run is queued, in the words the dialog shows.
+            using (var unrestricted = await SendAsync(
+                client, operate, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/records/remove",
+                new DeliveryRemovalRequest("restrict", [Guid.NewGuid()], null, null, Restriction: "legal-hold")))
+            {
+                var body = await unrestricted.Content.ReadAsStringAsync();
+                Assert.True(unrestricted.StatusCode == HttpStatusCode.BadRequest, body);
+                Assert.Contains("cannot restrict its records' access", body, StringComparison.Ordinal);
+                Assert.Contains("Nothing was queued", body, StringComparison.Ordinal);
+            }
+
+            // A partition that registers none is answered with none, and nothing is asked of OSDU.
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                await osdu.DeliveryAccessRestrictions.Where(a => a.Partition == partition).ExecuteDeleteAsync();
+            }
+
+            var none = await JsonAsync(client, operate, $"/api/v1/delivery/flows/{pipelineId:D}/access-check", HttpMethod.Post);
+            Assert.Empty(none.GetProperty("restrictions").EnumerateArray());
+            Assert.Empty(operations.Given);
+        }
+        finally
+        {
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                await osdu.DeliveryAccessRestrictions.Where(a => a.Partition == partition).ExecuteDeleteAsync();
+                await osdu.DeliveryPartitions.Where(p => p.Name == partition).ExecuteDeleteAsync();
+            }
+
+            await using var db = CatalogDatabase.Create(cs);
+            await db.Pipelines.Where(p => p.Id == pipelineId).ExecuteDeleteAsync();
+            await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+        }
+    }
+
+    private static async Task<JsonElement> JsonAsync(HttpClient client, string token, string path, HttpMethod? method = null)
+    {
+        using var response = await SendAsync(client, token, method ?? HttpMethod.Get, path);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.True(response.StatusCode == HttpStatusCode.OK, $"GET {path} answered {(int)response.StatusCode}: {body}");
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"{method ?? HttpMethod.Get} {path} answered {(int)response.StatusCode}: {body}");
         return JsonDocument.Parse(body).RootElement.Clone();
     }
 

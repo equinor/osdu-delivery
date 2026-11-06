@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   until Lift the restriction gives it back; held records whose requirements changed are restricted the same way. A
   restriction runs as a `remove` run with `scope: restrict` and `restriction`, lifted with `scope: unrestrict`
   ([restricting access](osdu/docs/reference/concepts/access-restriction.md)).
+  A restriction also reaches the records the mapping's enrichments add beside each record, a well log's LAS dataset and its
+  file among them, and lifting gives each the ACL it had. The dialog asks OSDU, under the flow's own credentials, whether the
+  flow could lift each restriction again (`POST /api/v1/delivery/flows/{pipelineId}/access-check`) and offers only those it
+  could, and the control plane refuses a restriction the flow's route cannot make before a run is queued
+  ([what a restriction reaches](osdu/docs/reference/concepts/access-restriction.md#what-a-restriction-reaches)).
 
 - **A lookup table's column holding a JSON object's text is kept as that object with `decode: json`.** A cache flow's
   table type writes `{ column: tags, as: Tags, decode: json }`, and a mapping writes the object whole where the template

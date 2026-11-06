@@ -1027,7 +1027,10 @@
         "PATCH /records",
         "acl.viewers",
         "acl.owners",
-        "RestrictionId"
+        "RestrictionId",
+        "restrict a dataset",
+        "enrichment records acl",
+        "access check"
       ],
       "related": [
         "delivery-concept-removal-and-reversal",
@@ -1037,12 +1040,15 @@
         "delivery-table-record",
         "delivery-flow-routes",
         "delivery-cli-run",
-        "delivery-concept-api"
+        "delivery-concept-api",
+        "delivery-flow-enrich-records"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Engine/Restrictions/RecordRestrictions.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Restrictions/RestrictionRoute.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/StorageRecordAccess.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs",
         "osdu/src/SqlFlow.Delivery/Protocols/RecordAccess.cs",
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RecordRemoval.cs",
@@ -1054,7 +1060,8 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
         "osdu/gui/src/features/delivery/RemovalDialog.tsx",
         "osdu/gui/src/features/delivery/AccessRestrictionsPage.tsx",
-        "osdu/gui/src/features/delivery/DeliveryRecordPage.tsx"
+        "osdu/gui/src/features/delivery/DeliveryRecordPage.tsx",
+        "osdu/gui/src/features/delivery/accessRestrictionText.ts"
       ]
     },
     {

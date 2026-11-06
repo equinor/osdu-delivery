@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { isApiError } from "@/api/client";
 import {
   deliveryApi,
+  type DeliveryAccessCheck,
   type DeliveryFlowScope,
   type DeliveryLedgerPurgeResult,
   type DeliveryRecordFilter,
@@ -33,7 +34,7 @@ import {
 } from "../../api/delivery";
 import { GONE_FINDING, inventoryApi, type Inventory, type InventoryRemovalPolicy } from "../../api/inventories";
 import { ACCESS_RESTRICTIONS_KEY, accessRestrictionsApi, type AccessRestriction } from "../../api/accessRestrictions";
-import { aclText } from "./accessRestrictionText";
+import { aclText, restrictionUse } from "./accessRestrictionText";
 import { isPartitionId, useActivePartition } from "./activePartition";
 import { CorrelationError } from "@/components/CorrelationError";
 import { counted, findingVisual } from "./inventories/inventoryFormat";
@@ -314,10 +315,52 @@ function requestFor(selection: RemovalSelection, scope: RemovalScope, purgeLedge
 }
 
 /**
- * The registered access restriction a restriction sets: the one the partition has when it has one, else the one picked
- * among several, with each one's groups. No picker is drawn for one, and none for none, which says where one is registered.
+ * Whether the flow can restrict under the picked restriction and lift it again, as the check asked of OSDU under the flow's
+ * own credentials says: being checked, refused with the run's own words, or confirmed, naming the identity that can lift it.
  */
-function RestrictionPicker({ restrictions, picked, onPick, partition, loading, failed, disabled }: {
+function RestrictionCheckLine({ check, picked, checking, failed }: {
+  check: DeliveryAccessCheck | undefined;
+  picked: AccessRestriction | null;
+  checking: boolean;
+  failed: string | null;
+}) {
+  if (checking) {
+    return (
+      <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground" data-testid="removal-restriction-checking">
+        <Loader2 className="size-3 animate-spin" aria-hidden />
+        Asking OSDU whether the flow can lift it again
+      </span>
+    );
+  }
+
+  if (failed !== null) {
+    return <span className="text-[12px] text-destructive" data-testid="removal-restriction-check-error">{`Whether the flow can lift it again could not be asked: ${failed}`}</span>;
+  }
+
+  if (check?.refusal != null) {
+    return <span className="text-[12px] text-destructive" data-testid="removal-restriction-refused">{check.refusal}</span>;
+  }
+
+  const use = picked === null ? null : restrictionUse(check, picked.restrictionId);
+  if (use === null) {
+    return null;
+  }
+
+  return use.usable
+    ? (
+      <span className="text-[12px] text-muted-foreground" data-testid="removal-restriction-usable">
+        {`${check?.identity != null ? `The flow's identity (${check.identity})` : "The flow's identity"} is an owner of it, so the flow can lift it again.`}
+      </span>
+    )
+    : <span className="text-[12px] text-destructive" data-testid="removal-restriction-refused">{use.refusal}</span>;
+}
+
+/**
+ * The registered access restriction a restriction sets: the one the partition has when it has one, else the one picked
+ * among several, with each one's groups. A restriction the flow could not lift again is offered disabled, and the picked
+ * one says whether the flow can. No picker is drawn for one, and none for none, which says where one is registered.
+ */
+function RestrictionPicker({ restrictions, picked, onPick, partition, loading, failed, disabled, check, checking, checkFailed }: {
   restrictions: AccessRestriction[];
   picked: AccessRestriction | null;
   onPick: (name: string) => void;
@@ -325,6 +368,9 @@ function RestrictionPicker({ restrictions, picked, onPick, partition, loading, f
   loading: boolean;
   failed: string | null;
   disabled: boolean;
+  check: DeliveryAccessCheck | undefined;
+  checking: boolean;
+  checkFailed: string | null;
 }) {
   if (loading) {
     return <Skeleton className="h-8 w-full rounded-md" />;
@@ -337,6 +383,17 @@ function RestrictionPicker({ restrictions, picked, onPick, partition, loading, f
   if (restrictions.length === 0) {
     return null;
   }
+
+  // A flow that restricts nothing has nothing to pick from: the reason alone is said.
+  if (check?.refusal != null) {
+    return (
+      <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/30 px-3 py-2" data-testid="removal-restriction">
+        <RestrictionCheckLine check={check} picked={picked} checking={checking} failed={checkFailed} />
+      </div>
+    );
+  }
+
+  const unusable = (restriction: AccessRestriction) => restrictionUse(check, restriction.restrictionId)?.usable === false;
 
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/30 px-3 py-2" data-testid="removal-restriction">
@@ -357,7 +414,14 @@ function RestrictionPicker({ restrictions, picked, onPick, partition, loading, f
               </SelectTrigger>
               <SelectContent>
                 {restrictions.map((restriction) => (
-                  <SelectItem key={restriction.restrictionId} value={restriction.name}>{restriction.name}</SelectItem>
+                  <SelectItem
+                    key={restriction.restrictionId}
+                    value={restriction.name}
+                    disabled={unusable(restriction)}
+                    data-testid={`removal-restriction-option-${restriction.restrictionId}`}
+                  >
+                    {unusable(restriction) ? `${restriction.name} (the flow cannot lift it)` : restriction.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -371,6 +435,7 @@ function RestrictionPicker({ restrictions, picked, onPick, partition, loading, f
           {aclText(picked.viewers, picked.owners)}
         </span>
       )}
+      <RestrictionCheckLine check={check} picked={picked} checking={checking} failed={checkFailed} />
     </div>
   );
 }
@@ -519,6 +584,17 @@ export function RemovalDialog(props: RemovalDialogProps) {
   });
   const registered = (restrictions.data ?? []).filter((restriction) => restrictionPartition === null || restriction.partition === restrictionPartition);
   const restriction = registered.length === 1 ? registered[0] : registered.find((one) => one.name === picked) ?? null;
+  // Whether the flow can lift each of them again, asked of OSDU under the flow's own credentials once Restrict access is
+  // chosen, so a restriction the run would refuse is refused here, in its words, before anything is queued.
+  const accessCheck = useQuery({
+    queryKey: ["delivery", "access-check", ledger?.pipelineId ?? null, ledger?.flowScope?.interfaceName ?? null, ledger?.flowScope?.partition ?? null],
+    queryFn: () => deliveryApi.checkAccess(ledger!.pipelineId, ledger!.flowScope),
+    enabled: open && ledger !== null && scope === "restrict" && registered.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const checkFailed = accessCheck.isError ? (isApiError(accessCheck.error) ? accessCheck.error.detail ?? accessCheck.error.title : String(accessCheck.error)) : null;
+  const restrictionUsable = restriction !== null && restrictionUse(accessCheck.data, restriction.restrictionId)?.usable === true;
   const request = useMemo(
     () => (selection === null ? null : requestFor(selection, removalScope, purging, restriction?.name ?? null)),
     [selection, removalScope, purging, restriction],
@@ -811,6 +887,9 @@ export function RemovalDialog(props: RemovalDialogProps) {
                       loading={restrictions.isLoading}
                       failed={restrictions.isError ? (isApiError(restrictions.error) ? restrictions.error.detail ?? restrictions.error.title : String(restrictions.error)) : null}
                       disabled={busy}
+                      check={accessCheck.data}
+                      checking={accessCheck.isFetching}
+                      checkFailed={checkFailed}
                     />
                   )}
                 </Fragment>
@@ -967,7 +1046,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
             size="sm"
             onClick={() => (scope === "none" && !fromInventory ? purge.mutate() : remove.mutate())}
             disabled={busy || nothingAsked || !confirmed || acting === 0 || capped || (ledger !== null && preview.isError) || refused !== null
-              || (scope === "restrict" && restriction === null)}
+              || (scope === "restrict" && (restriction === null || !restrictionUsable))}
             data-testid="removal-confirm"
           >
             {busy

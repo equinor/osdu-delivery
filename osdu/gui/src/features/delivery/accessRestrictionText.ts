@@ -67,6 +67,34 @@ export function nameProblem(name: string): string | null {
     : `A letter or digit, then letters, digits, spaces, '.', '_' or '-', at most ${MAX_RESTRICTION_NAME} characters.`;
 }
 
+/** What a check of a flow answers (`POST /flows/{id}/access-check`): why it restricts nothing, and each restriction it was asked of. */
+export interface RestrictionCheckAnswer {
+  refusal?: string | null;
+  restrictions: { restrictionId: number; usable: boolean; refusal?: string | null }[];
+}
+
+/**
+ * Whether the flow can restrict under the restriction `restrictionId` and lift it again, as a check of the flow answered: usable,
+ * or refused with the run's own words (the flow's refusal first, which holds for every restriction); null while no answer
+ * names it (not asked yet, or registered since it was asked), which a restriction waits on.
+ */
+export function restrictionUse(check: RestrictionCheckAnswer | undefined, restrictionId: number): { usable: boolean; refusal: string | null } | null {
+  if (check === undefined) {
+    return null;
+  }
+
+  if (check.refusal != null) {
+    return { usable: false, refusal: check.refusal };
+  }
+
+  const use = check.restrictions.find((one) => one.restrictionId === restrictionId);
+  if (use === undefined) {
+    return null;
+  }
+
+  return use.usable ? { usable: true, refusal: null } : { usable: false, refusal: use.refusal ?? "The flow cannot lift it again." };
+}
+
 /** A restriction's groups in one line: `viewers a, b; owners c`, or one list when both name the same groups. */
 export function aclText(viewers: readonly string[], owners: readonly string[]): string {
   const same = viewers.length === owners.length && viewers.every((group) => owners.some((owner) => owner.toLowerCase() === group.toLowerCase()));

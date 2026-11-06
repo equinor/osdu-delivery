@@ -115,8 +115,12 @@ function RemovalLine({ removedKey, onLift, lifting }: { removedKey: RemovedKey; 
 function RestrictionLine({ restriction, onLift }: { restriction: DeliveryRecordRestriction; onLift?: () => void }) {
   const name = restriction.name ?? `restriction #${restriction.restrictionId}, no longer registered`;
   const groups = restriction.viewers !== null && restriction.owners !== null ? aclText(restriction.viewers, restriction.owners) : null;
+  const beside = restriction.beside?.length ?? 0;
+  const besideText = beside === 0
+    ? ""
+    : ` The ${beside === 1 ? "record" : `${beside.toLocaleString()} records`} its enrichments add beside it ${beside === 1 ? "is" : "are"} restricted with it and given back the access each had: ${restriction.beside!.join(", ")}.`;
   const former = restriction.formerViewers !== null && restriction.formerOwners !== null
-    ? `Lifting the restriction writes back the access the record had: ${aclText(restriction.formerViewers, restriction.formerOwners)}. No new version is written; the record then follows its source again.`
+    ? `Lifting the restriction writes back the access the record had: ${aclText(restriction.formerViewers, restriction.formerOwners)}.${besideText} No new version is written; the record then follows its source again.`
     : "The ledger keeps no access the record had before, so lifting the restriction cannot give it back: set the record's ACL in OSDU, then lift it.";
   const asked = restriction.restrictedUtc === null;
   return (
@@ -131,7 +135,9 @@ function RestrictionLine({ restriction, onLift }: { restriction: DeliveryRecordR
           <span>
             {`Access restricted under ${name} since `}
             <RelativeTime value={restriction.restrictedUtc} />
-            {groups !== null ? `: readable in OSDU only by ${groups}. ` : ". "}
+            {groups !== null
+              ? `: readable in OSDU only by ${groups}${beside === 0 ? "" : `, with the ${beside === 1 ? "record" : `${beside.toLocaleString()} records`} its enrichments add beside it`}. `
+              : ". "}
             No run delivers it, no release sends it and the ledger keeps it until the restriction is lifted.
           </span>
         )}

@@ -8,11 +8,13 @@ namespace SqlFlow.Delivery.Engine.Restrictions;
 /// <summary>
 /// Whether a flow's route can restrict its records' access (osdu/docs/reference/concepts/access-restriction.md, Which routes),
 /// with the call it makes or why it cannot. Worked out from the flow alone, as <c>RemovalEndpoints</c> and <c>ReversalRoute</c>
-/// are, so the removal dialog shows it before anything is queued, and the run passes over what the route cannot do with the
-/// same reason. A record's access is restricted only where one storage ACL is all of it: a storage record, and a Wellbore DDMS
-/// record under a platform endpoint, whose bulk data the DDMS serves only to whoever may read the record. A route that
-/// registers datasets beside the record, a DDMS that keeps data under access of its own, and rows or objects outside storage
-/// are refused, since restricting the record would leave the rest readable.
+/// are, so the removal dialog shows it before anything is queued, the control plane refuses a restriction it would refuse, and
+/// the run passes over what the route cannot do with the same reason. A record's access is restricted only where storage ACLs
+/// the ledger can name are all of it: a storage record, and a Wellbore DDMS record under a platform endpoint, whose bulk data
+/// the DDMS serves only to whoever may read the record, each with the records the mapping's enrichments add beside it, whose
+/// ids its target state keeps. A route that registers datasets beside the record, a DDMS that keeps data under access of its
+/// own, rows or objects outside storage, and workflows run over the enrichments whose created records the record keeps are
+/// refused, since restricting the record would leave the rest readable.
 /// </summary>
 /// <param name="Call">The call a restriction (and a lift) makes, or why the route cannot, in brackets.</param>
 /// <param name="Refusal">Why the route cannot restrict the records, or null when it can.</param>
@@ -32,9 +34,30 @@ public sealed record RestrictionRoute(string Call, string? Refusal)
         return OfEntityType(flow, DdmsRouting.EntityTypeOf(targetId));
     }
 
+    /// <summary>
+    /// Why the flow cannot restrict any record for what it runs beside its route, whatever the route: a workflow it runs over
+    /// one of its mapping's enrichments whose created records the record keeps (<c>results.remove</c>, the default), which a
+    /// search finds again rather than the ledger naming each, so a restriction could not be sure to reach them all
+    /// (osdu/docs/reference/flow/enrich-workflow.md); null when it runs none.
+    /// </summary>
+    public static string? BesideRefusal(FlowDefinition flow)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        var kept = flow.EnrichWorkflows.Where(w => w.Value.Results.Remove).Select(w => $"'{w.Key}'").Order(StringComparer.Ordinal).ToList();
+        return kept.Count == 0
+            ? null
+            : $"the flow runs a workflow over its mapping's enrichment{(kept.Count == 1 ? string.Empty : "s")} {string.Join(", ", kept)} whose runs create records the record keeps (results.remove), which a search finds again rather than the ledger naming each, so a restriction could not be sure to reach them all; remove the record instead, or set results.remove to false where the records a run creates are not the record's own";
+    }
+
     private static RestrictionRoute OfEntityType(FlowDefinition flow, string? entityType)
     {
         ArgumentNullException.ThrowIfNull(flow);
+        var route = OfRoute(flow, entityType);
+        return route.Restricts && BesideRefusal(flow) is { } beside ? Cannot(beside) : route;
+    }
+
+    private static RestrictionRoute OfRoute(FlowDefinition flow, string? entityType)
+    {
         var options = flow.Target.ProtocolOptions;
         switch (flow.Target.Protocol)
         {
@@ -83,7 +106,7 @@ public sealed record RestrictionRoute(string Call, string? Refusal)
             : Cannot("the flow's endpoint is the DDMS itself, so the storage service that keeps the records' ACL is not under it; make the endpoint the platform root and give the DDMS its root under target.ddms");
     }
 
-    private static RestrictionRoute Can(string call) => new($"{call}: acl.viewers and acl.owners replaced in place, no new version", null);
+    private static RestrictionRoute Can(string call) => new($"{call}: acl.viewers and acl.owners replaced in place, no new version, on each record and the records its enrichments add beside it", null);
 
     private static RestrictionRoute Cannot(string why) => new($"({why})", why);
 }

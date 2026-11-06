@@ -299,8 +299,9 @@ export interface DeliveryRecord {
 
 /**
  * The access restriction a record carries (osdu/docs/reference/concepts/access-restriction.md): the registered restriction
- * and its groups (null when the registry no longer names it), when OSDU confirmed it (null while asked and unanswered), and
- * the ACL the record had before, which lifting it gives back.
+ * and its groups (null when the registry no longer names it), when OSDU confirmed it (null while asked and unanswered), the
+ * ACL the record had before, which lifting it gives back, and the records beside it the restriction reached with it (the
+ * records the mapping's enrichments add), which lifting gives the ACL each had.
  */
 export interface DeliveryRecordRestriction {
   restrictionId: number;
@@ -311,6 +312,28 @@ export interface DeliveryRecordRestriction {
   restrictedUtc: string | null;
   formerViewers: string[] | null;
   formerOwners: string[] | null;
+  beside?: string[] | null;
+}
+
+/** One registered restriction as a check of a flow answers it: whether the flow can restrict under it and lift it again, and why not. */
+export interface DeliveryAccessRestrictionUse {
+  restrictionId: number;
+  name?: string | null;
+  usable: boolean;
+  refusal?: string | null;
+}
+
+/**
+ * Whether a flow can restrict its records under each access restriction of its partition, asked of OSDU under the flow's
+ * own credentials before a restriction is queued: the flow's identity as Entitlements named it, why the flow restricts
+ * nothing at all, and each restriction with why a restriction under it would be refused.
+ */
+export interface DeliveryAccessCheck {
+  flow: string;
+  identity?: string | null;
+  refusal?: string | null;
+  restrictions: DeliveryAccessRestrictionUse[];
+  checkedUtc?: string;
 }
 
 /** An OSDU id a record's pending document refers to, and the property of the record holding it. */
@@ -481,6 +504,8 @@ export interface DeliveryAttemptResult {
 export interface DeliveryAttemptAcl {
   viewers: string[];
   owners: string[];
+  /** The records beside the record a restriction reached (the records its mapping's enrichments add), each group with the ACL it had when it was not the record's. */
+  beside?: { ids: string[]; viewers?: string[]; owners?: string[] }[];
 }
 
 /** What a restriction, or its lift, did to a record's access, as its attempt's result names it. */
@@ -4581,6 +4606,9 @@ export const deliveryApi = {
   /** Probes the flow's target: is OSDU reachable with the flow's credentials, in the scope's partition? Answered at once. */
   probe: (pipelineId: string, scope?: DeliveryFlowScope) =>
     post<DeliveryProbeResult>(flowPath(pipelineId, "/probe", scope)),
+  /** Whether the flow can restrict its records under each access restriction of its partition, and lift it again. */
+  checkAccess: (pipelineId: string, scope?: DeliveryFlowScope) =>
+    post<DeliveryAccessCheck>(flowPath(pipelineId, "/access-check", scope)),
   /** Releases one record; with `run`, also queues a deliver run scoped to it, which tries it again at once. */
   release: (record: DeliveryRecordRef, run = false) =>
     post<DeliveryReleaseResult>(`${recordApiPath(record)}/release`, run ? { run: true } : undefined),

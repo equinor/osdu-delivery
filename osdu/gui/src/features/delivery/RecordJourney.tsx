@@ -606,6 +606,15 @@ function AclFact({ acl }: { acl: DeliveryAttemptAcl }) {
     <span className="flex flex-col gap-0.5" data-testid="journey-acl">
       <span><span className="text-muted-foreground">viewers </span><Mono>{acl.viewers.join(", ")}</Mono></span>
       <span><span className="text-muted-foreground">owners </span><Mono>{acl.owners.join(", ")}</Mono></span>
+      {(acl.beside ?? []).map((group) => (
+        <span key={group.ids.join(",")} data-testid="journey-acl-beside">
+          <span className="text-muted-foreground">{group.viewers !== undefined && group.owners !== undefined ? "beside it, with its own " : "beside it, the same "}</span>
+          <Mono>{group.ids.join(", ")}</Mono>
+          {group.viewers !== undefined && group.owners !== undefined && (
+            <span className="text-muted-foreground">{` (viewers ${group.viewers.join(", ")}; owners ${group.owners.join(", ")})`}</span>
+          )}
+        </span>
+      ))}
     </span>
   );
 }
