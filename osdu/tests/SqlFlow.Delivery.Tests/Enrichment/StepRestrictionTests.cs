@@ -127,6 +127,30 @@ public sealed class StepRestrictionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_log_whose_acl_names_more_groups_than_four_thousand_characters_hold_is_restricted_and_given_every_group_back()
+    {
+        var (runtime, ledger) = await DeliveredAsync();
+        using (runtime)
+        {
+            // A log's mapping gives it the flow's group and every group of its field and its country: here a hundred.
+            var logId = TargetOf(await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(2)));
+            _platform.Records[logId]["acl"]!["viewers"] = new JsonArray([.. Enumerable.Range(1, 100).Select(n => (JsonNode?)$"data.field-{n:D3}.access.viewers@dev.dataservices.energy")]);
+            var logAcl = Acl(logId);
+            Assert.True(logAcl.ToJson().Length > 4000);
+            await RegisterAsync("legal-hold");
+
+            var summary = await runtime.RemoveAsync(RemovalSelection.Of([SampleEstate.Key(2)]), RemovalChoice.Restrict, restriction: "legal-hold");
+            Assert.True(summary.Restricted == 1, summary.Describe());
+            var kept = (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(2)))!.RestrictedFromAcl!;
+            Assert.True(kept.Length > 4000);
+            Assert.True(RestrictedAccess.Parse(kept).Record.SameAs(logAcl));
+
+            Assert.Equal(1, (await runtime.RemoveAsync(RemovalSelection.Of([SampleEstate.Key(2)]), RemovalChoice.Unrestrict)).Lifted);
+            Assert.True(Acl(logId).SameAs(logAcl));
+        }
+    }
+
+    [Fact]
     public async Task A_dataset_the_flow_may_not_change_keeps_the_log_from_being_restricted_and_what_was_changed_is_given_back()
     {
         var (runtime, ledger) = await DeliveredAsync();

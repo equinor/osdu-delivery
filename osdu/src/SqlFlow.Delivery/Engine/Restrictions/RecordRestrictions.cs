@@ -324,15 +324,6 @@ public sealed class RecordRestrictions
                 }
             }
 
-            var json = from.ToJson();
-            if (json.Length > DeliveryModel.MaxRestrictedFromAclLength)
-            {
-                results[i] = Skipped(record, string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"its ACL in OSDU and those of the {from.BesideIds.Count} record(s) beside it take more than the ledger keeps to give back ({json.Length} characters, at most {DeliveryModel.MaxRestrictedFromAclLength}), so it is not restricted; remove the record instead"));
-                continue;
-            }
-
             if (read.Version is { } version && record.TargetVersion is { } known && version != known)
             {
                 note += string.Create(CultureInfo.InvariantCulture, $"; OSDU holds version {version}, not version {known} this flow left, and the restriction covers every version");

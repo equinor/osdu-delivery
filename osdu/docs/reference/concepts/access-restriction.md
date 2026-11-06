@@ -174,8 +174,8 @@ read the dataset record through storage under the caller's token, and leave out 
 one else is handed its files. A record beside it that OSDU no longer holds (storage names it under `invalidRecords`), or
 that holds the restriction's groups already, set outside it, is left as it is and said in the record's result. One storage
 withholds from the flow's identity, or does not answer for, keeps the record from being restricted, with why
-([How a restriction runs](#how-a-restriction-runs), step 2). A record whose ACLs, with those beside it, take more than the
-ledger keeps (4,000 characters) is passed over, saying so: remove it instead.
+([How a restriction runs](#how-a-restriction-runs), step 2). The ledger keeps the ACLs whatever their length: a record's
+lists every group its mapping's lookups find, a well log's field and country groups among them.
 
 ## What a restriction holds off
 

@@ -66,7 +66,7 @@ public sealed class DeliveryModuleTests
         // listed with its runs; what a person asks for and waits on is run by the control plane itself, and is never offered to a node.
         Assert.Equal(["delivery-check-values", "delivery-export-value-issues"], operations);
         Assert.Equal(
-            ["delivery-explore", "delivery-preview", "delivery-probe", "delivery-read", "delivery-scope-values", "delivery-source", "delivery-source-sql", "delivery-staged-rows", "delivery-table-rows", "delivery-value-proof"],
+            ["delivery-access-check", "delivery-explore", "delivery-preview", "delivery-probe", "delivery-read", "delivery-scope-values", "delivery-source", "delivery-source-sql", "delivery-staged-rows", "delivery-table-rows", "delivery-value-proof"],
             factory.Services.GetRequiredService<DirectOperations>().Names.Order(StringComparer.Ordinal).ToList());
     }
 

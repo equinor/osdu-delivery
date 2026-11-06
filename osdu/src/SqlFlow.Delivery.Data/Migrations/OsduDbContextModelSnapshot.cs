@@ -3616,8 +3616,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RestrictedFromAcl")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("RestrictedUtc")
                         .HasColumnType("datetime2");

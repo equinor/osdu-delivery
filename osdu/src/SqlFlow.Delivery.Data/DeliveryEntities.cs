@@ -3933,9 +3933,6 @@ public static class DeliveryModel
     /// </summary>
     public const int MaxHeldStepsLength = 600;
 
-    /// <summary>The longest ACL a restricted record keeps of what OSDU held before (two lists of group emails, as JSON).</summary>
-    public const int MaxRestrictedFromAclLength = 4000;
-
     /// <summary>The longest lease token, and the longest worker name a lease records as its owner.</summary>
     public const int MaxLeaseTokenLength = 200;
 
@@ -4103,7 +4100,9 @@ public static class DeliveryModel
             OptionalOsduId(e.Property(r => r.ChildLinkKey)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.OccupiedTargetId)).HasMaxLength(MaxTargetIdLength);
             e.Property(r => r.HeldSteps).HasMaxLength(MaxHeldStepsLength);
-            e.Property(r => r.RestrictedFromAcl).HasMaxLength(MaxRestrictedFromAclLength);
+            // Unbounded: an ACL lists every group a mapping's lookups find (a log's field and country groups among them), and
+            // the records beside the record add theirs, so no length fits every record a restriction must give back.
+            e.Property(r => r.RestrictedFromAcl);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
             e.Property(r => r.LeaseOwner).HasMaxLength(200);
