@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 776" width="1280" height="776" role="img" aria-labelledby="title desc">
-  <title id="title">OSDU Delivery onboarding: twelve videos in five parts</title>
-  <desc id="desc">Twelve videos in the order to watch them, in five parts, each tagged for data engineers, for extending the framework, or both. Start here: why it exists, how it works. Into the tables: load only what changed, one new column. Row to record: write a mapping, ask once and render many, will it send. Into OSDU: five doors and ten routes, eight ledger states, 5,000 records on one worker. Build and extend: the code doesn't change, inside the codebase.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 474" width="1280" height="474" role="img" aria-labelledby="title desc">
+  <title id="title">OSDU Delivery onboarding: the videos in five parts</title>
+  <desc id="desc">The onboarding videos in the order to watch them, in five parts, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. Build and extend: configure it with an assistant, or change the framework.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1624"/>
@@ -22,7 +22,7 @@
       <circle cx="2" cy="2" r="1.1" fill="#9db0c6" fill-opacity="0.11"/>
     </pattern>
     <clipPath id="card">
-      <rect width="1280" height="776" rx="28"/>
+      <rect width="1280" height="474" rx="28"/>
     </clipPath>
   </defs>
   <style>
@@ -31,14 +31,11 @@
     .title { font-size: 56px; font-weight: 800; fill: #ffffff; letter-spacing: -0.5px; }
     .sub { font-size: 21px; fill: #a9bbd0; }
     .cta { font-size: 18px; font-weight: 700; fill: #0d1624; }
-    .legend { font-size: 15px; fill: #a9bbd0; }
     .part { font-size: 14px; font-weight: 700; letter-spacing: 2px; fill: #d5e0ee; }
     .partnum { fill: #7f93ab; }
     .rail { stroke: #3a4d66; stroke-width: 2; }
     .tile { fill: #172840; fill-opacity: 0.82; stroke: #2a3b52; stroke-width: 1.5; }
-    .num { font-size: 15px; font-weight: 800; letter-spacing: 2px; fill: #7f93ab; }
-    .name { font-size: 22px; font-weight: 700; fill: #ffffff; }
-    .meta { font-size: 16px; fill: #a9bbd0; }
+    .desc { font-size: 18px; fill: #d5e0ee; }
     .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.6s ease-out infinite; }
     @keyframes pulse { from { transform: scale(1); opacity: 0.55; } to { transform: scale(1.9); opacity: 0; } }
     @media (prefers-reduced-motion: reduce) {
@@ -47,27 +44,19 @@
   </style>
 
   <g clip-path="url(#card)">
-    <rect width="1280" height="776" fill="url(#bg)"/>
-    <rect width="1280" height="776" fill="url(#dots)"/>
-    <ellipse cx="460" cy="481" rx="620" ry="260" fill="url(#warmth)"/>
-    <ellipse cx="1060" cy="512" rx="360" ry="260" fill="url(#cool)"/>
+    <rect width="1280" height="474" fill="url(#bg)"/>
+    <rect width="1280" height="474" fill="url(#dots)"/>
+    <ellipse cx="460" cy="313" rx="620" ry="220" fill="url(#warmth)"/>
+    <ellipse cx="1060" cy="332" rx="360" ry="220" fill="url(#cool)"/>
   </g>
-  <rect x="0.75" y="0.75" width="1278.5" height="774.5" rx="27.5" fill="none" stroke="#2a3b52" stroke-width="1.5"/>
+  <rect x="0.75" y="0.75" width="1278.5" height="472.5" rx="27.5" fill="none" stroke="#2a3b52" stroke-width="1.5"/>
 
   <text class="kick" x="64" y="72">OSDU DELIVERY · ONBOARDING</text>
-  <text class="title" x="62" y="130">Learn it in twelve videos.</text>
-  <text class="sub" x="64" y="168">Five parts, in the order to watch them, each tagged for whom it serves.</text>
+  <text class="title" x="62" y="130">Learn it from the videos.</text>
+  <text class="sub" x="64" y="168">In the order to watch them, each tagged for data engineers, for extending, or both.</text>
 
   <rect x="1004" y="50" width="212" height="50" rx="25" fill="#f2b56b"/>
   <text class="cta" x="1110" y="81" text-anchor="middle">Watch them →</text>
-  <g transform="translate(944 142)">
-    <circle r="7" fill="#f2b56b"/>
-    <text class="legend" x="14" y="5">data engineer</text>
-  </g>
-  <g transform="translate(1092 142)">
-    <circle r="7" fill="#9cc8ff"/>
-    <text class="legend" x="14" y="5">extending</text>
-  </g>
 
   <line class="rail" x1="70" y1="242" x2="1208" y2="242"/>
   <path d="M1206 236 L1216 242 L1206 248 Z" fill="#3a4d66"/>
@@ -82,133 +71,44 @@
   <text class="part" x="1000" y="226"><tspan class="partnum">5</tspan>  BUILD AND EXTEND</text>
   <circle cx="1006" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
   <g>
-    <rect class="tile" x="64" y="262" width="216" height="146" rx="18" style="stroke: #ffffff; stroke-opacity: 0.55"/>
-    <text class="num" x="88" y="304">01</text>
-    <circle cx="242" cy="298" r="34" fill="url(#glow)"/>
-    <circle class="pulse" cx="242" cy="298" r="16" fill="none" stroke="#ffffff" stroke-width="2"/>
-    <circle cx="242" cy="298" r="16" fill="#ffffff"/>
-    <path d="M237.5 291 L250 298 L237.5 305 Z" fill="#0d1624"/>
-    <text class="name" x="88" y="346">Why it</text>
-    <text class="name" x="88" y="372">exists</text>
-    <text class="meta" x="88" y="396">3:42</text>
-    <circle cx="254" cy="390" r="7" fill="#9cc8ff"/>
-    <circle cx="232" cy="390" r="7" fill="#f2b56b"/>
+    <rect class="tile" x="64" y="262" width="216" height="164" rx="18" style="stroke: #ffffff; stroke-opacity: 0.55"/>
+    <circle cx="106" cy="304" r="34" fill="url(#glow)"/>
+    <circle class="pulse" cx="106" cy="304" r="17" fill="none" stroke="#ffffff" stroke-width="2"/>
+    <circle cx="106" cy="304" r="17" fill="#ffffff"/>
+    <path d="M101.5 296.5 L114.5 304 L101.5 311.5 Z" fill="#0d1624"/>
+    <text class="desc" x="88" y="358">Why it exists, and</text>
+    <text class="desc" x="88" y="382">how its parts fit</text>
+    <text class="desc" x="88" y="406">together.</text>
   </g>
   <g>
-    <rect class="tile" x="64" y="422" width="216" height="146" rx="18"/>
-    <text class="num" x="88" y="464">02</text>
-    <circle cx="242" cy="458" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M237.5 451 L250 458 L237.5 465 Z" fill="#ffffff"/>
-    <text class="name" x="88" y="506">How it</text>
-    <text class="name" x="88" y="532">works</text>
-    <text class="meta" x="88" y="556">6:18</text>
-    <circle cx="254" cy="550" r="7" fill="#9cc8ff"/>
-    <circle cx="232" cy="550" r="7" fill="#f2b56b"/>
+    <rect class="tile" x="298" y="262" width="216" height="164" rx="18"/>
+    <rect x="323" y="290" width="34" height="28" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M323 299 H357 M323 308.5 H357 M335 299 V318" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="322" y="358">How source files</text>
+    <text class="desc" x="322" y="382">land, and only what</text>
+    <text class="desc" x="322" y="406">changed is written.</text>
   </g>
   <g>
-    <rect class="tile" x="298" y="262" width="216" height="146" rx="18"/>
-    <text class="num" x="322" y="304">03</text>
-    <circle cx="476" cy="298" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M471.5 291 L484 298 L471.5 305 Z" fill="#ffffff"/>
-    <text class="name" x="322" y="346">Load only</text>
-    <text class="name" x="322" y="372">what changed</text>
-    <text class="meta" x="322" y="396">7:12</text>
-    <circle cx="488" cy="390" r="7" fill="#9cc8ff"/>
-    <circle cx="466" cy="390" r="7" fill="#f2b56b"/>
+    <rect class="tile" x="532" y="262" width="216" height="164" rx="18"/>
+    <path d="M563 287 H578 L586 295 V321 H563 Z M578 287 V295 H586" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M568 303 H581 M568 309 H581 M568 315 H576" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="556" y="358">How a row becomes</text>
+    <text class="desc" x="556" y="382">an OSDU record, and</text>
+    <text class="desc" x="556" y="406">when it sends again.</text>
   </g>
   <g>
-    <rect class="tile" x="298" y="422" width="216" height="146" rx="18"/>
-    <text class="num" x="322" y="464">04</text>
-    <circle cx="476" cy="458" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M471.5 451 L484 458 L471.5 465 Z" fill="#ffffff"/>
-    <text class="name" x="322" y="506">One new</text>
-    <text class="name" x="322" y="532">column</text>
-    <text class="meta" x="322" y="556">9:43</text>
-    <circle cx="488" cy="550" r="7" fill="#f2b56b"/>
+    <rect class="tile" x="766" y="262" width="216" height="164" rx="18"/>
+    <path d="M808 287 V307 M800 299 L808 307 L816 299" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M792 307 V319 H824 V307" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="790" y="358">How records reach</text>
+    <text class="desc" x="790" y="382">OSDU, and how each</text>
+    <text class="desc" x="790" y="406">is accounted for.</text>
   </g>
   <g>
-    <rect class="tile" x="532" y="262" width="216" height="146" rx="18"/>
-    <text class="num" x="556" y="304">05</text>
-    <circle cx="710" cy="298" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M705.5 291 L718 298 L705.5 305 Z" fill="#ffffff"/>
-    <text class="name" x="556" y="346">Write a</text>
-    <text class="name" x="556" y="372">mapping</text>
-    <text class="meta" x="556" y="396">17:30</text>
-    <circle cx="722" cy="390" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="532" y="422" width="216" height="146" rx="18"/>
-    <text class="num" x="556" y="464">06</text>
-    <circle cx="710" cy="458" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M705.5 451 L718 458 L705.5 465 Z" fill="#ffffff"/>
-    <text class="name" x="556" y="506">Ask once,</text>
-    <text class="name" x="556" y="532">render many</text>
-    <text class="meta" x="556" y="556">7:12</text>
-    <circle cx="722" cy="550" r="7" fill="#9cc8ff"/>
-    <circle cx="700" cy="550" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="532" y="582" width="216" height="146" rx="18"/>
-    <text class="num" x="556" y="624">07</text>
-    <circle cx="710" cy="618" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M705.5 611 L718 618 L705.5 625 Z" fill="#ffffff"/>
-    <text class="name" x="556" y="666">Will it</text>
-    <text class="name" x="556" y="692">send?</text>
-    <text class="meta" x="556" y="716">9:52</text>
-    <circle cx="722" cy="710" r="7" fill="#9cc8ff"/>
-    <circle cx="700" cy="710" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="766" y="262" width="216" height="146" rx="18"/>
-    <text class="num" x="790" y="304">08</text>
-    <circle cx="944" cy="298" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M939.5 291 L952 298 L939.5 305 Z" fill="#ffffff"/>
-    <text class="name" x="790" y="346">Five doors,</text>
-    <text class="name" x="790" y="372">ten routes</text>
-    <text class="meta" x="790" y="396">16:15</text>
-    <circle cx="956" cy="390" r="7" fill="#9cc8ff"/>
-    <circle cx="934" cy="390" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="766" y="422" width="216" height="146" rx="18"/>
-    <text class="num" x="790" y="464">09</text>
-    <circle cx="944" cy="458" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M939.5 451 L952 458 L939.5 465 Z" fill="#ffffff"/>
-    <text class="name" x="790" y="506">Eight ledger</text>
-    <text class="name" x="790" y="532">states</text>
-    <text class="meta" x="790" y="556">13:13</text>
-    <circle cx="956" cy="550" r="7" fill="#9cc8ff"/>
-    <circle cx="934" cy="550" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="766" y="582" width="216" height="146" rx="18"/>
-    <text class="num" x="790" y="624">10</text>
-    <circle cx="944" cy="618" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M939.5 611 L952 618 L939.5 625 Z" fill="#ffffff"/>
-    <text class="name" x="790" y="666">5,000 records,</text>
-    <text class="name" x="790" y="692">one worker</text>
-    <text class="meta" x="790" y="716">9:52</text>
-    <circle cx="956" cy="710" r="7" fill="#9cc8ff"/>
-    <circle cx="934" cy="710" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="1000" y="262" width="216" height="146" rx="18"/>
-    <text class="num" x="1024" y="304">11</text>
-    <circle cx="1178" cy="298" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M1173.5 291 L1186 298 L1173.5 305 Z" fill="#ffffff"/>
-    <text class="name" x="1024" y="346">The code</text>
-    <text class="name" x="1024" y="372">doesn't change</text>
-    <text class="meta" x="1024" y="396">8:09</text>
-    <circle cx="1190" cy="390" r="7" fill="#f2b56b"/>
-  </g>
-  <g>
-    <rect class="tile" x="1000" y="422" width="216" height="146" rx="18"/>
-    <text class="num" x="1024" y="464">12</text>
-    <circle cx="1178" cy="458" r="16" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
-    <path d="M1173.5 451 L1186 458 L1173.5 465 Z" fill="#ffffff"/>
-    <text class="name" x="1024" y="506">Inside the</text>
-    <text class="name" x="1024" y="532">codebase</text>
-    <text class="meta" x="1024" y="556">12:58</text>
-    <circle cx="1190" cy="550" r="7" fill="#9cc8ff"/>
+    <rect class="tile" x="1000" y="262" width="216" height="164" rx="18"/>
+    <path d="M1034 294 L1025 304 L1034 314 M1050 294 L1059 304 L1050 314 M1045 290 L1039 318" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="1024" y="358">Configure it with an</text>
+    <text class="desc" x="1024" y="382">assistant, or change</text>
+    <text class="desc" x="1024" y="406">the framework.</text>
   </g>
 </svg>

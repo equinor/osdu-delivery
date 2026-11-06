@@ -1,16 +1,14 @@
 # Onboarding
 
-<a href="#start-here"><img src="osdu/media/onboarding-videos.svg" width="100%" alt="Learn OSDU Delivery in twelve videos, in five parts: start here, into the ingestion tables, from row to record, into OSDU, and build and extend"></a>
-
-Twelve videos in five parts, in the order to watch them. The first two give the whole picture; the next eight follow a
+The videos in five parts, in the order to watch them. The first part gives the whole picture; the next three follow a
 record the way it travels, from the source files into the ingestion tables, from a row to an OSDU record, and into
-OSDU; the last two build on it. Each is tagged for whom it serves:
+OSDU; the last builds on it. Each video is tagged for whom it serves:
 <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> for building
 pipelines with OSDU Delivery, <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending">
 for changing the framework itself. Most serve both.
 
-Short on time: watch 01 and 02, then 05 to write a mapping or 12 to change the code. Every video is on the
-[deltaforge-org YouTube channel](https://www.youtube.com/@deltaforge-org).
+Short on time: watch the two under Start here, then the mapping tutorial to write a mapping or the codebase walkthrough
+to change the code. Every video is on the [deltaforge-org YouTube channel](https://www.youtube.com/@deltaforge-org).
 
 ## Start here
 
