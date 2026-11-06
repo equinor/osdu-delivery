@@ -852,6 +852,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A removal that skips a record says why on the record's timeline and in the run log, where both gave only the count: the
+  line names the first three records skipped, each with its reason, and how many more
+  ([how a removal runs](osdu/docs/reference/concepts/removal-and-reversal.md#removing-records-from-osdu)).
 - A mapping overview's table lists the columns the catalog holds of it through the flow's own connection, where a table
   catalogued through two connections listed whichever the catalog held first
   ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md#the-outline)).

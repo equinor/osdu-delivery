@@ -224,7 +224,7 @@ public sealed class RecordRestrictions
         }
 
         // What OSDU holds of each now and of the records beside it: their ACLs, which the ledger keeps to give back.
-        IReadOnlyDictionary<string, RecordAccessRead> held;
+        RecordAccessReads held;
         try
         {
             held = await access.ReadAsync([.. beside.SelectMany(b => Ids(records[b.Key].TargetId!, b.Value)).Distinct(StringComparer.Ordinal)], ct).ConfigureAwait(false);
@@ -245,13 +245,22 @@ public sealed class RecordRestrictions
         {
             var record = records[i];
             var again = record.RestrictionId == restriction.RestrictionId;
-            if (!held.TryGetValue(record.TargetId!, out var read))
+            var answer = held.AnswerFor(record.TargetId!);
+            if (answer == RecordAccessAnswer.NotFound)
             {
                 results[i] = again
-                    ? Skipped(record, "OSDU no longer serves the record (it was removed outside this flow); it stays restricted here, so no run delivers it until the restriction is lifted")
-                    : Skipped(record, "OSDU no longer serves the record (it was removed outside this flow), so it has no access to restrict");
+                    ? Skipped(record, "OSDU no longer serves the record (storage names it under invalidRecords: it was removed outside this flow); it stays restricted here, so no run delivers it until the restriction is lifted")
+                    : Skipped(record, "OSDU no longer serves the record (storage names it under invalidRecords: it was removed outside this flow), so it has no access to restrict");
                 continue;
             }
+
+            if (answer != RecordAccessAnswer.Held)
+            {
+                results[i] = Failed(record, $"OSDU did not say which ACL the record holds ({RecordAccessReads.Describe(answer)}), so nothing was changed; {Remedy(answer)}");
+                continue;
+            }
+
+            var read = held.Held[record.TargetId!];
 
             if (!again && read.Acl.SameAs(restriction.Acl))
             {
@@ -270,26 +279,43 @@ public sealed class RecordRestrictions
                 var reached = new List<(string Id, RecordAcl Acl)>(besideIds.Count);
                 var unserved = 0;
                 var restrictedAlready = 0;
+                var unread = new List<RecordAccessAnswer>();
                 foreach (var id in besideIds)
                 {
-                    if (!held.TryGetValue(id, out var other))
+                    var besideAnswer = held.AnswerFor(id);
+                    if (besideAnswer == RecordAccessAnswer.NotFound)
                     {
                         unserved++;
                     }
-                    else if (other.Acl.SameAs(restriction.Acl))
+                    else if (besideAnswer != RecordAccessAnswer.Held)
+                    {
+                        unread.Add(besideAnswer);
+                    }
+                    else if (held.Held[id].Acl.SameAs(restriction.Acl))
                     {
                         restrictedAlready++;
                     }
                     else
                     {
-                        reached.Add((id, other.Acl));
+                        reached.Add((id, held.Held[id].Acl));
                     }
+                }
+
+                // A record beside it whose ACL is not known cannot be restricted with it, and restricting the record alone would
+                // leave that one readable: whole or not at all.
+                if (unread.Count > 0)
+                {
+                    var why = string.Join("; ", unread.GroupBy(a => a).Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Count()}: {RecordAccessReads.Describe(g.Key)}")));
+                    results[i] = Failed(record, string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"OSDU did not say which ACL {unread.Count} of the {besideIds.Count} record(s) its enrichments add beside it hold ({why}), and restricting the record alone would leave them readable, so nothing was changed; {Remedy(unread[0])}"));
+                    continue;
                 }
 
                 from = RestrictedAccess.Of(read.Acl, reached);
                 if (unserved > 0)
                 {
-                    note += string.Create(CultureInfo.InvariantCulture, $"; {unserved} record(s) beside it OSDU does not serve to the flow (removed, or not readable by it) were left as they are");
+                    note += string.Create(CultureInfo.InvariantCulture, $"; {unserved} record(s) beside it OSDU no longer serves (storage names them under invalidRecords: removed outside this flow) were left as they are");
                 }
 
                 if (restrictedAlready > 0)
@@ -685,4 +711,13 @@ public sealed class RecordRestrictions
 
     private static RemovalRecordResult Failed(RecordState record, string detail)
         => RemovalRecordResult.Failed(record.DeliveryKey, record.SourceKey, record.Label, record.TargetId, HeaderRedaction.RedactMessage(detail), record.LastSubmissionId);
+
+    /// <summary>What settles a record storage did not answer with its ACL, so asking again restricts it.</summary>
+    private static string Remedy(RecordAccessAnswer answer) => answer switch
+    {
+        RecordAccessAnswer.Unanswered => "ask again once storage answers for it",
+        RecordAccessAnswer.Withheld => "add the flow's identity to an owner group of its ACL in OSDU (or make it a data manager), then restrict it again",
+        RecordAccessAnswer.NoAcl => "set its ACL in OSDU, then restrict it again",
+        _ => throw new ArgumentOutOfRangeException(nameof(answer), answer, "Only a record storage did not answer with its ACL has a remedy."),
+    };
 }

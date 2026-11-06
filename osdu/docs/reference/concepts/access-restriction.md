@@ -111,7 +111,17 @@ removal does, it first undoes what unfinished deliveries of the records left. Fo
    ([Which routes](#which-routes)).
 2. What OSDU holds of the others, and of the records beside each ([What a restriction reaches](#what-a-restriction-reaches)),
    is read with the batched read every route verifies with (`POST /api/storage/v2/query/records`), which answers each record
-   with the ACL storage holds for it now. A record OSDU no longer serves is passed over.
+   with the ACL storage holds for it now. Storage's answer tells four records apart, and the result says which:
+
+   | Storage | The record | Result |
+   | --- | --- | --- |
+   | Names it under `invalidRecords`: it holds no active version (removed outside this flow) | Passed over | `skipped` |
+   | Names it under `retryRecords` each time it is asked (it could not read the record in time) | Nothing changed; ask again | `failed` |
+   | Leaves it out of every list, as it does a record the caller may not read: the flow's identity is in none of the groups of its ACL and is not a data manager (storage's `BatchServiceImpl.getMultipleRecords`) | Nothing changed; add the identity to an owner group of the record's ACL | `failed` |
+   | Answers it without an ACL of viewers and owners | Nothing changed; set its ACL in OSDU | `failed` |
+
+   A record beside it that storage does not answer with its ACL fails the record the same way, since restricting the record
+   alone would leave that one readable; one storage names under `invalidRecords` is left as it is.
 3. Each is marked restricted in the ledger, keeping the ACL OSDU held for it and for each record beside it
    (`RestrictedFromAcl`), before OSDU is asked: the work queued for it is dropped (a pending or waiting record stands
    delivered at the version OSDU holds), and nothing is planned for it.
@@ -161,9 +171,11 @@ ACL it had.
 A dataset's files are reached through it: the Dataset service's retrieval instructions and the File service's download URL
 read the dataset record through storage under the caller's token, and leave out a record the caller cannot read
 ([osdu/specs/core INTEGRATION.md](../../../specs/core/INTEGRATION.md), 2.4 and 2.5), so once its ACL is the restriction's no
-one else is handed its files. A record beside it that OSDU no longer serves to the flow, or that holds the restriction's
-groups already, set outside it, is left as it is and said in the record's result. A record whose ACLs, with those beside it,
-take more than the ledger keeps (4,000 characters) is passed over, saying so: remove it instead.
+one else is handed its files. A record beside it that OSDU no longer holds (storage names it under `invalidRecords`), or
+that holds the restriction's groups already, set outside it, is left as it is and said in the record's result. One storage
+withholds from the flow's identity, or does not answer for, keeps the record from being restricted, with why
+([How a restriction runs](#how-a-restriction-runs), step 2). A record whose ACLs, with those beside it, take more than the
+ledger keeps (4,000 characters) is passed over, saying so: remove it instead.
 
 ## What a restriction holds off
 

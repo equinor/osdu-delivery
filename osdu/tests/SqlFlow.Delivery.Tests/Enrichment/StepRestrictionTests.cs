@@ -159,6 +159,53 @@ public sealed class StepRestrictionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_log_or_dataset_storage_withholds_from_the_flow_fails_unchanged_and_a_skipped_log_is_named_with_why()
+    {
+        var (runtime, ledger) = await DeliveredAsync();
+        using (runtime)
+        {
+            var logId = TargetOf(await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0)));
+            var dataset = DatasetOf(logId);
+            await RegisterAsync("legal-hold");
+
+            // Storage leaves a record the flow's identity may not read out of every list of its answer: the dataset first.
+            _platform.ReadWithheld.Add(dataset);
+            var summary = await runtime.RemoveAsync(RemovalSelection.Of([SampleEstate.Key(0)]), RemovalChoice.Restrict, restriction: "legal-hold");
+            Assert.Equal((0, 0, 1), (summary.Restricted, summary.Skipped, summary.Failed));
+            var detail = Assert.Single(summary.Records).Detail;
+            Assert.Contains("1 of the 1 record(s) its enrichments add beside it", detail, StringComparison.Ordinal);
+            Assert.Contains("may not read", detail, StringComparison.Ordinal);
+            Assert.Contains("add the flow's identity to an owner group", detail, StringComparison.Ordinal);
+            Assert.Empty(_platform.AclPatches);
+            var record = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0));
+            Assert.Equal((null, null), (record!.RestrictionId, record.RestrictedFromAcl));
+
+            // Then the log itself, and then a log storage did not answer for.
+            _platform.ReadWithheld.Clear();
+            _platform.ReadWithheld.Add(logId);
+            detail = Assert.Single((await runtime.RemoveAsync(RemovalSelection.Of([SampleEstate.Key(0)]), RemovalChoice.Restrict, restriction: "legal-hold")).Records).Detail;
+            Assert.StartsWith("OSDU did not say which ACL the record holds (storage answered without it, as it does a record the caller may not read", detail, StringComparison.Ordinal);
+            _platform.ReadWithheld.Clear();
+            _platform.ReadRetried.Add(logId);
+            detail = Assert.Single((await runtime.RemoveAsync(RemovalSelection.Of([SampleEstate.Key(0)]), RemovalChoice.Restrict, restriction: "legal-hold")).Records).Detail;
+            Assert.Contains("retryRecords", detail, StringComparison.Ordinal);
+            Assert.EndsWith("ask again once storage answers for it", detail, StringComparison.Ordinal);
+            Assert.Empty(_platform.AclPatches);
+
+            // A log removed outside the flow is skipped, and the line the run log and the record's history carry says why.
+            _platform.ReadRetried.Clear();
+            _platform.Removed.Add(logId);
+            summary = await runtime.RemoveAsync(RemovalSelection.Of([SampleEstate.Key(0)]), RemovalChoice.Restrict, restriction: "legal-hold");
+            Assert.Equal((0, 1, 0), (summary.Restricted, summary.Skipped, summary.Failed));
+            var line = summary.Describe();
+            Assert.Contains("1 skipped, 0 failed; skipped ", line, StringComparison.Ordinal);
+            Assert.Contains("storage names it under invalidRecords", line, StringComparison.Ordinal);
+            Assert.Contains(record.Label ?? record.SourceKey!, line, StringComparison.Ordinal);
+            Assert.Empty(_platform.AclPatches);
+        }
+    }
+
+    [Fact]
     public async Task Lifting_the_restriction_of_a_log_removed_from_osdu_gives_the_dataset_beside_it_its_access_back()
     {
         var (runtime, ledger) = await DeliveredAsync();

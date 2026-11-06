@@ -31,6 +31,15 @@ public sealed partial class FakeOsduPlatform
     /// <summary>When set, entitlements answers the groups list with this status.</summary>
     public HttpStatusCode? GroupsFail { get; set; }
 
+    /// <summary>
+    /// Ids the batched read leaves out of every list of its answer, as storage does a record it holds that the caller may not
+    /// read (storage BatchServiceImpl.getMultipleRecords keeps only the records that pass its ACL check).
+    /// </summary>
+    public HashSet<string> ReadWithheld { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Ids the batched read names under retryRecords every time, as storage does a record whose content it could not read.</summary>
+    public HashSet<string> ReadRetried { get; } = new(StringComparer.Ordinal);
+
     private HttpResponseMessage? AccessRoute(string method, string path, string? body)
     {
         if (path == "/api/entitlements/v2/groups" && method == "GET")

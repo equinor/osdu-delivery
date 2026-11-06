@@ -287,6 +287,59 @@ public static partial class EntitlementGroups
 /// <summary>What OSDU holds of one record's access: the version it holds and the ACL it governs every version with.</summary>
 public sealed record RecordAccessRead(long? Version, RecordAcl Acl);
 
+/// <summary>What storage's batched read answered for one record asked about.</summary>
+public enum RecordAccessAnswer
+{
+    /// <summary>Storage answered the record with its version and an ACL of viewers and owners.</summary>
+    Held,
+
+    /// <summary>Storage named the record under <c>invalidRecords</c>: it holds no active version (removed, purged, never written).</summary>
+    NotFound,
+
+    /// <summary>Storage named the record under <c>retryRecords</c> each time it was asked: it could not read the record in time.</summary>
+    Unanswered,
+
+    /// <summary>
+    /// Storage left the record out of every list, as it does a record it holds that the caller may not read: the caller is in
+    /// none of the groups of its ACL and is not a data manager (storage's <c>BatchServiceImpl.getMultipleRecords</c> keeps only
+    /// the records that pass its ACL check).
+    /// </summary>
+    Withheld,
+
+    /// <summary>Storage answered the record without an ACL that reads as viewers and owners.</summary>
+    NoAcl,
+}
+
+/// <summary>
+/// What storage answered for the records a read asked about (osdu/specs/core/storage/openapi.yaml, <c>MultiRecordInfo</c>):
+/// what it holds of each record it served, and why each other one is missing.
+/// </summary>
+public sealed record RecordAccessReads(
+    IReadOnlyDictionary<string, RecordAccessRead> Held, IReadOnlySet<string> NotFound, IReadOnlySet<string> Unanswered, IReadOnlySet<string> NoAcl)
+{
+    /// <summary>What storage answered for <paramref name="id"/>, which the read asked about.</summary>
+    public RecordAccessAnswer AnswerFor(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        return Held.ContainsKey(id) ? RecordAccessAnswer.Held
+            : NotFound.Contains(id) ? RecordAccessAnswer.NotFound
+            : Unanswered.Contains(id) ? RecordAccessAnswer.Unanswered
+            : NoAcl.Contains(id) ? RecordAccessAnswer.NoAcl
+            : RecordAccessAnswer.Withheld;
+    }
+
+    /// <summary>The answer for a record storage did not serve, as a message names it; null for <see cref="RecordAccessAnswer.Held"/>.</summary>
+    public static string? Describe(RecordAccessAnswer answer) => answer switch
+    {
+        RecordAccessAnswer.Held => null,
+        RecordAccessAnswer.NotFound => "storage names it under invalidRecords, as it does a record it holds no active version of (removed outside this flow)",
+        RecordAccessAnswer.Unanswered => "storage named it under retryRecords each time it was asked, so what it holds is not known",
+        RecordAccessAnswer.Withheld => "storage answered without it, as it does a record the caller may not read: the flow's identity is in none of the groups of its ACL and is not a data manager",
+        RecordAccessAnswer.NoAcl => "storage answered it without an ACL of viewers and owners",
+        _ => throw new ArgumentOutOfRangeException(nameof(answer), answer, "Unknown record access answer."),
+    };
+}
+
 /// <summary>How replacing one record's ACL came out.</summary>
 public enum AclChangeOutcome
 {
@@ -343,10 +396,11 @@ public interface IRecordAccess
     string ReplaceRequest { get; }
 
     /// <summary>
-    /// What OSDU holds of each record of <paramref name="ids"/> that it serves, by id: its version and its ACL. A record OSDU
-    /// does not serve (removed, purged, or one the caller cannot read) is not in the answer.
+    /// What OSDU holds of each record of <paramref name="ids"/> that it serves, by id, its version and its ACL, and for each
+    /// other one why it is missing: one storage holds no active version of, one it did not answer for, or one it withheld
+    /// because the caller may not read it.
     /// </summary>
-    Task<IReadOnlyDictionary<string, RecordAccessRead>> ReadAsync(IReadOnlyCollection<string> ids, CancellationToken ct);
+    Task<RecordAccessReads> ReadAsync(IReadOnlyCollection<string> ids, CancellationToken ct);
 
     /// <summary>
     /// Replaces the ACL of every record of <paramref name="ids"/> with <paramref name="acl"/>. Results align with

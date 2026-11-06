@@ -5,6 +5,7 @@ using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Restrictions;
 using SqlFlow.Delivery.Http;
+using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 using Xunit;
@@ -116,8 +117,9 @@ public sealed class AccessRestrictionContractTests
         var hold = new RecordAcl([Hold], [Hold]);
 
         var read = await rig.Access.ReadAsync(["dev:master-data--Wellbore:mine", "dev:master-data--Wellbore:gone"], CancellationToken.None);
-        Assert.Equal(["dev:master-data--Wellbore:mine"], read.Keys);
-        Assert.Equal(["data.default.owners@dev.example.com"], read["dev:master-data--Wellbore:mine"].Acl.Owners);
+        Assert.Equal(["dev:master-data--Wellbore:mine"], read.Held.Keys);
+        Assert.Equal(["data.default.owners@dev.example.com"], read.Held["dev:master-data--Wellbore:mine"].Acl.Owners);
+        Assert.Equal(RecordAccessAnswer.NotFound, read.AnswerFor("dev:master-data--Wellbore:gone"));
 
         var changes = await rig.Access.ReplaceAsync(["dev:master-data--Wellbore:mine", "dev:master-data--Wellbore:theirs", "dev:master-data--Wellbore:gone"], hold, CancellationToken.None);
         Assert.Equal([AclChangeOutcome.Replaced, AclChangeOutcome.Refused, AclChangeOutcome.NotFound], changes.Select(c => c.Outcome));
@@ -137,6 +139,51 @@ public sealed class AccessRestrictionContractTests
         var groups = await rig.Access.CallerGroupsAsync(CancellationToken.None);
         Assert.Equal(platform.MemberEmail, groups.MemberEmail);
         Assert.Contains(Hold, groups.Groups);
+    }
+
+    [Fact]
+    public async Task The_read_tells_a_record_storage_withheld_or_did_not_answer_for_from_one_it_no_longer_holds()
+    {
+        using var platform = new FakeOsduPlatform();
+        foreach (var id in new[] { "dev:master-data--Wellbore:mine", "dev:master-data--Wellbore:hidden", "dev:master-data--Wellbore:busy", "dev:master-data--Wellbore:bare" })
+        {
+            platform.Put(FakeOsduPlatform.Record(id, "osdu:wks:master-data--Wellbore:1.3.0"));
+        }
+
+        platform.Records["dev:master-data--Wellbore:bare"].Remove("acl");
+        platform.ReadWithheld.Add("dev:master-data--Wellbore:hidden");
+        platform.ReadRetried.Add("dev:master-data--Wellbore:busy");
+        using var rig = new Rig(platform);
+
+        var read = await rig.Access.ReadAsync(
+            ["dev:master-data--Wellbore:mine", "dev:master-data--Wellbore:hidden", "dev:master-data--Wellbore:busy", "dev:master-data--Wellbore:bare", "dev:master-data--Wellbore:gone"],
+            CancellationToken.None);
+
+        Assert.Equal(RecordAccessAnswer.Held, read.AnswerFor("dev:master-data--Wellbore:mine"));
+        Assert.Equal(RecordAccessAnswer.Withheld, read.AnswerFor("dev:master-data--Wellbore:hidden"));
+        Assert.Equal(RecordAccessAnswer.Unanswered, read.AnswerFor("dev:master-data--Wellbore:busy"));
+        Assert.Equal(RecordAccessAnswer.NoAcl, read.AnswerFor("dev:master-data--Wellbore:bare"));
+        Assert.Equal(RecordAccessAnswer.NotFound, read.AnswerFor("dev:master-data--Wellbore:gone"));
+        Assert.Null(RecordAccessReads.Describe(RecordAccessAnswer.Held));
+        Assert.Contains("may not read", RecordAccessReads.Describe(RecordAccessAnswer.Withheld), StringComparison.Ordinal);
+        Assert.Contains("invalidRecords", RecordAccessReads.Describe(RecordAccessAnswer.NotFound), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_line_a_removal_leaves_names_the_first_skipped_records_with_why()
+    {
+        var results = Enumerable.Range(1, 5)
+            .Select(n => RemovalRecordResult.Skipped(new DeliveryKey(Guid.NewGuid()), $"src-{n}", $"Log {n}", null, $"reason {n}", null))
+            .Append(RemovalRecordResult.Restricted(new DeliveryKey(Guid.NewGuid()), "src-6", "Log 6", "dev:wpc--WellLog:6", "restricted", null))
+            .ToList();
+
+        var line = (RemovalSummary.Of(RemovalChoice.Restrict, 6, results) with { Restriction = "Hold" }).Describe();
+
+        Assert.StartsWith("6 record(s) selected: 1 restricted under 'Hold' (reversible), 5 skipped, 0 failed; skipped Log 1: reason 1; Log 2: reason 2; Log 3: reason 3; and 2 more skipped", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("reason 4", line, StringComparison.Ordinal);
+        Assert.Equal(
+            "1 record(s) selected: 1 removed from OSDU (reversible), 0 already gone, 0 skipped, 0 failed",
+            RemovalSummary.Of(RemovalChoice.Record, 1, [RemovalRecordResult.Removed(new DeliveryKey(Guid.NewGuid()), "a", "A", "dev:x:a", "removed", null)]).Describe());
     }
 
     [Fact]

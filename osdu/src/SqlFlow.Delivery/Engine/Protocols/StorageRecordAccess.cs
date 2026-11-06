@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SqlFlow.Core;
+using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Protocols;
@@ -51,23 +52,45 @@ public sealed class StorageRecordAccess : IRecordAccess
 
     public string ReplaceRequest => $"PATCH {_patchPath} (acl.viewers and acl.owners replaced in place; no new version)";
 
-    public async Task<IReadOnlyDictionary<string, RecordAccessRead>> ReadAsync(IReadOnlyCollection<string> ids, CancellationToken ct)
+    public async Task<RecordAccessReads> ReadAsync(IReadOnlyCollection<string> ids, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ids);
-
-        // A projection that matches no data field: the read carries the record's header (its id, version and ACL), not its data.
-        var stored = await RecordWriter.ReadManyAsync(_client, _batchPath, ids, ["id"], ct).ConfigureAwait(false);
-        var read = new Dictionary<string, RecordAccessRead>(StringComparer.Ordinal);
-        foreach (var (id, record) in stored)
+        var held = new Dictionary<string, RecordAccessRead>(StringComparer.Ordinal);
+        var notFound = new HashSet<string>(StringComparer.Ordinal);
+        var unanswered = new HashSet<string>(StringComparer.Ordinal);
+        var noAcl = new HashSet<string>(StringComparer.Ordinal);
+        var storage = new StorageRecords(_client, _batchPath);
+        foreach (var chunk in ids.Distinct(StringComparer.Ordinal).Chunk(StorageRecords.Batch))
         {
-            if (RecordAcl.OfRecord(record) is { } acl)
+            ct.ThrowIfCancellationRequested();
+
+            // A projection that matches no data field: storage filters only data.* attributes, so the read carries the
+            // record's header (its id, version and ACL) and none of its data. A record the caller may not read is in none of
+            // the answer's lists, which is how it is told from one storage names under invalidRecords.
+            var read = await storage.ReadAsync(chunk, ["id"], ct).ConfigureAwait(false);
+            foreach (var element in read.Records)
             {
-                var version = record["version"] is JsonValue value && value.TryGetValue<long>(out var number) ? number : (long?)null;
-                read[id] = new RecordAccessRead(version, acl);
+                if (OsduSearch.IdOf(element) is not { } id || JsonNode.Parse(element.GetRawText()) is not JsonObject record)
+                {
+                    continue;
+                }
+
+                if (RecordAcl.OfRecord(record) is { } acl)
+                {
+                    var version = record["version"] is JsonValue value && value.TryGetValue<long>(out var number) ? number : (long?)null;
+                    held[id] = new RecordAccessRead(version, acl);
+                }
+                else
+                {
+                    noAcl.Add(id);
+                }
             }
+
+            notFound.UnionWith(read.Invalid.Where(id => !held.ContainsKey(id) && !noAcl.Contains(id)));
+            unanswered.UnionWith(read.Unanswered);
         }
 
-        return read;
+        return new RecordAccessReads(held, notFound, unanswered, noAcl);
     }
 
     public async Task<IReadOnlyList<AclChange>> ReplaceAsync(IReadOnlyList<string> ids, RecordAcl acl, CancellationToken ct)

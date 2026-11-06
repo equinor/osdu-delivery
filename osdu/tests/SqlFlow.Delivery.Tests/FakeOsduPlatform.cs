@@ -609,19 +609,24 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
         {
             var found = new JsonArray();
             var invalid = new JsonArray();
+            var retry = new JsonArray();
             foreach (var id in JsonNode.Parse(body!)!["records"]!.AsArray().Select(i => i!.GetValue<string>()))
             {
-                if (Records.TryGetValue(id, out var record) && !Removed.Contains(id))
-                {
-                    found.Add(record.DeepClone());
-                }
-                else
+                if (!Records.TryGetValue(id, out var record) || Removed.Contains(id))
                 {
                     invalid.Add(id);
                 }
+                else if (ReadRetried.Contains(id))
+                {
+                    retry.Add(id);
+                }
+                else if (!ReadWithheld.Contains(id))
+                {
+                    found.Add(record.DeepClone());
+                }
             }
 
-            return Json(HttpStatusCode.OK, new JsonObject { ["records"] = found, ["invalidRecords"] = invalid, ["retryRecords"] = new JsonArray() });
+            return Json(HttpStatusCode.OK, new JsonObject { ["records"] = found, ["invalidRecords"] = invalid, ["retryRecords"] = retry });
         }
 
         if (operation == "records/delete" && method == "POST")

@@ -375,8 +375,9 @@ public sealed record RemovalRecordResult(
 /// <summary>
 /// What a removal did, in total and per record. The per-record list is capped at
 /// <see cref="RemovalLimits.MaxReported"/> so a removal of thousands still returns a result a page can render;
-/// every record's own outcome is in the ledger regardless, on its attempt, which is where a removal is audited.
-/// Failures are kept ahead of successes when the cap bites, because they are what an operator needs to see.
+/// every record's own outcome is in the ledger regardless, on its attempt, which is where a removal is audited, and the line
+/// the activity trail and the run log carry names the first skipped records with why each was skipped, since a skipped record
+/// leaves no attempt. Failures are kept ahead of successes when the cap bites, because they are what an operator needs to see.
 /// <c>Purged</c> counts, of the records removed or already gone, those deleted from the ledger as the removal's extra step.
 /// </summary>
 public sealed record RemovalSummary(
@@ -419,8 +420,28 @@ public sealed record RemovalSummary(
         };
     }
 
-    /// <summary>The one line the activity trail carries for the whole removal.</summary>
-    public string Describe()
+    /// <summary>How many skipped records the line names, each with why it was skipped.</summary>
+    public const int NamedSkips = 3;
+
+    /// <summary>
+    /// The one line the activity trail and the run log carry for the whole removal: its counts, then the first
+    /// <see cref="NamedSkips"/> skipped records with why each was skipped.
+    /// </summary>
+    public string Describe() => Counts() + SkipsNamed();
+
+    private string SkipsNamed()
+    {
+        var named = Records.Where(r => r.Outcome == "skipped").Take(NamedSkips)
+            .Select(r => $"{r.Label ?? r.SourceKey ?? r.DeliveryKey.ToString("D")}: {r.Detail}")
+            .ToList();
+        return named.Count == 0
+            ? string.Empty
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"; skipped {string.Join("; ", named)}{(Skipped > named.Count ? $"; and {Skipped - named.Count} more skipped" : string.Empty)}");
+    }
+
+    private string Counts()
     {
         if (Scope == RemovalChoice.Previous)
         {

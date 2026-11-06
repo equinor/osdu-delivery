@@ -150,7 +150,10 @@ nothing is charged to a record and no attempt is written for the hold. A step ba
 it passes over a record with work queued or under a lease itself. What an unfinished delivery of a record
 left is undone before the record is removed ([below](#unfinished-deliveries-and-their-undo)). The removal is an activity
 of kind `delete` (or `restore-previous`) naming the run, and the run's result carries the counts and up to 200 per-record
-outcomes, failures first. A removal OSDU refused any record of ends failed, saying how many and why the first ones failed:
+outcomes, failures first. The line the activity carries, which the record's timeline and the run log show, gives the counts
+and names the first three records skipped, each with why, since a skipped record leaves no attempt:
+`1 record(s) selected: 0 removed from OSDU (reversible), 0 already gone, 1 skipped, 0 failed; skipped <record>: <why>`, and
+`; and <n> more skipped` past three. A removal OSDU refused any record of ends failed, saying how many and why the first ones failed:
 `<n> of <m> record(s) of '<flow>' could not be removed from OSDU: <record>: <why>; ...`. Every other record was removed,
 and the ones refused stay in the ledger as they were, to be removed again once what refused them is settled.
 
