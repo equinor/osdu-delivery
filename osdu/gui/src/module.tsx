@@ -140,6 +140,27 @@ const census: GuiModule["census"] = [
 ];
 
 /**
+ * The Equinor design (osdu/docs/reference/concepts/gui-designs.md): its tokens are in theme/equinor.css. Its typeface
+ * and its mark come from the services Equinor's design system runs and are never copied into this repository: the
+ * Equinor font is for Equinor and its suppliers only, and the logo is Equinor's trademark. The title bar shows the
+ * logo's symbol alone, cut from the logo above its wordmark (the logo's own units), in Energy Red in both modes.
+ */
+const EQUINOR_SYMBOL = {
+  src: "https://cdn.eds.equinor.com/logo/equinor-logo-primary.svg#red",
+  crop: { imageWidth: 285, imageHeight: 235, x: 162, y: 0, width: 123, height: 146 },
+};
+
+const designs: GuiModule["designs"] = [
+  {
+    id: "equinor",
+    label: "Equinor",
+    stylesheets: ["https://cdn.eds.equinor.com/font/eds-uprights-vf.css"],
+    marks: { light: EQUINOR_SYMBOL, dark: EQUINOR_SYMBOL },
+    firstMode: "dark",
+  },
+];
+
+/**
  * SQLFlow's pipeline tabs that describe its own flows' data (view columns, processed files), not these kinds, and the
  * definition, which for these kinds is the YAML tab's document again as JSON.
  */
@@ -548,6 +569,8 @@ export const osduDeliveryModule: GuiModule = {
   // The workbench opens on the page, with the activity bar beside it: the side bar starts closed until the person opens
   // it, its menu folded to the headers of its groups and sections, and from then on both start as they last left them.
   sideBar: { closedOnFirstVisit: true, menuCollapsedOnFirstVisit: true },
+  // Equinor's design beside SQLFlow's, picked in the title bar and on the sign-in page; a first visit opens in its dark mode.
+  designs,
   // The home page: questions for the assistant that its delivery tools answer, and what the partition's flows hold.
   home: {
     prompts: [

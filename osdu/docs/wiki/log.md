@@ -675,3 +675,15 @@ about its compatibility; the code of the disclosure and marks, the confirm endpo
 
 Accepted decision 0046 and rewrote it for what was built; added the reference page `delivery-concept-eu-ai-act`; updated
 `delivery-concept-ai-features` and `delivery-guide-mcp`.
+
+## [2026-11-06] ingest | Equinor's design beside SQLFlow's
+
+Source: the human's words asking for Equinor's branding from the Equinor Design System's source and packages, in a
+light and a dark mode picked from a design menu with SQLFlow's kept; turning down a deployment's setting because forks
+would conflict with the main repository; making Equinor dark the default, loading the Equinor font from Equinor's
+service, showing the Equinor logo in the title bar, leaving the look to judgement; then asking that the last theme be
+remembered and that the sign-in page offer the choice. The code of the designs extension point, the Equinor stylesheet,
+its tests and renders of both designs in both modes.
+
+Added decision 0047 and the reference page `delivery-concept-gui-designs`; updated `delivery-concept-gui` and
+`delivery-flow-assertion-sets`.

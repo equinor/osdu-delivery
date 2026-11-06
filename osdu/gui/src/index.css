@@ -1,9 +1,11 @@
 /*
   The OSDU Delivery stylesheet: SQLFlow's design system as it is, with both source trees named for Tailwind, so the
-  classes the OSDU pages use are generated next to the ones SQLFlow's pages use.
+  classes the OSDU pages use are generated next to the ones SQLFlow's pages use, and the designs the module adds
+  (module.tsx), each keyed on <html data-sf-design>.
 */
 
 @import "../../../sqlflow/gui/src/index.css";
+@import "./theme/equinor.css";
 
 @source "./";
 @source "../../../sqlflow/gui/src";

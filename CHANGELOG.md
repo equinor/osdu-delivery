@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The GUI comes in an Equinor design beside SQLFlow's, each light or dark, picked in the title bar or on the sign-in
+  page.** The Equinor design takes the Equinor Design System's colours, Equinor's symbol in the title bar and Equinor's
+  typeface for titles, both loaded from Equinor's own service. The design and mode a person last wore are kept in their
+  browser and open their next visit, and a downloaded assertion dashboard carries the design it was downloaded in
+  ([the designs](osdu/docs/reference/concepts/gui-designs.md)).
+
 - **A record can be kept in OSDU and hidden, rather than removed: Remove offers Restrict access.** Its ACL in OSDU is
   replaced with the groups of an access restriction an administrator registered for the partition (the new Access
   restrictions page, `/api/v1/delivery/access-restrictions`), through storage's metadata patch, which keeps the version and
@@ -524,6 +530,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The GUI opens in the Equinor design's dark mode until a person picks a design**, where it opened in SQLFlow's design in
+  the operating system's mode. A browser that kept a light or dark choice opens in the Equinor design in that mode; the
+  SQLFlow design is one pick away in the title bar's menu ([the designs](osdu/docs/reference/concepts/gui-designs.md)).
 - **Only a person records a verdict on an assistant's answer.** The confirm endpoint refuses a GUI chat run's own token
   ("A verdict is the person's"), where the model's confirmation was stored as the person's; the person confirms with the
   row under the answer, and the Slack bot still confirms under its own credential

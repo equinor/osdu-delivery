@@ -245,6 +245,10 @@ other packages adopt the same contract.
 - [0039: the VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line](decisions/0039-vscode-extension-is-an-mcp-client.md) -
   why the extension reads through the server's tools, why a missing tool was filled in the server, why Microsoft sign-in
   reaches a client through a GUI page, and why the extension, the server and `sqlflow` share one credential file.
+- [0047: Equinor's design beside SQLFlow's, picked by each person and kept in their browser](decisions/0047-designs-picked-per-person.md):
+  why the design is a choice made in the title bar and on the sign-in page rather than a deployment's setting, why a first
+  visit opens in Equinor dark, why the Equinor Design System's values are copied into one stylesheet, and why its typeface
+  and logo stay on Equinor's service.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

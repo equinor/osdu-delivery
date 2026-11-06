@@ -98,7 +98,8 @@ stops a duplicate when runs overlap.</p>
 
 ## Into OSDU
 
-The routes into OSDU, the ledger that accounts for every record sent, and the workers that share the load.
+The routes into OSDU, the ledger that accounts for every record sent, what OSDU really holds beside it, and the
+workers that share the load.
 
 <table>
 <tr>
@@ -120,9 +121,18 @@ a run, and removing records without a mass deletion.</p>
 </td>
 </tr>
 <tr>
+<td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=8a8YU9PFSwE"><img src="https://img.youtube.com/vi/8a8YU9PFSwE/maxresdefault.jpg" width="100%" alt="What's really in OSDU? Finding the hidden differences"></a></td>
+<td width="62%" valign="top">
+<h3>10 <a href="https://www.youtube.com/watch?v=8a8YU9PFSwE">What's really in OSDU?</a></h3>
+<p>3:36 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
+<p>The ledger knows what was sent, not what OSDU holds: an inventory of the partition finds orphans, missing records
+and duplicates, keeps the most complete copy, and removes the rest with a soft delete that can be restored.</p>
+</td>
+</tr>
+<tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=06ZcsDXt2O0"><img src="https://img.youtube.com/vi/06ZcsDXt2O0/maxresdefault.jpg" width="100%" alt="Scaling: why 5,000 records ran on one worker"></a></td>
 <td width="62%" valign="top">
-<h3>10 <a href="https://www.youtube.com/watch?v=06ZcsDXt2O0">Why 5,000 records ran on one worker</a></h3>
+<h3>11 <a href="https://www.youtube.com/watch?v=06ZcsDXt2O0">Why 5,000 records ran on one worker</a></h3>
 <p>9:52 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>Autoscalers count work, not records: a delivery split into parts, the rate limit shared among them, recovery when a
 worker fails, and a scale-down that lets running work finish.</p>
@@ -138,7 +148,7 @@ Let an assistant write the configuration, and find where a change to the framewo
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=9jOs8EDwBk4"><img src="https://img.youtube.com/vi/9jOs8EDwBk4/maxresdefault.jpg" width="100%" alt="The code doesn't change: AI-driven data pipelines"></a></td>
 <td width="62%" valign="top">
-<h3>11 <a href="https://www.youtube.com/watch?v=9jOs8EDwBk4">The code doesn't change</a></h3>
+<h3>12 <a href="https://www.youtube.com/watch?v=9jOs8EDwBk4">The code doesn't change</a></h3>
 <p>8:09 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>Only the configuration does: an assistant reads the schema, drafts the mapping and opens a pull request, and a
 person reviews it.</p>
@@ -147,7 +157,7 @@ person reviews it.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough: architecture and where to make changes"></a></td>
 <td width="62%" valign="top">
-<h3>12 <a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></h3>
+<h3>13 <a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></h3>
 <p>12:58 · <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p><code>osdu/</code> and <code>sqlflow/</code> and the line between them, one CSV row through the real classes, the
 ledger's rules, and where a change belongs.</p>

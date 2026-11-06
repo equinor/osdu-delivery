@@ -4,6 +4,7 @@
 
 import { saveFile } from "../assertionFormat";
 import type { DashData, DashSnapshot, ResultFacts } from "./dashboardModel";
+import { FILE_TOKENS, wornTokenStyle, type WornTokens } from "./dashboardTokens";
 
 /** The results a read asks the control plane for at most. */
 const PER_READ = 100;
@@ -19,10 +20,30 @@ export function dashboardFileName(set: string | null | undefined, partition: str
 }
 
 /**
- * The dashboard's page: its styles, the snapshot as JSON a script cannot break out of, and the bundled script that renders
- * it. Disabled assertions travel with the file, so its reader can include them as the workbench's can.
+ * The values the file's tokens hold in the design worn, in its light and its dark mode, read off the workbench's <html>.
+ * The mode is switched there and back within this one task, which the browser never paints between.
  */
-export function dashboardPage(snapshot: DashSnapshot, script: string, style: string): string {
+function readWornTokens(): WornTokens {
+  const root = document.documentElement;
+  const read = () => {
+    const computed = getComputedStyle(root);
+    return Object.fromEntries(FILE_TOKENS.map((name) => [name, computed.getPropertyValue(name)]));
+  };
+  const wasDark = root.classList.contains("dark");
+  root.classList.remove("dark");
+  const light = read();
+  root.classList.add("dark");
+  const dark = read();
+  root.classList.toggle("dark", wasDark);
+  return { light, dark };
+}
+
+/**
+ * The dashboard's page: its styles, with the design worn in the workbench put over dashboard.css's own values, the
+ * snapshot as JSON a script cannot break out of, and the bundled script that renders it. Disabled assertions travel with
+ * the file, so its reader can include them as the workbench's can.
+ */
+export function dashboardPage(snapshot: DashSnapshot, script: string, style: string, worn: WornTokens): string {
   const title = ["Assertions", snapshot.set === undefined ? null : snapshot.set ?? "No set", snapshot.data.partition].filter((part) => part !== null).join(", ");
   // In a script element only "</script" ends it; JSON escapes "<" so no value can, and the bundle's own text is guarded alike.
   const json = JSON.stringify(snapshot).replace(/</g, "\\u003c");
@@ -33,7 +54,7 @@ export function dashboardPage(snapshot: DashSnapshot, script: string, style: str
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${escapeHtml(title)}</title>`,
-    `<style>${style.replace(/<\/style/gi, "<\\/style")}</style>`,
+    `<style>${`${style}\n${wornTokenStyle(worn)}`.replace(/<\/style/gi, "<\\/style")}</style>`,
     "</head>",
     "<body>",
     '<div id="root"></div>',
@@ -74,5 +95,5 @@ export async function downloadDashboard(options: {
     results,
     dark: document.documentElement.classList.contains("dark"),
   };
-  saveFile(dashboardPage(snapshot, script, style), "text/html;charset=utf-8", dashboardFileName(set, data.partition));
+  saveFile(dashboardPage(snapshot, script, style, readWornTokens()),"text/html;charset=utf-8", dashboardFileName(set, data.partition));
 }

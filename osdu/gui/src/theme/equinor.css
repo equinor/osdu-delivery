@@ -1,0 +1,150 @@
+/*
+  The Equinor design (osdu/docs/reference/concepts/gui-designs.md): SQLFlow's workbench tokens (sqlflow/gui/src/index.css)
+  set to the Equinor Design System's colours, in a light and a dark mode, while <html data-sf-design="equinor"> is on.
+
+  The values are EDS's own, from @equinor/eds-tokens 2.3.2, with the EDS token and palette step each comes from beside it;
+  the few steps a dense workbench needs between two of EDS's say so. They are copied rather than read from EDS's
+  stylesheet, whose dark values follow its own `data-color-scheme` attribute and the operating system's preference, not
+  the workbench's `dark` class, so a dark panel in a light page (the sign-in page, the home page's opening) would take
+  its light values. EDS's next major renames its variables; this file is the one place that follows.
+
+  The chrome is the surface colour in both modes, white in light and EDS's dark surface in dark, with a hairline where it
+  meets the canvas the pages sit on; the status bar carries the accent. The identity tokens behind the sign-in page and
+  the home page's opening are Equinor's brand colours (EDS's legacy infographic palette): Slate Blue for the field, Moss
+  Green for its light, and Mist Blue for the rings in its picture; Energy Red is the logo's, which the title bar carries
+  (module.tsx). The chart palette stays SQLFlow's validated one
+  (DESIGN.md 3.4); EDS 2.x has no data visualisation colours of its own.
+
+  Every token the light block sets, the dark block sets too, except the identity tokens and the radius, which hold in
+  both modes: the light block's selector outweighs SQLFlow's `.dark`, so a token it alone set would stay light in the
+  dark mode. The unit suite (unit/equinorDesign.test.ts) checks that, and measures every text and status pair.
+*/
+
+:root[data-sf-design="equinor"] {
+  /* EDS corners: 4px, the radius of its buttons, inputs and cards. */
+  --radius: 0.25rem;
+
+  /* Identity: Equinor's brand colours (EDS legacy infographic palette). */
+  --brand-navy: #243746; /* Slate Blue */
+  --brand-navy-deep: #17232d; /* Slate Blue, deepened for the field's far side */
+  --brand-cream: #d5eaf4; /* Mist Blue, the light the sign-in picture's rings glow in */
+  --brand-blue: #007079; /* Moss Green */
+
+  --background: #f5f5f5; /* bg-neutral-canvas, neutral-1 */
+  --foreground: #1d1d1d; /* text-neutral-strong, neutral-13 */
+  --card: #ffffff; /* bg-neutral-surface, neutral-2 */
+  --card-foreground: #1d1d1d;
+  --popover: #ffffff; /* bg-floating */
+  --popover-foreground: #1d1d1d;
+  --primary: #206f77; /* bg-accent-fill-emphasis-default, accent-9 */
+  --primary-foreground: #ffffff; /* text-accent-strong-on-emphasis, accent-15 */
+  --secondary: #e1e1e1; /* bg-neutral-fill-muted-default, neutral-3 */
+  --secondary-foreground: #1d1d1d;
+  --muted: #ebebeb; /* between bg-neutral-canvas and bg-neutral-fill-muted-default */
+  --muted-foreground: #585858; /* text-neutral-subtle, neutral-12 */
+  --accent: #eaf8fa; /* bg-accent-canvas, accent-1 */
+  --accent-foreground: #141f20; /* text-accent-strong, accent-13 */
+  --destructive: #bc002a; /* bg-danger-fill-emphasis-default, danger-9 */
+  --destructive-foreground: #ffffff; /* text-danger-strong-on-emphasis, danger-15 */
+  --border: #dcdcdc; /* between bg-neutral-fill-muted-default and border-neutral-subtle */
+  --input: #aeaeae; /* border-neutral-medium, neutral-7 */
+  --ring: var(--primary);
+
+  --success: #207720; /* bg-success-fill-emphasis-default, success-9 */
+  --success-foreground: #ffffff;
+  --warning: #9b4900; /* bg-warning-fill-emphasis-default, warning-9 */
+  --warning-foreground: #ffffff;
+  --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
+
+  --title-bar: #ffffff; /* bg-neutral-surface */
+  --title-bar-foreground: #1d1d1d;
+  --title-bar-subtle: #6f6f6f; /* EDS legacy text, static icons tertiary */
+  --chrome-border: #dcdcdc;
+  --activity-bar: #ffffff;
+  --activity-bar-foreground: #636363; /* bg-neutral-fill-emphasis-default, neutral-9 */
+  --activity-bar-active: #206f77;
+  --activity-bar-badge: var(--primary);
+  --side-bar: #ffffff;
+  --side-bar-foreground: #3d3d3d; /* EDS legacy text, static icons default */
+  --panel: #ffffff;
+  --status-bar: #206f77;
+  --status-bar-foreground: #ffffff;
+  --tab-bar: #ffffff;
+  --tab-active: #f5f5f5;
+  --editor: #ffffff;
+
+  --sidebar: var(--side-bar);
+  --sidebar-foreground: var(--side-bar-foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: #cfe7e9; /* bg-accent-fill-muted-default, accent-3 */
+  --sidebar-accent-foreground: #141f20;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+/* The dark mode, on <html> and on a dark panel in either mode. */
+:root[data-sf-design="equinor"].dark,
+:root[data-sf-design="equinor"] .dark {
+  --background: #0b0b0b; /* bg-neutral-canvas, neutral-1 */
+  --foreground: #f5fdff; /* text-neutral-strong, neutral-13 */
+  --card: #202223; /* bg-neutral-surface, neutral-2 */
+  --card-foreground: #f5fdff;
+  --popover: #202223; /* bg-floating */
+  --popover-foreground: #f5fdff;
+  --primary: #8cd2da; /* bg-accent-fill-emphasis-default, accent-9 */
+  --primary-foreground: #030303; /* text-accent-strong-on-emphasis, accent-15 */
+  --secondary: #333639; /* neutral-14 */
+  --secondary-foreground: #f5fdff;
+  --muted: #2a2c2e; /* between bg-neutral-surface and neutral-14 */
+  --muted-foreground: #9fb4c6; /* border-neutral-strong, neutral-8 */
+  --accent: #2c3839; /* accent-14 */
+  --accent-foreground: #e6ffff; /* text-accent-strong, accent-13 */
+  --destructive: #ffa3a1; /* bg-danger-fill-emphasis-default, danger-9 */
+  --destructive-foreground: #040303; /* text-danger-strong-on-emphasis, danger-15 */
+  --border: #333639; /* neutral-14 */
+  --input: #525c65; /* border-neutral-subtle, neutral-6 */
+  --ring: var(--primary);
+
+  --success: #8cdb87; /* bg-success-fill-emphasis-default, success-9 */
+  --success-foreground: #030303;
+  --warning: #ffad63; /* bg-warning-fill-emphasis-default, warning-9 */
+  --warning-foreground: #040303;
+  --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
+
+  --title-bar: #202223; /* bg-neutral-surface */
+  --title-bar-foreground: #f5fdff;
+  --title-bar-subtle: #9fb4c6;
+  --chrome-border: #333639;
+  --activity-bar: #202223;
+  --activity-bar-foreground: #9fb4c6;
+  --activity-bar-active: #8cd2da;
+  --activity-bar-badge: var(--primary);
+  --side-bar: #202223;
+  --side-bar-foreground: #d6e3ee; /* text-neutral-subtle, neutral-12 */
+  --panel: #202223;
+  --status-bar: #206f77; /* the light mode's accent, which carries white text */
+  --status-bar-foreground: #ffffff;
+  --tab-bar: #202223;
+  --tab-active: #0b0b0b;
+  --editor: #202223;
+
+  --sidebar: var(--side-bar);
+  --sidebar-foreground: var(--side-bar-foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: #3c6266; /* bg-accent-fill-muted-default, accent-3 */
+  --sidebar-accent-foreground: #f5fdff;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+/* Page and section titles in Equinor's typeface (EDS's header role), which the design loads from Equinor's font service;
+   the interface itself stays in Inter, as EDS sets it. In the base layer, so a utility on a heading still wins. */
+@layer base {
+  :root[data-sf-design="equinor"] :where(h1, h2) {
+    font-family: Equinor, "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}

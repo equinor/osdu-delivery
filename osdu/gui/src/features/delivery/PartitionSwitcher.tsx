@@ -77,11 +77,11 @@ export function PartitionSwitcher() {
         data-testid="osdu-partition-switcher"
         aria-label={`OSDU partition: ${shown}`}
         title="The OSDU partition every OSDU page is read in"
-        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md bg-title-bar-foreground/10 px-2 text-title-bar-foreground/80 transition-colors hover:bg-title-bar-foreground/15 hover:text-title-bar-foreground"
       >
         <Layers className="size-3.5" />
-        <span className="hidden text-[11px] text-white/55 sm:inline">Partition</span>
-        <span className="font-mono text-[12px] leading-none text-white" data-testid="osdu-partition-current">{shown}</span>
+        <span className="hidden text-[11px] text-title-bar-foreground/55 sm:inline">Partition</span>
+        <span className="font-mono text-[12px] leading-none text-title-bar-foreground" data-testid="osdu-partition-current">{shown}</span>
         {current.pendingChanges > 0 && (
           <span
             className="rounded-full bg-warning px-1.5 font-mono text-[10px] leading-4 text-warning-foreground"
@@ -90,7 +90,7 @@ export function PartitionSwitcher() {
             {current.pendingChanges.toLocaleString()}
           </span>
         )}
-        <ChevronDown className="size-3.5 text-white/55" />
+        <ChevronDown className="size-3.5 text-title-bar-foreground/55" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="text-[12px] font-normal text-muted-foreground">

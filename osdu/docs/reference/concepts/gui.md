@@ -23,6 +23,7 @@ related:
   - delivery-concept-removal-and-reversal
   - delivery-concept-partition-cache
   - delivery-concept-menu
+  - delivery-concept-gui-designs
   - delivery-guide-operations-runbook
 sourceRefs:
   - osdu/gui/src/module.tsx
@@ -75,6 +76,8 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
 [assistant](../../../../sqlflow/docs/reference/guides/chat-assistant.md). This page covers what the module adds:
 
 - the product name, "OSDU Delivery, powered by SQLFlow", on the login page and the title bar;
+- the **Equinor** design beside SQLFlow's, each light or dark, picked in the title bar or on the sign-in page and kept in
+  the browser, a first visit opening in Equinor dark ([the designs](gui-designs.md));
 - the whole menu, laid out by what a person does there, SQLFlow's pages and the ones below side by side, with the side
   bar closed and the menu folded the first time the workbench opens ([the menu](menu.md)), each entry of its own pages
   saying what the page is for, which a page's

@@ -2036,6 +2036,7 @@
         "delivery-concept-removal-and-reversal",
         "delivery-concept-partition-cache",
         "delivery-concept-menu",
+        "delivery-concept-gui-designs",
         "delivery-guide-operations-runbook"
       ],
       "sourceRefs": [
@@ -2117,6 +2118,49 @@
         "osdu/gui/src/features/delivery/order/OrderPage.tsx",
         "osdu/src/SqlFlow.Delivery/Engine/Checks/ValueIssuesWorkbook.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-concept-gui-designs",
+      "corpus": "reference",
+      "path": "concepts/gui-designs.md",
+      "title": "The workbench's designs: SQLFlow and Equinor, light and dark, picked in the title bar or on the sign-in page",
+      "type": "concept",
+      "summary": "The GUI's two designs, Equinor and SQLFlow, each light or dark: where to pick one, what the browser remembers, and what the Equinor design loads.",
+      "keywords": [
+        "design",
+        "designs",
+        "theme",
+        "themes",
+        "dark mode",
+        "light mode",
+        "equinor design",
+        "equinor branding",
+        "equinor design system",
+        "eds",
+        "sqlflow design",
+        "change the colours",
+        "switch theme",
+        "remember the theme",
+        "design menu",
+        "sign-in page design",
+        "equinor font",
+        "equinor logo"
+      ],
+      "related": [
+        "delivery-concept-gui",
+        "delivery-concept-menu",
+        "delivery-flow-assertion-sets"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/module.tsx",
+        "osdu/gui/src/theme/equinor.css",
+        "osdu/gui/index.html",
+        "osdu/gui/src/features/delivery/assertions/dashboard/dashboardTokens.ts",
+        "sqlflow/gui/src/theme/designs.ts",
+        "sqlflow/gui/src/theme/appearance.ts",
+        "sqlflow/gui/src/theme/ThemeModeContext.tsx",
+        "sqlflow/gui/src/layout/workbench/AppearanceControl.tsx"
       ]
     },
     {
@@ -11083,6 +11127,36 @@
         "osdu/gui/src/features/delivery/RecordContentView.tsx",
         "osdu/deploy/bicep/ai-foundry.bicep",
         "osdu/deploy/bicep/main.bicep"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0047-designs-picked-per-person",
+      "corpus": "wiki",
+      "path": "decisions/0047-designs-picked-per-person.md",
+      "title": "Decision 0047: Equinor's design beside SQLFlow's, picked by each person and kept in their browser",
+      "type": "decision",
+      "summary": "Why the Equinor design is each person's choice rather than a deployment setting, why EDS values are copied, and why its font and logo stay on its service.",
+      "keywords": [
+        "design",
+        "theme",
+        "equinor design",
+        "equinor design system",
+        "branding",
+        "dark mode",
+        "light mode",
+        "fork"
+      ],
+      "related": [
+        "delivery-wiki-0045-activity-bar-shortcuts"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/module.tsx",
+        "osdu/gui/src/theme/equinor.css",
+        "osdu/gui/unit/equinorDesign.test.ts",
+        "osdu/gui/e2e/35-designs.spec.ts",
+        "sqlflow/gui/src/theme/designs.ts",
+        "sqlflow/gui/src/theme/ThemeModeContext.tsx",
+        "sqlflow/gui/src/layout/workbench/AppearanceControl.tsx"
       ]
     },
     {
