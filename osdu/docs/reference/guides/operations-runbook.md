@@ -26,6 +26,7 @@ keywords:
 related:
   - delivery-concept-record-lifecycle
   - delivery-concept-removal-and-reversal
+  - delivery-concept-access-restriction
   - delivery-concept-ledger
   - delivery-concept-submissions
   - delivery-cli-records
@@ -341,6 +342,18 @@ follow it under **Runs** or with **Open run** on the notice. It waits for a run 
 removal OSDU refused records of ends failed, naming them; ask again for those once what refused them is settled. A removed
 record is delivered again by the next run that reads its row; a row that should stay out of OSDU is taken out of the source.
 See [Removal and reversal](../concepts/removal-and-reversal.md#removing-records-from-osdu).
+
+## Records must not be read, but must stay in OSDU
+
+**You see** delivered records that no longer meet their requirements (held now because a mapping's assertions changed, or
+under legal review) and must not be read until that is settled, without deleting anything.
+
+**Do:** **Remove** on the record's page or the Records tab selection, then **Restrict access**, picking one of the partition's
+registered restrictions (an administrator registers them on the **Access restrictions** page). Their ACL in OSDU is replaced
+with that restriction's groups, in place and with no new version, and no run, release or ledger deletion touches them until
+**Lift the restriction**, under the same **Remove**, gives each back the ACL it had. A restriction the flow's identity could
+not lift again (it is in none of the restriction's owner groups) is refused before anything changes: add the identity to the
+group in Entitlements. The flow's **Restricted** filter lists them. See [Restricting access](../concepts/access-restriction.md).
 
 ## A run delivered the wrong thing
 

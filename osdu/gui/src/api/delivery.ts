@@ -73,6 +73,11 @@ export interface DeliveryFlowStats {
    * delivery. Absent from an older control plane.
    */
   stepsHeld?: number;
+  /**
+   * Records whose access in OSDU is restricted under a registered access restriction, or asked to be, whatever their status:
+   * no run delivers them until it is lifted. Absent from an older control plane.
+   */
+  restricted?: number;
   deliveredLast24h: number;
   lastDeliveredUtc: string | null;
   lastVerifiedUtc: string | null;
@@ -283,6 +288,29 @@ export interface DeliveryRecord {
    * Absent from an older control plane.
    */
   claimed?: boolean;
+  /**
+   * The registered access restriction whose groups replaced the record's ACL in OSDU, while it does; null or absent for a
+   * record whose access is its own. No run delivers the record until it is lifted.
+   */
+  restrictionId?: number | null;
+  /** When OSDU confirmed the restriction; null while it is asked and OSDU's answer is not known. */
+  restrictedUtc?: string | null;
+}
+
+/**
+ * The access restriction a record carries (osdu/docs/reference/concepts/access-restriction.md): the registered restriction
+ * and its groups (null when the registry no longer names it), when OSDU confirmed it (null while asked and unanswered), and
+ * the ACL the record had before, which lifting it gives back.
+ */
+export interface DeliveryRecordRestriction {
+  restrictionId: number;
+  name: string | null;
+  description: string | null;
+  viewers: string[] | null;
+  owners: string[] | null;
+  restrictedUtc: string | null;
+  formerViewers: string[] | null;
+  formerOwners: string[] | null;
 }
 
 /** An OSDU id a record's pending document refers to, and the property of the record holding it. */
@@ -335,6 +363,8 @@ export interface DeliveryRecordDetail {
    * none. Its empty fields arrive as null: read it through `removedKeyOf`.
    */
   removedKey?: object | null;
+  /** The access restriction the record carries while its access in OSDU is restricted; null or absent otherwise. */
+  restriction?: DeliveryRecordRestriction | null;
 }
 
 /** One run of an execution, as a lookup by run id or correlation id answers it (DeliveryRunLookupRunDto). */
@@ -435,11 +465,30 @@ export interface DeliveryAttemptResult {
    */
   adopted?: { targetId: string; version?: number };
   /**
+   * For a restriction of the record's access (phase `restrict`) or its lift (phase `lift-restriction`): the registered
+   * restriction, the ACL OSDU holds after it (`acl`, null when OSDU was asked nothing) and the ACL it replaced (`replaced`).
+   */
+  restriction?: DeliveryAttemptRestriction;
+  /**
    * What the check before sending found of the document (osdu/docs/reference/concepts/preflight.md, Validation before a
    * record is sent), what the mapping's assertions found among it; read it with `verdictIn`, which answers null for a
    * result that carries none.
    */
   validation?: unknown;
+}
+
+/** An ACL as an attempt's result names it: the groups that may read the record and those that may change it. */
+export interface DeliveryAttemptAcl {
+  viewers: string[];
+  owners: string[];
+}
+
+/** What a restriction, or its lift, did to a record's access, as its attempt's result names it. */
+export interface DeliveryAttemptRestriction {
+  id: number;
+  name: string;
+  acl?: DeliveryAttemptAcl | null;
+  replaced?: DeliveryAttemptAcl | null;
 }
 
 /**
@@ -479,7 +528,7 @@ export interface DeliveryAttempt {
   startedUtc: string;
   completedUtc: string;
   /** `undone` is an undo of what an unfinished delivery left (phase `undo`); a skipped or held try of phase `undo-wait` waited for one. */
-  outcome: "delivered" | "skipped" | "failed" | "held" | "deleted" | "historypurged" | "restored" | "undone";
+  outcome: "delivered" | "skipped" | "failed" | "held" | "deleted" | "historypurged" | "restored" | "undone" | "restricted" | "unrestricted";
   phase: string;
   metadataHash: string | null;
   payloadHash: string | null;
@@ -1075,6 +1124,8 @@ export interface DeliveryRecordListQuery extends PageQuery {
   issue?: string;
   /** Only records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
+  /** Only records whose access in OSDU is restricted, or asked to be. */
+  restricted?: boolean;
 }
 
 /**
@@ -1163,6 +1214,8 @@ export interface DeliveryRecordLookupQuery extends PageQuery {
   drifted?: boolean;
   /** Only the records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
+  /** Only the records whose access in OSDU is restricted, or asked to be. */
+  restricted?: boolean;
   /** The ledger identity of one flow (a {@link DeliveryRecordFlow}'s `flowId`); left out, every flow. */
   flowId?: string;
   /** The partition whose ledgers are read; left out, the workbench's, which every call carries. */
@@ -1187,9 +1240,10 @@ export interface DeliveryRecordFlow {
  * How much of a record a removal takes away in OSDU. The four are different calls with different promises, not degrees
  * of one thing: "record" and "previous" can be undone, "history" and "everything" cannot. OSDU has no call that removes
  * only the latest version, so "previous" writes the version before it back as a new version, and the replaced one stays
- * in the record's history.
+ * in the record's history. "restrict" removes nothing: the record's ACL in OSDU is replaced with a registered access
+ * restriction's groups, and "unrestrict" gives it back the ACL it had (osdu/docs/reference/concepts/access-restriction.md).
  */
-export type RemovalScope = "record" | "previous" | "history" | "everything";
+export type RemovalScope = "record" | "previous" | "history" | "everything" | "restrict" | "unrestrict";
 
 /** Where a flow's records live, and the exact call each removal scope would make against them. */
 export interface DeliveryTarget {
@@ -1213,6 +1267,10 @@ export interface DeliveryTarget {
   previousPath: string;
   /** Why the route cannot write an earlier version back; absent or null when it can. */
   previousRefusal?: string | null;
+  /** The call a restriction of the records' access, and a lift, makes; absent from an older control plane. */
+  restrictPath?: string;
+  /** Why the route cannot restrict the records' access; absent or null when it can. */
+  restrictRefusal?: string | null;
 }
 
 /** One interface another waits for, or does not wait for, and where that comes from. */
@@ -2030,6 +2088,8 @@ export interface DeliveryRecordFilter {
   issue?: string;
   /** The records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
+  /** The records whose access in OSDU is restricted, or asked to be. */
+  restricted?: boolean;
 }
 
 /**
@@ -2094,6 +2154,8 @@ export interface DeliveryRemovalRequest {
   purgeLedger?: boolean;
   /** The pool the remove run is queued on; any node when absent. */
   pool?: string | null;
+  /** With "restrict": the registered access restriction, by name, whose groups the records' ACL becomes. Refused with the other scopes. */
+  restriction?: string;
 }
 
 /** What a removal would act on, and from where: the contents of the confirmation. */
@@ -2106,6 +2168,8 @@ export interface DeliveryRemovalPreview {
   target: DeliveryTarget;
   /** Of the selection, the records removed from OSDU already: those deleting from the ledger alone reaches. */
   removed: number;
+  /** Of the selection, the records whose access is restricted: those a lift reaches. Absent from an older control plane. */
+  restricted?: number;
 }
 
 /**
@@ -2236,6 +2300,8 @@ export interface DeliveryRemovalAccepted {
   records: number;
   /** Whether the removal deletes the records it removes from the ledger too. */
   purgeLedger: boolean;
+  /** The access restriction a restriction restricts the records under; null for any other scope. */
+  restriction?: string | null;
 }
 
 /** What a reversal reverses: one run, or one submission. */

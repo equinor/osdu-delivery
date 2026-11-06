@@ -47,6 +47,13 @@ public static class ReversalPlan
             return ReversalStep.Skip(ReversalOutcomes.NotClaimed, "the record never claimed an OSDU id, so this flow wrote nothing to OSDU under it");
         }
 
+        if (record.Restricted)
+        {
+            return ReversalStep.Skip(
+                ReversalOutcomes.Restricted,
+                "the record's access in OSDU is restricted, and nothing is written to it while it is; it is taken again when the reversal is asked again, once the restriction is lifted");
+        }
+
         if (record.LeaseOwner is not null || record.Status is RecordStatus.Pending or RecordStatus.Delivering or RecordStatus.Waiting)
         {
             return ReversalStep.Skip(

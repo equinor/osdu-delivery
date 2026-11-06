@@ -200,6 +200,7 @@ starts and dropped when it ends ([A dimension build's staging](../flow/dimension
 | --- | --- |
 | [`osdu.Partition`](../tables/partition.md) | An OSDU partition registered with the catalog, and whether it is the default |
 | [`osdu.ConfigProperty`](../tables/config-property.md) | A value of the central configuration the control plane supplies to runs |
+| [`osdu.AccessRestriction`](../tables/access-restriction.md) | An access restriction registered for a partition: the groups a restricted record's ACL in OSDU becomes |
 
 ### The schema itself
 

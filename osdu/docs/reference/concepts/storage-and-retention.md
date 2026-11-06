@@ -93,7 +93,7 @@ calls for it, and choose it in years rather than months: statistics and trends r
 | Download runs | `DownloadRun` | Never removed |
 | Mappings, templates and search terms | `Mapping`, `RepositoryTemplate`, `SearchTerm`, `SearchTermRefinement` | Rewritten by each repository sync |
 | OSDU schema lineage | `SchemaLineage`, `SchemaLineageKind` | One set per release built; building it again replaces it |
-| Partitions and configuration | `Partition`, `ConfigProperty`, `SchemaVersion`, `__EFMigrationsHistory` | Managed on the Partitions page and by the configuration |
+| Partitions and configuration | `Partition`, `AccessRestriction`, `ConfigProperty`, `SchemaVersion`, `__EFMigrationsHistory` | Managed on the Partitions and Access restrictions pages and by the configuration; an access restriction goes only once no record carries it |
 
 The page flags the kept areas that grow with use and that nothing removes (submissions, objects created in OSDU, purged
 records, activities, the render context, dimension builds, inventory builds and removals, removal runs, retrievals,

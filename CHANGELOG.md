@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A record can be kept in OSDU and hidden, rather than removed: Remove offers Restrict access.** Its ACL in OSDU is
+  replaced with the groups of an access restriction an administrator registered for the partition (the new Access
+  restrictions page, `/api/v1/delivery/access-restrictions`), through storage's metadata patch, which keeps the version and
+  every one before it. The ledger keeps the ACL the record had, and no run, release or ledger deletion touches the record
+  until Lift the restriction gives it back; held records whose requirements changed are restricted the same way. A
+  restriction runs as a `remove` run with `scope: restrict` and `restriction`, lifted with `scope: unrestrict`
+  ([restricting access](osdu/docs/reference/concepts/access-restriction.md)).
+
 - **A lookup table's column holding a JSON object's text is kept as that object with `decode: json`.** A cache flow's
   table type writes `{ column: tags, as: Tags, decode: json }`, and a mapping writes the object whole where the template
   takes one (the record's `tags`, say), every property name and JSON type as the column holds them, a dotted name such as

@@ -112,8 +112,9 @@ public sealed partial class OsduLedger : ILedger
             async db =>
             {
                 // The order of the filtered index (PartitionId, FlowId, PlanRequestedUtc), whose key ends with the delivery
-                // key, so a page is a seek past the last one read.
-                var query = db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId && r.PlanRequestedUtc != null);
+                // key, so a page is a seek past the last one read. A record whose access is restricted keeps its request
+                // until the restriction is lifted: every plan would leave it as it is, so no run reads its row for it.
+                var query = db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId && r.PlanRequestedUtc != null && r.RestrictionId == null);
 
                 // The records deleted from the ledger whose rows wait to be read again, from their own filtered index in
                 // the same order, so both are a seek past the same cursor. A deletion asks only for a row it has a key tuple
@@ -1694,6 +1695,12 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => r.HeldSteps != null);
         }
 
+        if (narrowing.Restricted)
+        {
+            // The restricted records' index holds the records whose access is restricted, and no others.
+            rows = rows.Where(r => r.RestrictionId != null);
+        }
+
         return rows;
     }
 
@@ -1872,7 +1879,7 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => sent.Contains(r.DeliveryKey));
         }
 
-        rows = Narrowed(rows, new LookupNarrowing(query.Drifted, query.StepHeld));
+        rows = Narrowed(rows, new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted));
         if (query.Problem is { } problem)
         {
             // The problem index holds the blocked records alone; naming its filter lets the server read it.
@@ -1890,7 +1897,7 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>Whether the listing has a filter besides its search.</summary>
     private static bool Narrows(RecordQuery query)
         => query.Status is not null || query.SubmissionId is not null || query.DeliveredBySubmissionId is not null || query.RunId is not null
-            || query.Drifted || query.StepHeld || query.EverDelivered is not null;
+            || query.Drifted || query.StepHeld || query.Restricted || query.EverDelivered is not null;
 
     /// <summary>The listing's search term when it is a prefix search: not empty, not a delivery key, not a contains search.</summary>
     private static string? PrefixTerm(RecordQuery query)
@@ -1961,7 +1968,7 @@ public sealed partial class OsduLedger : ILedger
     private static async Task<FlowStats> StatsAsync(OsduDbContext db, short partition, Guid flowId, DateTime nowUtc, CancellationToken ct)
     {
         var since = nowUtc.AddHours(-24);
-        var (byStatus, drifted, last24, stepsHeld) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
+        var (byStatus, drifted, last24, stepsHeld, restricted) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
         var (blocked, stranded) = await SqlServerLedgerBulk.ParkedCountsAsync(db, partition, flowId, ct).ConfigureAwait(false);
 
         // The held records an adoption may be asked of, read from the held records alone through the status index: the test is
@@ -1992,6 +1999,7 @@ public sealed partial class OsduLedger : ILedger
             Adoptable = adoptable,
             Drifted = drifted,
             StepsHeld = stepsHeld,
+            Restricted = restricted,
             DeliveredLast24h = last24,
             LastDeliveredUtc = lastDelivered,
             LastVerifiedUtc = lastVerified,
@@ -2005,7 +2013,7 @@ public sealed partial class OsduLedger : ILedger
     /// kept the counts in a few rows per flow and was written inside the transaction of every record write, so every
     /// node delivering a flow met every other one on those rows.
     /// </summary>
-    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld)> CountFromRecordsAsync(
+    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld, long Restricted)> CountFromRecordsAsync(
         OsduDbContext db, short partition, Guid flowId, DateTime since, CancellationToken ct)
     {
         var byStatus = await db.DeliveryRecords
@@ -2023,7 +2031,10 @@ public sealed partial class OsduLedger : ILedger
         var stepsHeld = await db.DeliveryRecords
             .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.HeldSteps != null, ct)
             .ConfigureAwait(false);
-        return (byStatus, drifted, deliveredSince, stepsHeld);
+        var restricted = await db.DeliveryRecords
+            .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.RestrictionId != null, ct)
+            .ConfigureAwait(false);
+        return (byStatus, drifted, deliveredSince, stepsHeld, restricted);
     }
 
     public async Task<IReadOnlyList<AttemptRecord>> ListAttemptsAsync(Guid flowId, DeliveryKey key, int max, CancellationToken ct = default)
@@ -4252,6 +4263,9 @@ public sealed partial class OsduLedger : ILedger
         OccupiedTargetId = r.OccupiedTargetId,
         OccupiedTargetVersion = r.OccupiedTargetVersion,
         AdoptRequestedUtc = r.AdoptRequestedUtc is { } asked ? DateTime.SpecifyKind(asked, DateTimeKind.Utc) : null,
+        RestrictionId = r.RestrictionId,
+        RestrictedUtc = r.RestrictedUtc is { } restricted ? DateTime.SpecifyKind(restricted, DateTimeKind.Utc) : null,
+        RestrictedFromAcl = r.RestrictedFromAcl,
         TargetVersion = r.TargetVersion,
         Status = StatusText.ToRecordStatus(r.Status),
         LastDeliveredUtc = r.LastDeliveredUtc,

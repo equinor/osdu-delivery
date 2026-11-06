@@ -74,11 +74,30 @@ public enum AttemptOutcome
     /// artifact and what became of it. The record's own state is what the delivery left it in.
     /// </summary>
     Undone,
+
+    /// <summary>
+    /// The record's ACL in OSDU was replaced with a registered restriction's groups (phase <see cref="AttemptPhases.Restrict"/>;
+    /// osdu/docs/reference/concepts/access-restriction.md): its result names the restriction, the ACL set and the ACL replaced.
+    /// The record keeps its status and its version; no run delivers it until the restriction is lifted.
+    /// </summary>
+    Restricted,
+
+    /// <summary>
+    /// The restriction was lifted (phase <see cref="AttemptPhases.LiftRestriction"/>): the ACL OSDU held before it was written
+    /// back, or nothing was asked of OSDU because it no longer held the record. The record follows its source again.
+    /// </summary>
+    Unrestricted,
 }
 
 /// <summary>The phases of the attempts that record a decision not to send, beside the delivery phases the worker reports.</summary>
 public static class AttemptPhases
 {
+    /// <summary>An operator replaced the record's ACL in OSDU with a registered restriction's groups (outcome restricted).</summary>
+    public const string Restrict = "restrict";
+
+    /// <summary>An operator lifted the record's restriction, giving it back the ACL it had before (outcome unrestricted).</summary>
+    public const string LiftRestriction = "lift-restriction";
+
     /// <summary>A skipped attempt: the source carried a version older than the one delivered or queued.</summary>
     public const string Stale = "stale";
 
@@ -453,6 +472,22 @@ public sealed record RecordState
     /// there claims it rather than holding the record. Null otherwise, and once the record claims an id.
     /// </summary>
     public DateTime? AdoptRequestedUtc { get; init; }
+
+    /// <summary>
+    /// The registered access restriction whose groups replaced the record's ACL in OSDU (osdu/docs/reference/concepts/access-restriction.md),
+    /// or null for a record whose access is its own. While it is set no run delivers the record, no release sends it and the
+    /// ledger never forgets it; only lifting the restriction gives the record its access back.
+    /// </summary>
+    public int? RestrictionId { get; init; }
+
+    /// <summary>When OSDU confirmed the restriction; null while it is asked and OSDU's answer is not known.</summary>
+    public DateTime? RestrictedUtc { get; init; }
+
+    /// <summary>The ACL OSDU held before the restriction, as JSON, which lifting it writes back.</summary>
+    public string? RestrictedFromAcl { get; init; }
+
+    /// <summary>Whether the record's access in OSDU is restricted, or asked to be: the ledger keeps it out of every run until it is lifted.</summary>
+    public bool Restricted => RestrictionId is not null;
 
     public long? TargetVersion { get; init; }
 
@@ -1187,6 +1222,12 @@ public sealed record FlowStats
     /// <summary>Records whose last render set a step of <c>enrich:</c> aside on its hold, the record going ahead without it.</summary>
     public long StepsHeld { get; init; }
 
+    /// <summary>
+    /// Records whose access in OSDU is restricted, or asked to be (osdu/docs/reference/concepts/access-restriction.md), whatever
+    /// their status: no run delivers them until their restriction is lifted.
+    /// </summary>
+    public long Restricted { get; init; }
+
     public long DeliveredLast24h { get; init; }
 
     public DateTime? LastDeliveredUtc { get; init; }
@@ -1440,7 +1481,8 @@ public enum SearchMode
 /// </summary>
 /// <param name="Drifted">Only the records whose last verify found drift or a missing record.</param>
 /// <param name="StepHeld">Only the records whose last render set a step of <c>enrich:</c> aside on its hold.</param>
-public readonly record struct LookupNarrowing(bool Drifted = false, bool StepHeld = false);
+/// <param name="Restricted">Only the records whose access in OSDU is restricted, or asked to be.</param>
+public readonly record struct LookupNarrowing(bool Drifted = false, bool StepHeld = false, bool Restricted = false);
 
 /// <summary>
 /// What a release reaches: the records named by key, the records one problem keeps blocked, or every blocked record of
@@ -1590,6 +1632,12 @@ public sealed record RecordQuery
     /// read from the held-steps index.
     /// </summary>
     public bool StepHeld { get; init; }
+
+    /// <summary>
+    /// Only records whose access in OSDU is restricted, or asked to be (osdu/docs/reference/concepts/access-restriction.md),
+    /// read from the restricted records' index.
+    /// </summary>
+    public bool Restricted { get; init; }
 
     /// <summary>Only the blocked records one problem keeps blocked (<see cref="ProblemSignature"/>), read from the problem index.</summary>
     public long? Problem { get; init; }
@@ -3138,6 +3186,45 @@ public interface ILedger
 
     Task<IReadOnlyList<DeliveryKey>> MarkRestoredAsync(
         Guid flowId, IReadOnlyList<PreviousVersionRestored> restored, string worker, Guid? runId, DateTime nowUtc, string? correlationId = null, CancellationToken ct = default);
+
+    /// <summary>The access restriction registered for <paramref name="partition"/> under <paramref name="name"/>, whatever its case; null when there is none.</summary>
+    Task<AccessRestrictionState?> FindAccessRestrictionAsync(string partition, string name, CancellationToken ct = default);
+
+    /// <summary>The registered access restrictions of <paramref name="ids"/>, by id; an id no restriction has is left out.</summary>
+    Task<IReadOnlyDictionary<int, AccessRestrictionState>> AccessRestrictionsAsync(IReadOnlyCollection<int> ids, CancellationToken ct = default);
+
+    /// <summary>How many records of the ledger are restricted, or asked to be, whatever their status.</summary>
+    Task<long> CountRestrictedAsync(Guid flowId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks each record of <paramref name="asked"/> restricted under <paramref name="restriction"/> before its ACL in OSDU is
+    /// replaced (osdu/docs/reference/concepts/access-restriction.md, How a restriction runs), keeping the ACL OSDU held, and
+    /// drops the work queued for it, so a restriction whose answer is lost still keeps the record out of every run. A record
+    /// is written only while OSDU holds it for the flow, no lease but <paramref name="holder"/> holds it, and it carries no
+    /// restriction or this one unanswered; the others are named as moved.
+    /// </summary>
+    Task<RestrictionWrite> AskRestrictionAsync(
+        Guid flowId, AccessRestrictionState restriction, IReadOnlyList<RestrictionAsked> asked, string? holder, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Settles what OSDU answered for records <see cref="AskRestrictionAsync"/> marked: <paramref name="confirmed"/> are
+    /// restricted as of now, each with an attempt (outcome <see cref="AttemptOutcome.Restricted"/>); <paramref name="withdrawn"/>,
+    /// whose ACL OSDU kept, are no longer restricted and are asked to be planned again. Only a record this restriction still
+    /// asks of is written.
+    /// </summary>
+    Task<RestrictionWrite> SettleRestrictionAsync(
+        Guid flowId, AccessRestrictionState restriction, IReadOnlyList<RestrictionConfirmed> confirmed, IReadOnlyList<DeliveryKey> withdrawn,
+        string worker, Guid? runId, DateTime nowUtc, string? correlationId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lifts the restriction of each record of <paramref name="lifted"/> once OSDU holds the ACL it had before, or holds no
+    /// record of it: an attempt (outcome <see cref="AttemptOutcome.Unrestricted"/>) each, and a request to plan it again, so it
+    /// follows its source from here. A record OSDU no longer held is sent again by the next run. Only a record still restricted
+    /// and held by no lease but <paramref name="holder"/> is written.
+    /// </summary>
+    Task<RestrictionWrite> LiftRestrictionAsync(
+        Guid flowId, IReadOnlyList<RestrictionLifted> lifted, IReadOnlyDictionary<int, AccessRestrictionState> restrictions, string? holder,
+        string worker, Guid? runId, DateTime nowUtc, string? correlationId = null, CancellationToken ct = default);
 
     /// <summary>
     /// Opens the reversal of <paramref name="source"/> in the flow's ledger, or resumes the one it holds

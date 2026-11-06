@@ -78,11 +78,11 @@ file instead (`-0002` finds `LOG-0002/1`); it reads every record the other filte
 them it asks for a flow or a status first ([finding records](ledger.md#finding-records)). Each hit says which value
 matched. The filters a flow's Records tab has narrow both the listing and a lookup: a status picker (`pending`,
 `waiting`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted`), **Drifted only** (the records whose last
-verify found OSDU holding something else, or nothing, and the removed records OSDU still holds) and **Step held** ([an enrichment set aside on its
-hold](../flow/enrich-holds.md)), with a flow picker beside them. A row shows the status, the record (label, source key,
+verify found OSDU holding something else, or nothing, and the removed records OSDU still holds), **Step held** ([an enrichment set aside on its
+hold](../flow/enrich-holds.md)) and **Restricted** ([access restricted in OSDU](access-restriction.md)), with a flow picker beside them. A row shows the status, the record (label, source key,
 ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type, a link to the
 record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`), flow (`flow`, the ledger's flow
-id), **Match anywhere** (`mode=contains`), **Drifted only** (`drifted=true`) and **Step held** (`stepHeld=true`) are in
+id), **Match anywhere** (`mode=contains`), **Drifted only** (`drifted=true`), **Step held** (`stepHeld=true`) and **Restricted** (`restricted=true`) are in
 the address, so a lookup is a link; a link that names a partition (`partition`) makes it the title bar's, so the lookup
 is read in the partition it is about. **Export**, in the header, downloads every record the lookup reaches (at most
 1,000) as an Excel workbook, each with its flow, interface and partition and the values the term matched; its About

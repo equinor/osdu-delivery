@@ -1,5 +1,5 @@
 import {
-  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, Download, FileCode2, Layers, LayoutTemplate, ListChecks, ListX,
+  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, Download, FileCode2, Layers, LayoutTemplate, ListChecks, ListX, Lock,
   Network, PackageCheck, PackageSearch, ScrollText, Settings, Shapes, ShieldCheck, Telescope, TextSearch, Unlink,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
@@ -45,6 +45,7 @@ const OrderPage = lazyRoute("OrderPage", () => import("./features/delivery/order
 const MappingBuilderPage = lazyRoute("MappingBuilderPage", () => import("./features/delivery/MappingBuilderPage"));
 const DeliveryCachePage = lazyRoute("DeliveryCachePage", () => import("./features/delivery/DeliveryCachePage"));
 const DeliveryPartitionsPage = lazyRoute("DeliveryPartitionsPage", () => import("./features/delivery/DeliveryPartitionsPage"));
+const AccessRestrictionsPage = lazyRoute("AccessRestrictionsPage", () => import("./features/delivery/AccessRestrictionsPage"));
 const DeliveryAssertionsPage = lazyRoute("DeliveryAssertionsPage", () => import("./features/delivery/assertions/DeliveryAssertionsPage"));
 const AssertionReportPage = lazyRoute("AssertionReportPage", () => import("./features/delivery/assertions/AssertionReportPage"));
 const DeliveryDimensionsPage = lazyRoute("DeliveryDimensionsPage", () => import("./features/delivery/dimensions/DeliveryDimensionsPage"));
@@ -414,6 +415,7 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/mappings/build", component: MappingBuilderPage },
     { path: "/delivery/cache", component: DeliveryCachePage },
     { path: "/delivery/partitions", component: DeliveryPartitionsPage },
+    { path: "/delivery/access-restrictions", component: AccessRestrictionsPage },
     { path: "/delivery/assertions", component: DeliveryAssertionsPage },
     { path: "/delivery/assertions/runs/:assertionRunId", component: AssertionReportPage },
     { path: "/delivery/dimensions", component: DeliveryDimensionsPage },
@@ -462,6 +464,7 @@ export const osduDeliveryModule: GuiModule = {
           "/delivery/inventories",
           "/delivery/dimensions",
           "/delivery/partitions",
+          "/delivery/access-restrictions",
         ],
       },
       {
@@ -514,6 +517,8 @@ export const osduDeliveryModule: GuiModule = {
         description: "The order records reach OSDU in, from what each kind refers to: the delivery schedules drawn against it, a partition's types level by level, and OSDU's own lineage by release." },
     { label: "Partitions", to: "/delivery/partitions", icon: Layers, testId: "nav-delivery-partitions",
         description: "The OSDU partitions the flows run in, as the control plane's configuration names them, each with its cache and the flows serving it; an admin can describe or remove the others." },
+    { label: "Access restrictions", to: "/delivery/access-restrictions", icon: Lock, testId: "nav-delivery-access-restrictions",
+        description: "The groups a record's ACL in OSDU can be restricted to without removing it, per partition, with how many records carry each; an admin registers, describes or removes them." },
     { label: "Search terms", to: "/delivery/search-terms", icon: TextSearch, testId: "nav-delivery-search-terms",
         description: "The source columns the mappings read, which the Explorer searches by: rename one to what people call it, pick the route it searches through, add a note, or delete and restore it." },
   ],

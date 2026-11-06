@@ -220,7 +220,8 @@ no engine path could honour is refused before anything is queued.
 | `slices` | array of whole numbers | The key slices of `submissionId` a part of a split delivery delivers (`deliver`) or an `intake` plans: 0 to 1023, each once, neighbours on a `deliver`. Written by a split delivery, not by hand. |
 | `rateShare` | whole number | How many parts of a split delivery share the flow's `reliability.rateLimitRps`, 2 to 65: a part sends under that share of it ([submissions](../concepts/submissions.md#many-nodes)). Written by a split delivery, not by hand. |
 | `confirm` | text | The partition a `delete-ledger` run acts in, as the person who asked typed it. Required by `delete-ledger` and taken by no other operation of a delivery flow (an inventory flow's `remove` and `restore` take their own). |
-| `scope` | text | How much of each record a `remove` run takes: `record` (reversibly), `previous` (the version before the latest written back), `history` (the earlier versions) or `everything` ([the scopes](../concepts/removal-and-reversal.md#removing-records-from-osdu)). Required by `remove`, exactly as written. |
+| `scope` | text | How much of each record a `remove` run takes: `record` (reversibly), `previous` (the version before the latest written back), `history` (the earlier versions) or `everything` ([the scopes](../concepts/removal-and-reversal.md#removing-records-from-osdu)); or `restrict`, its ACL in OSDU replaced with a registered access restriction's groups, or `unrestrict`, the ACL it had given back ([Restricting access](../concepts/access-restriction.md)). Required by `remove`, exactly as written. |
+| `restriction` | text | With `scope` `restrict`, the registered access restriction the records are restricted under, by name, in the partition the run acts in ([the registry](../concepts/access-restriction.md#the-registry)). Required by it, and refused with any other scope. |
 | `filter` | object | The listing a `remove` run empties instead of naming `recordKeys`: `status`, `search` with `mode` (`prefix` or `contains`), `submissionId`, `deliveredBySubmissionId`, `runId`, `drifted` and `issue`, as the records list names them. The run resolves it when it removes the records and refuses a filter that matches more than 25,000. Any other property is refused. |
 | `purgeLedger` | `true`/`false` | With `scope` `record` or `everything`, a `remove` run also deletes from the ledger each record OSDU answered for, keeping one line of it. |
 | `references`, `partitionReferences` | objects | The central configuration the control plane supplies with every delivery, cache, retrieval, assertion, dimension, inventory, removal and download run it queues ([sqlflow config](config.md)). Not written by hand. |
@@ -238,13 +239,13 @@ Which fields each operation takes:
 | `sync` | `recordKeys`, `interface`, `interfaces` | `force`, `submissionId`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
 | `reverse` | `submissionId` or `runId` (exactly one), `interface` | `force`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
 | `undo` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
-| `remove` | `scope` (required), `recordKeys` or `filter` (exactly one), `purgeLedger` (with `scope` `record` or `everything`), `interface` | `force`, `submissionId`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
+| `remove` | `scope` (required), `recordKeys` or `filter` (exactly one), `purgeLedger` (with `scope` `record` or `everything`), `restriction` (with `scope` `restrict`, required), `interface` | `force`, `submissionId`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
 | `delete-ledger` | `confirm` (required), `interface`, `interfaces` | `force`, `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
 
 Across every operation: `submissionId` and `recordKeys` never together; a `maxRecords` above 0 never with `recordKeys`,
 `submissionId` or `slices`; `interface` and `interfaces` never together;
 `interfaces` never with `submissionId`, `recordKeys` or `slices`; `runId` only on `reverse`; `confirm` only on
-`delete-ledger`; `scope`, `filter` and `purgeLedger` only on `remove`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `selection`, `duplicateCheck`, `types`, `entries`, `approve` and `downloads`, which belong to the other kinds, never.
+`delete-ledger`; `scope`, `restriction`, `filter` and `purgeLedger` only on `remove`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `selection`, `duplicateCheck`, `types`, `entries`, `approve` and `downloads`, which belong to the other kinds, never.
 A refusal names the field and why, for example
 `payload redeliver does not apply to the plan operation: a plan sends nothing.`, and a property of another kind is
 refused in the shape every kind uses (below):

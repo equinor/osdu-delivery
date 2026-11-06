@@ -22,6 +22,62 @@ namespace SqlFlow.Delivery.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryAccessRestriction", b =>
+                {
+                    b.Property<int>("RestrictionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RestrictionId"));
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Owners")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Partition")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Viewers")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("RestrictionId");
+
+                    b.HasIndex("Partition", "Name")
+                        .IsUnique();
+
+                    b.ToTable("AccessRestriction", "osdu");
+                });
+
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryActivity", b =>
                 {
                     b.Property<short>("PartitionId")
@@ -3559,6 +3615,16 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<string>("RenderContext")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("RestrictedFromAcl")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime?>("RestrictedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RestrictionId")
+                        .HasColumnType("int");
+
                     b.Property<string>("SourceFileName")
                         .HasMaxLength(800)
                         .HasColumnType("nvarchar(800)");
@@ -3634,6 +3700,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasFilter("[ClaimedTargetId] IS NOT NULL");
 
                     b.HasIndex("LeaseOwner");
+
+                    b.HasIndex("RestrictionId")
+                        .HasFilter("[RestrictionId] IS NOT NULL");
 
                     b.HasIndex("HeldCacheSetId", "Status")
                         .HasFilter("[HeldCacheSetId] IS NOT NULL");
@@ -3717,6 +3786,11 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasFilter("[HeldSteps] IS NOT NULL");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_HeldSteps"), new[] { "HeldSteps" });
+
+                    b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_Restricted")
+                        .HasFilter("[RestrictionId] IS NOT NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_Restricted"), new[] { "RestrictionId" });
 
                     b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_Unsorted")
                         .HasFilter("[ProblemHash] IS NULL AND [Blocked]=(1) AND ([Status] IN (N'held', N'failed'))");

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { PackageCheck } from "lucide-react";
+import { Lock, PackageCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,6 +50,16 @@ function FlowCard({ pipeline, stats, active, elsewhere, onOpen }: {
         {stats && (stats.stepsHeld ?? 0) > 0 && (
           <Badge variant="outline" title="Records an enrichment held in and was set aside on: each went ahead with what the enrichment added to its last delivery" data-testid={`delivery-flow-steps-held-${pipeline.id}`}>
             {`${(stats.stepsHeld ?? 0).toLocaleString()} with a step held`}
+          </Badge>
+        )}
+        {stats && (stats.restricted ?? 0) > 0 && (
+          <Badge
+            variant="outline"
+            title="Records whose access in OSDU is restricted under a registered access restriction: no run delivers them until the restriction is lifted"
+            data-testid={`delivery-flow-restricted-${pipeline.id}`}
+          >
+            <Lock className="size-3" aria-hidden />
+            {`${(stats.restricted ?? 0).toLocaleString()} restricted`}
           </Badge>
         )}
         {partitions.length > 0 && (

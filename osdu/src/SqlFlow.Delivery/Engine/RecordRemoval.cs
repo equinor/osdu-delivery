@@ -50,13 +50,17 @@ public sealed record RemovalSelection
         return new RemovalSelection(null, filter);
     }
 
-    /// <summary>The selection as the activity trail records it: what was asked for, never the resolved key list.</summary>
-    public object Describe(RemovalChoice scope, bool purgeLedger = false) => Keys is not null
-        ? new { scope = scope.ToString().ToLowerInvariant(), purgeLedger, records = Keys.Count, keys = Keys.Take(20).Select(k => k.ToString()).ToList() }
+    /// <summary>
+    /// The selection as the activity trail records it: what was asked for, never the resolved key list, with the access
+    /// restriction a restriction names.
+    /// </summary>
+    public object Describe(RemovalChoice scope, bool purgeLedger = false, string? restriction = null) => Keys is not null
+        ? new { scope = scope.ToString().ToLowerInvariant(), purgeLedger, restriction, records = Keys.Count, keys = Keys.Take(20).Select(k => k.ToString()).ToList() }
         : new
         {
             scope = scope.ToString().ToLowerInvariant(),
             purgeLedger,
+            restriction,
             filter = new
             {
                 status = Filter!.Status?.ToString().ToLowerInvariant(),
@@ -95,11 +99,24 @@ public enum RemovalChoice
 
     /// <summary><see cref="RemovalScope.Everything"/>: the record and every one of its versions are purged.</summary>
     Everything,
+
+    /// <summary>
+    /// Nothing is removed: the record's ACL in OSDU is replaced with a registered access restriction's groups, so no one
+    /// outside them reads it, and no run delivers it until the restriction is lifted (osdu/docs/reference/concepts/access-restriction.md).
+    /// Reversible: <see cref="Unrestrict"/> gives the record back the ACL it had.
+    /// </summary>
+    Restrict,
+
+    /// <summary>A restriction is lifted: the record is given back the ACL it had before it, and follows its source again.</summary>
+    Unrestrict,
 }
 
 /// <summary>How a removal choice reaches a protocol.</summary>
 public static class RemovalChoices
 {
+    /// <summary>Whether <paramref name="choice"/> restricts records' access or lifts a restriction, rather than removing anything.</summary>
+    public static bool ChangesAccess(this RemovalChoice choice) => choice is RemovalChoice.Restrict or RemovalChoice.Unrestrict;
+
     /// <summary>
     /// The scope a protocol deletes with for <paramref name="choice"/>. <see cref="RemovalChoice.Previous"/> deletes nothing,
     /// so it has none, and asking for it is a defect in the caller.
@@ -110,6 +127,7 @@ public static class RemovalChoices
         RemovalChoice.History => RemovalScope.History,
         RemovalChoice.Everything => RemovalScope.Everything,
         RemovalChoice.Previous => throw new ArgumentOutOfRangeException(nameof(choice), choice, "Restoring the previous version deletes nothing, so no protocol removal scope stands for it."),
+        RemovalChoice.Restrict or RemovalChoice.Unrestrict => throw new ArgumentOutOfRangeException(nameof(choice), choice, "Restricting a record's access, or lifting a restriction, deletes nothing, so no protocol removal scope stands for it."),
         _ => throw new ArgumentOutOfRangeException(nameof(choice), choice, "Unknown removal choice."),
     };
 }
@@ -292,7 +310,7 @@ public sealed record RemovalEndpoints(string Record, string History, string Ever
 
 /// <summary>
 /// What deleting records already removed from OSDU from the ledger did: how many it was asked about, and how many it deleted;
-/// the rest were not removed from OSDU, or a lease held them, and were left as they were.
+/// the rest were not removed from OSDU, were restricted, or a lease held them, and were left as they were.
 /// </summary>
 public sealed record LedgerPurgeSummary(int Selected, int Purged)
 {
@@ -302,7 +320,7 @@ public sealed record LedgerPurgeSummary(int Selected, int Purged)
     /// <summary>The one line the activity trail carries.</summary>
     public string Describe() => string.Create(
         CultureInfo.InvariantCulture,
-        $"{Purged} of {Selected} record(s) deleted from the ledger{(Left > 0 ? $"; {Left} left as they were (not removed from OSDU, work in flight, or something an unfinished delivery left that its undo has not taken back yet)" : string.Empty)}");
+        $"{Purged} of {Selected} record(s) deleted from the ledger{(Left > 0 ? $"; {Left} left as they were (not removed from OSDU, restricted, work in flight, or something an unfinished delivery left that its undo has not taken back yet)" : string.Empty)}");
 }
 
 /// <summary>
@@ -342,6 +360,14 @@ public sealed record RemovalRecordResult(
     public static RemovalRecordResult Skipped(DeliveryKey key, string? sourceKey, string? label, string? targetId, string detail, Guid? submissionId)
         => new(key.Value, sourceKey, label, targetId, "skipped", detail, submissionId);
 
+    /// <summary>The record's ACL in OSDU was replaced with an access restriction's groups (<see cref="RemovalChoice.Restrict"/>).</summary>
+    public static RemovalRecordResult Restricted(DeliveryKey key, string? sourceKey, string? label, string? targetId, string detail, Guid? submissionId)
+        => new(key.Value, sourceKey, label, targetId, "restricted", detail, submissionId);
+
+    /// <summary>The record's restriction was lifted (<see cref="RemovalChoice.Unrestrict"/>).</summary>
+    public static RemovalRecordResult Lifted(DeliveryKey key, string? sourceKey, string? label, string? targetId, string detail, Guid? submissionId)
+        => new(key.Value, sourceKey, label, targetId, "lifted", detail, submissionId);
+
     public static RemovalRecordResult Failed(DeliveryKey key, string? sourceKey, string? label, string? targetId, string detail, Guid? submissionId)
         => new(key.Value, sourceKey, label, targetId, "failed", detail, submissionId);
 }
@@ -366,6 +392,15 @@ public sealed record RemovalSummary(
     /// <summary>What the pipeline's after step did with what the removal changed in OSDU (osdu/docs/reference/flow/delivery.md, cache); null when it names none.</summary>
     public Snapshots.CacheStepOutcome? CacheAfter { get; init; }
 
+    /// <summary>The records whose access was restricted (<see cref="RemovalChoice.Restrict"/>).</summary>
+    public int Restricted { get; init; }
+
+    /// <summary>The records whose restriction was lifted (<see cref="RemovalChoice.Unrestrict"/>).</summary>
+    public int Lifted { get; init; }
+
+    /// <summary>The access restriction a restriction was made under; null for any other choice.</summary>
+    public string? Restriction { get; init; }
+
     public static RemovalSummary Of(RemovalChoice scope, int selected, IReadOnlyList<RemovalRecordResult> results, int purged = 0)
     {
         ArgumentNullException.ThrowIfNull(results);
@@ -377,7 +412,11 @@ public sealed record RemovalSummary(
         var reported = results.Count <= RemovalLimits.MaxReported
             ? results
             : results.OrderBy(r => r.Outcome == "failed" ? 0 : r.Outcome == "skipped" ? 1 : 2).Take(RemovalLimits.MaxReported).ToList();
-        return new RemovalSummary(scope, selected, removed, restored, alreadyGone, skipped, failed, reported, results.Count > reported.Count, purged);
+        return new RemovalSummary(scope, selected, removed, restored, alreadyGone, skipped, failed, reported, results.Count > reported.Count, purged)
+        {
+            Restricted = results.Count(r => r.Outcome == "restricted"),
+            Lifted = results.Count(r => r.Outcome == "lifted"),
+        };
     }
 
     /// <summary>The one line the activity trail carries for the whole removal.</summary>
@@ -388,6 +427,20 @@ public sealed record RemovalSummary(
             return string.Create(
                 CultureInfo.InvariantCulture,
                 $"{Selected} record(s) selected: {Restored} put back at the version before the latest (reversible), {Skipped} skipped, {Failed} failed");
+        }
+
+        if (Scope == RemovalChoice.Restrict)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{Selected} record(s) selected: {Restricted} restricted{(Restriction is null ? string.Empty : $" under '{Restriction}'")} (reversible), {Skipped} skipped, {Failed} failed{(Undone.Idle ? string.Empty : $"; first {Undone.Describe()}")}");
+        }
+
+        if (Scope == RemovalChoice.Unrestrict)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{Selected} record(s) selected: {Lifted} restriction(s) lifted, {Skipped} skipped, {Failed} failed");
         }
 
         var what = Scope switch

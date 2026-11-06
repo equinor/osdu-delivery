@@ -1,5 +1,5 @@
 import {
-  Ban, CircleDashed, CircleHelp, Equal, FileQuestion, GitBranch, Hourglass, PenLine, Trash2, Undo2, XCircle, type LucideIcon,
+  Ban, CircleDashed, CircleHelp, Equal, FileQuestion, GitBranch, Hourglass, Lock, PenLine, Trash2, Undo2, XCircle, type LucideIcon,
 } from "lucide-react";
 import type { DeliveryReversal } from "../../api/delivery";
 
@@ -62,6 +62,12 @@ export const REVERSAL_OUTCOMES: Record<string, { label: string; icon: LucideIcon
     tone: "text-info",
     meaning: "Work was queued or in flight for the record. It is taken again when the reversal is asked again, once that work has settled.",
   },
+  restricted: {
+    label: "restricted",
+    icon: Lock,
+    tone: "text-info",
+    meaning: "The record's access in OSDU is restricted, and nothing is written to it while it is. It is taken again when the reversal is asked again, once the restriction is lifted.",
+  },
   "not-claimed": {
     label: "not claimed",
     icon: Ban,
@@ -97,7 +103,7 @@ export const REVERSAL_OUTCOMES: Record<string, { label: string; icon: LucideIcon
 /** The order outcomes are shown in: what was put back first, then what was passed over, then what failed or waits. */
 export const REVERSAL_OUTCOME_ORDER = [
   "restored", "removed", "already-gone", "superseded", "unchanged", "changed-in-osdu", "missing-in-osdu", "version-missing", "busy",
-  "not-claimed", "not-in-ledger", "not-reversible", "failed", "pending",
+  "restricted", "not-claimed", "not-in-ledger", "not-reversible", "failed", "pending",
 ];
 
 /** Whether a reversal is still being worked on by a run. */

@@ -348,6 +348,8 @@ public static class RemovalScopes
         RemovalChoice.Previous => "previous",
         RemovalChoice.History => "history",
         RemovalChoice.Everything => "everything",
+        RemovalChoice.Restrict => "restrict",
+        RemovalChoice.Unrestrict => "unrestrict",
         _ => throw new ArgumentOutOfRangeException(nameof(scope)),
     };
 
@@ -360,6 +362,8 @@ public static class RemovalScopes
             case "previous": scope = RemovalChoice.Previous; return true;
             case "history": scope = RemovalChoice.History; return true;
             case "everything": scope = RemovalChoice.Everything; return true;
+            case "restrict": scope = RemovalChoice.Restrict; return true;
+            case "unrestrict": scope = RemovalChoice.Unrestrict; return true;
             default: scope = RemovalChoice.Record; return false;
         }
     }

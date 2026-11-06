@@ -70,6 +70,7 @@ SQLFlow's.
 | | | Inventories | `/delivery/inventories` |
 | | | Dimensions | `/delivery/dimensions` |
 | | | Partitions | `/delivery/partitions` |
+| | | Access restrictions | `/delivery/access-restrictions` |
 | Build | Flows | Repos | `/repos` |
 | | | Pipelines | `/pipelines` |
 | | | Schedules | `/schedules` |

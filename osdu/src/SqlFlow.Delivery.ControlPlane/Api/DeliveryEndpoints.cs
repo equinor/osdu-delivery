@@ -52,7 +52,7 @@ public sealed record DeliveryFlowStatsDto(
     long Deleted, long Drifted, long DeliveredLast24h, DateTime? LastDeliveredUtc, DateTime? LastVerifiedUtc, long Submissions,
     DeliverySubmissionDto? LastSubmission, string? Interface = null, int Interfaces = 1, long Waiting = 0, string? Partition = null,
     IReadOnlyList<string>? Partitions = null, string? HeaderPartition = null, IReadOnlyList<string>? RedeliverParts = null, long Reverted = 0,
-    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0);
+    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0, long Restricted = 0);
 
 /// <summary>
 /// One interface of a delivery flow (osdu/docs/reference/flow/interfaces.md): its ledger identity, how it is delivered
@@ -145,7 +145,16 @@ public sealed record DeliveryRecordDto(
     string? WaitingFor = null, IReadOnlyList<DeliveryRecordReferenceDto>? References = null, DateTime? SourceInsertedUtc = null,
     string? Partition = null, string? Issue = null, string? ParentId = null, long? ParentVersion = null, long? PendingParentVersion = null,
     string? OccupiedTargetId = null, long? OccupiedTargetVersion = null, bool Adoptable = false, DateTime? AdoptRequestedUtc = null,
-    bool Claimed = false);
+    bool Claimed = false, int? RestrictionId = null, DateTime? RestrictedUtc = null);
+
+/// <summary>
+/// The access restriction a record carries (osdu/docs/reference/concepts/access-restriction.md): the registered restriction,
+/// its groups (null when the registry no longer names it), when OSDU confirmed it (null while it is asked and unanswered), and
+/// the ACL the record had before, which lifting it writes back.
+/// </summary>
+public sealed record DeliveryRecordRestrictionDto(
+    int RestrictionId, string? Name, string? Description, IReadOnlyList<string>? Viewers, IReadOnlyList<string>? Owners, DateTime? RestrictedUtc,
+    IReadOnlyList<string>? FormerViewers, IReadOnlyList<string>? FormerOwners);
 
 /// <summary>An OSDU id a record's pending document refers to, and the property of the record holding it.</summary>
 public sealed record DeliveryRecordReferenceDto(string Id, string Property);
@@ -187,7 +196,8 @@ public sealed record DeliveryRecordDetailDto(
     DeliveryRecordDto Record, Guid? PipelineId, Guid? RepoId, string? FlowName, string? Interface = null,
     DeliveryRecordLinkDto? WaitsOn = null, IReadOnlyList<DeliveryRecordLinkDto>? WaitedOnBy = null,
     IReadOnlyList<string>? KeyColumns = null, string? Partition = null,
-    DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null, DeliveryRemovedKeyDto? RemovedKey = null);
+    DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null, DeliveryRemovedKeyDto? RemovedKey = null,
+    DeliveryRecordRestrictionDto? Restriction = null);
 
 /// <summary>One delivery try, as the append-only history holds it: its outcome, and every step with what the target returned.</summary>
 public sealed record DeliveryAttemptDto(
@@ -439,12 +449,14 @@ public sealed record DeliveryRedeliverResult(int Marked, Guid? RunId);
 /// <c>Ddms</c> says, for a flow on the ddms route, which collection of which DDMS its records go to, and
 /// <c>RecordMethod</c> which method the record scope calls <c>RecordPath</c> with. <c>PreviousPath</c> is the calls the
 /// previous scope makes (the version before the latest read, then written back as a new version), and
-/// <c>PreviousRefusal</c> why the route cannot write an earlier version back, null when it can.
+/// <c>PreviousRefusal</c> why the route cannot write an earlier version back, null when it can. <c>RestrictPath</c> is the
+/// call a restriction of the records' access makes, and a lift (osdu/docs/reference/concepts/access-restriction.md), and
+/// <c>RestrictRefusal</c> why the route cannot restrict them, null when it can.
 /// </summary>
 public sealed record DeliveryTargetDto(
     Guid PipelineId, string FlowName, string Endpoint, string? DataPartition, string Protocol, string AuthType,
     string RecordPath, string HistoryPath, string EverythingPath, string? Interface = null, string? Ddms = null, string RecordMethod = "POST",
-    string PreviousPath = "", string? PreviousRefusal = null);
+    string PreviousPath = "", string? PreviousRefusal = null, string RestrictPath = "", string? RestrictRefusal = null);
 
 /// <summary>
 /// The listing a removal is aimed at, the same filter the records list is built from. <c>SubmissionId</c> names the
@@ -457,17 +469,19 @@ public sealed record DeliveryTargetDto(
 /// </summary>
 public sealed record DeliveryRecordFilterDto(
     string? Status, string? Search, string? Mode, Guid? SubmissionId, Guid? RunId, bool Drifted = false, Guid? DeliveredBy = null, string? Issue = null,
-    bool StepHeld = false);
+    bool StepHeld = false, bool Restricted = false);
 
 /// <summary>
-/// A removal of one or many records. <c>scope</c> is record, previous, history or everything. The records are named either
+/// A removal of one or many records. <c>scope</c> is record, previous, history or everything, or restrict or unrestrict their
+/// access (osdu/docs/reference/concepts/access-restriction.md), restrict with the registered <c>restriction</c> to restrict
+/// them under, by name. The records are named either
 /// by <c>keys</c> or by <c>filter</c> (every record the listing matches), never both. <c>expected</c> is the count
 /// the operator was shown: when it no longer matches what the filter resolves to, the removal is refused rather
 /// than run against a set that changed underneath them. <c>purgeLedger</c>, with record or everything, also deletes each
 /// record OSDU answered for from the ledger, keeping one line of it. <c>pool</c> names the pool the remove run is queued on.
 /// </summary>
 public sealed record DeliveryRemovalRequest(
-    string? Scope, IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool PurgeLedger = false, string? Pool = null);
+    string? Scope, IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool PurgeLedger = false, string? Pool = null, string? Restriction = null);
 
 /// <summary>
 /// Which of a flow's records a sync reads: those <c>Keys</c> names, every one <c>Filter</c> matches (resolved to keys when the
@@ -514,7 +528,7 @@ public static class DeliveryRerender
 /// A removal was queued as a remove run of the flow (osdu/docs/reference/concepts/removal-and-reversal.md, Removing records
 /// from OSDU): the run to watch, how many records it will act on, and whether it deletes them from the ledger too.
 /// </summary>
-public sealed record DeliveryRemovalAccepted(Guid RunId, string Status, string Scope, int Records, bool PurgeLedger = false);
+public sealed record DeliveryRemovalAccepted(Guid RunId, string Status, string Scope, int Records, bool PurgeLedger = false, string? Restriction = null);
 
 /// <summary>
 /// Records already removed from OSDU to delete from the ledger: those <c>Keys</c> names, every one <c>Filter</c> matches (refused
@@ -537,9 +551,10 @@ public sealed record DeliveryPurgedRecordDto(
 /// <summary>
 /// What a removal would act on, for the confirmation the operator sees before asking for it. <c>Removed</c> counts the
 /// records of the selection the ledger marks removed from OSDU already: those deleting from the ledger alone reaches.
+/// <c>Restricted</c> counts those whose access is restricted: those a lift reaches, and a restriction passes over.
 /// </summary>
 public sealed record DeliveryRemovalPreview(
-    string Scope, int Records, int InOsdu, int NeverDelivered, bool Capped, DeliveryTargetDto Target, int Removed = 0);
+    string Scope, int Records, int InOsdu, int NeverDelivered, bool Capped, DeliveryTargetDto Target, int Removed = 0, int Restricted = 0);
 
 /// <summary>
 /// How a record is addressed in the API and the GUI: the ledger's flow id and the delivery key, together. A delivery key
@@ -581,6 +596,7 @@ public static class DeliveryEndpoints
 
         // The partitions the catalog knows, which every OSDU page is read in.
         DeliveryPartitionEndpoints.Map(delivery);
+        DeliveryAccessRestrictionEndpoints.Map(delivery);
 
         // Where each cached type of a partition comes from, who reads it, and what its last refreshes did.
         DeliveryCacheStreams.Map(delivery);
@@ -948,11 +964,12 @@ public static class DeliveryEndpoints
             stats.Sum(s => s.Stats.Blocked),
             stats.Sum(s => s.Stats.Stranded),
             stats.Sum(s => s.Stats.Adoptable),
-            stats.Sum(s => s.Stats.StepsHeld));
+            stats.Sum(s => s.Stats.StepsHeld),
+            stats.Sum(s => s.Stats.Restricted));
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryRecordDto>>, ProblemHttpResult>> ListRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, int? page, int? pageSize,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, int? page, int? pageSize,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, CancellationToken ct)
     {
         var (flow, unresolved) = await ResolveKeptAsync(db, documents, partitions, ledger, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -961,7 +978,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true));
         if (query is null)
         {
             return invalid!;
@@ -1030,6 +1047,7 @@ public static class DeliveryEndpoints
             RunId = filter.RunId,
             Drifted = filter.Drifted,
             StepHeld = filter.StepHeld,
+            Restricted = filter.Restricted,
         }, null);
     }
 
@@ -1046,19 +1064,19 @@ public static class DeliveryEndpoints
     /// rest of the lookup leaves, and is refused as too broad when they are more than the scan limit.
     /// </summary>
     private static async Task<Results<Ok<PagedResult<DeliveryRecordHitDto>>, ProblemHttpResult>> LookupRecordsAsync(
-        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, [FromQuery] string? partition, int? page, int? pageSize,
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, [FromQuery] string? partition, int? page, int? pageSize,
         CatalogDbContext db, OsduDbContext osdu, ILedger ledger, HttpRequest request, CancellationToken ct)
     {
         // The partition the page reads: the one the request names, else the workbench's.
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true));
         if (query is null)
         {
             return invalid!;
         }
 
-        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld);
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted);
         var (p, size) = PageRequest.Normalize(page, pageSize);
         var wanted = (long)p * size;
         var take = (int)Math.Min(wanted, RecordListing.LookupCandidateLimit);
@@ -1094,7 +1112,7 @@ public static class DeliveryEndpoints
     /// starts, so a refusal or a failure is answered as a problem, never as half a file.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
         IPartitionRegistry partitions, ILedger ledger, TimeProvider clock, HttpResponse response, CancellationToken ct)
     {
@@ -1104,7 +1122,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true));
         if (query is null)
         {
             return invalid!;
@@ -1130,18 +1148,18 @@ public static class DeliveryEndpoints
     /// records than the scan limit is refused as too broad, before any of the file is written.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordLookupAsync(
-        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, [FromQuery] string? partition, CatalogDbContext db,
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, [FromQuery] string? partition, CatalogDbContext db,
         OsduDbContext osdu, ILedger ledger, TimeProvider clock, HttpRequest request, HttpResponse response, CancellationToken ct)
     {
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true));
         if (query is null)
         {
             return invalid!;
         }
 
-        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld);
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted);
         const int reach = RecordListing.LookupCandidateLimit;
         IReadOnlyList<RecordState> found;
         var more = false;
@@ -1317,7 +1335,35 @@ public static class DeliveryEndpoints
         var removedKey = await ledger.GetRemovedKeyAsync(record.FlowId, record.DeliveryKey, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryRecordDetailDto(
             ToDto(record), found?.Pipeline.Id, found?.Pipeline.RepoId, found?.Pipeline.Name, NamedInterface(found), waitsOn, waitedOnBy,
-            KeyColumnsOf(documents, found), NamedPartition(found), parent, readBy, removedKey is null ? null : DeliveryRemovalEndpoints.ToDto(removedKey)));
+            KeyColumnsOf(documents, found), NamedPartition(found), parent, readBy, removedKey is null ? null : DeliveryRemovalEndpoints.ToDto(removedKey),
+            await RestrictionOfAsync(ledger, record, ct).ConfigureAwait(false)));
+    }
+
+    /// <summary>The access restriction <paramref name="record"/> carries, with its registered groups and the ACL it had before; null for a record not restricted.</summary>
+    private static async Task<DeliveryRecordRestrictionDto?> RestrictionOfAsync(ILedger ledger, RecordState record, CancellationToken ct)
+    {
+        if (record.RestrictionId is not { } id)
+        {
+            return null;
+        }
+
+        var registered = (await ledger.AccessRestrictionsAsync([id], ct).ConfigureAwait(false)).GetValueOrDefault(id);
+        RecordAcl? former = null;
+        if (record.RestrictedFromAcl is { } kept)
+        {
+            try
+            {
+                former = RecordAcl.Parse(kept);
+            }
+            catch (DeliveryException)
+            {
+                // A kept ACL that does not read is shown as unknown; lifting the restriction says why it cannot give it back.
+                former = null;
+            }
+        }
+
+        return new DeliveryRecordRestrictionDto(
+            id, registered?.Name, registered?.Description, registered?.Acl.Viewers, registered?.Acl.Owners, record.RestrictedUtc, former?.Viewers, former?.Owners);
     }
 
     /// <summary>
@@ -2372,6 +2418,14 @@ public static class DeliveryEndpoints
                 title: "Not removed from OSDU");
         }
 
+        if (record.Restricted)
+        {
+            return TypedResults.Problem(
+                detail: "The record's access in OSDU is restricted, and the ledger never forgets a restricted record: the next run would deliver it again under the ACL its mapping gives. Lift the restriction first, then delete it from the ledger.",
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Access restricted");
+        }
+
         if ((await ledger.OpenArtifactsAsync(flow.Flow.Id, [new DeliveryKey(key)], ct).ConfigureAwait(false)).Count is > 0 and var open)
         {
             return TypedResults.Problem(
@@ -3121,7 +3175,7 @@ public static class DeliveryEndpoints
             return refused;
         }
 
-        return await EnqueueRemovalAsync(db, dispatcher, flow, scope, purgeLedger, [key], null, 1, request?.Pool, user, ct).ConfigureAwait(false);
+        return await EnqueueRemovalAsync(db, osdu, dispatcher, flow, scope, purgeLedger, request?.Restriction, [key], null, 1, request?.Pool, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3131,7 +3185,7 @@ public static class DeliveryEndpoints
     /// of quietly widening it.
     /// </summary>
     private static async Task<Results<Accepted<DeliveryRemovalAccepted>, ProblemHttpResult>> RemoveRecordsAsync(
-        Guid pipelineId, DeliveryRemovalRequest request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger,
+        Guid pipelineId, DeliveryRemovalRequest request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger,
         IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
         var (flow, problem) = await ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -3161,7 +3215,7 @@ public static class DeliveryEndpoints
                     statusCode: StatusCodes.Status400BadRequest, title: "Too many records");
             }
 
-            return await EnqueueRemovalAsync(db, dispatcher, flow, scope, request.PurgeLedger, request.Keys, null, request.Keys.Count, request.Pool, user, ct).ConfigureAwait(false);
+            return await EnqueueRemovalAsync(db, osdu, dispatcher, flow, scope, request.PurgeLedger, request.Restriction, request.Keys, null, request.Keys.Count, request.Pool, user, ct).ConfigureAwait(false);
         }
 
         if (request.Filter is null)
@@ -3208,7 +3262,7 @@ public static class DeliveryEndpoints
                 statusCode: StatusCodes.Status409Conflict, title: "The selection changed");
         }
 
-        return await EnqueueRemovalAsync(db, dispatcher, flow, scope, request.PurgeLedger, [], query, matched.Count, request.Pool, user, ct).ConfigureAwait(false);
+        return await EnqueueRemovalAsync(db, osdu, dispatcher, flow, scope, request.PurgeLedger, request.Restriction, [], query, matched.Count, request.Pool, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>What a removal would take away, and from where: the confirmation's contents, computed not guessed.</summary>
@@ -3231,6 +3285,7 @@ public static class DeliveryEndpoints
         int records;
         int neverDelivered;
         int removed;
+        int restricted;
         bool capped;
         if (request.Keys is { Count: > 0 })
         {
@@ -3238,6 +3293,7 @@ public static class DeliveryEndpoints
             records = request.Keys.Count;
             neverDelivered = records - found.Values.Count(r => r.LastDeliveredUtc is not null);
             removed = found.Values.Count(r => r.Status == RecordStatus.Deleted);
+            restricted = found.Values.Count(r => r.Restricted);
             capped = records > RemovalLimits.MaxSelection;
         }
         else
@@ -3268,6 +3324,7 @@ public static class DeliveryEndpoints
                 removed = query.Status is null or RecordStatus.Deleted
                     ? Math.Min((await ledger.CountAsync(flow.FlowId, query with { Status = RecordStatus.Deleted }, RemovalLimits.MaxSelection + 1, ct).ConfigureAwait(false)).Count, records)
                     : 0;
+                restricted = Math.Min((await ledger.CountAsync(flow.FlowId, query with { Restricted = true }, RemovalLimits.MaxSelection + 1, ct).ConfigureAwait(false)).Count, records);
             }
             catch (RecordQueryTooBroadException ex)
             {
@@ -3276,7 +3333,7 @@ public static class DeliveryEndpoints
         }
 
         return TypedResults.Ok(new DeliveryRemovalPreview(
-            RemovalScopes.Wire(scope), records, Math.Max(0, records - neverDelivered), neverDelivered, capped, await ToTargetDtoAsync(osdu, flow, ct).ConfigureAwait(false), removed));
+            RemovalScopes.Wire(scope), records, Math.Max(0, records - neverDelivered), neverDelivered, capped, await ToTargetDtoAsync(osdu, flow, ct).ConfigureAwait(false), removed, restricted));
     }
 
     /// <summary>A record listing outside the ledger's bounds (<see cref="RecordListing"/>): the detail says how to narrow it.</summary>
@@ -3285,7 +3342,7 @@ public static class DeliveryEndpoints
 
     private static ProblemHttpResult BadScope(string? scope)
         => TypedResults.Problem(
-            detail: $"'{scope ?? "(none)"}' is not a removal scope. Use record (reversible), previous (the version before the latest written back as current, reversible), history (earlier versions only) or everything (the record and every version).",
+            detail: $"'{scope ?? "(none)"}' is not a removal scope. Use record (reversible), previous (the version before the latest written back as current, reversible), history (earlier versions only), everything (the record and every version), restrict (its access, under a registered restriction, reversible) or unrestrict (its access given back).",
             statusCode: StatusCodes.Status400BadRequest, title: "Invalid removal scope");
 
     /// <summary>A removal that deletes from the ledger what it does not take out of OSDU: refused, since only a record OSDU no longer holds may go.</summary>
@@ -3305,12 +3362,18 @@ public static class DeliveryEndpoints
     /// request names, or the filter matched when it was counted.
     /// </summary>
     private static async Task<Results<Accepted<DeliveryRemovalAccepted>, ProblemHttpResult>> EnqueueRemovalAsync(
-        CatalogDbContext db, IRunDispatcher dispatcher, FlowContext flow, RemovalChoice scope, bool purgeLedger, IReadOnlyList<Guid> keys, RecordQuery? filter,
-        int records, string? pool, ClaimsPrincipal user, CancellationToken ct)
+        CatalogDbContext db, OsduDbContext osdu, IRunDispatcher dispatcher, FlowContext flow, RemovalChoice scope, bool purgeLedger, string? restriction,
+        IReadOnlyList<Guid> keys, RecordQuery? filter, int records, string? pool, ClaimsPrincipal user, CancellationToken ct)
     {
         if (PurgeRefused(scope, purgeLedger) is { } refused)
         {
             return refused;
+        }
+
+        restriction = string.IsNullOrWhiteSpace(restriction) ? null : restriction.Trim();
+        if (await RestrictionRefusedAsync(osdu, flow, scope, restriction, ct).ConfigureAwait(false) is { } unrestricted)
+        {
+            return unrestricted;
         }
 
         var parameters = new RunParameters
@@ -3323,12 +3386,53 @@ public static class DeliveryEndpoints
                 Filter = filter,
                 Scope = scope,
                 PurgeLedger = purgeLedger,
+                Restriction = restriction,
             }.ToJson(),
         };
         var runId = await EnqueueRunAsync(db, dispatcher, flow, parameters, pool, user, ct).ConfigureAwait(false);
         return TypedResults.Accepted(
             $"/api/v1/runs/{runId}",
-            new DeliveryRemovalAccepted(runId, RunStatuses.Queued, RemovalScopes.Wire(scope), records, purgeLedger));
+            new DeliveryRemovalAccepted(runId, RunStatuses.Queued, RemovalScopes.Wire(scope), records, purgeLedger, restriction));
+    }
+
+    /// <summary>
+    /// A restriction that names no registered restriction, or one that is not the flow's partition's, or a removal of another
+    /// scope that names one: refused before a run is queued (osdu/docs/reference/concepts/access-restriction.md). The run checks
+    /// it again on the node, with whether the flow's identity could lift it.
+    /// </summary>
+    private static async Task<ProblemHttpResult?> RestrictionRefusedAsync(OsduDbContext osdu, FlowContext flow, RemovalChoice scope, string? restriction, CancellationToken ct)
+    {
+        if (scope != RemovalChoice.Restrict)
+        {
+            return restriction is null
+                ? null
+                : TypedResults.Problem(
+                    detail: $"Only a removal of scope restrict names an access restriction, not one of {RemovalScopes.Wire(scope)}.",
+                    statusCode: StatusCodes.Status400BadRequest, title: "Invalid removal");
+        }
+
+        if (restriction is null)
+        {
+            return TypedResults.Problem(
+                detail: "A restriction names the registered access restriction whose groups the records' ACL becomes (restriction).",
+                statusCode: StatusCodes.Status400BadRequest, title: "No restriction named");
+        }
+
+        // A flow bound to a partition names it; one whose partition is its header's names it there, unless as a reference the
+        // node resolves, in which case the node finds the restriction in the partition it runs in.
+        var partition = DeliveryDestination.BoundPartition(flow.Flow);
+        if (partition is null || partition.Contains("${", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var registered = await osdu.DeliveryAccessRestrictions.AsNoTracking()
+            .AnyAsync(a => a.Partition == partition && a.Name == restriction, ct).ConfigureAwait(false);
+        return registered
+            ? null
+            : TypedResults.Problem(
+                detail: $"No access restriction named '{restriction}' is registered for partition '{partition}'. Register it under Access restrictions, or name one that is.",
+                statusCode: StatusCodes.Status400BadRequest, title: "Unknown access restriction");
     }
 
     /// <summary>
@@ -3351,10 +3455,11 @@ public static class DeliveryEndpoints
 
         var paths = RemovalEndpoints.Of(flow.Flow, string.IsNullOrEmpty(kind) ? null : kind);
         var route = SqlFlow.Delivery.Engine.Reversals.ReversalRoute.Of(flow.Flow, string.IsNullOrEmpty(kind) ? null : kind);
+        var restriction = SqlFlow.Delivery.Engine.Restrictions.RestrictionRoute.Of(flow.Flow, string.IsNullOrEmpty(kind) ? null : kind);
         return new DeliveryTargetDto(
             flow.Pipeline.Id, flow.Pipeline.Name, target.Endpoint, partition, DeliveryProtocols.Name(target.Protocol),
             target.Auth.Type.ToString(), paths.Record, paths.History, paths.Everything, flow.Flow.Interface, ddms, paths.RecordMethod,
-            route.Restore, route.RestoreRefusal);
+            route.Restore, route.RestoreRefusal, restriction.Call, restriction.Refusal);
     }
 
     /// <summary>The kind the flow's mapping renders, as the repository sync read it; null while the sync has read no valid mapping of that reference.</summary>
@@ -3832,7 +3937,9 @@ public static class DeliveryEndpoints
         // them, whether an adoption may be asked of it, and when one was.
         r.OccupiedTargetId, r.OccupiedTargetVersion, OccupiedHolds.Adoptable(r), r.AdoptRequestedUtc,
         // Whether its flow wrote to OSDU under the id: only a claimed id is read back or removed.
-        r.ClaimedTargetId is not null);
+        r.ClaimedTargetId is not null,
+        // While its access in OSDU is restricted: the restriction, and when OSDU confirmed it.
+        r.RestrictionId, r.RestrictedUtc);
 
     private static DeliveryAttemptDto ToDto(AttemptRecord a) => new(
         a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),

@@ -1,6 +1,6 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CircleAlert, Eraser, Info, Loader2, RotateCcw, Trash2, TriangleAlert, Undo2 } from "lucide-react";
+import { CircleAlert, Eraser, Info, Loader2, Lock, LockOpen, RotateCcw, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,9 @@ import {
   type RemovalScope,
 } from "../../api/delivery";
 import { GONE_FINDING, inventoryApi, type Inventory, type InventoryRemovalPolicy } from "../../api/inventories";
+import { ACCESS_RESTRICTIONS_KEY, accessRestrictionsApi, type AccessRestriction } from "../../api/accessRestrictions";
+import { aclText } from "./accessRestrictionText";
+import { isPartitionId, useActivePartition } from "./activePartition";
 import { CorrelationError } from "@/components/CorrelationError";
 import { counted, findingVisual } from "./inventories/inventoryFormat";
 
@@ -92,6 +96,8 @@ interface LedgerRemovalProps {
   singleLabel?: string;
   /** Every selected record is removed from OSDU already: the dialog opens on deleting it from the ledger. */
   alreadyRemoved?: boolean;
+  /** The dialog opens on lifting the records' access restriction, as a restricted record's page asks. */
+  opensOnLift?: boolean;
   /** A removal that reaches OSDU was queued on a node. */
   onQueued: (accepted: DeliveryRemovalAccepted) => void;
   /** Records already removed from OSDU were deleted from the ledger, here and now. */
@@ -161,6 +167,29 @@ const SCOPES: ScopeChoice[] = [
     call: (target) => target.previousPath,
     refusal: (target) => target.previousRefusal ?? null,
     confirmLabel: "Restore previous version",
+  },
+  {
+    scope: "restrict",
+    title: "Restrict access",
+    effect: "Readable only by a registered restriction's groups. Nothing is deleted.",
+    ledger: "Each record's ACL in OSDU is replaced in place with the restriction's groups: no new version, every version and the "
+      + "search index follow. The ledger keeps the access each had, and keeps the record out of every run, release and deletion "
+      + "from the ledger until the restriction is lifted. Records restricted already, or never delivered, are passed over.",
+    reversible: true,
+    call: (target) => target.restrictPath ?? null,
+    refusal: (target) => target.restrictRefusal ?? (target.restrictPath === undefined ? "The control plane does not restrict access yet." : null),
+    confirmLabel: "Restrict access",
+  },
+  {
+    scope: "unrestrict",
+    title: "Lift the restriction",
+    effect: "Each record gets back the access it had.",
+    ledger: "The ACL each record had before its restriction is written back in place, with no new version; a record OSDU no longer "
+      + "holds is sent again. Lifted, a record follows its source again: the flow's next run plans it.",
+    reversible: true,
+    call: (target) => target.restrictPath ?? null,
+    refusal: (target) => target.restrictRefusal ?? (target.restrictPath === undefined ? "The control plane does not restrict access yet." : null),
+    confirmLabel: "Lift the restriction",
   },
   {
     scope: "history",
@@ -276,11 +305,74 @@ function confirmationWord(target: DeliveryTarget | undefined, flowName: string):
   return target?.dataPartition ?? flowName;
 }
 
-function requestFor(selection: RemovalSelection, scope: RemovalScope, purgeLedger = false): DeliveryRemovalRequest {
+function requestFor(selection: RemovalSelection, scope: RemovalScope, purgeLedger = false, restriction: string | null = null): DeliveryRemovalRequest {
   const purge = purgeLedger && leavesItOut(scope) ? { purgeLedger: true } : {};
+  const restricting = scope === "restrict" && restriction !== null ? { restriction } : {};
   return selection.kind === "keys"
-    ? { scope, keys: selection.keys, ...purge }
-    : { scope, filter: selection.filter, expected: selection.expected, ...purge };
+    ? { scope, keys: selection.keys, ...purge, ...restricting }
+    : { scope, filter: selection.filter, expected: selection.expected, ...purge, ...restricting };
+}
+
+/**
+ * The registered access restriction a restriction sets: the one the partition has when it has one, else the one picked
+ * among several, with each one's groups. No picker is drawn for one, and none for none, which says where one is registered.
+ */
+function RestrictionPicker({ restrictions, picked, onPick, partition, loading, failed, disabled }: {
+  restrictions: AccessRestriction[];
+  picked: AccessRestriction | null;
+  onPick: (name: string) => void;
+  partition: string | null;
+  loading: boolean;
+  failed: string | null;
+  disabled: boolean;
+}) {
+  if (loading) {
+    return <Skeleton className="h-8 w-full rounded-md" />;
+  }
+
+  if (failed !== null) {
+    return <p className="text-[12px] text-destructive" data-testid="removal-restriction-error">{failed}</p>;
+  }
+
+  if (restrictions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/30 px-3 py-2" data-testid="removal-restriction">
+      {restrictions.length === 1
+        ? (
+          <span className="text-[12.5px]">
+            <span className="text-muted-foreground">Under </span>
+            <span className="font-medium" data-testid="removal-restriction-name">{restrictions[0].name}</span>
+            {restrictions[0].description !== null && <span className="text-muted-foreground">{`: ${restrictions[0].description}`}</span>}
+          </span>
+        )
+        : (
+          <div className="flex items-center gap-2">
+            <Label htmlFor="removal-restriction-pick" className="shrink-0 text-[12px] font-normal text-muted-foreground">Under</Label>
+            <Select value={picked?.name ?? ""} onValueChange={onPick} disabled={disabled}>
+              <SelectTrigger id="removal-restriction-pick" size="sm" className="h-8 min-w-0 flex-1 [&>span]:truncate" data-testid="removal-restriction-pick">
+                <SelectValue placeholder={`Pick one of ${partition ?? "the partition"}'s ${restrictions.length} restrictions`} />
+              </SelectTrigger>
+              <SelectContent>
+                {restrictions.map((restriction) => (
+                  <SelectItem key={restriction.restrictionId} value={restriction.name}>{restriction.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      {picked !== null && restrictions.length > 1 && picked.description !== null && (
+        <span className="text-[12px] text-muted-foreground" data-testid="removal-restriction-purpose">{picked.description}</span>
+      )}
+      {picked !== null && (
+        <span className="break-all font-mono text-[11px] text-muted-foreground" data-testid="removal-restriction-groups">
+          {aclText(picked.viewers, picked.owners)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /** A hover panel of facts or an explanation, behind a small info mark beside what it explains. */
@@ -371,16 +463,19 @@ export function RemovalDialog(props: RemovalDialogProps) {
   const ids = props.inventory === undefined ? null : props;
   const of = ids?.inventory ?? null;
   const alreadyRemoved = ledger?.alreadyRemoved ?? false;
+  const opensOnLift = ledger?.opensOnLift ?? false;
   // Gone ids are out of OSDU already: they are brought back there, or left as they are there and removed from the inventory.
   // What one removal removed is only brought back.
   const byRemoval = of?.restoresRemoval !== undefined;
   const fromInventory = of !== null && of.finding === GONE_FINDING;
   const startsOut = alreadyRemoved || fromInventory;
-  const opensOn: OsduChoice = byRemoval || of?.opensOn === "restore" ? "restore" : startsOut ? "none" : "record";
+  const opensOn: OsduChoice = byRemoval || of?.opensOn === "restore" ? "restore" : opensOnLift ? "unrestrict" : startsOut ? "none" : "record";
   const [scope, setScope] = useState<OsduChoice>(opensOn);
   // Deleting here: the records from the ledger, or the gone ids from the inventory.
   const [deleteHere, setDeleteHere] = useState(startsOut && opensOn !== "restore");
   const [typed, setTyped] = useState("");
+  // The access restriction picked among several a partition registers; null until one is.
+  const [picked, setPicked] = useState<string | null>(null);
   const [wasOpen, setWasOpen] = useState(open);
 
   // Every opening starts afresh: on the reversible removal with the ledger left alone, or, for records already removed (and
@@ -392,6 +487,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
       setScope(opensOn);
       setDeleteHere(startsOut && opensOn !== "restore");
       setTyped("");
+      setPicked(null);
     }
   }
 
@@ -400,7 +496,6 @@ export function RemovalDialog(props: RemovalDialogProps) {
   const dropping = fromInventory && deleteHere && !restoring;
   const removalScope: RemovalScope = scope === "none" || scope === "restore" ? "record" : scope;
   const selection = ledger?.selection ?? null;
-  const request = useMemo(() => (selection === null ? null : requestFor(selection, removalScope, purging)), [selection, removalScope, purging]);
   const preview = useQuery({
     queryKey: [
       "delivery", "removal-preview", ledger?.pipelineId ?? null, ledger?.flowScope?.interfaceName ?? null, ledger?.flowScope?.partition ?? null,
@@ -411,6 +506,23 @@ export function RemovalDialog(props: RemovalDialogProps) {
     staleTime: 0,
     gcTime: 0,
   });
+
+  // The access restrictions a restriction picks from: the registered ones of the partition the records' ledger is kept in,
+  // read as soon as the target names it, so the choice says at once whether there is one to pick.
+  const [activeOne] = useActivePartition();
+  const named = preview.data?.target.dataPartition ?? null;
+  const restrictionPartition = ledger?.flowScope?.partition ?? (named !== null && isPartitionId(named) ? named : null) ?? activeOne;
+  const restrictions = useQuery({
+    queryKey: [...ACCESS_RESTRICTIONS_KEY, restrictionPartition],
+    queryFn: () => accessRestrictionsApi.list(restrictionPartition),
+    enabled: open && ledger !== null && preview.data !== undefined && preview.data.target.restrictRefusal == null,
+  });
+  const registered = (restrictions.data ?? []).filter((restriction) => restrictionPartition === null || restriction.partition === restrictionPartition);
+  const restriction = registered.length === 1 ? registered[0] : registered.find((one) => one.name === picked) ?? null;
+  const request = useMemo(
+    () => (selection === null ? null : requestFor(selection, removalScope, purging, restriction?.name ?? null)),
+    [selection, removalScope, purging, restriction],
+  );
 
   const remove = useMutation({
     mutationFn: async () => {
@@ -466,6 +578,8 @@ export function RemovalDialog(props: RemovalDialogProps) {
   const word = of === null ? confirmationWord(target, flowName) : of.inventory.partition;
   const records = of !== null ? of.count : preview.data?.records ?? (selection!.kind === "keys" ? selection!.keys.length : selection!.expected);
   const removed = of !== null ? 0 : preview.data?.removed ?? (alreadyRemoved ? records : 0);
+  // Of the selection, the records whose access is restricted: what a lift reaches, and what a restriction passes over.
+  const restricted = of !== null ? 0 : preview.data?.restricted ?? (opensOnLift ? records : 0);
   // More than one removal takes: the API would refuse it, so the dialog says so and does not offer it.
   const capped = of === null && preview.data?.capped === true;
   const callOf = (option: ScopeChoice) => (of !== null ? inventoryCall(option.scope, of.policy) : target === undefined ? null : option.call(target));
@@ -477,7 +591,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
   const confirmed = !needsTyping || typed.trim() === word;
   // Nothing in OSDU and nothing in the ledger (or the inventory) is no request at all.
   const nothingAsked = scope === "none" && !purging && !dropping;
-  const acting = fromInventory || byRemoval ? records : scope === "none" ? removed : records;
+  const acting = fromInventory || byRemoval ? records : scope === "none" ? removed : scope === "unrestrict" ? restricted : records;
   // Every record of the selection is out of OSDU already: only purging what OSDU keeps of it, or leaving it, still acts on it.
   const allRemoved = records > 0 && removed >= records;
   // Gone ids are brought back or left as they are in OSDU; what one removal removed is only brought back; served ids are
@@ -486,7 +600,9 @@ export function RemovalDialog(props: RemovalDialogProps) {
     ? SCOPES.filter((option) => (byRemoval
       ? option.scope === "restore"
       : fromInventory ? option.scope === "none" || option.scope === "restore" : option.scope === "record" || option.scope === "everything"))
-    : SCOPES.filter((option) => option.scope !== "restore" && (option.scope !== "none" || removed > 0 || scope === "none"));
+    : SCOPES.filter((option) => option.scope !== "restore"
+      && (option.scope !== "none" || removed > 0 || scope === "none")
+      && (option.scope !== "unrestrict" || restricted > 0 || scope === "unrestrict"));
   const known = of !== null || target !== undefined;
 
   const label = of === null ? "" : findingVisual(of.finding).label.toLowerCase();
@@ -630,53 +746,74 @@ export function RemovalDialog(props: RemovalDialogProps) {
               const refusal = !known || option.scope === "none" ? null : refusalFor(option);
               const unavailable: { line: string; why: string } | null = option.scope === "none"
                 ? removed === 0 && !fromInventory ? { line: "None of these is removed yet.", why: "None of these is removed from OSDU yet." } : null
-                : allRemoved && option.scope !== "everything" && option.scope !== "restore"
+                : allRemoved && option.scope !== "everything" && option.scope !== "restore" && option.scope !== "unrestrict"
                   ? { line: "Removed from OSDU already.", why: "Every record here is removed from OSDU already, so there is nothing of it for this to act on." }
-                  : refusal !== null ? { line: "Not available for this flow.", why: refusal } : null;
+                  : refusal !== null
+                    ? { line: "Not available for this flow.", why: refusal }
+                    : option.scope === "restrict" && restrictions.isSuccess && registered.length === 0
+                      ? {
+                        line: `No access restriction is registered${restrictionPartition === null ? "" : ` for ${restrictionPartition}`}.`,
+                        why: "A restriction replaces the records' ACL with a registered restriction's groups. An admin registers one under Access restrictions (the OSDU menu).",
+                      }
+                      : null;
               const call = known ? callOf(option) : null;
               const id = `removal-scope-${option.scope}`;
               return (
-                <ChoiceRow key={option.scope} active={active} permanent={option.reversible === false} unavailable={unavailable !== null}>
-                  <label
-                    htmlFor={id}
-                    className={cn("flex min-w-0 flex-1 items-start gap-2.5 py-2", unavailable === null ? "cursor-pointer" : "cursor-not-allowed")}
-                  >
-                    <RadioGroupItem
-                      id={id}
-                      value={option.scope}
-                      disabled={unavailable !== null}
-                      className={cn("mt-0.5", option.reversible === false && "text-destructive [&_svg]:fill-destructive")}
-                      data-testid={id}
-                    />
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="text-[13px] font-medium leading-tight">{option.title}</span>
-                      <span className="text-[12px] leading-snug text-muted-foreground">
-                        {unavailable !== null
-                          ? unavailable.line
-                          : option.scope === "restore"
-                            ? option.effect
-                            : fromInventory
-                              ? "OSDU no longer serves them."
-                              : option.scope === "none" && records > 1 ? `For the ${removed.toLocaleString()} already removed.` : option.effect}
+                <Fragment key={option.scope}>
+                  <ChoiceRow active={active} permanent={option.reversible === false} unavailable={unavailable !== null}>
+                    <label
+                      htmlFor={id}
+                      className={cn("flex min-w-0 flex-1 items-start gap-2.5 py-2", unavailable === null ? "cursor-pointer" : "cursor-not-allowed")}
+                    >
+                      <RadioGroupItem
+                        id={id}
+                        value={option.scope}
+                        disabled={unavailable !== null}
+                        className={cn("mt-0.5", option.reversible === false && "text-destructive [&_svg]:fill-destructive")}
+                        data-testid={id}
+                      />
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="text-[13px] font-medium leading-tight">{option.title}</span>
+                        <span className="text-[12px] leading-snug text-muted-foreground">
+                          {unavailable !== null
+                            ? unavailable.line
+                            : option.scope === "restore"
+                              ? option.effect
+                              : fromInventory
+                                ? "OSDU no longer serves them."
+                                : option.scope === "none" && records > 1 ? `For the ${removed.toLocaleString()} already removed.` : option.effect}
+                        </span>
                       </span>
+                    </label>
+                    <span className="flex items-center gap-1 pt-1.5">
+                      {option.reversible !== null && <Permanence reversible={option.reversible} />}
+                      {known && (
+                        <InfoTip label={`About ${option.title.toLowerCase()}`} testId={`${id}-info`}>
+                          {unavailable !== null
+                            ? <span>{unavailable.why}</span>
+                            : (
+                              <div className="flex flex-col gap-1.5">
+                                <span>{option.scope === "restore" ? RESTORED : fromInventory ? GONE_LEFT : of !== null ? INVENTORY_KEPT : option.ledger}</span>
+                                {call !== null && <span className="break-all font-mono text-[11px] text-muted-foreground">{call}</span>}
+                              </div>
+                            )}
+                        </InfoTip>
+                      )}
                     </span>
-                  </label>
-                  <span className="flex items-center gap-1 pt-1.5">
-                    {option.reversible !== null && <Permanence reversible={option.reversible} />}
-                    {known && (
-                      <InfoTip label={`About ${option.title.toLowerCase()}`} testId={`${id}-info`}>
-                        {unavailable !== null
-                          ? <span>{unavailable.why}</span>
-                          : (
-                            <div className="flex flex-col gap-1.5">
-                              <span>{option.scope === "restore" ? RESTORED : fromInventory ? GONE_LEFT : of !== null ? INVENTORY_KEPT : option.ledger}</span>
-                              {call !== null && <span className="break-all font-mono text-[11px] text-muted-foreground">{call}</span>}
-                            </div>
-                          )}
-                      </InfoTip>
-                    )}
-                  </span>
-                </ChoiceRow>
+                  </ChoiceRow>
+                  {/* The restriction to set is picked under its choice, where the choice acts. */}
+                  {option.scope === "restrict" && active && ledger !== null && (
+                    <RestrictionPicker
+                      restrictions={registered}
+                      picked={restriction}
+                      onPick={setPicked}
+                      partition={restrictionPartition}
+                      loading={restrictions.isLoading}
+                      failed={restrictions.isError ? (isApiError(restrictions.error) ? restrictions.error.detail ?? restrictions.error.title : String(restrictions.error)) : null}
+                      disabled={busy}
+                    />
+                  )}
+                </Fragment>
               );
             })}
           </RadioGroup>
@@ -779,10 +916,21 @@ export function RemovalDialog(props: RemovalDialogProps) {
 
         {fromInventory && !restoring && rechecksNote}
 
-        {scope !== "none" && preview.data !== undefined && preview.data.neverDelivered > 0 && (
+        {scope !== "none" && scope !== "unrestrict" && preview.data !== undefined && preview.data.neverDelivered > 0 && (
           <p className="flex items-start gap-2 text-[12px] text-muted-foreground" data-testid="removal-never-delivered">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
-            {`${preview.data.neverDelivered.toLocaleString()} of these were never delivered: they are asked for, and come back as already gone.`}
+            {scope === "restrict"
+              ? `${preview.data.neverDelivered.toLocaleString()} of these were never delivered: OSDU holds no access of theirs to restrict, and they are passed over.`
+              : `${preview.data.neverDelivered.toLocaleString()} of these were never delivered: they are asked for, and come back as already gone.`}
+          </p>
+        )}
+
+        {scope === "restrict" && restricted > 0 && (
+          <p className="flex items-start gap-2 text-[12px] text-muted-foreground" data-testid="removal-restricted-already">
+            <Lock className="mt-0.5 size-3.5 shrink-0" />
+            {records === 1
+              ? "Its access is restricted already: it is passed over. Lift the restriction first to restrict it under another."
+              : `${restricted.toLocaleString()} of these are restricted already: they are passed over. Lift a restriction first to restrict a record under another.`}
           </p>
         )}
 
@@ -815,13 +963,18 @@ export function RemovalDialog(props: RemovalDialogProps) {
             Cancel
           </Button>
           <Button
-            variant={scope === "previous" || restoring ? "default" : "destructive"}
+            variant={scope === "previous" || scope === "restrict" || scope === "unrestrict" || restoring ? "default" : "destructive"}
             size="sm"
             onClick={() => (scope === "none" && !fromInventory ? purge.mutate() : remove.mutate())}
-            disabled={busy || nothingAsked || !confirmed || acting === 0 || capped || (ledger !== null && preview.isError) || refused !== null}
+            disabled={busy || nothingAsked || !confirmed || acting === 0 || capped || (ledger !== null && preview.isError) || refused !== null
+              || (scope === "restrict" && restriction === null)}
             data-testid="removal-confirm"
           >
-            {busy ? <Loader2 className="animate-spin" /> : scope === "previous" ? <Undo2 /> : restoring ? <RotateCcw /> : scope === "none" ? <Eraser /> : null}
+            {busy
+              ? <Loader2 className="animate-spin" />
+              : scope === "previous"
+                ? <Undo2 />
+                : scope === "restrict" ? <Lock /> : scope === "unrestrict" ? <LockOpen /> : restoring ? <RotateCcw /> : scope === "none" ? <Eraser /> : null}
             {confirmLabel}
             {acting > 1 ? ` (${acting.toLocaleString()})` : ""}
           </Button>

@@ -502,6 +502,20 @@ public interface IDeliveryProtocol
         var refused = new DeliveryException($"The {DeliveryProtocols.Name(Kind)} route cannot write an earlier version of a record back.");
         return Task.FromResult<IReadOnlyList<RestoreResult>>(restores.Select(r => new RestoreResult(r, null, null, refused)).ToList());
     }
+
+    /// <summary>
+    /// How the route reads and replaces its records' access in OSDU (osdu/docs/reference/concepts/access-restriction.md), or
+    /// null for a route whose records' access is not one storage ACL: a route that registers datasets beside the record, keeps
+    /// rows or objects outside storage, or cannot reach the storage service. Which records of a route that answers it can be
+    /// restricted is <c>RestrictionRoute</c>'s to say, before anything is asked of OSDU.
+    /// </summary>
+    IRecordAccess? Access => null;
+
+    /// <summary>
+    /// Why the route answers no <see cref="Access"/> for a reason of its own, which the flow's route alone does not say, as a
+    /// clause a refusal carries; null when it says nothing beyond its route.
+    /// </summary>
+    string? AccessRefusal => null;
 }
 
 /// <summary>One record a reversal writes back: its OSDU id, the version to write back as OSDU held it, and what OSDU holds now.</summary>

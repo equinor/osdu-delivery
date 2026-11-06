@@ -22,6 +22,8 @@ related:
   - delivery-table-record-identity
   - delivery-table-submission
   - delivery-table-lease
+  - delivery-table-access-restriction
+  - delivery-concept-access-restriction
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
@@ -34,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
   - osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Restrictions.cs
 ---
 
 # osdu.Record: the current state of one deliverable of one flow, and the work waiting to be sent
@@ -98,6 +101,9 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `PendingParentVersion` | `bigint` | yes | The version of the parent the pending work was rendered from; null when it read none. |
 | `ChildLinkKey` | `nvarchar(500)` | yes | Collation `Latin1_General_100_BIN2`. For a record whose render looked for its children: the unique segment their OSDU ids share with the id the record's key gives, everything after the entity type; null for a record whose mapping links none. Written as the render is recorded (work queued, a hold, a render that sent nothing), so a child landing plans the record again ([Child records](../flow/mapping-child.md#what-the-ledger-keeps)). Added by migration `RecordChildLinks` (module version 1.59.0). |
 | `HeldSteps` | `nvarchar(600)` | yes | The enrichments of the record's mapping that held and were set aside on the record's last render (`onHold: step`), comma-separated in the order they render: the record went ahead with what each added to its last delivery. Null when none was. Written as the render is recorded (work queued, a hold, a render that sent nothing), and cleared when the record is removed ([An enrichment set aside on its hold](../flow/enrich-holds.md#what-the-ledger-keeps)). Added by migration `RecordHeldSteps` (module version 1.64.0). |
+| `RestrictionId` | `int` | yes | The registered access restriction ([`osdu.AccessRestriction`](access-restriction.md)) whose groups replaced the record's ACL in OSDU, or null for a record whose access is its own ([Restricting access](../concepts/access-restriction.md)). Set before the ACL is patched, so a restriction whose answer was lost still keeps the record out: while it is set, no run delivers the record, no release sends it, a removal's extra step and deleting the ledger never forget it, and a step back or a reversal passes it over, until the restriction is lifted. A removal keeps it, so a restricted record taken out of OSDU is not delivered again. Added by migration `RecordAccessRestrictions` (module version 1.65.0). |
+| `RestrictedUtc` | `datetime2` | yes | When OSDU confirmed the record's ACL was replaced with the restriction's groups; null while the restriction is asked and OSDU's answer is not known (asking again, or lifting it, settles it), and for a record not restricted. Added by migration `RecordAccessRestrictions` (module version 1.65.0). |
+| `RestrictedFromAcl` | `nvarchar(4000)` | yes | The ACL OSDU held for the record before it was restricted, as `{"viewers":[...],"owners":[...]}`: what lifting the restriction writes back. Kept from the first time the restriction was asked, whatever OSDU answered then, and cleared with the restriction. Added by migration `RecordAccessRestrictions` (module version 1.65.0). |
 | `PendingRenderContext` | `nvarchar(max)` | yes | The render context of the pending work. |
 | `PendingSourceFingerprint` | `nvarchar(200)` | yes | The ingestion fingerprint of the pending work, or of the state a held, failed or deleted record was left in. |
 | `PendingSourceModifiedUtc` | `datetime2` | yes | The business version of the pending work, or of the state a held, failed or deleted record was left in. |
@@ -135,6 +141,8 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `IX_Record_PartitionId_ParentId` | `PartitionId`, `ParentId` | index | `[ParentId] IS NOT NULL` | none | The records of a partition, of every flow, that read a parent that just landed, which are planned again ([Parent records](../flow/mapping-parent.md#when-the-parent-changes)). |
 | `IX_Record_PartitionId_ChildLinkKey` | `PartitionId`, `ChildLinkKey` | index | `[ChildLinkKey] IS NOT NULL` | none | The records of a partition, of every flow, that link a child that just landed, found by the unique segment of its id, which are planned again ([Child records](../flow/mapping-child.md#when-a-child-lands)). |
 | `IX_Record_PartitionId_FlowId_HeldSteps` | `PartitionId`, `FlowId` | index | `[HeldSteps] IS NOT NULL` | `HeldSteps` | The records of a flow an enrichment was set aside on, and no others: a flow's Records tab's and the Records page's **Step held** (a range of the partition when no flow is picked), and the flow's `stepsHeld` count ([An enrichment set aside on its hold](../flow/enrich-holds.md#what-the-ledger-keeps)). |
+| `IX_Record_PartitionId_FlowId_Restricted` | `PartitionId`, `FlowId` | index | `[RestrictionId] IS NOT NULL` | `RestrictionId` | The records of a flow whose access in OSDU is restricted, and no others: a flow's Records tab's and the Records page's **Restricted**, and the flow's `restricted` count ([Restricting access](../concepts/access-restriction.md)). |
+| `IX_Record_RestrictionId` | `RestrictionId` | index | `[RestrictionId] IS NOT NULL` | none | A registered restriction's records, counted on the Access restrictions page and in the transaction that refuses removing a restriction while any record carries it. |
 | `IX_Record_ClaimedTargetId` | `ClaimedTargetId` | unique | `[ClaimedTargetId] IS NOT NULL` | none | One OSDU record, one flow: the database refuses a second claim on an id, whatever races the intakes run. An id names its partition, so it stays unique across every partition. |
 | `IX_Record_LastSubmissionId_WorkBatch` | `LastSubmissionId`, `WorkBatch` | index | none | none | A work batch's claim marking the batch's due records, a slice at a time however large the batch. |
 | `IX_Record_LeaseOwner` | `LeaseOwner` | index | none | none | The records a lease holds: the ones a checkpoint or a close hands back, and the ones a submission waits on. |
@@ -167,8 +175,8 @@ this table through its status indexes on every call; nothing keeps a running tot
 
 - **Written** by the intake, which stages and queues records a slice of at most 1,000 at a time, and by the lease
   applying what a worker appended ([`osdu.RecordEvent`](record-event.md)): a worker does not write this table while it
-  delivers. Releases, adoptions, redeliveries, removals, reversals, syncs, cache rollouts, and parents and children that land write it
-  through the ledger (`OsduLedger.cs`, `OsduLedger.Adoptions.cs`, `OsduLedger.Parents.cs`, `OsduLedger.Children.cs`, `SqlServerLedgerBulk.cs`,
+  delivers. Releases, adoptions, redeliveries, removals, restrictions, reversals, syncs, cache rollouts, and parents and children that land write it
+  through the ledger (`OsduLedger.cs`, `OsduLedger.Adoptions.cs`, `OsduLedger.Restrictions.cs`, `OsduLedger.Parents.cs`, `OsduLedger.Children.cs`, `SqlServerLedgerBulk.cs`,
   `SqlServerLedgerBulk.Adoptions.cs`), each
   writing an attempt or an activity beside the change.
 - **Read** by the worker's claims, every plan's change gates, a flow's statistics and Records and Issues tabs, the record

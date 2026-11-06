@@ -417,6 +417,15 @@ public sealed class OsduRecordProtocol : IDeliveryProtocol
     /// <summary>The writer a restore goes through: this route's paths and batching, without the keys a delivery carries forward.</summary>
     private OsduRecordProtocol? _restorer;
 
+    /// <summary>
+    /// The records' access, through the storage service the route writes to: the metadata patch goes to the record path the
+    /// route writes with, and the current ACL is read with the batched read it verifies with
+    /// (osdu/docs/reference/concepts/access-restriction.md).
+    /// </summary>
+    public IRecordAccess? Access => _access ??= new StorageRecordAccess(_client, _options.RecordPath ?? DefaultRecordPath, _options.VerifyBatchPath ?? DefaultVerifyBatchPath);
+
+    private StorageRecordAccess? _access;
+
     private LegalTagValidator? _legal;
 
     /// <summary>Asks the legal service under this target, when the flow's target reaches it (see <see cref="LegalTagValidator.PathFor"/>).</summary>

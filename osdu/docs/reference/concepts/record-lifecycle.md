@@ -38,6 +38,7 @@ related:
   - delivery-flow-mapping-assertions
   - delivery-flow-mapping-parent
   - delivery-flow-mapping-child
+  - delivery-concept-access-restriction
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
@@ -93,6 +94,9 @@ records into issues, and what releasing a record does. For removals and reversal
 | `waiting` | Its document refers to a record another record of the ledger holds and has not delivered. | No | That record lands: `pending`. Nothing is charged. |
 | `deleted` | Removed from OSDU by an operator, by a reversal of the run that created it, or by a removal flow because its source no longer holds the key. | Not after a removal; yes after a reversal | The flow's next run reads its row by key and delivers it again, since the removal asked for it (removal), or a release (reversal). A record a removal flow took out is kept out instead: only a row newer than its removal, the key back in the source, or **Deliver again** brings it back ([Removal flow](../flow/removal.md#delivering-a-record-again)). |
 | `reverted` | A reversal, or a step back to the previous version, wrote an earlier version back. | Yes | Its source row changes, or a release makes it `delivered` again. |
+
+A record whose access in OSDU is restricted, whatever its status, is left as it is by every plan, release, step back and
+reversal, and kept by the ledger, until the restriction is lifted ([Restricting access](access-restriction.md)).
 
 A **blocked** record is skipped by every later plan as `blocked`, with the reason
 `<status> since <time>: <last error>; release the record or change the source to plan it again`, until either its source
@@ -178,6 +182,8 @@ OSDU answered and the correlation id every request carried ([The delivery ledger
 | `historypurged` | A removal purged the record's earlier versions; the record itself is still live. |
 | `restored` | An earlier version was written back, by a reversal or a step back to the previous version. |
 | `undone` | What an unfinished delivery left in OSDU was undone. |
+| `restricted` | The record's ACL in OSDU was replaced with a registered access restriction's groups; its status and version stay ([Restricting access](access-restriction.md)). |
+| `unrestricted` | Its restriction was lifted: the ACL it had was given back, or nothing was asked of OSDU because it no longer held the record. |
 
 | Phase | Meaning |
 | --- | --- |
@@ -190,6 +196,7 @@ OSDU answered and the correlation id every request carried ([The delivery ledger
 | `delete`, `purge-history` | A removal at the `record` or `everything` scope, or at the `history` scope. |
 | `source-removed` | A removal flow took the record out of OSDU (`deleted`) or settled it in the ledger (`skipped`), because its source no longer holds the key; its result names the removal flow, the removal run, why and as of when, and the file and row that said so ([Removal flow](../flow/removal.md#taking-out-what-the-source-removed)). |
 | `restore-previous` | An operator stepped the record back to the version before the latest. |
+| `restrict`, `lift-restriction` | An operator restricted the record's access in OSDU, or lifted its restriction ([Restricting access](access-restriction.md)). |
 | `reassign-id` | An operator gave the record a new OSDU id because OSDU lost the one it claimed; its result names both (outcome `skipped`). |
 | `adopt` | A run took over the record OSDU already held at the id the record's key makes, as an operator asked (worker `intake`, outcome `skipped`); its result names the id and the version OSDU held. See [Adopting a record OSDU already holds](#adopting-a-record-osdu-already-holds). |
 | `reverse` | What a reversal did to the record. |

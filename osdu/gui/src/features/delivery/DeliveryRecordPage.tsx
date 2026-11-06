@@ -17,7 +17,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { IdChip } from "@/components/IdChip";
 import { Page } from "@/components/Page";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
-import { BlockedBadge, RecordStatusBadge } from "./DeliveryBadges";
+import { BlockedBadge, RecordStatusBadge, RestrictedBadge } from "./DeliveryBadges";
 import { RecordJourney, RecordMilestones } from "./RecordJourney";
 import { RecordName } from "./RecordName";
 import { RECORD_ARTIFACTS_SHOWN, RecordArtifacts, RecordUndoNotice } from "./RecordArtifacts";
@@ -34,6 +34,7 @@ import { RecordSourceTab } from "./RecordSourceTab";
 import { RedeliverDialog } from "./RedeliverDialog";
 import { ReleaseDialog } from "./ReleaseDialog";
 import { RemovalDialog } from "./RemovalDialog";
+import { removalQueuedText } from "./removalQueued";
 import { useRecordOsduRead } from "./useRecordOsduRead";
 import { shortId } from "./idTail";
 
@@ -87,6 +88,8 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const [redeliverOpen, setRedeliverOpen] = useState(false);
   const [adoptOpen, setAdoptOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  // Whether the removal dialog opens on lifting the record's restriction, as the restriction's line asks, or on removing it.
+  const [removeLifts, setRemoveLifts] = useState(false);
   // A render of the record from its current source row, with a read of what OSDU holds beside it, shown on the Render
   // tab where it was asked for; kept here so it is still there after a look at another tab.
   const [renderResults, setRenderResults] = useState<RenderResults | null>(null);
@@ -256,6 +259,8 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const busy = verify.isPending || sync.isPending || release.isPending || adopt.isPending || osdu.pending || readSource.isPending
     || render.isPending;
   const canActOnTarget = wroteToOsdu(record);
+  // A record whose access in OSDU is restricted is sent by nothing until the restriction is lifted.
+  const restricted = record.restrictionId != null;
   // The record's ledger: the interface of its source and the partition it delivers to, which every view of it acts in.
   const flowScope: DeliveryFlowScope = { interfaceName: detail.interface ?? null, partition: detail.partition ?? null };
   const flowLabel = detail.flowName === null ? undefined : ledgerLabel(detail.flowName, { interfaceName: flowScope.interfaceName });
@@ -266,6 +271,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="min-w-0 break-words text-lg font-semibold leading-7">{record.label ?? record.sourceKey}</h1>
           <RecordStatusBadge status={record.status} />
+          {record.restrictionId != null && <RestrictedBadge asked={record.restrictedUtc == null} />}
           {record.blocked && <BlockedBadge />}
           <div className="grow" />
           <div className="flex flex-wrap items-center gap-2">
@@ -295,7 +301,16 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
               <ShieldCheck />
               Verify
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setRedeliverOpen(true)} disabled={busy || detail.pipelineId === null} title="Bring the record up to date from its current source row, or send it again" data-testid="record-redeliver">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRedeliverOpen(true)}
+              disabled={busy || detail.pipelineId === null || restricted}
+              title={restricted
+                ? "Its access in OSDU is restricted: no run delivers it until the restriction is lifted"
+                : "Bring the record up to date from its current source row, or send it again"}
+              data-testid="record-redeliver"
+            >
               <RotateCcw />
               Redeliver
             </Button>
@@ -304,8 +319,10 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
                 variant="outline"
                 size="sm"
                 onClick={() => release.mutate()}
-                disabled={busy}
-                title="Let the record go again: a document it kept is sent as it is; otherwise the next run plans it from its row"
+                disabled={busy || restricted}
+                title={restricted
+                  ? "Its access in OSDU is restricted: no release sends it until the restriction is lifted"
+                  : "Let the record go again: a document it kept is sent as it is; otherwise the next run plans it from its row"}
                 data-testid="record-release"
               >
                 <Unlock />
@@ -334,7 +351,10 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
             <Button
               variant="destructive-outline"
               size="sm"
-              onClick={() => setRemoveOpen(true)}
+              onClick={() => {
+                setRemoveLifts(false);
+                setRemoveOpen(true);
+              }}
               // A record removed from OSDU already is still the dialog's: deleting it from the ledger starts there.
               disabled={busy || record.targetId === null || detail.pipelineId === null}
               title={record.status === "deleted" ? "Removed from OSDU: delete it from the ledger" : "Remove from OSDU, and from the ledger if you choose"}
@@ -375,6 +395,13 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           removedKey={removedKeyOf(detail.removedKey)}
           onLift={canOperate ? () => lift.mutate() : undefined}
           lifting={lift.isPending}
+          restriction={detail.restriction}
+          onLiftRestriction={canOperate && detail.pipelineId !== null
+            ? () => {
+              setRemoveLifts(true);
+              setRemoveOpen(true);
+            }
+            : undefined}
         />
         <RecordUndoNotice artifacts={artifacts.data} onOpen={() => setTab("artifacts")} />
       </Card>
@@ -485,18 +512,16 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           flowName={ledgerLabel(detail.flowName ?? "this flow", flowScope)}
           selection={{ kind: "keys", keys: [deliveryKey] }}
           singleLabel={record.label ?? record.sourceKey}
-          alreadyRemoved={record.status === "deleted"}
+          // A restricted record is never deleted from the ledger, so one removed from OSDU opens on the choices that act on it.
+          alreadyRemoved={record.status === "deleted" && record.restrictionId == null}
+          opensOnLift={removeLifts}
           onPurged={(result) => {
             toast.success(result.summary);
             refresh();
           }}
           onQueued={(accepted) => {
             // A remove run of the flow: the record's own reads poll, so its state moves once the run has removed it.
-            toast.success(
-              accepted.scope === "previous"
-                ? "Restoring the previous version: queued as a run."
-                : accepted.purgeLedger ? "Removal, then deletion from the ledger: queued as a run." : "Removal: queued as a run.",
-              { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+            toast.success(removalQueuedText(accepted, false), { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
             refresh();
           }}
         />

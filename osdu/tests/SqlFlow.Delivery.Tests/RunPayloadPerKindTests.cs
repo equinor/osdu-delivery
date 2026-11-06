@@ -164,7 +164,7 @@ public sealed class RunPayloadPerKindTests
             Assert.Throws<SqlFlowException>(() => new DownloadFlowKind(Loader).ValidateParameters(
                 new RunParameters { Operation = DeliveryOperations.Plan, Payload = Payloads[DeliveryRunPayload.ForceProperty] })).Message);
         Assert.Equal(
-            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, maxRecords, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, filter and purgeLedger.",
+            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, maxRecords, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, restriction, filter and purgeLedger.",
             Refusal(new DeliveryFlowKind(Loader), Payloads[DeliveryRunPayload.EntriesProperty]));
     }
 
@@ -241,7 +241,7 @@ public sealed class RunPayloadPerKindTests
             StringComparison.Ordinal);
 
         Assert.Equal(
-            "payload scope is required by the remove operation: name how much of each record goes, record, previous, history or everything.",
+            "payload scope is required by the remove operation: name how much of each record goes, record, previous, history or everything, or restrict or unrestrict its access.",
             Refusal("{" + Key + "}", DeliveryOperations.Remove));
         Assert.StartsWith("payload names no records for the remove operation", Refusal("""{"scope":"record"}""", DeliveryOperations.Remove), StringComparison.Ordinal);
         foreach (var (json, why) in new[]
@@ -266,7 +266,7 @@ public sealed class RunPayloadPerKindTests
             Refusal("""{"confirm":"dev","purgeLedger":true}""", DeliveryOperations.DeleteLedger),
             StringComparison.Ordinal);
         Assert.Contains(
-            "payload scope must be one of record, previous, history or everything",
+            "payload scope must be one of record, previous, history, everything, restrict or unrestrict",
             Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"scope":"purge"}""")).Message,
             StringComparison.Ordinal);
         Assert.Contains(

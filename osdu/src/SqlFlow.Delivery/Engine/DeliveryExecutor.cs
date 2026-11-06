@@ -461,7 +461,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
                 var removing = payload.Scope ?? throw new DeliveryException("A remove run names how much of each record goes (payload scope), and this one names none.");
                 var removal = await runtime.RemoveAsync(
                     keys.Count > 0 ? RemovalSelection.Of(keys) : RemovalSelection.Of(payload.Filter ?? throw new DeliveryException("A remove run names its records (payload recordKeys or filter), and this one names none.")),
-                    removing, payload.PurgeLedger, ct).ConfigureAwait(false);
+                    removing, payload.PurgeLedger, payload.Restriction, ct).ConfigureAwait(false);
                 LogOutcome(log, $"remove: {removal.Describe()}");
                 var removed = RemoveRunOutcome.From(operation, removal);
                 return removed.Failed > 0 ? throw new RecordsNotRemovedException(flow, removed) : removed;
@@ -1165,7 +1165,16 @@ public sealed record RemoveRunOutcome(
     IReadOnlyList<RemovalRecordResult> Records, bool Truncated)
 {
     /// <summary>The run's headline count on the run row (<c>result.rowsLoaded</c>): the records it changed in OSDU.</summary>
-    public long RowsLoaded => Removed + Restored;
+    public long RowsLoaded => Removed + Restored + Restricted + Lifted;
+
+    /// <summary>The records whose access the run restricted.</summary>
+    public int Restricted { get; init; }
+
+    /// <summary>The records whose restriction the run lifted.</summary>
+    public int Lifted { get; init; }
+
+    /// <summary>The access restriction a restriction was made under; null for any other scope.</summary>
+    public string? Restriction { get; init; }
 
     /// <summary>What unfinished deliveries of the records left, undone before anything was removed.</summary>
     public UndoSummary Undone { get; init; } = UndoSummary.Empty;
@@ -1186,6 +1195,9 @@ public sealed record RemoveRunOutcome(
             Undone = summary.Undone,
             CacheAfter = summary.CacheAfter,
             Summary = summary.Describe(),
+            Restricted = summary.Restricted,
+            Lifted = summary.Lifted,
+            Restriction = summary.Restriction,
         };
     }
 }
@@ -1215,7 +1227,10 @@ public sealed class RecordsNotRemovedException : DeliveryException
         var failed = outcome.Records.Where(r => r.Outcome == "failed").Take(Named)
             .Select(r => $"{r.Label ?? r.SourceKey ?? r.DeliveryKey.ToString("D")}: {r.Detail}")
             .ToList();
-        var what = outcome.Scope == RemovalScopes.Wire(RemovalChoice.Previous) ? "put back at the version before the latest" : "removed from OSDU";
+        var what = outcome.Scope == RemovalScopes.Wire(RemovalChoice.Previous) ? "put back at the version before the latest"
+            : outcome.Scope == RemovalScopes.Wire(RemovalChoice.Restrict) ? "restricted in OSDU"
+            : outcome.Scope == RemovalScopes.Wire(RemovalChoice.Unrestrict) ? "given back their access in OSDU"
+            : "removed from OSDU";
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{outcome.Failed} of {outcome.Selected} record(s) of '{flow.Label}' could not be {what}: {string.Join("; ", failed)}{(outcome.Failed > failed.Count ? $"; and {outcome.Failed - failed.Count} more" : string.Empty)}. {outcome.Summary}. Each record's history says why; ask for the ones that failed again once what refused them is settled.");

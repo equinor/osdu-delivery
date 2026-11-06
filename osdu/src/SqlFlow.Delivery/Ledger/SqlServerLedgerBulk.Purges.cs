@@ -13,8 +13,9 @@ namespace SqlFlow.Delivery.Ledger;
 /// </summary>
 internal static partial class SqlServerLedgerBulk
 {
-    // One slice of records deleted from the ledger. A removal's extra step and the ledger-only deletion take only a record
-    // OSDU no longer holds, one the ledger marks deleted; deleting the whole ledger (@everyState) takes every record, after
+    // One slice of records deleted from the ledger. No record whose access in OSDU is restricted is ever deleted from the
+    // ledger, which would forget the restriction (osdu/docs/reference/concepts/access-restriction.md). A removal's extra step
+    // and the ledger-only deletion take only a record OSDU no longer holds, one the ledger marks deleted; deleting the whole ledger (@everyState) takes every record, after
     // the run that deletes it removed from OSDU every one OSDU held. Either way only a record no lease holds goes, so no work
     // is in flight on it and no lease event waits to be applied to it, and only one with no artifact an undo has still to
     // settle (osdu/docs/reference/concepts/removal-and-reversal.md, Deleting removed records from the ledger), since the
@@ -36,7 +37,7 @@ internal static partial class SqlServerLedgerBulk
         FROM (SELECT DISTINCT CAST(j.[value] AS uniqueidentifier) AS [DeliveryKey] FROM OPENJSON(@keys) AS j) AS k
         INNER JOIN [osdu].[Record] AS r WITH (UPDLOCK, FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
             ON r.[PartitionId] = @partitionId AND r.[FlowId] = @flowId AND r.[DeliveryKey] = k.[DeliveryKey]
-        WHERE (@everyState = 1 OR r.[Status] = N'deleted') AND r.[LeaseOwner] IS NULL
+        WHERE (@everyState = 1 OR r.[Status] = N'deleted') AND r.[LeaseOwner] IS NULL AND r.[RestrictionId] IS NULL
             AND NOT EXISTS (
                 SELECT 1 FROM [osdu].[Artifact] AS o
                 WHERE o.[PartitionId] = @partitionId AND o.[FlowId] = @flowId AND o.[DeliveryKey] = r.[DeliveryKey]

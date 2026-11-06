@@ -1,5 +1,5 @@
 import {
-  AlertTriangle, Ban, CheckCircle2, CircleDashed, Hourglass, Loader2, PauseCircle, Trash2, Undo2, XCircle, type LucideIcon,
+  AlertTriangle, Ban, CheckCircle2, CircleDashed, Hourglass, Loader2, Lock, PauseCircle, Trash2, Undo2, XCircle, type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { DeliveryRecordStatus, DeliverySubmissionStatus, DeliveryVerifyOutcome } from "../../api/delivery";
@@ -72,6 +72,25 @@ export function BlockedBadge() {
     <Badge variant="secondary" className="bg-warning/15 text-warning" data-testid="record-blocked">
       <Ban className="size-3" />
       blocked
+    </Badge>
+  );
+}
+
+/**
+ * A record whose access in OSDU is restricted under a registered access restriction: a neutral chip with its glyph, since a
+ * restriction is something an operator chose, not a problem. `asked` marks one whose answer from OSDU is not known yet.
+ */
+export function RestrictedBadge({ asked = false }: { asked?: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      title={asked
+        ? "Restricting its access was asked and OSDU's answer is not known: no run delivers it, and asking again or lifting the restriction settles it"
+        : "Its access in OSDU is restricted: readable only by the restriction's groups, and delivered by no run until the restriction is lifted"}
+      data-testid="record-restricted"
+    >
+      <Lock className="size-3 text-muted-foreground" aria-hidden />
+      {asked ? "restriction asked" : "restricted"}
     </Badge>
   );
 }

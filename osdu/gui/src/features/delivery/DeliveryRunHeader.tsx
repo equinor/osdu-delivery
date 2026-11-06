@@ -5,7 +5,9 @@ import type { RunDetail } from "@/api/types";
 import { DetailPair } from "@/components/DetailPair";
 import { IdChip } from "@/components/IdChip";
 import { ledgerLabel } from "../../api/delivery";
-import { DELIVERING_OPERATIONS, runRecordCounts, runRemovalCounts, runRequest, runResult, runScope, runSubmissionId } from "./runOutcome";
+import {
+  DELIVERING_OPERATIONS, runRecordCounts, runRemovalCounts, runRequest, runResult, runScope, runSubmissionId, type RunRemovalCounts,
+} from "./runOutcome";
 import { ReverseButton } from "./ReverseButton";
 import { shortId } from "./idTail";
 
@@ -88,21 +90,37 @@ export function DeliveryRunMeta({ run }: { run: RunDetail }) {
     );
 }
 
+/** What a remove run changed of each record, by its scope: the headline count's label and value. */
+function removalHeadline(scope: string | null, counts: RunRemovalCounts | null): { label: string; value: number | null } {
+  switch (scope) {
+    case "previous":
+      return { label: "Restored", value: counts?.restored ?? null };
+    case "restrict":
+      return { label: "Restricted", value: counts?.restricted ?? null };
+    case "unrestrict":
+      return { label: "Lifted", value: counts?.lifted ?? null };
+    default:
+      return { label: "Removed", value: counts?.removed ?? null };
+  }
+}
+
 /**
- * What a remove run did to the records it selected: removed (or, a step back, restored), already gone, skipped, failed, and
- * deleted from the ledger when it was asked to.
+ * What a remove run did to the records it selected: removed (or, a step back, restored; a restriction, restricted; a lift,
+ * lifted), already gone, skipped, failed, and deleted from the ledger when it was asked to.
  */
 function RemovalCounts({ run }: { run: RunDetail }) {
   const counts = runRemovalCounts(runResult(run));
   const request = runRequest(run);
-  const previous = request.removalScope === "previous";
+  // Only a removal takes a record out of OSDU, so only it finds one already gone.
+  const removing = request.removalScope !== "previous" && request.removalScope !== "restrict" && request.removalScope !== "unrestrict";
+  const headline = removalHeadline(request.removalScope, counts);
   return (
     <>
       <DetailPair label="Selected"><RecordCount value={counts?.selected ?? null} testId="run-removal-selected" /></DetailPair>
-      <DetailPair label={previous ? "Restored" : "Removed"}>
-        <RecordCount value={(previous ? counts?.restored : counts?.removed) ?? null} testId="run-removal-removed" />
+      <DetailPair label={headline.label}>
+        <RecordCount value={headline.value} testId="run-removal-removed" />
       </DetailPair>
-      {!previous && <DetailPair label="Already gone"><RecordCount value={counts?.alreadyGone ?? null} testId="run-removal-gone" /></DetailPair>}
+      {removing && <DetailPair label="Already gone"><RecordCount value={counts?.alreadyGone ?? null} testId="run-removal-gone" /></DetailPair>}
       <DetailPair label="Skipped"><RecordCount value={counts?.skipped ?? null} testId="run-removal-skipped" /></DetailPair>
       <DetailPair label="Failed"><RecordCount value={counts?.failed ?? null} testId="run-removal-failed" /></DetailPair>
       {request.purgeLedger && (

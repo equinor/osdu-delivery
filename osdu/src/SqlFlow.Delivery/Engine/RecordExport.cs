@@ -148,7 +148,7 @@ public static class RecordExport
             sheet.AddRow(columns.Cells(hit.Record, hit, hit.FlowName));
         }
 
-        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld);
+        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld, lookup.Narrowing.Restricted);
         List<(string, XlsxCell)> about =
         [
             ("Lookup", XlsxCell.Text(lookup.Search is not { } search
@@ -190,7 +190,7 @@ public static class RecordExport
             parts.Add(query.Mode == SearchMode.Contains ? $"'{search}' anywhere" : $"'{search}' at the start");
         }
 
-        parts.AddRange(Narrowing(query.Drifted, query.StepHeld));
+        parts.AddRange(Narrowing(query.Drifted, query.StepHeld, query.Restricted));
         if (query.Problem is { } problem)
         {
             parts.Add($"issue {ProblemSignature.Format(problem)}");
@@ -220,7 +220,7 @@ public static class RecordExport
     }
 
     /// <summary>The drift and held-step filters in words, as a flow's listing and the lookup across flows both say them.</summary>
-    private static List<string> Narrowing(bool drifted, bool stepHeld)
+    private static List<string> Narrowing(bool drifted, bool stepHeld, bool restricted)
     {
         var parts = new List<string>();
         if (drifted)
@@ -231,6 +231,11 @@ public static class RecordExport
         if (stepHeld)
         {
             parts.Add("an enrichment set aside on its hold");
+        }
+
+        if (restricted)
+        {
+            parts.Add("access restricted in OSDU");
         }
 
         return parts;

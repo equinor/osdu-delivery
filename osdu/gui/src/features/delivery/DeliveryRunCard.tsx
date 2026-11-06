@@ -40,6 +40,8 @@ const REMOVAL_LABELS: Record<string, string> = {
   previous: "restore the previous version",
   history: "purge earlier versions",
   everything: "purge everything",
+  restrict: "restrict access",
+  unrestrict: "lift the restriction",
 };
 
 /** The parts of a listing filter, by the names the records list gives them, in the order it shows them. */
@@ -62,6 +64,14 @@ function filterText(filter: Record<string, unknown>): string {
 
   if (filter.drifted === true) {
     parts.push("drifted");
+  }
+
+  if (filter.stepHeld === true) {
+    parts.push("a step held");
+  }
+
+  if (filter.restricted === true) {
+    parts.push("access restricted");
   }
 
   return parts.length === 0 ? "every record of the ledger" : `every record matching ${parts.join(", ")}`;
@@ -132,6 +142,7 @@ export default function DeliveryRunCard({ run }: { run: RunDetail }) {
               {request.removalScope !== null && (
                 <Badge variant="secondary" data-testid="run-removal-scope">
                   {REMOVAL_LABELS[request.removalScope] ?? request.removalScope}
+                  {request.restriction !== null && ` under ${request.restriction}`}
                 </Badge>
               )}
               {request.purgeLedger && <Badge variant="secondary" data-testid="run-purge-ledger">then delete from the ledger</Badge>}

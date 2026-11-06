@@ -49,6 +49,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/dimensions/DeliveryDimensionsPage.tsx
   - osdu/gui/src/features/delivery/dimensions/DimensionWorkspace.tsx
   - osdu/gui/src/features/delivery/DeliveryPartitionsPage.tsx
+  - osdu/gui/src/features/delivery/AccessRestrictionsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryHomeSection.tsx
   - osdu/gui/src/features/delivery/dimensions/DimensionViewWorkspace.tsx
   - osdu/gui/src/features/delivery/inventories/InventoryRecordsGrid.tsx
@@ -162,7 +163,8 @@ interface picker whose choice is in the address; a flow that names its partition
   ingestion file, or of a word or key value a row shows inside them (`LOG-0002` finds `Wellbore B-1 / COMPOSITE / LOG-0002/1`),
   with a status picker,
   **Drifted only**, **Step held** (while an enrichment is set aside on any record,
-  [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
+  [an enrichment set aside on its hold](../flow/enrich-holds.md)), **Restricted** (while any record's access is restricted,
+  [restricting access](access-restriction.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
   planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). **Export** downloads every record the
   filter matches, not the page in view, as an Excel workbook to work through where the records come from
   ([records export](../cli/records.md#records-export)); it says on hover why it cannot when nothing matches or more than
@@ -321,6 +323,11 @@ picked records, and the removal runs that wrote to its ledger.
   (caches, ledgers and runs stay). The **Actions** column shows only when some row has one. With no partition at all
   the page says **No partition to work against** and how to name one in the configuration. See
   [configured partitions](partitions.md#configured-partitions).
+- **Access restrictions**: the restrictions registered for the partition in the title bar, each with what it is for, its
+  viewers and owners, how many records carry it, and who registered it, searched by name, purpose or group. An admin
+  **Register**s one (a name, what it is for, and the groups as one email per line, checked to be data groups before
+  anything is sent), **Describe**s it, or **Remove**s one no record carries; while records carry it, **Remove** says so on
+  hover. A restriction's groups stay as registered. See [restricting access](access-restriction.md#the-registry).
 
 ## Build
 

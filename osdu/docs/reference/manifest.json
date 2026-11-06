@@ -1005,6 +1005,59 @@
       ]
     },
     {
+      "id": "delivery-concept-access-restriction",
+      "corpus": "reference",
+      "path": "concepts/access-restriction.md",
+      "title": "Restricting access: replacing a delivered record's ACL in OSDU with a registered restriction's groups, and lifting it",
+      "type": "concept",
+      "summary": "Hiding a record instead of removing it: the registry of restricting ACLs, the call, what the ledger keeps and holds off, lifting, and which routes.",
+      "keywords": [
+        "restrict access",
+        "access restriction",
+        "restricted ACL",
+        "restricting ACL",
+        "lift restriction",
+        "unrestrict",
+        "quarantine a record",
+        "legal hold",
+        "hide a record in OSDU",
+        "change acl group",
+        "held records acl",
+        "metadata patch",
+        "PATCH /records",
+        "acl.viewers",
+        "acl.owners",
+        "RestrictionId"
+      ],
+      "related": [
+        "delivery-concept-removal-and-reversal",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-ledger",
+        "delivery-table-access-restriction",
+        "delivery-table-record",
+        "delivery-flow-routes",
+        "delivery-cli-run",
+        "delivery-concept-api"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Restrictions/RecordRestrictions.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Restrictions/RestrictionRoute.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/StorageRecordAccess.cs",
+        "osdu/src/SqlFlow.Delivery/Protocols/RecordAccess.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RecordRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Restrictions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/AccessRestrictions.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAccessRestrictionEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
+        "osdu/gui/src/features/delivery/RemovalDialog.tsx",
+        "osdu/gui/src/features/delivery/AccessRestrictionsPage.tsx",
+        "osdu/gui/src/features/delivery/DeliveryRecordPage.tsx"
+      ]
+    },
+    {
       "id": "delivery-concept-ai-features",
       "corpus": "reference",
       "path": "concepts/ai-features.md",
@@ -2010,6 +2063,7 @@
         "osdu/gui/src/features/delivery/dimensions/DeliveryDimensionsPage.tsx",
         "osdu/gui/src/features/delivery/dimensions/DimensionWorkspace.tsx",
         "osdu/gui/src/features/delivery/DeliveryPartitionsPage.tsx",
+        "osdu/gui/src/features/delivery/AccessRestrictionsPage.tsx",
         "osdu/gui/src/features/delivery/DeliveryHomeSection.tsx",
         "osdu/gui/src/features/delivery/dimensions/DimensionViewWorkspace.tsx",
         "osdu/gui/src/features/delivery/inventories/InventoryRecordsGrid.tsx",
@@ -2782,7 +2836,8 @@
         "delivery-flow-delivery",
         "delivery-flow-mapping-assertions",
         "delivery-flow-mapping-parent",
-        "delivery-flow-mapping-child"
+        "delivery-flow-mapping-child",
+        "delivery-concept-access-restriction"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
@@ -2858,7 +2913,8 @@
         "delivery-concept-api",
         "delivery-guide-finding-orphans",
         "delivery-concept-protocols",
-        "delivery-flow-removal"
+        "delivery-flow-removal",
+        "delivery-concept-access-restriction"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
@@ -2888,7 +2944,8 @@
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryReversalVerbs.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs",
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Restrictions/RecordRestrictions.cs"
       ]
     },
     {
@@ -7122,6 +7179,7 @@
       "related": [
         "delivery-concept-record-lifecycle",
         "delivery-concept-removal-and-reversal",
+        "delivery-concept-access-restriction",
         "delivery-concept-ledger",
         "delivery-concept-submissions",
         "delivery-cli-records",
@@ -7581,6 +7639,35 @@
         "osdu/gui/src/features/delivery/MappingBuilderPage.tsx",
         "osdu/gui/src/features/delivery/MappingEntryEditor.tsx",
         "osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs"
+      ]
+    },
+    {
+      "id": "delivery-table-access-restriction",
+      "corpus": "reference",
+      "path": "tables/access-restriction.md",
+      "title": "osdu.AccessRestriction: the access restrictions registered per partition, which a record's ACL in OSDU can be replaced with",
+      "type": "table",
+      "summary": "One row per access restriction registered for a partition: its name, what it is for, and the groups a restricted record's ACL in OSDU becomes.",
+      "keywords": [
+        "osdu.AccessRestriction",
+        "access restriction table",
+        "restriction registry",
+        "restricted ACL",
+        "legal hold group",
+        "quarantine group"
+      ],
+      "related": [
+        "delivery-concept-access-restriction",
+        "delivery-concept-database",
+        "delivery-table-record",
+        "delivery-table-partition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/AccessRestrictions.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAccessRestrictionEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261105225617_RecordAccessRestrictions.cs"
       ]
     },
     {
@@ -9096,7 +9183,9 @@
         "delivery-table-attempt",
         "delivery-table-record-identity",
         "delivery-table-submission",
-        "delivery-table-lease"
+        "delivery-table-lease",
+        "delivery-table-access-restriction",
+        "delivery-concept-access-restriction"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
@@ -9109,7 +9198,8 @@
         "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Restrictions.cs"
       ]
     },
     {

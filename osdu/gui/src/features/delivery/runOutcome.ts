@@ -77,6 +77,10 @@ export interface RunRemovalCounts {
   failed: number | null;
   /** Of the records removed or already gone, those deleted from the ledger as well. */
   purged: number | null;
+  /** The records whose access a restriction restricted (scope restrict). */
+  restricted: number | null;
+  /** The records whose restriction a lift lifted (scope unrestrict). */
+  lifted: number | null;
 }
 
 /** The counts a remove run reported; null before it finished, and for every other run. */
@@ -93,6 +97,8 @@ export function runRemovalCounts(result: Record<string, unknown> | null): RunRem
     skipped: count(result, "skipped"),
     failed: count(result, "failed"),
     purged: count(result, "purged"),
+    restricted: count(result, "restricted"),
+    lifted: count(result, "lifted"),
   };
 }
 
@@ -167,6 +173,8 @@ export interface RunRequest {
   interfaceName: string | null;
   /** How much of each record a remove run takes (record, previous, history, everything); null for every other run. */
   removalScope: string | null;
+  /** The registered access restriction a restriction names (scope restrict); null for any other run. */
+  restriction: string | null;
   /** Whether a remove run deletes from the ledger too what OSDU answered for. */
   purgeLedger: boolean;
   /** The listing a remove run empties, its parts as the payload names them; null for a removal by key and every other run. */
@@ -196,6 +204,7 @@ export function runRequest(run: RunDetail): RunRequest {
     reversesRun: typeof payload.runId === "string" && UUID.test(payload.runId) ? payload.runId : null,
     interfaceName: typeof payload.interface === "string" ? payload.interface : null,
     removalScope: typeof payload.scope === "string" ? payload.scope : null,
+    restriction: typeof payload.restriction === "string" ? payload.restriction : null,
     purgeLedger: payload.purgeLedger === true,
     filter: isRecord(payload.filter) ? payload.filter : null,
   };

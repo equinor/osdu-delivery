@@ -163,6 +163,7 @@ export default function DeliveryRecordsPage() {
   const anywhere = searchParams.get("mode") === "contains";
   const drifted = searchParams.get("drifted") === "true";
   const stepHeld = searchParams.get("stepHeld") === "true";
+  const restricted = searchParams.get("restricted") === "true";
   const [typed, setTyped] = useState(term);
 
   // The address as last asked. It is drawn a render after each change, so every change builds on this rather than on the
@@ -227,10 +228,11 @@ export default function DeliveryRecordsPage() {
     status: status === ALL ? undefined : (status as DeliveryRecordStatus),
     drifted: drifted || undefined,
     stepHeld: stepHeld || undefined,
+    restricted: restricted || undefined,
     flowId: flow === "" ? undefined : flow,
     partition: active ?? undefined,
-  }), [searching, term, anywhere, status, drifted, stepHeld, flow, active]);
-  const narrowed = status !== ALL || flow !== "" || drifted || stepHeld;
+  }), [searching, term, anywhere, status, drifted, stepHeld, restricted, flow, active]);
+  const narrowed = status !== ALL || flow !== "" || drifted || stepHeld || restricted;
   // How many records the lookup reached, as its last page counted them; capped when more match than it reaches.
   const [reached, setReached] = useState<{ total: number; capped: boolean } | null>(null);
   const onPageLoaded = useCallback((_rows: DeliveryRecordHit[], total: number, capped: boolean) => {
@@ -298,6 +300,13 @@ export default function DeliveryRecordsPage() {
         </Label>
         <Label
           className="flex items-center gap-2 text-[13px] font-normal"
+          title="Records whose access in OSDU is restricted under a registered access restriction: readable only by its groups, and delivered by no run until the restriction is lifted"
+        >
+          <Switch checked={restricted} onCheckedChange={(on) => setParam("restricted", on ? "true" : null)} data-testid="delivery-lookup-restricted" />
+          Restricted
+        </Label>
+        <Label
+          className="flex items-center gap-2 text-[13px] font-normal"
           title="Match the term anywhere in the source key, the label, the OSDU id or the ingestion file, not only at the start of a value. It reads every record the other filters leave, so with more than 100,000 of them it asks for a flow or a status first."
         >
           <Switch checked={anywhere} onCheckedChange={(on) => setParam("mode", on ? "contains" : null)} data-testid="delivery-lookup-contains" />
@@ -314,7 +323,7 @@ export default function DeliveryRecordsPage() {
         </p>
       )}
       <PagedTable
-        queryKey={["delivery", "lookup", term, anywhere, status, drifted, stepHeld, flow, active]}
+        queryKey={["delivery", "lookup", term, anywhere, status, drifted, stepHeld, restricted, flow, active]}
         fetchPage={(page, pageSize) => deliveryApi.lookupRecords({ ...lookup, page, pageSize })}
         onPageLoaded={onPageLoaded}
         columns={columns}

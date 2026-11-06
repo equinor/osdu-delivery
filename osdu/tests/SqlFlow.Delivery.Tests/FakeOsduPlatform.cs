@@ -287,6 +287,11 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
             return DatasetService(method, path["/api/dataset/v1/".Length..], uri, body);
         }
 
+        if (AccessRoute(method, path, body) is { } access)
+        {
+            return access;
+        }
+
         if (path.StartsWith("/api/storage/v2/", StringComparison.Ordinal))
         {
             return StorageService(method, Uri.UnescapeDataString(path["/api/storage/v2/".Length..]), body, HttpUtility.ParseQueryString(uri.Query)["skipdupes"] == "true");

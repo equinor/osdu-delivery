@@ -28,7 +28,8 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
 import { downloadFileName } from "@/lib/download";
-import { BlockedBadge, RecordStatusBadge, SubmissionStatusBadge, VerifyOutcomeBadge } from "./DeliveryBadges";
+import { BlockedBadge, RecordStatusBadge, RestrictedBadge, SubmissionStatusBadge, VerifyOutcomeBadge } from "./DeliveryBadges";
+import { removalQueuedText } from "./removalQueued";
 import { ExportRecordsButton } from "./ExportRecordsButton";
 import { FlowStatusBar } from "./FlowStatusBar";
 import { InterfacePicker } from "./InterfacePicker";
@@ -86,6 +87,7 @@ const recordColumns: Column<DeliveryRecord>[] = [
     header: "",
     render: (row) => (
       <span className="inline-flex gap-1">
+        {row.restrictionId != null && <RestrictedBadge asked={row.restrictedUtc == null} />}
         {row.blocked && <BlockedBadge />}
         {row.hasPendingDocument && <Badge variant="outline">pending</Badge>}
       </span>
@@ -115,6 +117,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const [status, setStatus] = useState<string>(ALL);
   const [drifted, setDrifted] = useState(false);
   const [stepHeld, setStepHeld] = useState(false);
+  const [restricted, setRestricted] = useState(false);
   const [contains, setContains] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [deleteLedgerOpen, setDeleteLedgerOpen] = useState(false);
@@ -139,11 +142,12 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     status: status === ALL ? undefined : (status as DeliveryRecordStatus),
     drifted: drifted || undefined,
     stepHeld: stepHeld || undefined,
+    restricted: restricted || undefined,
     submissionId: submissionFilter ?? undefined,
     deliveredBy: deliveredFilter ?? undefined,
     runId: runFilter ?? undefined,
     issue: issueFilter ?? undefined,
-  }), [search, contains, status, drifted, stepHeld, submissionFilter, deliveredFilter, runFilter, issueFilter]);
+  }), [search, contains, status, drifted, stepHeld, restricted, submissionFilter, deliveredFilter, runFilter, issueFilter]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -447,6 +451,15 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                 Step held
               </Label>
             )}
+            {((s?.restricted ?? 0) > 0 || restricted) && (
+              <Label
+                className="flex items-center gap-2 text-[13px] font-normal"
+                title="Records whose access in OSDU is restricted under a registered access restriction: readable only by its groups, and delivered by no run until the restriction is lifted"
+              >
+                <Switch checked={restricted} onCheckedChange={setRestricted} data-testid="delivery-records-restricted" />
+                Restricted
+              </Label>
+            )}
             <Label
               className="flex items-center gap-2 text-[13px] font-normal"
               title="Match the term anywhere in the source key, the label, the OSDU id or the ingestion file, not only at the start of a value or of a word in it. It reads every record the other filters leave, so with more than 100,000 of them it asks for a status, submission or run first."
@@ -490,7 +503,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
           {/* A flow that works in partitions has no records until the partition in view is known. */}
           {!ready ? <Skeleton className="h-40 w-full rounded-lg" /> : (
           <PagedTable
-            queryKey={["delivery", "records", pipelineId, interfaceName, partition, search, status, drifted, stepHeld, contains, submissionFilter, deliveredFilter, runFilter, issueFilter]}
+            queryKey={["delivery", "records", pipelineId, interfaceName, partition, search, status, drifted, stepHeld, restricted, contains, submissionFilter, deliveredFilter, runFilter, issueFilter]}
             fetchPage={(page, pageSize) => deliveryApi.records(pipelineId, {
               page, pageSize, interface: interfaceName ?? undefined, partition: partition ?? undefined, ...filter,
             })}
@@ -594,14 +607,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             onQueued={(accepted) => {
               clearSelection();
               // A remove run of the flow: the page follows the flow's runs, so its counts and records move once it ends.
-              const records = `${accepted.records.toLocaleString()} record${accepted.records === 1 ? "" : "s"}`;
-              toast.success(
-                accepted.scope === "previous"
-                  ? `Restoring the previous version of ${records}: queued as a run.`
-                  : accepted.purgeLedger
-                    ? `Removal of ${records}, then deletion from the ledger: queued as a run.`
-                    : `Removal of ${records}: queued as a run.`,
-                { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+              toast.success(removalQueuedText(accepted, true), { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
               void queryClient.invalidateQueries({ queryKey: ["delivery"] });
             }}
           />

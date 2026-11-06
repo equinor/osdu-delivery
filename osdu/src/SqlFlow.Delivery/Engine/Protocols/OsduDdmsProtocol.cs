@@ -195,6 +195,22 @@ public sealed class OsduDdmsProtocol : IDeliveryProtocol
     private OsduRecordProtocol? _storage;
 
     /// <summary>
+    /// The records' access, through the storage service past the DDMS, under a platform endpoint only: a Wellbore DDMS record
+    /// is a storage record, and the DDMS reads it under the caller's token before it serves the record's bulk data, so its ACL
+    /// governs both (osdu/docs/reference/concepts/access-restriction.md). Which records of the flow that holds for is
+    /// <c>RestrictionRoute</c>'s to say. Null when the endpoint is a DDMS itself, where the storage service is not under it.
+    /// </summary>
+    public IRecordAccess? Access => _routing.PlatformEndpoint
+        ? _access ??= new StorageRecordAccess(_client, OsduRecordProtocol.DefaultRecordPath, OsduRecordProtocol.DefaultVerifyBatchPath)
+        : null;
+
+    public string? AccessRefusal => _routing.PlatformEndpoint
+        ? null
+        : "the flow's endpoint is the DDMS itself, so the storage service that keeps the records' ACL is not under it; make the endpoint the platform root and give the DDMS its root under target.ddms";
+
+    private StorageRecordAccess? _access;
+
+    /// <summary>
     /// Undoes what unfinished deliveries left (osdu/docs/reference/concepts/artifacts-and-undo.md, ddms): for each
     /// record, what its DDMS's shape made beside it (a session, content datasets, rows, a dataset and its lock), then
     /// the record itself, removed through the DDMS when the unit created it and given back the version the unit

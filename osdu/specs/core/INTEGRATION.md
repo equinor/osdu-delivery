@@ -246,6 +246,12 @@ PatchOperation to BulkUpdateRecordsResponse, L2179-2258]:
   `lockedRecordIds` (a record given with a version that is no longer the latest); 400 when a remove would empty the
   legal tags or an ACL list [44 SC/api/PatchApi.java:83-94; docs/docs/api.md:337-357].
 - Metadata updates create no new version and do not change `modifyUser` or `modifyTime` [44 docs/docs/index.md:45].
+- Later storage (`21ac469f`, 2026-11-05) reads the records' metadata whatever their state, so a soft-deleted record's
+  ACL is changed too; checks owner access per record, a data manager (`users.data.root`) passing; and publishes a
+  record-changed message of operation `update` for every record it changed, so the indexer indexes it again under its
+  new ACL [BulkUpdateRecordServiceImpl.java:98-127, 164-181; PersistenceServiceImpl.java:127-161 there]. Reads overlay
+  the record's current metadata on the version read, so every version is read under the ACL the record holds now
+  [BatchServiceImpl.java:139-156 there].
 
 `PATCH /records` with `application/json-patch+json` (RFC 6902) [C-storage: PATCH /records, updateRecordsMetadata;
 PatchRecordsRequestModel to PatchRecordsResponse, L2260-2322]:

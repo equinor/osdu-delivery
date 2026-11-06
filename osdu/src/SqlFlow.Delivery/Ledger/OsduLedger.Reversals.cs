@@ -229,7 +229,7 @@ public sealed partial class OsduLedger
             db => db.DeliveryReversalItems
                 .Where(i => i.PartitionId == partition && i.ReversalId == reversalId && i.DeliveryKey.CompareTo(from) > 0
                     && (i.State == ReversalItemStates.Pending || i.State == ReversalItemStates.Sending || i.State == ReversalItemStates.Failed
-                        || (i.State == ReversalItemStates.Skipped && i.Outcome == ReversalOutcomes.Busy)))
+                        || (i.State == ReversalItemStates.Skipped && (i.Outcome == ReversalOutcomes.Busy || i.Outcome == ReversalOutcomes.Restricted))))
                 .OrderBy(i => i.DeliveryKey)
                 .Take(take)
                 .ToListAsync(ct),

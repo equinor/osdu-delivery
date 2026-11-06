@@ -12,6 +12,27 @@ namespace SqlFlow.Delivery.Ledger;
 public static class AttemptResult
 {
     /// <summary>
+    /// The result of restricting a record's access, or of lifting a restriction
+    /// (osdu/docs/reference/concepts/access-restriction.md): a removal's result, and under <c>restriction</c> the registered
+    /// restriction (its id and name), the ACL OSDU holds now (<c>acl</c>, null when OSDU was asked nothing) and the ACL it
+    /// replaced (<c>replaced</c>, null when unknown).
+    /// </summary>
+    public static string Restriction(
+        string? correlationId, string? targetStateJson, int restrictionId, string restrictionName, string? aclJson, string? replacedJson, string detail)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(restrictionName);
+        var result = ObjectOrEmpty(Removal(correlationId, targetStateJson, detail));
+        result["restriction"] = new JsonObject
+        {
+            ["id"] = restrictionId,
+            ["name"] = restrictionName,
+            ["acl"] = Parse(aclJson),
+            ["replaced"] = Parse(replacedJson),
+        };
+        return result.ToJsonString();
+    }
+
+    /// <summary>
     /// <paramref name="resultJson"/> with <paramref name="detail"/> added. A result that held nothing yet is started with
     /// an empty steps array, so every reader finds the same shape.
     /// </summary>

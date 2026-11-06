@@ -3,7 +3,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   ArchiveRestore, ArrowRightLeft, CheckCircle2, ChevronRight, CircleDashed, CircleDot, Database, DatabaseZap, Eraser, FileInput, FilePen,
-  FileQuestion, FileX2, Hourglass, Layers, Link2, PauseCircle, RefreshCw, ScanSearch, ShieldCheck, Trash2, Undo2, XCircle,
+  FileQuestion, FileX2, Hourglass, Layers, Link2, Lock, LockOpen, PauseCircle, RefreshCw, ScanSearch, ShieldCheck, Trash2, Undo2, XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import { RelativeTime } from "@/components/RelativeTime";
 import { SummaryStrip, type SummaryCell } from "@/components/SummaryStrip";
 import { TruncatedText } from "@/components/TruncatedText";
 import type {
-  DeliveryActivity, DeliveryAttempt, DeliveryAttemptStep, DeliveryChainLanding, DeliveryChainRun, DeliveryRecord,
+  DeliveryActivity, DeliveryAttempt, DeliveryAttemptAcl, DeliveryAttemptStep, DeliveryChainLanding, DeliveryChainRun, DeliveryRecord,
   DeliveryRecordChain, DeliverySourceChange, DeliverySourceChangeKind, DeliveryUndoArtifact,
 } from "../../api/delivery";
 import { verdictIn, type ValidationVerdict } from "../../api/validation";
@@ -546,6 +546,9 @@ function reachedTarget(attempt: DeliveryAttempt): boolean {
     || attempt.outcome === "historypurged"
     || attempt.outcome === "restored"
     || attempt.outcome === "undone"
+    || attempt.outcome === "restricted"
+    // A lift asks OSDU only when it holds the record: the ACL it wrote back is named, or none when nothing was asked.
+    || (attempt.outcome === "unrestricted" && attempt.result?.restriction?.acl != null)
     || (attempt.result?.steps?.length ?? 0) > 0
     || (attempt.outcome === "held" && attempt.worker !== "intake" && attempt.phase !== "undo-wait" && refusalOf(attempt.error) !== null);
 }
@@ -555,6 +558,8 @@ const PHASE_TEXT: Record<string, string> = {
   payload: "payload only",
   "metadata+payload": "record and payload",
   "source-removed": "a removal flow found its source no longer holds the key",
+  restrict: "access restricted in OSDU, no new version",
+  "lift-restriction": "access given back in OSDU, no new version",
 };
 
 /** Why an undo ran, as its attempt's result names the reason. */
@@ -592,6 +597,16 @@ function UndoList({ artifacts, keptRecord }: { artifacts: DeliveryUndoArtifact[]
         ))}
       </ul>
     </div>
+  );
+}
+
+/** An ACL in an attempt's detail: its viewers and its owners, each group in full. */
+function AclFact({ acl }: { acl: DeliveryAttemptAcl }) {
+  return (
+    <span className="flex flex-col gap-0.5" data-testid="journey-acl">
+      <span><span className="text-muted-foreground">viewers </span><Mono>{acl.viewers.join(", ")}</Mono></span>
+      <span><span className="text-muted-foreground">owners </span><Mono>{acl.owners.join(", ")}</Mono></span>
+    </span>
   );
 }
 
@@ -682,6 +697,29 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
       tone: "info",
       icon: Link2,
       then: { text: attempt.worker === "intake" ? "This run writes the row there." : "The next deliver run writes this row there.", tone: "muted" },
+      outcome: null,
+    };
+  }
+
+  // An operator replaced the record's ACL in OSDU with a registered restriction's groups, or gave it back the ACL it had.
+  if (attempt.outcome === "restricted") {
+    const name = attempt.result?.restriction?.name;
+    return {
+      title: name !== undefined ? `Access restricted under ${name}` : "Access restricted",
+      tone: "muted",
+      icon: Lock,
+      then: { text: "No run delivers it, and no release sends it, until the restriction is lifted.", tone: "muted" },
+      outcome: { text: "Access restricted", tone: "muted" },
+    };
+  }
+
+  if (attempt.outcome === "unrestricted") {
+    const name = attempt.result?.restriction?.name;
+    return {
+      title: name !== undefined ? `Restriction ${name} lifted` : "Restriction lifted",
+      tone: "muted",
+      icon: LockOpen,
+      then: { text: "It follows its source again: the next run plans it.", tone: "muted" },
       outcome: null,
     };
   }
@@ -801,6 +839,7 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
   const request = refusal?.method != null && refusal.url !== null ? `${refusal.method} ${urlPath(refusal.url)}` : null;
   const version = attempt.targetVersion !== null && attempt.outcome === "delivered" ? attempt.targetVersion : null;
   const adopted = attempt.phase === "adopt" ? attempt.result?.adopted : undefined;
+  const restriction = attempt.result?.restriction;
   return {
     ...entryDefaults(),
     id: `attempt-${attempt.attemptId}`,
@@ -839,6 +878,13 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
           {refusal?.url != null && <Fact label="Request" wide><Mono>{`${refusal.method ?? ""} ${refusal.url}`}</Mono></Fact>}
           {attempt.error !== null && <Fact label="Error" wide><span className="text-destructive">{attempt.error}</span></Fact>}
           {attempt.result?.detail !== undefined && <Fact label="Note" wide>{attempt.result.detail}</Fact>}
+          {restriction !== undefined && <Fact label="Restriction" wide>{restriction.name}</Fact>}
+          {restriction?.acl != null && (
+            <Fact label={attempt.outcome === "restricted" ? "Access set" : "Access given back"} wide><AclFact acl={restriction.acl} /></Fact>
+          )}
+          {restriction?.replaced != null && (
+            <Fact label={attempt.outcome === "restricted" ? "Access replaced" : "Restriction's access"} wide><AclFact acl={restriction.replaced} /></Fact>
+          )}
           <Fact label="Correlation id">{correlationId !== undefined ? <TruncatedText text={correlationId} mono maxWidth={360} copy title="Correlation id" /> : <NoFact />}</Fact>
           <Fact label="Built from"><Origin file={attempt.sourceFileName} row={attempt.sourceRowNumber} inCell /></Fact>
           <Fact label="Row stamped"><RelativeTime value={attempt.sourceUpdatedUtc} /></Fact>
@@ -1060,6 +1106,16 @@ const REQUESTS: Partial<Record<string, { one: string; many: (count: number) => s
     button: "Remove",
   },
   reverse: { one: "Reversal of a run asked", many: (count) => `Reversal of a run that reached ${count} records, this one among them`, button: "Reverse" },
+  restrict: {
+    one: "Restricting this record's access asked",
+    many: (count) => `Restricting the access of ${count} records asked, this one among them`,
+    button: "Remove",
+  },
+  "lift-restriction": {
+    one: "Lifting this record's restriction asked",
+    many: (count) => `Lifting the restriction of ${count} records asked, this one among them`,
+    button: "Remove",
+  },
   verify: { one: "Verify of this record asked", many: (count) => `Verify asked for ${count} records, this one among them`, button: "Verify" },
   "source-remove": {
     one: "Taken out by a removal flow: its source no longer holds the key",

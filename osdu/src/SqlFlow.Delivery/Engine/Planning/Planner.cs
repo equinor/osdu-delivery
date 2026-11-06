@@ -653,6 +653,21 @@ public sealed class Planner
                 SourceModifiedUtc = source.ModifiedUtc,
             };
 
+            // The record's access in OSDU is restricted (osdu/docs/reference/concepts/access-restriction.md): it is left exactly
+            // as it is, whatever its row says, since a write would carry the ACL its mapping gives and show it again. Lifting
+            // the restriction asks for it to be planned again.
+            if (state?.RestrictionId is not null)
+            {
+                entries.Add(basis with
+                {
+                    Action = PlannedAction.Blocked,
+                    Reason = state.RestrictedUtc is { } restricted
+                        ? string.Create(CultureInfo.InvariantCulture, $"the record's access in OSDU is restricted since {restricted:u}; nothing is delivered to it until the restriction is lifted")
+                        : "the record's access in OSDU is asked to be restricted; nothing is delivered to it until the restriction is lifted",
+                });
+                continue;
+            }
+
             // A row the source read but cannot deliver as it stands (a child dataset over its ceiling).
             if (record.Hold is { } refusal)
             {

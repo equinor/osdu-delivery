@@ -251,6 +251,11 @@ public sealed class PreviousVersionRestore
             return "the record was removed from OSDU, so there is no latest version to step back from";
         }
 
+        if (record.Restricted)
+        {
+            return "the record's access in OSDU is restricted, and nothing is written to it while it is; lift the restriction, then step it back";
+        }
+
         if (record.LeaseOwner is not null || record.Status is RecordStatus.Pending or RecordStatus.Delivering or RecordStatus.Waiting)
         {
             return $"work is queued for the record ({record.Status.ToString().ToLowerInvariant()}); ask again once it has settled";

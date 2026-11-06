@@ -271,6 +271,26 @@ public sealed class DeliveryRecord
     /// </summary>
     public string? HeldSteps { get; set; }
 
+    /// <summary>
+    /// The registered access restriction (<see cref="DeliveryAccessRestriction"/>) whose groups replaced the record's ACL in
+    /// OSDU (osdu/docs/reference/concepts/access-restriction.md), or null for a record whose access is its own. Set before the
+    /// ACL is patched, so a restriction whose answer was lost still keeps the record out of every run; while it is set, no
+    /// run delivers the record, no release sends it, and the ledger never forgets it, until the restriction is lifted.
+    /// </summary>
+    public int? RestrictionId { get; set; }
+
+    /// <summary>
+    /// When OSDU confirmed the record's ACL was replaced with the restriction's groups; null while the restriction is asked
+    /// and OSDU's answer is not known (a restriction asked again, or a lift, settles it), and for a record not restricted.
+    /// </summary>
+    public DateTime? RestrictedUtc { get; set; }
+
+    /// <summary>
+    /// The ACL OSDU held for the record before it was restricted, as <c>{"viewers":[...],"owners":[...]}</c>: what lifting the
+    /// restriction writes back. Kept from the first time the restriction was asked, whatever OSDU answered then.
+    /// </summary>
+    public string? RestrictedFromAcl { get; set; }
+
     public string? PendingRenderContext { get; set; }
 
     public string? PendingSourceFingerprint { get; set; }
@@ -3546,6 +3566,50 @@ public sealed class DeliveryPartition
 }
 
 /// <summary>
+/// An access restriction registered for one OSDU partition (osdu/docs/reference/concepts/access-restriction.md): a name,
+/// what it is for, and the entitlements groups a restricted record's ACL in OSDU is replaced with, as its viewers and its
+/// owners. A record restricted under it names it (<see cref="DeliveryRecord.RestrictionId"/>), so it cannot be removed
+/// while any record still carries it. Its groups never change once registered: OSDU holds them on the records restricted
+/// under it, so a different set of groups is a restriction of its own.
+/// </summary>
+public sealed class DeliveryAccessRestriction
+{
+    /// <summary>The longest name a restriction keeps.</summary>
+    public const int MaxNameLength = 100;
+
+    /// <summary>The widest description a restriction keeps.</summary>
+    public const int MaxDescriptionLength = 400;
+
+    /// <summary>The longest list of groups, as JSON, a restriction keeps as its viewers or its owners.</summary>
+    public const int MaxGroupsLength = 2000;
+
+    public int RestrictionId { get; set; }
+
+    /// <summary>The data-partition-id the restriction's groups belong to: records of that partition alone are restricted under it.</summary>
+    public string Partition { get; set; } = string.Empty;
+
+    /// <summary>What operators pick it by, unique within its partition whatever its case.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>What the restriction is for (a legal hold, a quality quarantine), in the words of whoever registered it.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>The groups a restricted record's <c>acl.viewers</c> becomes, as a JSON array of group emails.</summary>
+    public string Viewers { get; set; } = "[]";
+
+    /// <summary>The groups a restricted record's <c>acl.owners</c> becomes, as a JSON array of group emails.</summary>
+    public string Owners { get; set; } = "[]";
+
+    public DateTime CreatedUtc { get; set; }
+
+    public string CreatedBy { get; set; } = string.Empty;
+
+    public DateTime UpdatedUtc { get; set; }
+
+    public string UpdatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// One property of the central configuration: a value the control plane supplies to the runs it queues, so a flow that
 /// names <c>${env:NAME}</c> resolves it from here rather than from whatever the node that picks the run up happens to
 /// hold. A property is set once for the whole control plane (<see cref="RepoId"/> null) and may be set again for one
@@ -3869,6 +3933,9 @@ public static class DeliveryModel
     /// </summary>
     public const int MaxHeldStepsLength = 600;
 
+    /// <summary>The longest ACL a restricted record keeps of what OSDU held before (two lists of group emails, as JSON).</summary>
+    public const int MaxRestrictedFromAclLength = 4000;
+
     /// <summary>The longest lease token, and the longest worker name a lease records as its owner.</summary>
     public const int MaxLeaseTokenLength = 200;
 
@@ -4036,6 +4103,7 @@ public static class DeliveryModel
             OptionalOsduId(e.Property(r => r.ChildLinkKey)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.OccupiedTargetId)).HasMaxLength(MaxTargetIdLength);
             e.Property(r => r.HeldSteps).HasMaxLength(MaxHeldStepsLength);
+            e.Property(r => r.RestrictedFromAcl).HasMaxLength(MaxRestrictedFromAclLength);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
             e.Property(r => r.LeaseOwner).HasMaxLength(200);
@@ -4068,6 +4136,13 @@ public static class DeliveryModel
             // The records of a flow that an enrichment held in and was set aside on: the Records tab's filter and the flow's
             // count, the few such records and no others.
             e.HasIndex(r => new { r.PartitionId, r.FlowId }, "IX_Record_PartitionId_FlowId_HeldSteps").IncludeProperties(r => r.HeldSteps).HasFilter("[HeldSteps] IS NOT NULL");
+            // The records of a flow whose access in OSDU is restricted, and no others: the Records tab's filter and the flow's
+            // count.
+            e.HasIndex(r => new { r.PartitionId, r.FlowId }, "IX_Record_PartitionId_FlowId_Restricted").IncludeProperties(r => r.RestrictionId).HasFilter("[RestrictionId] IS NOT NULL");
+            // A registered restriction's records, counted for its page and refusing its removal while any is left. Records not
+            // restricted stay out of it. No foreign key backs it: adding one would read every row of the ledger under a schema
+            // lock as the migration ran, and the removal of a restriction is refused in the same transaction that counts it.
+            e.HasIndex(r => r.RestrictionId).HasFilter("[RestrictionId] IS NOT NULL");
             // One OSDU record, one flow: the database refuses a second flow's claim on an id, whatever races the intakes
             // run. An id names its partition, so this stays unique across every partition.
             e.HasIndex(r => r.ClaimedTargetId).IsUnique().HasFilter("[ClaimedTargetId] IS NOT NULL");
@@ -5177,6 +5252,21 @@ public static class DeliveryModel
             e.Property(p => p.UpdatedBy).HasMaxLength(200).IsRequired();
             // At most one partition is the default.
             e.HasIndex(p => p.IsDefault).IsUnique().HasFilter("[IsDefault] = 1");
+        });
+
+        modelBuilder.Entity<DeliveryAccessRestriction>(e =>
+        {
+            e.ToTable("AccessRestriction", SchemaName);
+            e.HasKey(a => a.RestrictionId);
+            e.Property(a => a.Partition).HasMaxLength(200).IsRequired();
+            e.Property(a => a.Name).HasMaxLength(DeliveryAccessRestriction.MaxNameLength).IsRequired();
+            e.Property(a => a.Description).HasMaxLength(DeliveryAccessRestriction.MaxDescriptionLength);
+            e.Property(a => a.Viewers).HasMaxLength(DeliveryAccessRestriction.MaxGroupsLength).IsRequired();
+            e.Property(a => a.Owners).HasMaxLength(DeliveryAccessRestriction.MaxGroupsLength).IsRequired();
+            e.Property(a => a.CreatedBy).HasMaxLength(200).IsRequired();
+            e.Property(a => a.UpdatedBy).HasMaxLength(200).IsRequired();
+            // One name per partition, whatever its case, as operators pick it; a partition's restrictions listed by name.
+            e.HasIndex(a => new { a.Partition, a.Name }).IsUnique();
         });
 
         modelBuilder.Entity<DeliveryConfigProperty>(e =>

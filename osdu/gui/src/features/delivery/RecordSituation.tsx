@@ -1,6 +1,8 @@
 import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { Ban, CircleAlert, Hourglass, KeyRound, Loader2, RotateCcw, Send, ShieldAlert, Trash2, Undo2, type LucideIcon } from "lucide-react";
+import {
+  Ban, CircleAlert, Hourglass, KeyRound, Loader2, Lock, LockOpen, RotateCcw, Send, ShieldAlert, Trash2, Undo2, type LucideIcon,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -9,8 +11,9 @@ import { CopyButton } from "@/components/CopyButton";
 import { ExplainMark } from "@/components/ExplainTip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
-import type { DeliveryRecord, DeliveryRecordLink } from "../../api/delivery";
+import type { DeliveryRecord, DeliveryRecordLink, DeliveryRecordRestriction } from "../../api/delivery";
 import type { RemovedKey } from "../../api/removals";
+import { aclText } from "./accessRestrictionText";
 import { IssueMessage, IssueSummary } from "./IssueMessage";
 import { removalWhy } from "./removals/removalFormat";
 import { shortId } from "./idTail";
@@ -100,6 +103,45 @@ function RemovalLine({ removedKey, onLift, lifting }: { removedKey: RemovedKey; 
       </span>
       <ExplainMark title="Why removed" text={removalWhy(removedKey)} testId="record-removal-why" />
       {action}
+    </Line>
+  );
+}
+
+/**
+ * The access restriction the record carries (osdu/docs/reference/concepts/access-restriction.md): under which registered
+ * restriction, readable by whom, since when, or asked and not answered yet, what that keeps from the record, and the way to
+ * lift it, with the access lifting gives back on hover.
+ */
+function RestrictionLine({ restriction, onLift }: { restriction: DeliveryRecordRestriction; onLift?: () => void }) {
+  const name = restriction.name ?? `restriction #${restriction.restrictionId}, no longer registered`;
+  const groups = restriction.viewers !== null && restriction.owners !== null ? aclText(restriction.viewers, restriction.owners) : null;
+  const former = restriction.formerViewers !== null && restriction.formerOwners !== null
+    ? `Lifting the restriction writes back the access the record had: ${aclText(restriction.formerViewers, restriction.formerOwners)}. No new version is written; the record then follows its source again.`
+    : "The ledger keeps no access the record had before, so lifting the restriction cannot give it back: set the record's ACL in OSDU, then lift it.";
+  const asked = restriction.restrictedUtc === null;
+  return (
+    <Line tone={asked ? "warning" : "muted"} icon={Lock} testId="record-restriction">
+      {asked
+        ? (
+          <span>
+            {`Restricting its access under ${name} was asked, and OSDU's answer is not known. No run delivers it meanwhile; ask again to finish (Remove, Restrict access), or lift the restriction.`}
+          </span>
+        )
+        : (
+          <span>
+            {`Access restricted under ${name} since `}
+            <RelativeTime value={restriction.restrictedUtc} />
+            {groups !== null ? `: readable in OSDU only by ${groups}. ` : ". "}
+            No run delivers it, no release sends it and the ledger keeps it until the restriction is lifted.
+          </span>
+        )}
+      <ExplainMark title="What lifting gives back" text={former} testId="record-restriction-former" />
+      {onLift !== undefined && (
+        <Button variant="outline" size="xs" className="ml-2 align-middle" onClick={onLift} data-testid="record-restriction-lift">
+          <LockOpen />
+          Lift the restriction
+        </Button>
+      )}
     </Line>
   );
 }
@@ -211,7 +253,7 @@ function Waiters({ record, waiters }: { record: DeliveryRecord; waiters: Deliver
  * this one. A delivered record with nothing wrong has no situation and gets no lines: the status pill and the milestones
  * say everything there is.
  */
-export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLift, lifting = false }: {
+export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLift, lifting = false, restriction, onLiftRestriction }: {
   record: DeliveryRecord;
   waitsOn: DeliveryRecordLink | null | undefined;
   /** The records whose waiting document refers to this one, the first `MAX_WAITERS_SHOWN`. */
@@ -221,9 +263,17 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
   /** Lifts that deletion; absent where the reader cannot. */
   onLift?: () => void;
   lifting?: boolean;
+  /** The access restriction the record carries, while its access in OSDU is restricted. */
+  restriction?: DeliveryRecordRestriction | null;
+  /** Opens the lift of that restriction; absent where the reader cannot. */
+  onLiftRestriction?: () => void;
 }) {
   const leaseExpired = useHasPassed(record.leaseExpiresUtc);
   const lines: ReactNode[] = [];
+  // A restriction keeps the record out of everything below, so it says so first.
+  if (restriction != null) {
+    lines.push(<RestrictionLine key="restriction" restriction={restriction} onLift={onLiftRestriction} />);
+  }
   if (removedKey !== undefined) {
     lines.push(<RemovalLine key="removal" removedKey={removedKey} onLift={onLift} lifting={lifting} />);
   }
@@ -369,6 +419,16 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
     case "deleted":
       // A record a removal flow took out says so in its own line, with the way to deliver it again.
       if (removedKey?.state === "removed") {
+        break;
+      }
+
+      // Removed while its access is restricted: nothing delivers it again until the restriction is lifted.
+      if (restriction != null) {
+        lines.push(
+          <Line key="deleted" tone="muted" icon={Trash2} testId="record-deleted">
+            Removed from OSDU while its access is restricted: no run delivers it again until the restriction is lifted.
+          </Line>,
+        );
         break;
       }
 

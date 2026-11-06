@@ -28,7 +28,7 @@ import { NoFact } from "./Facts";
 import { ledgerFlowLabel, ledgerFlowOptions } from "./ledgerFlowOptions";
 
 const ALL = "all";
-const KINDS = ["deliver", "intake", "drain", "verify", "probe", "sync", "release", "adopt", "redeliver", "rerender", "delete", "restore-previous", "purge", "reverse", "undo", "delete-ledger", "remove-dimension", "inventory-remove", "inventory-restore", "inventory-repair", "reassign-id", "source-remove", "lift-removal", "ledger-move"];
+const KINDS = ["deliver", "intake", "drain", "verify", "probe", "sync", "release", "adopt", "redeliver", "rerender", "delete", "restore-previous", "restrict", "lift-restriction", "purge", "reverse", "undo", "delete-ledger", "remove-dimension", "inventory-remove", "inventory-restore", "inventory-repair", "reassign-id", "source-remove", "lift-removal", "ledger-move"];
 const OUTCOMES = ["running", "completed", "failed", "cancelled"];
 
 /** What the idle-runs switch says on hover: which runs it shows, and why they are left out otherwise. */

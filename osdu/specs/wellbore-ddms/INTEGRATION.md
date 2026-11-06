@@ -744,6 +744,10 @@ Source:
 | `GET /ddms/v3/{c}/{record_id}/data` | bulk of the latest version | [C: GET /ddms/v3/{c}/{record_id}/data] |
 | `GET /ddms/v3/{c}/{record_id}/versions/{version}/data` | bulk of that record version | [C: GET /ddms/v3/{c}/{record_id}/versions/{version}/data] |
 
+A bulk read fetches the record from Storage under the caller's token before it reads the bulk the record names, so
+whoever may not read the record may not read its bulk data either: the record's ACL governs both [98 at `5413d816`
+(2026-11-04) app/routers/bulk/bulk_routes.py:216-237].
+
 Contract:
 
 - 200 `application/json`, empty schema, named examples `json-data-split-example`, `json-data-columns-example` and

@@ -16,7 +16,7 @@ public sealed class OsduDbContext : DbContext
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
     /// <summary>The module version the current migrations produce; written to <see cref="OsduSchemaVersion.ModuleVersion"/>.</summary>
-    public const string ModuleVersion = "1.64.0";
+    public const string ModuleVersion = "1.65.0";
 
     /// <summary>
     /// The oldest SQLFlow catalog migration this schema works with: the one that records the values the control plane
@@ -188,6 +188,9 @@ public sealed class OsduDbContext : DbContext
 
     /// <summary>The OSDU partitions registered with the catalog, and the default one.</summary>
     public DbSet<DeliveryPartition> DeliveryPartitions => Set<DeliveryPartition>();
+
+    /// <summary>The access restrictions registered per partition, which a record's ACL in OSDU can be replaced with.</summary>
+    public DbSet<DeliveryAccessRestriction> DeliveryAccessRestrictions => Set<DeliveryAccessRestriction>();
 
     public DbSet<DeliveryCacheVersion> DeliveryCacheVersions => Set<DeliveryCacheVersion>();
 

@@ -35,6 +35,7 @@ related:
   - delivery-guide-finding-orphans
   - delivery-concept-protocols
   - delivery-flow-removal
+  - delivery-concept-access-restriction
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/RecordRemoval.cs
@@ -64,6 +65,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Restrictions/RecordRestrictions.cs
 ---
 
 # Removing records from OSDU, deleting the ledger, reversing a run and redelivering records
@@ -76,6 +78,7 @@ against the storage service's OpenAPI description; route-specific calls are in [
 | You want to | Use |
 | --- | --- |
 | Take records out of OSDU, reversibly | A removal at the `record` scope. |
+| Keep records in OSDU, readable only by a registered group, and out of every run | A [restriction of their access](access-restriction.md) (`restrict`), lifted with `unrestrict`. |
 | Bring back what an inventory found gone, or what one of its removals took out of OSDU | An inventory's [restore](../flow/inventory-removals.md#restoring-gone-ids). |
 | Take out of OSDU what the source no longer holds, on a schedule | A [removal flow](../flow/removal.md). |
 | Make the version before the latest current again | A removal at the `previous` scope. |
@@ -90,7 +93,9 @@ against the storage service's OpenAPI description; route-specific calls are in [
 ## Removing records from OSDU
 
 OSDU's storage service offers three removals, and they are not degrees of one thing. OSDU Delivery names them, and a
-fourth that removes nothing, the same way in the API, the run, the GUI and the ledger:
+fourth that removes nothing, the same way in the API, the run, the GUI and the ledger. The same run also restricts
+records' access (`restrict`) and lifts restrictions (`unrestrict`), which remove nothing either
+([Restricting access](access-restriction.md)):
 
 | Scope | Storage call | What goes | Reversible | The ledger afterwards |
 | --- | --- | --- | --- | --- |
@@ -155,8 +160,9 @@ versions, so only `everything` applies there, and Seismic Store on a gc deployme
 dialog shows the exact call each scope makes for the flow before anything is queued. See [Routes](../flow/routes.md).
 
 **Where.** **Remove** on a record's page and on a flow's Records tab selection opens the one removal dialog: an **In OSDU**
-part (**Remove the record**, **Restore the previous version**, **Purge earlier versions**, **Purge everything**, and
-**Leave as it is** for records removed already) and an **In the ledger** part (**Delete from the ledger**, offered only with
+part (**Remove the record**, **Restore the previous version**, **Purge earlier versions**, **Purge everything**,
+**Restrict access** and **Lift the restriction** ([Restricting access](access-restriction.md)), and **Leave as it is** for
+records removed already) and an **In the ledger** part (**Delete from the ledger**, offered only with
 a choice that leaves the records out of OSDU). Anything permanent asks for the partition to be typed back. Once the
 removal is queued, **Open run** on the notice opens its run. The API is
 `POST /api/v1/delivery/records/{flowId}/{key}/delete` and `POST /api/v1/delivery/flows/{pipelineId}/records/remove` (with
@@ -188,10 +194,12 @@ ledger** in the dialog), or later on its own, asking nothing of OSDU (**Leave as
 `POST /flows/{pipelineId}/records/purge` for keys, a filter or every removed record, `POST /records/{flowId}/{key}/purge`).
 It is an activity of kind `purge`.
 
-Only a record the ledger marks `deleted` goes, none a lease holds, and none with something an unfinished delivery left that
-its undo has not taken back. Each goes with its attempts, search entries and row, one slice of records to a transaction, and
+Only a record the ledger marks `deleted` goes, none a lease holds, none whose access is restricted
+([Restricting access](access-restriction.md#what-a-restriction-holds-off)), and none with something an unfinished delivery
+left that its undo has not taken back. Each goes with its attempts, search entries and row, one slice of records to a transaction, and
 leaves one line in `osdu.PurgedRecord` ([The delivery ledger](ledger.md#osdupurgedrecord-what-is-kept-of-a-record-deleted-from-the-ledger)).
-The record's own route refuses with 409: `Not removed from OSDU` for a record OSDU may still hold, `Undo unfinished`
+The record's own route refuses with 409: `Not removed from OSDU` for a record OSDU may still hold, `Access restricted`
+for a restricted one, `Undo unfinished`
 for one an undo has still to finish, and `Record busy` for one work started on after it was read. History purges and
 `previous` never delete from the ledger:
 `A record is deleted from the ledger only with a removal that takes it out of OSDU (record or everything), not with <scope>.`
@@ -216,7 +224,9 @@ for a flow to be delivered again from nothing. It removes the pipeline's records
 of the pipeline from the ledger, and the next run reads every row. It queues a run of the pipeline with the operation
 `delete-ledger` (`POST /api/v1/delivery/flows/{pipelineId}/ledger/delete` with `confirm`), so no delivery of the pipeline
 runs beside it. Nothing is queued unless `confirm` names the partition the ledger is kept in, and the run checks it again
-on the node before it touches anything. For each interface, in reverse delivery order, the run:
+on the node before it touches anything. A ledger holding a record whose access is restricted is not deleted: the run
+refuses before anything is removed, since the next run would deliver it again
+([Restricting access](access-restriction.md#what-a-restriction-holds-off)). For each interface, in reverse delivery order, the run:
 
 1. Refuses while a worker holds a lease on the ledger's records:
    `A worker holds a lease on records of '<flow>' until <time>, so nothing was removed or deleted: work is in flight on this ledger. Delete it once that work has ended.`
@@ -276,6 +286,7 @@ A record is reversed only while it is still the record the source left. Each one
 | `unchanged` | The version before the source is the one the source left. |
 | `version-missing` | The version to put back can no longer be read from OSDU. |
 | `busy` | Work is queued or in flight for the record; taken again when the reversal is asked again. |
+| `restricted` | The record's access in OSDU is restricted ([Restricting access](access-restriction.md)); taken again when the reversal is asked again, once it is lifted. |
 | `not-claimed`, `not-in-ledger` | The flow never claimed the record's OSDU id, or the ledger no longer holds the record. |
 | `not-reversible` | The route cannot do what the record needs. |
 

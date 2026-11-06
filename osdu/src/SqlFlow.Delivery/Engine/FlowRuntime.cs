@@ -1699,9 +1699,13 @@ public sealed partial class FlowRuntime : IDisposable
     /// <see cref="RemovalChoice.Everything"/>) also deletes each record OSDU answered for from the ledger, keeping one line
     /// of it (<see cref="ILedger.PurgeRecordsAsync"/>); a record whose removal failed stays in the ledger as it was. Either
     /// way each record removed is asked for again, on its record or on its line, so the flow's next run reads its row by key
-    /// and delivers it again: what the source holds and OSDU does not comes back.
+    /// and delivers it again: what the source holds and OSDU does not comes back. <see cref="RemovalChoice.Restrict"/> and
+    /// <see cref="RemovalChoice.Unrestrict"/> take the same path too, replacing each record's ACL in OSDU with the registered
+    /// access restriction <paramref name="restriction"/> names, or giving it back the ACL it had
+    /// (<see cref="Restrictions.RecordRestrictions"/>; osdu/docs/reference/concepts/access-restriction.md); before anything is
+    /// restricted, the flow's identity is checked to be able to lift it again.
     /// </summary>
-    public Task<RemovalSummary> RemoveAsync(RemovalSelection selection, RemovalChoice scope, bool purgeLedger = false, CancellationToken ct = default)
+    public Task<RemovalSummary> RemoveAsync(RemovalSelection selection, RemovalChoice scope, bool purgeLedger = false, string? restriction = null, CancellationToken ct = default)
     {
         // A selection by filter is resolved here, when the removal runs: whoever queued it (the API, which counted it, or a run
         // triggered by hand, which did not), what it matches now is what it removes, and never a part of it.
@@ -1709,12 +1713,28 @@ public sealed partial class FlowRuntime : IDisposable
         if (purgeLedger && scope is not (RemovalChoice.Record or RemovalChoice.Everything))
         {
             throw new DeliveryException(
-                $"A record is deleted from the ledger only with a removal that takes it out of OSDU (record or everything), not with {scope.ToString().ToLowerInvariant()}.");
+                $"A record is deleted from the ledger only with a removal that takes it out of OSDU (record or everything), not with {Operations.RemovalScopes.Wire(scope)}.");
+        }
+
+        if (scope == RemovalChoice.Restrict && string.IsNullOrWhiteSpace(restriction))
+        {
+            throw new DeliveryException("A restriction names the registered access restriction whose groups the records' ACL becomes, and this one names none.");
+        }
+
+        if (scope != RemovalChoice.Restrict && restriction is not null)
+        {
+            throw new DeliveryException($"Only a restriction names an access restriction, not a removal of scope {Operations.RemovalScopes.Wire(scope)}.");
         }
 
         var single = selection.Keys is { Count: 1 } only ? only[0] : (DeliveryKey?)null;
-        var kind = scope == RemovalChoice.Previous ? AttemptPhases.RestorePrevious : "delete";
-        return TrackAsync(kind, selection.Describe(scope, purgeLedger), single, async activity =>
+        var kind = scope switch
+        {
+            RemovalChoice.Previous => AttemptPhases.RestorePrevious,
+            RemovalChoice.Restrict => AttemptPhases.Restrict,
+            RemovalChoice.Unrestrict => AttemptPhases.LiftRestriction,
+            _ => "delete",
+        };
+        return TrackAsync(kind, selection.Describe(scope, purgeLedger, restriction?.Trim()), single, async activity =>
         {
             var removalStarted = _context.Time.GetUtcNow().UtcDateTime;
             var ledger = RequireLedger();
@@ -1726,6 +1746,9 @@ public sealed partial class FlowRuntime : IDisposable
             await ledger.RecoverExpiredLeasesAsync(Flow.Id, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
             var stepBack = scope == RemovalChoice.Previous
                 ? new Reversals.PreviousVersionRestore(Flow, ledger, protocol, _context.Time, Actor, RunId)
+                : null;
+            var access = scope.ChangesAccess()
+                ? new Restrictions.RecordRestrictions(Flow, ledger, protocol, _context.Time, Actor, RunId, await RestrictionToSetAsync(ledger, protocol, scope, restriction, ct).ConfigureAwait(false))
                 : null;
             var purged = 0;
             var undone = UndoSummary.Empty;
@@ -1745,7 +1768,7 @@ public sealed partial class FlowRuntime : IDisposable
                     var (chunkUndone, unsettled) = await UndoForRemovalAsync(ledger, protocol, records.Values.ToList(), open: true, minted: false, holder, ct).ConfigureAwait(false);
                     undone = undone.Add(chunkUndone);
                     return await RemoveChunkAsync(
-                        ledger, protocol, chunk, records, scope, purgeLedger, deliverAgain: true, activity, stepBack, results, unsettled, holder, ct).ConfigureAwait(false);
+                        ledger, protocol, chunk, records, scope, purgeLedger, deliverAgain: true, activity, stepBack, results, unsettled, holder, ct, access).ConfigureAwait(false);
                 }, ct).ConfigureAwait(false);
             }
 
@@ -1758,9 +1781,30 @@ public sealed partial class FlowRuntime : IDisposable
             {
                 Undone = undone,
                 CacheAfter = await PutIntoCacheAsync(removalStarted, purgedIds, ct).ConfigureAwait(false),
+                Restriction = restriction?.Trim(),
             };
             return (summary, summary.Describe(), results.Count == 1 ? results[0].SubmissionId : null, false);
         }, ct);
+    }
+
+    /// <summary>
+    /// The registered access restriction a restriction of the records sets (osdu/docs/reference/concepts/access-restriction.md),
+    /// found in the partition the ledger is kept in, once the flow's identity is checked to be able to lift it again; null for a
+    /// lift, which gives each record back the ACL it had.
+    /// </summary>
+    private async Task<AccessRestrictionState?> RestrictionToSetAsync(ILedger ledger, IDeliveryProtocol protocol, RemovalChoice scope, string? restriction, CancellationToken ct)
+    {
+        if (scope != RemovalChoice.Restrict)
+        {
+            return null;
+        }
+
+        var partition = _ledgerPartition ?? throw new InvalidOperationException("The ledger is registered before an intervention's action runs, which names its partition.");
+        var registered = await ledger.FindAccessRestrictionAsync(partition, restriction!, ct).ConfigureAwait(false)
+            ?? throw new DeliveryException(
+                $"No access restriction named '{restriction!.Trim()}' is registered for partition '{partition}', so nothing was restricted. Register it under Access restrictions, or name one that is.");
+        await Restrictions.RecordRestrictions.EnsureLiftableAsync(Flow, protocol, registered, ct).ConfigureAwait(false);
+        return registered;
     }
 
     /// <summary>
@@ -1792,12 +1836,12 @@ public sealed partial class FlowRuntime : IDisposable
     /// removal's own (<paramref name="holder"/>) is passed over: a worker is sending it, or another removal has it. With
     /// <paramref name="deliverAgain"/> (an operator's removal) each record removed is asked to be planned again, so the flow's
     /// next run delivers it again; the removal that opens deleting the ledger asks for nothing, since the run after it reads
-    /// every row.
+    /// every row. With <paramref name="access"/>, the records are restricted, or their restrictions lifted, instead.
     /// </summary>
     private async Task<int> RemoveChunkAsync(
         ILedger ledger, IDeliveryProtocol protocol, IReadOnlyList<DeliveryKey> chunk, IReadOnlyDictionary<DeliveryKey, RecordState> records,
         RemovalChoice scope, bool purgeLedger, bool deliverAgain, long? activity, Reversals.PreviousVersionRestore? stepBack, List<RemovalRecordResult> results,
-        IReadOnlySet<DeliveryKey> unsettled, string? holder, CancellationToken ct)
+        IReadOnlySet<DeliveryKey> unsettled, string? holder, CancellationToken ct, Restrictions.RecordRestrictions? access = null)
     {
         var removals = new List<RecordRemoval>(chunk.Count);
         foreach (var key in chunk)
@@ -1849,6 +1893,20 @@ public sealed partial class FlowRuntime : IDisposable
             return 0;
         }
 
+        if (access is not null)
+        {
+            var chosen = removals.Select(r => records[r.Key]).ToList();
+            var changed = access.Lifting
+                ? await access.LiftAsync(chosen, holder, correlation.Id, ct).ConfigureAwait(false)
+                : await access.RestrictAsync(chosen, holder, correlation.Id, ct).ConfigureAwait(false);
+            for (var i = 0; i < chosen.Count; i++)
+            {
+                results.Add(await AnnounceAccessAsync(changed[i], chosen[i], ct).ConfigureAwait(false));
+            }
+
+            return 0;
+        }
+
         var outcomes = await protocol.DeleteBatchAsync(removals, scope.Scope(), ct).ConfigureAwait(false);
 
         // The ledger settles the whole chunk in one write, and only for the records the target actually
@@ -1869,7 +1927,9 @@ public sealed partial class FlowRuntime : IDisposable
             results.Add(gone.Contains(outcome.Removal.Key) ? result with { Detail = result.Detail + "; deleted from the ledger" }
                 : purgeLedger && outcome.Succeeded && unsettled.Contains(outcome.Removal.Key)
                     ? result with { Detail = result.Detail + "; kept in the ledger, since what its unfinished deliveries left could not all be undone yet" }
-                    : result);
+                    : purgeLedger && outcome.Succeeded && records[outcome.Removal.Key].Restricted
+                        ? result with { Detail = result.Detail + "; kept in the ledger, since its access is restricted: lift the restriction to delete it from the ledger" }
+                        : result);
         }
 
         return gone.Count;
@@ -2027,6 +2087,14 @@ public sealed partial class FlowRuntime : IDisposable
             {
                 throw new DeliveryException(
                     $"The run names partition '{confirm.Trim()}' to confirm deleting the ledger of '{Flow.Label}', which is kept in partition '{partition}', so nothing was removed or deleted. Name '{partition}' to delete it.");
+            }
+
+            // A record whose access is restricted is never forgotten: deleting the ledger would deliver it again, open to everyone.
+            if (await ledger.CountRestrictedAsync(Flow.Id, ct).ConfigureAwait(false) is > 0 and var restricted)
+            {
+                throw new DeliveryException(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{restricted} record(s) of '{Flow.Label}' have their access restricted in OSDU, so nothing was removed or deleted: deleting the ledger would forget them, and the next run would deliver them again under the ACL their mapping gives. Lift their restrictions first (Remove, Lift the restriction), then delete the ledger."));
             }
 
             var now = _context.Time.GetUtcNow().UtcDateTime;
@@ -2475,6 +2543,35 @@ public sealed partial class FlowRuntime : IDisposable
         return result.AlreadyGone
             ? RemovalRecordResult.AlreadyGone(key, record.SourceKey, record.Label, record.TargetId, result.Detail, record.LastSubmissionId)
             : RemovalRecordResult.Removed(key, record.SourceKey, record.Label, record.TargetId, result.Detail, record.LastSubmissionId);
+    }
+
+    /// <summary>Announces one record whose access was restricted, or whose restriction was lifted, now that the ledger holds it.</summary>
+    private async Task<RemovalRecordResult> AnnounceAccessAsync(RemovalRecordResult result, RecordState record, CancellationToken ct)
+    {
+        if (result.Outcome is not ("restricted" or "lifted"))
+        {
+            return result;
+        }
+
+        var restricted = result.Outcome == "restricted";
+        await _context.Listener.OnEventAsync(new DeliveryEvent
+        {
+            AtUtc = _context.Time.GetUtcNow().UtcDateTime,
+            FlowId = Flow.Id,
+            FlowName = Flow.Label,
+            Interface = Flow.Interface,
+            Kind = restricted ? "record.restricted" : "record.unrestricted",
+            SubmissionId = record.LastSubmissionId,
+            DeliveryKey = record.DeliveryKey,
+            SourceKey = record.SourceKey,
+            Label = record.Label,
+            TargetId = record.TargetId,
+            TargetVersion = record.TargetVersion,
+            Worker = Actor,
+            Phase = restricted ? AttemptPhases.Restrict : AttemptPhases.LiftRestriction,
+            Detail = result.Detail,
+        }, ct).ConfigureAwait(false);
+        return result;
     }
 
     /// <summary>Announces one record written back at its version before the latest, now that the ledger holds it, and says what it did.</summary>

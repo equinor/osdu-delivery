@@ -124,6 +124,12 @@ public static class ReversalOutcomes
     /// <summary>Work is queued or in flight for the record; taken again when the reversal is asked again.</summary>
     public const string Busy = "busy";
 
+    /// <summary>
+    /// The record's access in OSDU is restricted (osdu/docs/reference/concepts/access-restriction.md), and nothing is written
+    /// to it while it is; taken again when the reversal is asked again, once the restriction is lifted.
+    /// </summary>
+    public const string Restricted = "restricted";
+
     /// <summary>The record never claimed the OSDU id, so the flow wrote nothing to OSDU under it.</summary>
     public const string NotClaimed = "not-claimed";
 
@@ -137,7 +143,7 @@ public static class ReversalOutcomes
     public const string Failed = "failed";
 
     public static IReadOnlyList<string> All { get; } =
-        [Restored, Removed, AlreadyGone, Superseded, Unchanged, ChangedInOsdu, MissingInOsdu, VersionMissing, Busy, NotClaimed, NotInLedger, NotReversible, Failed];
+        [Restored, Removed, AlreadyGone, Superseded, Unchanged, ChangedInOsdu, MissingInOsdu, VersionMissing, Busy, Restricted, NotClaimed, NotInLedger, NotReversible, Failed];
 
     /// <summary>The outcomes after which OSDU holds what it held before the source.</summary>
     public static bool Reversed(string? outcome) => outcome is Restored or Removed or AlreadyGone;
@@ -248,10 +254,10 @@ public sealed record ReversalCounts(long Records, IReadOnlyDictionary<string, lo
     public long Open => State(ReversalItemStates.Pending) + State(ReversalItemStates.Sending);
 
     /// <summary>
-    /// Records the next run of the reversal takes: those not settled yet, those that failed, and those passed over as busy.
-    /// None means asking again would change nothing.
+    /// Records the next run of the reversal takes: those not settled yet, those that failed, and those passed over as busy or
+    /// restricted. None means asking again would change nothing.
     /// </summary>
-    public long ToTake => Open + State(ReversalItemStates.Failed) + Outcome(ReversalOutcomes.Busy);
+    public long ToTake => Open + State(ReversalItemStates.Failed) + Outcome(ReversalOutcomes.Busy) + Outcome(ReversalOutcomes.Restricted);
 
     /// <summary>The counts that are not zero, as the audit trail shows a reversal: "1,200 restored, 300 removed, 4 superseded".</summary>
     public override string ToString()

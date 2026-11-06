@@ -364,8 +364,11 @@ public sealed record DeliveryRunPayload
     /// <summary>The partition a run deleting the ledger, an inventory flow's remove or restore run, or a removal flow's approved run acts in, named by whoever asked for it as confirmation.</summary>
     public const string ConfirmProperty = "confirm";
 
-    /// <summary>How much of each record a delivery flow's remove run takes: record, previous, history or everything.</summary>
+    /// <summary>How much of each record a delivery flow's remove run takes: record, previous, history or everything; or restrict or unrestrict its access.</summary>
     public const string ScopeProperty = "scope";
+
+    /// <summary>The registered access restriction, by name, a delivery flow's remove run restricts its records under (scope restrict).</summary>
+    public const string RestrictionProperty = "restriction";
 
     /// <summary>The listing a delivery flow's remove run empties: every record of the ledger it matches, resolved when the run removes them.</summary>
     public const string FilterProperty = "filter";
@@ -429,7 +432,7 @@ public sealed record DeliveryRunPayload
 
     private static readonly string[] Properties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, MaxRecordsProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
-            PartitionReferencesProperty, ConfirmProperty, ScopeProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
+            PartitionReferencesProperty, ConfirmProperty, ScopeProperty, RestrictionProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
             RestoreProperty, SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty, DownloadsProperty];
 
     /// <summary>
@@ -451,6 +454,7 @@ public sealed record DeliveryRunPayload
         [InterfacesProperty] = "only a delivery flow's runs select interfaces",
         [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove and restore runs and a removal flow's approved run name the partition they act in",
         [ScopeProperty] = "only a delivery flow's remove run names how much of each record it removes",
+        [RestrictionProperty] = "only a delivery flow's remove run restricts its records' access under a registered restriction",
         [FilterProperty] = "only a delivery flow's remove run names the listing it empties",
         [PurgeLedgerProperty] = "only a delivery flow's remove run deletes what it removes from the ledger",
         [TestsProperty] = "only an assertion flow's runs select tests",
@@ -470,7 +474,7 @@ public sealed record DeliveryRunPayload
     /// <summary>The properties a delivery flow's runs take, besides the central configuration; which operation takes which is <see cref="Validate"/>'s.</summary>
     private static readonly string[] DeliveryProperties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, MaxRecordsProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty,
-            ScopeProperty, FilterProperty, PurgeLedgerProperty];
+            ScopeProperty, RestrictionProperty, FilterProperty, PurgeLedgerProperty];
 
     private static readonly string[] RemovalProperties = ["finding", "scope", "expected", "ids", "selection"];
 
@@ -556,6 +560,13 @@ public sealed record DeliveryRunPayload
     /// and every version. Only a remove run names it, and it has to.
     /// </summary>
     public RemovalChoice? Scope { get; init; }
+
+    /// <summary>
+    /// The registered access restriction, by name, a remove run of <see cref="Scope"/> restrict replaces its records' ACL
+    /// with (osdu/docs/reference/concepts/access-restriction.md); the run finds it in the partition it acts in. Only such a
+    /// run names it, and it has to.
+    /// </summary>
+    public string? Restriction { get; init; }
 
     /// <summary>
     /// The listing a remove run empties instead of naming its records by <see cref="RecordKeys"/>: every record of the ledger
@@ -686,6 +697,7 @@ public sealed record DeliveryRunPayload
         Add(Interfaces.Count > 0, InterfacesProperty);
         Add(Confirm is not null, ConfirmProperty);
         Add(Scope is not null, ScopeProperty);
+        Add(Restriction is not null, RestrictionProperty);
         Add(Filter is not null, FilterProperty);
         Add(PurgeLedger, PurgeLedgerProperty);
         Add(Tests.Count > 0, TestsProperty);
@@ -819,6 +831,7 @@ public sealed record DeliveryRunPayload
             Interfaces = Names(root[InterfacesProperty]),
             Confirm = root[ConfirmProperty] is null ? null : Text(root[ConfirmProperty], ConfirmProperty),
             Scope = root[ScopeProperty] is null ? null : RemovalScopeOf(root[ScopeProperty]),
+            Restriction = root[RestrictionProperty] is null ? null : RestrictionName(root[RestrictionProperty]),
             Filter = root[FilterProperty] is null ? null : ListingFilter(root[FilterProperty]),
             PurgeLedger = Boolean(root, PurgeLedgerProperty),
             References = ReferenceMap(root[ReferencesProperty], ReferencesProperty),
@@ -890,6 +903,7 @@ public sealed record DeliveryRunPayload
         if (operation != DeliveryOperations.Remove)
         {
             Refuse(Scope is not null, ScopeProperty, operation, "only a remove run names how much of each record it removes");
+            Refuse(Restriction is not null, RestrictionProperty, operation, "only a remove run restricts its records' access");
             Refuse(Filter is not null, FilterProperty, operation, "only a remove run names the listing it empties");
             Refuse(PurgeLedger, PurgeLedgerProperty, operation, "only a remove run deletes what it removes from the ledger");
         }
@@ -1063,7 +1077,7 @@ public sealed record DeliveryRunPayload
                 if (Scope is not { } removing)
                 {
                     throw new SqlFlowException(
-                        $"payload {ScopeProperty} is required by the {operation} operation: name how much of each record goes, record, previous, history or everything.");
+                        $"payload {ScopeProperty} is required by the {operation} operation: name how much of each record goes, record, previous, history or everything, or restrict or unrestrict its access.");
                 }
 
                 if (RecordKeys.Count == 0 && Filter is null)
@@ -1075,6 +1089,14 @@ public sealed record DeliveryRunPayload
                 Refuse(RecordKeys.Count > 0 && Filter is not null, FilterProperty, operation, "a removal names its records by recordKeys or by filter, not both");
                 Refuse(PurgeLedger && removing is not (RemovalChoice.Record or RemovalChoice.Everything), PurgeLedgerProperty, operation,
                     $"a record is deleted from the ledger only with a removal that takes it out of OSDU (record or everything), not with {RemovalScopes.Wire(removing)}");
+                if (removing == RemovalChoice.Restrict && string.IsNullOrWhiteSpace(Restriction))
+                {
+                    throw new SqlFlowException(
+                        $"payload {RestrictionProperty} is required by the {operation} operation with {ScopeProperty} restrict: name the registered access restriction whose groups the records' ACL becomes.");
+                }
+
+                Refuse(Restriction is not null && removing != RemovalChoice.Restrict, RestrictionProperty, operation,
+                    $"only a removal of scope restrict names an access restriction, not one of {RemovalScopes.Wire(removing)}");
                 Refuse(Force, ForceProperty, operation, "a removal passes no gate: it takes the records it names");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a removal names its records by recordKeys or by a filter, which can name a submission");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a removal sends nothing the flow renders");
@@ -1176,6 +1198,11 @@ public sealed record DeliveryRunPayload
         if (Scope is { } removalScope)
         {
             root[ScopeProperty] = RemovalScopes.Wire(removalScope);
+        }
+
+        if (Restriction is { } restriction)
+        {
+            root[RestrictionProperty] = restriction;
         }
 
         if (Filter is { } listing)
@@ -1384,7 +1411,16 @@ public sealed record DeliveryRunPayload
     private static RemovalChoice RemovalScopeOf(JsonNode? node)
         => RemovalScopes.TryParse(Text(node, ScopeProperty), out var scope)
             ? scope
-            : throw new SqlFlowException($"payload {ScopeProperty} must be one of record, previous, history or everything.");
+            : throw new SqlFlowException($"payload {ScopeProperty} must be one of record, previous, history, everything, restrict or unrestrict.");
+
+    /// <summary>A registered access restriction's name: text, at most as long as the registry keeps one.</summary>
+    private static string RestrictionName(JsonNode? node)
+    {
+        var name = Text(node, RestrictionProperty).Trim();
+        return name.Length is > 0 and <= DeliveryAccessRestriction.MaxNameLength
+            ? name
+            : throw new SqlFlowException($"payload {RestrictionProperty} must name a registered access restriction, 1 to {DeliveryAccessRestriction.MaxNameLength} characters.");
+    }
 
     /// <summary>The listing a remove run empties, read as strictly as the payload around it: every part of it, and nothing else.</summary>
     private static RecordQuery ListingFilter(JsonNode? node)

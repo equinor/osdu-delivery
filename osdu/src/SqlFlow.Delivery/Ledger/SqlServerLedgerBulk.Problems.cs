@@ -25,7 +25,8 @@ internal static partial class SqlServerLedgerBulk
     // record has no problem any more. A blocked record released with its rendered document accepts that document as it
     // is: the gate before a record is sent sends it whatever its verdict says (osdu/docs/reference/concepts/preflight.md,
     // Validation before a record is sent), and a document rendered differently later is judged again. With an activity,
-    // each record released is named under it.
+    // each record released is named under it. A record whose access in OSDU is restricted is never released: it stays as it
+    // is until the restriction is lifted (osdu/docs/reference/concepts/access-restriction.md).
     // A held or failed record r that nothing will move: not blocked, not asked to be planned again, and with no document a
     // worker sends. A release reaches it as it reaches a blocked one.
     internal const string Stranded =
@@ -48,9 +49,10 @@ internal static partial class SqlServerLedgerBulk
         FROM (SELECT DISTINCT CAST(k.[value] AS uniqueidentifier) AS [DeliveryKey] FROM OPENJSON(@keys) AS k) AS n
         INNER JOIN [osdu].[Record] AS r WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
             ON r.[PartitionId] = @partitionId AND r.[FlowId] = @flowId AND r.[DeliveryKey] = n.[DeliveryKey]
-        WHERE (r.[Blocked] = 1 AND r.[Status] IN (N'held', N'failed', N'deleted', N'reverted'))
-           OR ({{Stranded}})
-           OR (@waiting = 1 AND r.[Status] = N'waiting');
+        WHERE r.[RestrictionId] IS NULL
+          AND ((r.[Blocked] = 1 AND r.[Status] IN (N'held', N'failed', N'deleted', N'reverted'))
+            OR ({{Stranded}})
+            OR (@waiting = 1 AND r.[Status] = N'waiting'));
         IF @activityId IS NOT NULL
             INSERT INTO [osdu].[ActivityRecord] ([PartitionId], [FlowId], [DeliveryKey], [ActivityId])
             SELECT @partitionId, @flowId, x.[DeliveryKey], @activityId
