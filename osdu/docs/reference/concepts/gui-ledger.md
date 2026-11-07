@@ -26,6 +26,8 @@ related:
 sourceRefs:
   - osdu/gui/src/features/delivery/RecordParentChips.tsx
   - osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx
+  - osdu/gui/src/features/delivery/FlowCard.tsx
+  - osdu/gui/src/features/delivery/flowHealth.ts
   - osdu/gui/src/features/delivery/RepositorySyncControl.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryActivityPage.tsx
@@ -54,13 +56,42 @@ partition. The rest of what the module adds to the workbench is on [the OSDU pag
 
 ## Delivery
 
-Every delivery flow as a card, counted in the title bar's partition: a delivered bar, **Records**, **Delivered**,
-**Pending**, **Held**, **Failed** and **Last 24h**, with the last delivery, the last verify and the last submission. A
-flow that delivers only to other partitions says where, without counts. The header line totals what the flows hold
-(delivered of total, pending, held, failed, drifted). **Find a record** with **Look up** opens Records looked up for
-what is typed. A card opens the flow's Delivery tab. **Sync now** syncs the repository picked in the list beside it, so a commit reaches the
+Every delivery flow as a card, counted in the title bar's partition, the flows that need someone first. A card reads top
+to bottom:
+
+- a **ring** of the flow's records by status, in the status colours, with the share delivered in its middle (never 100%
+  while one record is not); its hover lists each status with its count and share;
+- the flow's batch and how many records it holds (which opens its Records tab), above the flow's **name**;
+- the **verdict**, the one thing that most needs someone, in a line; its hover says what it means and what to do, with a
+  copy button, and it links to where that is done;
+- **Delivered**, **Pending**, **Held** and **Failed**, in the same place on every card; a count of some opens those records
+  in the flow's Records tab, and its hover says what the status means;
+- notes on some of the records when there are any: drifted (when the verdict is something else), restricted access
+  ([restricting access](access-restriction.md)), a held enrichment step ([enrich holds](../flow/enrich-holds.md)), and an
+  inactive flow, each opening its records;
+- the last delivery (with how many in the last 24 hours), the last verify and the last submission, which opens the
+  submission's page and has its counts on hover; and the partition the counts are of, for a flow that delivers to several.
+
+| Verdict | When | Links to |
+| --- | --- | --- |
+| Last submission failed | the flow's newest submission failed; its error is on the hover | the submission's page |
+| N failed (, M held) | records failed on every try | the Issues tab |
+| N held, all adoptable / M adoptable | records held back; some or all because OSDU already holds a record at their ids | the Delivery tab's **Adopt** when all are, else the Issues tab |
+| N drifted since the last verify | the last verify found OSDU holding something else, or nothing | the drifted records |
+| Delivering, N to go / Planning a submission | records planned and not yet delivered, or a submission still being planned | the pending records |
+| N waiting for records they refer to | records waiting for a record they refer to | the waiting records |
+| N reverted | records a reversal put back, blocked until released | the reverted records |
+| No records yet | the ledger holds none for the flow | |
+| All N delivered (, M removed) | every record delivered as its latest version | |
+
+The verdicts are in that order of precedence, and the cards take it too, once every flow's counts have answered: failed
+and a failed submission, then held, then drifted, then delivering and waiting, then the rest; a flow that delivers only to
+other partitions comes last, dimmed, saying where it delivers, without counts. The header line says how many flows deliver
+to the partition, the share of their records delivered, and only the counts that ask for someone (failed, held, drifted,
+pending), with how many flows need attention. **Find a record** with **Look up** opens Records looked up for what is typed.
+A card opens the flow's Delivery tab. **Sync now** syncs the repository picked in the list beside it, so a commit reaches the
 flows without a trip to the Repos page: it is the Repos page's own sync, with its message, and its trace followed by the
-title bar's trace indicator, which opens it in the bottom panel when clicked. The list shows how each repository last synced, a paused one cannot be picked, the pick is remembered, and a mark
+title bar's trace indicator, which opens it in the bottom panel when clicked. A repository whose auto sync is off holds its commit on purpose, so its Sync now asks first, naming the commit it holds, before moving it to its branch's tip ([automatic sync](../../../../sqlflow/docs/reference/concepts/repository-auto-sync.md)). The list shows how each repository last synced and which sync only on request, a paused one cannot be picked, the pick is remembered, and a mark
 beside a repository whose last sync failed shows the error and opens that trace. When any sync ends, whoever started it,
 the page reads its flows and counts again. A card shows what a flow's run did within seconds of the run
 ending: the page checks each flow's newest run every five seconds (every three while one is queued or running), and reads

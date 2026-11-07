@@ -687,3 +687,12 @@ its tests and renders of both designs in both modes.
 
 Added decision 0047 and the reference page `delivery-concept-gui-designs`; updated `delivery-concept-gui` and
 `delivery-flow-assertion-sets`.
+
+## [2026-11-07] ingest | Every admin page under Admin
+
+Source: the human's words asking that Access restrictions move to the Admin menu and that every admin section be under
+it; the menu layout in `osdu/gui/src/module.tsx`, the Admin group's admin-only scope, the partition picker's link to
+Partitions, and the navigation spec.
+
+Added decision 0048, which amends 0034; updated `delivery-concept-menu`, `delivery-concept-gui`,
+`delivery-concept-partitions` and `delivery-concept-access-restriction`.

@@ -1,58 +1,11 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, CircleDashed, Hourglass, PauseCircle, ShieldCheck, Trash2, Undo2, XCircle, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { cn } from "@/lib/utils";
 import type { DeliveryFlowStats } from "../../api/delivery";
-
-/** One status a flow's records can be in, as the bar draws it: the colour marks it, the icon and label name it. */
-interface StatusPart {
-  key: string;
-  label: string;
-  count: number;
-  icon: LucideIcon;
-  /** The segment's fill; the tone the record badges give the same status. */
-  fill: string;
-  /** The icon's colour in the legend. */
-  ink: string;
-  /** What the status means, for the segment's tooltip. */
-  meaning: string;
-}
-
-/** The statuses in the order a record moves through them, so the bar reads from done to stuck. */
-function partsOf(stats: DeliveryFlowStats): StatusPart[] {
-  const sending = stats.pending + stats.delivering;
-  return [
-    { key: "delivered", label: "delivered", count: stats.delivered, icon: CheckCircle2, fill: "bg-success", ink: "text-success", meaning: "Delivered, as its latest version." },
-    {
-      key: "pending",
-      label: "pending",
-      count: sending,
-      icon: CircleDashed,
-      fill: "bg-info",
-      ink: "text-info",
-      meaning: stats.delivering > 0 ? `Planned and not yet delivered; ${stats.delivering} being sent now.` : "Planned and not yet delivered.",
-    },
-    { key: "waiting", label: "waiting", count: stats.waiting, icon: Hourglass, fill: "bg-info/45", ink: "text-info", meaning: "Waiting for a record it refers to." },
-    { key: "held", label: "held", count: stats.held, icon: PauseCircle, fill: "bg-warning", ink: "text-warning", meaning: "Held back until its row changes or someone releases it." },
-    { key: "failed", label: "failed", count: stats.failed, icon: XCircle, fill: "bg-destructive", ink: "text-destructive", meaning: "Failed on every try." },
-    { key: "deleted", label: "deleted", count: stats.deleted, icon: Trash2, fill: "bg-muted-foreground/50", ink: "text-muted-foreground", meaning: "Removed from OSDU: by an operator, sent again when its row is read; by a reversal, blocked until its row changes or it is released; by a removal flow, kept out until a row of its key newer than its removal arrives." },
-    {
-      key: "reverted",
-      label: "reverted",
-      count: stats.reverted ?? 0,
-      icon: Undo2,
-      fill: "bg-muted-foreground/30",
-      ink: "text-muted-foreground",
-      meaning: "Put back by a reversal to the version OSDU held before, and blocked until its source changes or it is released.",
-    },
-  ];
-}
-
-function percent(count: number, total: number): string {
-  const share = (count / total) * 100;
-  return share > 0 && share < 1 ? "<1%" : `${Math.round(share)}%`;
-}
+import { percentOf, statusShares } from "./flowHealth";
+import { STATUS_LOOK } from "./statusLook";
 
 /**
  * Where a flow's records stand, as one bar: the whole is every record the ledger holds for the flow, each segment a
@@ -61,7 +14,7 @@ function percent(count: number, total: number): string {
  * sits beside them. The headline and the flow's actions ride on the first line.
  */
 export function FlowStatusBar({ stats, actions }: { stats: DeliveryFlowStats; actions: ReactNode }) {
-  const parts = partsOf(stats);
+  const parts = statusShares(stats).map((share) => ({ ...share, ...STATUS_LOOK[share.key] }));
   const shown = parts.filter((part) => part.count > 0);
   return (
     <div className="flex flex-col gap-2.5" data-testid="delivery-stats">
@@ -95,7 +48,7 @@ export function FlowStatusBar({ stats, actions }: { stats: DeliveryFlowStats; ac
                   </TooltipTrigger>
                   <TooltipContent>
                     <span className="font-medium">{`${part.count.toLocaleString()} ${part.label}`}</span>
-                    {` (${percent(part.count, stats.total)}). ${part.meaning}`}
+                    {` (${percentOf(part.count, stats.total)}). ${part.meaning}`}
                   </TooltipContent>
                 </Tooltip>
               ))}

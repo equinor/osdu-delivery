@@ -2202,6 +2202,8 @@
       "sourceRefs": [
         "osdu/gui/src/features/delivery/RecordParentChips.tsx",
         "osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx",
+        "osdu/gui/src/features/delivery/FlowCard.tsx",
+        "osdu/gui/src/features/delivery/flowHealth.ts",
         "osdu/gui/src/features/delivery/RepositorySyncControl.tsx",
         "osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx",
         "osdu/gui/src/features/delivery/DeliveryActivityPage.tsx",
@@ -10739,7 +10741,8 @@
         "osdu group"
       ],
       "related": [
-        "delivery-wiki-0045-activity-bar-shortcuts"
+        "delivery-wiki-0045-activity-bar-shortcuts",
+        "delivery-wiki-0048-admin-holds-admin-pages"
       ],
       "sourceRefs": [
         "osdu/gui/src/module.tsx",
@@ -11164,6 +11167,29 @@
         "sqlflow/gui/src/theme/designs.ts",
         "sqlflow/gui/src/theme/ThemeModeContext.tsx",
         "sqlflow/gui/src/layout/workbench/AppearanceControl.tsx"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0048-admin-holds-admin-pages",
+      "corpus": "wiki",
+      "path": "decisions/0048-admin-holds-admin-pages.md",
+      "title": "Decision 0048: every page an admin runs is in the menu's Admin group",
+      "type": "decision",
+      "summary": "Why Access restrictions and Partitions moved from the OSDU group to Admin, and what that leaves a person who is not an admin.",
+      "keywords": [
+        "menu",
+        "admin group",
+        "access restrictions",
+        "partitions",
+        "side bar"
+      ],
+      "related": [
+        "delivery-wiki-0034-one-menu-by-task"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/module.tsx",
+        "osdu/gui/e2e/02-navigation.spec.ts",
+        "osdu/gui/src/features/delivery/PartitionSwitcher.tsx"
       ]
     },
     {

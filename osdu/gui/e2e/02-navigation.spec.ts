@@ -43,7 +43,6 @@ const MENU: MenuGroup[] = [
       "nav-delivery-assertions",
       "nav-delivery-inventories",
       "nav-delivery-dimensions",
-      "nav-delivery-partitions",
     ],
     sections: [],
   },
@@ -58,7 +57,12 @@ const MENU: MenuGroup[] = [
     ],
   },
   { id: "explore", label: "Explore", entries: ["nav-catalog", "nav-lineage", "nav-subscribers", "nav-schema-changes", "nav-search"], sections: [] },
-  { id: "admin", label: "Admin", entries: ["nav-users", "nav-external-triggers", "nav-semantic-layer"], sections: [] },
+  {
+    id: "admin",
+    label: "Admin",
+    entries: ["nav-users", "nav-external-triggers", "nav-semantic-layer", "nav-delivery-access-restrictions", "nav-delivery-partitions"],
+    sections: [],
+  },
   { id: "settings", label: "Settings", entries: ["nav-settings-tokens", "nav-settings-notifications"], sections: [] },
 ];
 

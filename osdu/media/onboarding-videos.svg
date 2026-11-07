@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 474" width="1280" height="474" role="img" aria-labelledby="title desc">
-  <title id="title">OSDU Delivery onboarding: the videos in five parts</title>
-  <desc id="desc">The onboarding videos in the order to watch them, in five parts, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. Build and extend: configure it with an assistant, or change the framework.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 482" width="1280" height="482" role="img" aria-labelledby="title desc">
+  <title id="title">OSDU Delivery onboarding: the videos in parts</title>
+  <desc id="desc">The onboarding videos in parts, in the order to watch them, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. After delivery: what OSDU really holds, and proof that it is right. Build and extend: use the assistant, run from GitHub, or change the framework.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1624"/>
@@ -22,7 +22,7 @@
       <circle cx="2" cy="2" r="1.1" fill="#9db0c6" fill-opacity="0.11"/>
     </pattern>
     <clipPath id="card">
-      <rect width="1280" height="474" rx="28"/>
+      <rect width="1280" height="482" rx="28"/>
     </clipPath>
   </defs>
   <style>
@@ -31,11 +31,11 @@
     .title { font-size: 56px; font-weight: 800; fill: #ffffff; letter-spacing: -0.5px; }
     .sub { font-size: 21px; fill: #a9bbd0; }
     .cta { font-size: 18px; font-weight: 700; fill: #0d1624; }
-    .part { font-size: 14px; font-weight: 700; letter-spacing: 2px; fill: #d5e0ee; }
+    .part { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; fill: #d5e0ee; }
     .partnum { fill: #7f93ab; }
     .rail { stroke: #3a4d66; stroke-width: 2; }
     .tile { fill: #172840; fill-opacity: 0.82; stroke: #2a3b52; stroke-width: 1.5; }
-    .desc { font-size: 18px; fill: #d5e0ee; }
+    .desc { font-size: 16px; fill: #d5e0ee; }
     .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.6s ease-out infinite; }
     @keyframes pulse { from { transform: scale(1); opacity: 0.55; } to { transform: scale(1.9); opacity: 0; } }
     @media (prefers-reduced-motion: reduce) {
@@ -44,12 +44,12 @@
   </style>
 
   <g clip-path="url(#card)">
-    <rect width="1280" height="474" fill="url(#bg)"/>
-    <rect width="1280" height="474" fill="url(#dots)"/>
-    <ellipse cx="460" cy="313" rx="620" ry="220" fill="url(#warmth)"/>
-    <ellipse cx="1060" cy="332" rx="360" ry="220" fill="url(#cool)"/>
+    <rect width="1280" height="482" fill="url(#bg)"/>
+    <rect width="1280" height="482" fill="url(#dots)"/>
+    <ellipse cx="460" cy="318" rx="620" ry="220" fill="url(#warmth)"/>
+    <ellipse cx="1060" cy="337" rx="360" ry="220" fill="url(#cool)"/>
   </g>
-  <rect x="0.75" y="0.75" width="1278.5" height="472.5" rx="27.5" fill="none" stroke="#2a3b52" stroke-width="1.5"/>
+  <rect x="0.75" y="0.75" width="1278.5" height="480.5" rx="27.5" fill="none" stroke="#2a3b52" stroke-width="1.5"/>
 
   <text class="kick" x="64" y="72">OSDU DELIVERY · ONBOARDING</text>
   <text class="title" x="62" y="130">Learn it from the videos.</text>
@@ -58,57 +58,71 @@
   <rect x="1004" y="50" width="212" height="50" rx="25" fill="#f2b56b"/>
   <text class="cta" x="1110" y="81" text-anchor="middle">Watch them →</text>
 
-  <line class="rail" x1="70" y1="242" x2="1208" y2="242"/>
-  <path d="M1206 236 L1216 242 L1206 248 Z" fill="#3a4d66"/>
+  <line class="rail" x1="70" y1="242" x2="1204" y2="242"/>
+  <path d="M1202 236 L1212 242 L1202 248 Z" fill="#3a4d66"/>
   <text class="part" x="64" y="226"><tspan class="partnum">1</tspan>  START HERE</text>
   <circle cx="70" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
-  <text class="part" x="298" y="226"><tspan class="partnum">2</tspan>  INTO THE TABLES</text>
-  <circle cx="304" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
-  <text class="part" x="532" y="226"><tspan class="partnum">3</tspan>  ROW TO RECORD</text>
-  <circle cx="538" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
-  <text class="part" x="766" y="226"><tspan class="partnum">4</tspan>  INTO OSDU</text>
-  <circle cx="772" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
-  <text class="part" x="1000" y="226"><tspan class="partnum">5</tspan>  BUILD AND EXTEND</text>
-  <circle cx="1006" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
+  <text class="part" x="258" y="226"><tspan class="partnum">2</tspan>  INTO THE TABLES</text>
+  <circle cx="264" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
+  <text class="part" x="452" y="226"><tspan class="partnum">3</tspan>  ROW TO RECORD</text>
+  <circle cx="458" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
+  <text class="part" x="646" y="226"><tspan class="partnum">4</tspan>  INTO OSDU</text>
+  <circle cx="652" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
+  <text class="part" x="840" y="226"><tspan class="partnum">5</tspan>  AFTER DELIVERY</text>
+  <circle cx="846" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
+  <text class="part" x="1034" y="226"><tspan class="partnum">6</tspan>  BUILD AND EXTEND</text>
+  <circle cx="1040" cy="242" r="5" fill="#0d1624" stroke="#9cc8ff" stroke-width="2"/>
   <g>
-    <rect class="tile" x="64" y="262" width="216" height="164" rx="18" style="stroke: #ffffff; stroke-opacity: 0.55"/>
-    <circle cx="106" cy="304" r="34" fill="url(#glow)"/>
-    <circle class="pulse" cx="106" cy="304" r="17" fill="none" stroke="#ffffff" stroke-width="2"/>
-    <circle cx="106" cy="304" r="17" fill="#ffffff"/>
-    <path d="M101.5 296.5 L114.5 304 L101.5 311.5 Z" fill="#0d1624"/>
-    <text class="desc" x="88" y="358">Why it exists, and</text>
-    <text class="desc" x="88" y="382">how its parts fit</text>
-    <text class="desc" x="88" y="406">together.</text>
+    <rect class="tile" x="64" y="262" width="178" height="172" rx="18" style="stroke: #ffffff; stroke-opacity: 0.55"/>
+    <circle cx="102" cy="302" r="34" fill="url(#glow)"/>
+    <circle class="pulse" cx="102" cy="302" r="17" fill="none" stroke="#ffffff" stroke-width="2"/>
+    <circle cx="102" cy="302" r="17" fill="#ffffff"/>
+    <path d="M97.5 294.5 L110.5 302 L97.5 309.5 Z" fill="#0d1624"/>
+    <text class="desc" x="84" y="352">Why it exists,</text>
+    <text class="desc" x="84" y="374">and how its parts</text>
+    <text class="desc" x="84" y="396">fit together.</text>
   </g>
   <g>
-    <rect class="tile" x="298" y="262" width="216" height="164" rx="18"/>
-    <rect x="323" y="290" width="34" height="28" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M323 299 H357 M323 308.5 H357 M335 299 V318" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="desc" x="322" y="358">How source files</text>
-    <text class="desc" x="322" y="382">land, and only what</text>
-    <text class="desc" x="322" y="406">changed is written.</text>
+    <rect class="tile" x="258" y="262" width="178" height="172" rx="18"/>
+    <rect x="279" y="288" width="34" height="28" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M279 297 H313 M279 306.5 H313 M291 297 V316" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="278" y="352">How source files</text>
+    <text class="desc" x="278" y="374">land, and only</text>
+    <text class="desc" x="278" y="396">what changed is</text>
+    <text class="desc" x="278" y="418">written.</text>
   </g>
   <g>
-    <rect class="tile" x="532" y="262" width="216" height="164" rx="18"/>
-    <path d="M563 287 H578 L586 295 V321 H563 Z M578 287 V295 H586" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M568 303 H581 M568 309 H581 M568 315 H576" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="desc" x="556" y="358">How a row becomes</text>
-    <text class="desc" x="556" y="382">an OSDU record, and</text>
-    <text class="desc" x="556" y="406">when it sends again.</text>
+    <rect class="tile" x="452" y="262" width="178" height="172" rx="18"/>
+    <path d="M479 285 H494 L502 293 V319 H479 Z M494 285 V293 H502" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M484 301 H497 M484 307 H497 M484 313 H492" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="472" y="352">How a row becomes</text>
+    <text class="desc" x="472" y="374">an OSDU record,</text>
+    <text class="desc" x="472" y="396">and when it sends</text>
+    <text class="desc" x="472" y="418">again.</text>
   </g>
   <g>
-    <rect class="tile" x="766" y="262" width="216" height="164" rx="18"/>
-    <path d="M808 287 V307 M800 299 L808 307 L816 299" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M792 307 V319 H824 V307" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="desc" x="790" y="358">How records reach</text>
-    <text class="desc" x="790" y="382">OSDU, and how each</text>
-    <text class="desc" x="790" y="406">is accounted for.</text>
+    <rect class="tile" x="646" y="262" width="178" height="172" rx="18"/>
+    <path d="M684 285 V305 M676 297 L684 305 L692 297" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M668 305 V317 H700 V305" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="666" y="352">How records reach</text>
+    <text class="desc" x="666" y="374">OSDU, and how</text>
+    <text class="desc" x="666" y="396">each is accounted</text>
+    <text class="desc" x="666" y="418">for.</text>
   </g>
   <g>
-    <rect class="tile" x="1000" y="262" width="216" height="164" rx="18"/>
-    <path d="M1034 294 L1025 304 L1034 314 M1050 294 L1059 304 L1050 314 M1045 290 L1039 318" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="desc" x="1024" y="358">Configure it with an</text>
-    <text class="desc" x="1024" y="382">assistant, or change</text>
-    <text class="desc" x="1024" y="406">the framework.</text>
+    <rect class="tile" x="840" y="262" width="178" height="172" rx="18"/>
+    <path d="M878 285 L892 291 V301 C892 310 886 316 878 319 C870 316 864 310 864 301 V291 Z" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M871 302 L876 307 L885 297" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="860" y="352">What OSDU really</text>
+    <text class="desc" x="860" y="374">holds, and proof</text>
+    <text class="desc" x="860" y="396">that it is right.</text>
+  </g>
+  <g>
+    <rect class="tile" x="1034" y="262" width="178" height="172" rx="18"/>
+    <path d="M1064 292 L1055 302 L1064 312 M1080 292 L1089 302 L1080 312 M1075 288 L1069 316" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="desc" x="1054" y="352">Use the assistant,</text>
+    <text class="desc" x="1054" y="374">run from GitHub,</text>
+    <text class="desc" x="1054" y="396">or change the</text>
+    <text class="desc" x="1054" y="418">framework.</text>
   </g>
 </svg>

@@ -649,6 +649,7 @@ locals {
       "ControlPlane__Bootstrap__Repositories__${name}__Branch"              = r.branch
       "ControlPlane__Bootstrap__Repositories__${name}__SyncIntervalSeconds" = tostring(r.sync_interval_seconds)
     },
+    r.auto_sync == null ? {} : { "ControlPlane__Bootstrap__Repositories__${name}__AutoSync" = tostring(r.auto_sync) },
     local.repository_credential[name] == null ? {} : { "ControlPlane__Bootstrap__Repositories__${name}__CredentialReference" = local.repository_credential[name] },
     r.credential_username == null ? {} : { "ControlPlane__Bootstrap__Repositories__${name}__CredentialUsername" = r.credential_username },
     { for i, path in r.excluded_flow_paths : "ControlPlane__Bootstrap__Repositories__${name}__ExcludedFlowPaths__${i}" => path },

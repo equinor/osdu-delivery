@@ -109,6 +109,51 @@ test.describe.serial("External triggers", () => {
     await expect(adminPage.getByTestId("trace-copy")).toBeVisible();
   });
 
+  test("the Repositories tab turns a repository's auto sync off and on, and shows one the configuration sets", async ({ adminPage }) => {
+    // The listing and the switch are answered here, so the estate's own repository keeps syncing as it does.
+    const base = {
+      remoteUrl: "https://git.example.org/estate.git", localPath: null, branch: "main", enabled: true, syncIntervalSeconds: 300,
+      nextSyncUtc: null, lastSyncUtc: "2026-11-07T09:00:00Z", lastSyncedSha: "abcdef0123456789", lastError: null,
+      credentialReference: null, credentialUsername: null, excludedFlowPaths: [], createdUtc: "2026-11-01T09:00:00Z",
+      updatedUtc: "2026-11-07T09:00:00Z", syncRequestedUtc: null, syncStartedUtc: null, syncPending: false,
+    };
+    let gated = { ...base, id: "00000000-0000-0000-0000-0000000000a1", name: `e2e-gated-${runTag}`, autoSync: true, autoSyncConfiguredBy: null };
+    const pinned = {
+      ...base, id: "00000000-0000-0000-0000-0000000000a2", name: `e2e-pinned-${runTag}`, autoSync: false,
+      autoSyncConfiguredBy: `ControlPlane:Bootstrap:Repositories:e2e-pinned-${runTag}:AutoSync`,
+    };
+    const asked: boolean[] = [];
+    await adminPage.route("**/api/v1/repos/sources?*", (route) =>
+      route.fulfill({ json: { items: [gated, pinned], page: 1, pageSize: 200, total: 2 } }));
+    await adminPage.route("**/api/v1/repos/sources/*/auto-sync", (route) => {
+      const autoSync = (route.request().postDataJSON() as { autoSync: boolean }).autoSync;
+      asked.push(autoSync);
+      gated = { ...gated, autoSync, autoSyncUpdatedBy: "admin", autoSyncUpdatedUtc: "2026-11-07T10:00:00Z" } as typeof gated;
+      return route.fulfill({ json: gated });
+    });
+
+    await adminPage.goto("/external-triggers?tab=repositories");
+    const table = adminPage.getByTestId("repositories-table");
+    await expect(table).toBeVisible({ timeout: FIRST_PAGE_MS });
+    const gatedRow = table.getByTestId("table-row").filter({ hasText: gated.name });
+    const pinnedRow = table.getByTestId("table-row").filter({ hasText: pinned.name });
+    await expect(gatedRow.getByTestId("repo-sync-mode")).toHaveText("every 5 min");
+    await expect(pinnedRow.getByTestId("repo-auto-sync")).toBeDisabled();
+    // Off with no trigger syncing it, a repository takes a merge only when a person syncs it now, and the row says so.
+    await expect(pinnedRow.getByTestId("repo-sync-advice-warning")).toBeVisible();
+
+    await gatedRow.getByTestId("repo-auto-sync").click();
+    await expect(gatedRow.getByTestId("repo-sync-mode")).toHaveText("on request");
+    await expect(adminPage.getByText(`${gated.name} syncs only when asked now`)).toBeVisible();
+
+    // Back on, it catches up with everything merged since, so that is confirmed first.
+    await gatedRow.getByTestId("repo-auto-sync").click();
+    await expect(adminPage.getByTestId("confirm-dialog")).toContainText("moving from abcdef0123 to the tip of main");
+    await adminPage.getByTestId("confirm-dialog-confirm").click();
+    await expect(gatedRow.getByTestId("repo-sync-mode")).toHaveText("every 5 min");
+    expect(asked).toEqual([false, true]);
+  });
+
   test("someone without the admin role is not offered the page", async ({ page, request }) => {
     await seedSession(page, await operatorSession(request));
     await seedSideBarOpen(page);

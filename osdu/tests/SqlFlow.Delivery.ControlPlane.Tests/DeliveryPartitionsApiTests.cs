@@ -638,6 +638,70 @@ public sealed class DeliveryPartitionsApiTests
         }
     }
 
+    /// <summary>
+    /// A partition registered makes every repository sync again to describe its registry-driven flows in it, and that sync
+    /// recomputes, it never moves: a repository whose automatic sync is off is synced at the commit it holds, so registering
+    /// a partition never brings a merge into an environment that takes merges only when a trigger reports them.
+    /// </summary>
+    [Fact]
+    public async Task Registering_a_partition_resyncs_a_repository_that_syncs_only_on_request_at_the_commit_it_holds()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var partition = "r" + suffix;
+        var sourceName = "cp-held-" + suffix;
+        var sourceId = FlowIdentity.FromName($"reposource/{sourceName}");
+        var held = new string('a', 40);
+        var now = DateTime.UtcNow;
+
+        await using (var db = CatalogDatabase.Create(cs))
+        {
+            await RepoSourceStore.UpsertAsync(db, sourceName, "https://example/" + sourceName + ".git", "main", enabled: true, syncIntervalSeconds: 300, now);
+            Assert.True(await RepoSourceStore.TryClaimSyncAsync(db, sourceId, now, now.AddMinutes(5), now));
+            await RepoSourceStore.RecordSuccessAsync(db, sourceId, held, now);
+            Assert.Equal(AutoSyncChange.Applied, (await RepoSourceStore.SetAutoSyncAsync(db, sourceId, false, "tests", now)).Outcome);
+        }
+
+        try
+        {
+            // The managed sync is off, so the request the registration makes stays on the row to be read.
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("ControlPlane:ManagedSync:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var admin = await TokenAsync(client, ["admin"]);
+
+            using (var added = await SendAsync(client, admin, HttpMethod.Post, "/api/v1/delivery/partitions", new DeliveryPartitionAddRequest(partition, null, null)))
+            {
+                Assert.True(added.StatusCode == HttpStatusCode.Created, await added.Content.ReadAsStringAsync());
+            }
+
+            await using var check = CatalogDatabase.Create(cs);
+            var source = await check.RepoSources.AsNoTracking().SingleAsync(s => s.Id == sourceId);
+            Assert.False(source.AutoSync);
+            Assert.NotNull(source.NextSyncUtc);
+            Assert.True(source.ForceLineageOnNextSync);
+            Assert.Null(source.MoveRequestedUtc);
+            Assert.Equal(held, source.LastSyncedSha);
+        }
+        finally
+        {
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                await osdu.DeliveryPartitions.Where(p => p.Name == partition).ExecuteDeleteAsync();
+            }
+
+            await using var db = CatalogDatabase.Create(cs);
+            await db.ActivityEvents.Where(e => e.SubjectKey == sourceId.ToString()).ExecuteDeleteAsync();
+            await db.RepoSources.Where(s => s.Id == sourceId).ExecuteDeleteAsync();
+        }
+    }
+
     private static async Task WaitForInterfacesAsync(string cs, Guid repoId, int expected)
     {
         for (var attempt = 0; attempt < 120; attempt++)

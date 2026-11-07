@@ -6,10 +6,12 @@ import { isApiError } from "@/api/client";
 import { repoSourceApi } from "@/api/endpoints";
 import type { RepoSource } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { syncNowConfirmText, syncNowMoves, syncsOnRequest } from "@/features/repos/autoSync";
 import { announceSyncOutcome, repoSourcesRefetchInterval } from "@/features/repos/syncOutcome";
 import { useFollowSyncTrace, useSyncTracePanel } from "@/features/repos/useSyncTracePanel";
 import { pickedSource, rememberedRepository, rememberRepository, syncsEnded } from "./repositorySync";
@@ -41,6 +43,7 @@ function SyncStanding({ source }: { source: RepoSource }) {
     <span>
       synced <RelativeTime value={source.lastSyncUtc} absolute={false} />
       {source.lastSyncedSha !== null && <>, <span className="font-mono">{source.lastSyncedSha.slice(0, 10)}</span></>}
+      {syncsOnRequest(source) && <>, syncs on request</>}
     </span>
   );
 }
@@ -59,6 +62,7 @@ export function RepositorySyncControl() {
   const { hasScope } = useAuth();
   const canOperate = hasScope("operate");
   const [picked, setPicked] = useState(rememberedRepository);
+  const [confirming, setConfirming] = useState<RepoSource | null>(null);
 
   const sources = useQuery({
     queryKey: ["repo-sources", "list", FETCH_CAP],
@@ -107,6 +111,11 @@ export function RepositorySyncControl() {
 
   const source = pickedSource(sources.data.items, picked);
   const syncing = source !== undefined && (source.syncPending || (syncNow.isPending && syncNow.variables?.id === source.id));
+  const startSync = (target: RepoSource) => {
+    syncNow.mutate(target);
+    followSyncTrace(target.id, target.name);
+  };
+
   return (
     <div className="flex items-center gap-1.5" data-testid="delivery-repo-sync">
       <Select
@@ -156,11 +165,19 @@ export function RepositorySyncControl() {
         disabled={source === undefined || syncing || !canOperate}
         title={source === undefined
           ? "Every repository is paused. Resume one on the Repos page to sync it."
-          : `Sync ${source.name} now. This page reads its flows again when the sync ends.`}
+          : syncNowMoves(source)
+            ? `${source.name} syncs only on request: syncing now moves it to the tip of ${source.branch}, after you confirm.`
+            : `Sync ${source.name} now. This page reads its flows again when the sync ends.`}
         onClick={() => {
-          if (source !== undefined) {
-            syncNow.mutate(source);
-            followSyncTrace(source.id, source.name);
+          if (source === undefined) {
+            return;
+          }
+
+          // A repository that syncs only on request holds its commit on purpose: moving it to the tip is confirmed.
+          if (syncNowMoves(source)) {
+            setConfirming(source);
+          } else {
+            startSync(source);
           }
         }}
         data-testid="delivery-repo-sync-now"
@@ -168,6 +185,20 @@ export function RepositorySyncControl() {
         {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
         {syncing ? "Syncing" : "Sync now"}
       </Button>
+      <ConfirmDialog
+        open={confirming !== null}
+        title="Move to the tip of its branch"
+        message={confirming === null ? "" : syncNowConfirmText(confirming)}
+        confirmLabel="Sync now"
+        onConfirm={() => {
+          if (confirming !== null) {
+            startSync(confirming);
+          }
+
+          setConfirming(null);
+        }}
+        onClose={() => setConfirming(null)}
+      />
     </div>
   );
 }

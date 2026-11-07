@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "15875810710813848169"
+      "templateHash": "5154243451354093568"
     }
   },
   "definitions": {
@@ -197,6 +197,13 @@
           "minValue": 30,
           "metadata": {
             "description": "How often it syncs, in seconds: at least 30. Default 300."
+          }
+        },
+        "autoSync": {
+          "type": "bool",
+          "nullable": true,
+          "metadata": {
+            "description": "Whether it syncs on its own every syncIntervalSeconds (true), or only when an external trigger or a person asks, holding the commit it has until then (false), so a merge reaches this environment only when its own trigger reports it. Unset leaves it to an administrator, on the External triggers page; set, it is locked there."
           }
         },
         "credentialSecretName": {
@@ -833,7 +840,7 @@
       },
       "defaultValue": {},
       "metadata": {
-        "description": "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): { remoteUrl (https), branch (main), syncIntervalSeconds (300, at least 30), credentialSecretName: for a private remote the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository's contents), credentialUsername where the host needs one, excludedFlowPaths }. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
+        "description": "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): { remoteUrl (https), branch (main), syncIntervalSeconds (300, at least 30), autoSync (unset: left to an administrator; false syncs only when a trigger or a person asks), credentialSecretName: for a private remote the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository's contents), credentialUsername where the host needs one, excludedFlowPaths }. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
       }
     },
     "githubApp": {
@@ -1146,7 +1153,7 @@
     "githubAppWebHost": "[if(startsWith(variables('githubAppApiHost'), 'api.'), substring(variables('githubAppApiHost'), 4), variables('githubAppApiHost'))]",
     "githubAppReference": "[if(equals(variables('githubAppChecked'), null()), '', format('${{githubapp:app={0};key=keyvault:{1}/{2}{3}}}', coalesce(tryGet(variables('githubAppChecked'), 'appId'), ''), parameters('keyVaultName'), coalesce(tryGet(variables('githubAppChecked'), 'privateKeySecretName'), ''), if(empty(variables('githubAppApiUrl')), '', format(';api={0}', variables('githubAppApiRoot')))))]",
     "repositoryCredentials": "[toObject(items(variables('repositoriesChecked')), lambda('r', lambdaVariables('r').key), lambda('r', if(not(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), ''))), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), '')), if(and(and(not(empty(variables('githubAppReference'))), coalesce(tryGet(lambdaVariables('r').value, 'useGitHubApp'), true())), or(equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), variables('githubAppWebHost')), equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), format('www.{0}', variables('githubAppWebHost'))))), variables('githubAppReference'), ''))))]",
-    "repositorySettings": "[reduce(map(items(variables('repositoriesChecked')), lambda('r', union(createObject(format('ControlPlane__Bootstrap__Repositories__{0}__RemoteUrl', lambdaVariables('r').key), lambdaVariables('r').value.remoteUrl, format('ControlPlane__Bootstrap__Repositories__{0}__Branch', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'branch'), 'main'), format('ControlPlane__Bootstrap__Repositories__{0}__SyncIntervalSeconds', lambdaVariables('r').key), string(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300))), if(empty(variables('repositoryCredentials')[lambdaVariables('r').key]), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialReference', lambdaVariables('r').key), variables('repositoryCredentials')[lambdaVariables('r').key])), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialUsername', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__Repositories__{0}__ExcludedFlowPaths__{1}', lambdaVariables('r').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray())[lambdaVariables('i')]))))), createObject(), lambda('settings', 'repository', union(lambdaVariables('settings'), lambdaVariables('repository'))))]",
+    "repositorySettings": "[reduce(map(items(variables('repositoriesChecked')), lambda('r', union(createObject(format('ControlPlane__Bootstrap__Repositories__{0}__RemoteUrl', lambdaVariables('r').key), lambdaVariables('r').value.remoteUrl, format('ControlPlane__Bootstrap__Repositories__{0}__Branch', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'branch'), 'main'), format('ControlPlane__Bootstrap__Repositories__{0}__SyncIntervalSeconds', lambdaVariables('r').key), string(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300))), if(equals(tryGet(lambdaVariables('r').value, 'autoSync'), null()), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__AutoSync', lambdaVariables('r').key), if(coalesce(tryGet(lambdaVariables('r').value, 'autoSync'), true()), 'true', 'false'))), if(empty(variables('repositoryCredentials')[lambdaVariables('r').key]), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialReference', lambdaVariables('r').key), variables('repositoryCredentials')[lambdaVariables('r').key])), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialUsername', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__Repositories__{0}__ExcludedFlowPaths__{1}', lambdaVariables('r').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray())[lambdaVariables('i')]))))), createObject(), lambda('settings', 'repository', union(lambdaVariables('settings'), lambdaVariables('repository'))))]",
     "effectiveAzureAdAllowedTenantIds": "[if(parameters('provisionEntraApp'), concat(createArray(subscription().tenantId), parameters('azureAdAdditionalAllowedTenantIds')), parameters('azureAdAllowedTenantIds'))]"
   },
   "resources": {

@@ -263,7 +263,7 @@ anything, so a membership changed since is refused there in the same words.
   ACL set and replaced.
 - A flow's Records tab and the Records page narrow to **Restricted** records, the grid marks each one, and a flow's card
   counts them. A remove run's page says how many records it restricted or lifted, and under which restriction.
-- **Access restrictions** (OSDU in the menu) keeps the registry ([The registry](#the-registry)).
+- **Access restrictions** (Admin in the menu) keeps the registry ([The registry](#the-registry)).
 
 ## What it does not do
 

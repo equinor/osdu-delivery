@@ -249,6 +249,9 @@ other packages adopt the same contract.
   why the design is a choice made in the title bar and on the sign-in page rather than a deployment's setting, why a first
   visit opens in Equinor dark, why the Equinor Design System's values are copied into one stylesheet, and why its typeface
   and logo stay on Equinor's service.
+- [0048: every page an admin runs is in the menu's Admin group](decisions/0048-admin-holds-admin-pages.md): why Access
+  restrictions and Partitions moved from OSDU to Admin, why Maintenance stayed under Health, and how a person who is not
+  an admin still reaches the two pages.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

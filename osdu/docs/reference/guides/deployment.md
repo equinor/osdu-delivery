@@ -291,7 +291,7 @@ OSDU Delivery's Bicep parameters beyond SQLFlow's:
 | `sqlAdmins` | The people or groups (`name`, `objectId`, `type`) made owners of every database, inside every deployment. |
 | `catalogDatabaseName` | The metadata database, `OsduDelivery` by default. |
 | `landingStorage` | The storage account the flows read their files from, created or adopted, granted to the apps, and given to every run as `LANDING_URL` (`abfss://<container>@<account>.dfs.core.windows.net`). |
-| `repositories` | The flow repositories the control plane syncs, registered at its start and kept as configured; a private one is read with the estate's GitHub App (`githubApp`, unless it sets `useGitHubApp` to false) or names the vault secret holding its own token (`credentialSecretName`, which wins). |
+| `repositories` | The flow repositories the control plane syncs, registered at its start and kept as configured; a private one is read with the estate's GitHub App (`githubApp`, unless it sets `useGitHubApp` to false) or names the vault secret holding its own token (`credentialSecretName`, which wins). `autoSync: false` (Terraform `auto_sync`) has a repository sync only when an external trigger or a person asks, holding its commit until then; unset leaves that to an admin ([automatic sync](../../../../sqlflow/docs/reference/concepts/repository-auto-sync.md)). |
 | `githubApp` | The GitHub App the estate's GitHub repositories are read with: `appId` (its client ID), `privateKeySecretName` (the vault secret a person puts its `.pem` in), and for GitHub Enterprise `apiUrl`. Each repository on the App's GitHub that names no token gets `${githubapp:app=<appId>;key=keyvault:<vault>/<privateKeySecretName>}` as its credential reference, which the control plane and each worker resolve with their own identity; the output `githubAppPrivateKeySecret` names the secret. |
 | `externalTriggers` | The callers that sync one of `repositories` (`repository`) and fire the schedules they name (`schedules`) ([SQLFlow's external triggers](../../../../sqlflow/docs/reference/concepts/external-triggers.md)): a GitHub workflow (`gitHub`: `repository`, `workflow`, `ref`, `environment`, `repositoryId`), proved by the token GitHub mints for its job, or a system holding a key (`keySecretName`, the vault secret a person puts it in, listed by the `externalTriggerKeySecrets` output). The control plane writes them at start and disables one the configuration no longer names. |
 | `properties` | Further values every run resolves with, as a setting or a `${keyvault:...}` reference. |
@@ -382,6 +382,14 @@ A GitHub workflow after a merge, or a system holding a key, can instead sync a r
 names through an external trigger, which the deployment's configuration declares (`externalTriggers`,
 `external_triggers`, above) or an admin creates on the External triggers page
 ([SQLFlow's external triggers](../../../../sqlflow/docs/reference/concepts/external-triggers.md)).
+
+Each environment syncs a repository on its own interval too, so where dev, test and production sync one estate repository a
+merge reaches all of them within minutes whatever their triggers do. An environment that should take a merge only when its
+own trigger reports it turns the repository's auto sync off: `autoSync: false` in its `repositories`, or an admin on
+**External triggers > Repositories**. It then holds the commit it has until a trigger request moves it to exactly the merge
+the request names, never to a later one and never back, and registering a partition or another change that re-describes
+its flows syncs the commit it holds again
+([automatic sync](../../../../sqlflow/docs/reference/concepts/repository-auto-sync.md)).
 
 ## See also
 

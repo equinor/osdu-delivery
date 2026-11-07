@@ -790,6 +790,7 @@ run "the_repositories_are_synced_as_the_configuration_names_them" {
         remote_url             = "https://github.com/example/welldb-metadata.git"
         branch                 = "release"
         sync_interval_seconds  = 120
+        auto_sync              = false
         credential_secret_name = "github-welldb-token"
         credential_username    = "x-access-token"
         excluded_flow_paths    = ["flows/legacy/old.yaml", "flows/scratch/draft.yaml"]
@@ -805,21 +806,23 @@ run "the_repositories_are_synced_as_the_configuration_names_them" {
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__RemoteUrl"] == "https://github.com/example/welldb-metadata.git" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__Branch"] == "release" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__SyncIntervalSeconds"] == "120" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__AutoSync"] == "false" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__CredentialReference"] == "$${keyvault:${azurerm_key_vault.this.name}/github-welldb-token}" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__CredentialUsername"] == "x-access-token" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__ExcludedFlowPaths__0"] == "flows/legacy/old.yaml" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__ExcludedFlowPaths__1"] == "flows/scratch/draft.yaml"
     )
-    error_message = "A private repository is synced from its branch with its token read from the vault, never written here."
+    error_message = "A private repository is synced from its branch with its token read from the vault, never written here, and only on request when auto_sync is false."
   }
 
   assert {
     condition = (
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__samples__Branch"] == "main" &&
       local.control_plane_settings["ControlPlane__Bootstrap__Repositories__samples__SyncIntervalSeconds"] == "300" &&
-      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__Repositories__samples__CredentialReference")
+      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__Repositories__samples__CredentialReference") &&
+      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__Repositories__samples__AutoSync")
     )
-    error_message = "A public repository takes the default branch and interval, and no credential."
+    error_message = "A public repository takes the default branch and interval, no credential, and leaves its automatic sync to an administrator."
   }
 }
 

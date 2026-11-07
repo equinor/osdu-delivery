@@ -66,10 +66,10 @@ start one ([the local demo](osdu/docs/reference/guides/local-demo.md)).
 
 ## Onboarding
 
-<a href="ONBOARDING.md"><img src="osdu/media/onboarding-videos.svg" width="100%" alt="Onboarding: learn OSDU Delivery from the videos, in five parts in the order to watch them, each tagged for data engineers, for extending the framework, or both"></a>
+<a href="ONBOARDING.md"><img src="osdu/media/onboarding-videos.svg" width="100%" alt="Onboarding: learn OSDU Delivery from the videos, in parts in the order to watch them, each tagged for data engineers, for extending the framework, or both"></a>
 
-**[The videos](ONBOARDING.md)** in five parts, in the order to watch them, each with a short description and tagged for
-data engineers, for extending the framework, or both.
+**[The videos](ONBOARDING.md)** in parts, in the order to watch them, each with a short description and tagged for data
+engineers, for extending the framework, or both.
 
 ## Learn more
 

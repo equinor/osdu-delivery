@@ -88,6 +88,34 @@ test.describe("Syncing a repository from the Delivery page", () => {
     await expect(adminPage.getByTestId("delivery-repo-sync-error")).toHaveCount(0);
   });
 
+  test("asks before moving a repository that syncs only on request to its branch's tip", async ({ adminPage }) => {
+    const syncs: string[] = [];
+    await adminPage.route(SOURCES, (route) => route.fulfill(listing([source("gated", { autoSync: false })])));
+    await adminPage.route("**/api/v1/repos/sources/*/sync", (route) => {
+      syncs.push(route.request().url());
+      return route.fulfill({ json: source("gated", { autoSync: false, lastSyncedSha: "fedcba9876543210" }) });
+    });
+    await adminPage.goto("/delivery");
+    await expect(adminPage.getByTestId("delivery-repo-sync-pick")).toHaveText("gated", { timeout: FIRST_PAGE_MS });
+
+    await adminPage.getByTestId("delivery-repo-sync-pick").click();
+    await expect(adminPage.getByTestId("delivery-repo-sync-option-gated")).toContainText("syncs on request");
+    await adminPage.keyboard.press("Escape");
+
+    // Cancelled, nothing is synced: the repository keeps the commit it holds.
+    await adminPage.getByTestId("delivery-repo-sync-now").click();
+    await expect(adminPage.getByTestId("confirm-dialog")).toContainText("holds abcdef0123");
+    await expect(adminPage.getByTestId("confirm-dialog")).toContainText("moves it to the tip of main");
+    await adminPage.getByTestId("confirm-dialog-cancel").click();
+    await expect(adminPage.getByTestId("confirm-dialog")).toHaveCount(0);
+    expect(syncs).toHaveLength(0);
+
+    await adminPage.getByTestId("delivery-repo-sync-now").click();
+    await adminPage.getByTestId("confirm-dialog-confirm").click();
+    await expect(adminPage.getByText("gated synced to fedcba987654")).toBeVisible();
+    expect(syncs).toHaveLength(1);
+  });
+
   test("reads the flows again when a sync that outlasted the server's wait ends", async ({ adminPage }) => {
     let items = [source("slow")];
     await adminPage.route(SOURCES, (route) => route.fulfill(listing(items)));

@@ -69,8 +69,6 @@ SQLFlow's.
 | | | Assertions | `/delivery/assertions` |
 | | | Inventories | `/delivery/inventories` |
 | | | Dimensions | `/delivery/dimensions` |
-| | | Partitions | `/delivery/partitions` |
-| | | Access restrictions | `/delivery/access-restrictions` |
 | Build | Flows | Repos | `/repos` |
 | | | Pipelines | `/pipelines` |
 | | | Schedules | `/schedules` |
@@ -90,6 +88,8 @@ SQLFlow's.
 | Admin | | Users | `/users` |
 | | | External triggers | `/external-triggers` |
 | | | AI context | `/semantic-layer` |
+| | | Access restrictions | `/delivery/access-restrictions` |
+| | | Partitions | `/delivery/partitions` |
 | Settings | | Access tokens | `/settings/tokens` |
 | | | Notifications | `/settings/notifications` |
 
@@ -101,15 +101,18 @@ SQLFlow's.
 - **Ledger**: what was delivered, flow by flow (Delivery) and record by record (Records), the removals that write to it,
   who did what (Audit trail), and the ledgers whose flow is gone.
 - **OSDU**: what OSDU holds, read live (Explorer, which also searches by the source columns of Search terms), the checks
-  of it (Assertions, Inventories), the tables built from it (Dimensions), and the partitions the flows deliver to.
+  of it (Assertions, Inventories), and the tables built from it (Dimensions).
 - **Build**: what is delivered, how and from where, all of it kept in the repositories. **Flows** are the repositories,
   their pipelines and their schedules. **Delivery** is what a delivered record is built from (the mapping, the template
   it pins, the cache it reads) and the order records reach OSDU in. **Sources** are the connections and acquisition flows
   the pipelines read, and the tools that look at a source before a flow is written for it.
 - **Explore**: the data the flows read and write and how it connects: the catalog, its lineage, the reports and apps that
   read it (Subscribers), changes to its definitions, and the search over all of it.
-- **Admin**, shown to an admin only: who and what may act: the users, the external systems that may fire schedules, and
-  what the assistant may read.
+- **Admin**, shown to an admin only: every page an admin runs ([decision 0048](../../wiki/decisions/0048-admin-holds-admin-pages.md)).
+  Who and what may act: the users, the external systems that may fire schedules, and what the assistant may read; the
+  groups a record's access can be restricted to (Access restrictions); and the partitions the flows deliver to
+  (Partitions). Anyone signed in can still open the last two by their address, and Partitions from the title bar's
+  partition picker; only an admin changes them.
 - **Settings**: the person's own access tokens and notifications, which the account menu also opens.
 
 No flow is configured from the menu. Flows of every kind are written in their repository's files, and synced and

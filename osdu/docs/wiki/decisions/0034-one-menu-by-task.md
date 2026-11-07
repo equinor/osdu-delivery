@@ -20,15 +20,17 @@ sourceRefs:
   - sqlflow/gui/unit/menuLayout.test.ts
 related:
   - delivery-wiki-0045-activity-bar-shortcuts
+  - delivery-wiki-0048-admin-holds-admin-pages
 referenceRefs:
   - delivery-concept-menu
   - delivery-concept-gui
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 # 0034: The module lays out the whole menu, SQLFlow's pages and its own, by what a person does there
 
 Status: accepted, amended by [0045](0045-activity-bar-shortcuts.md): the groups are the side bar's, and the activity bar
-holds a menu button and shortcuts to the pages worked in most. Documented in [the menu](../../reference/concepts/menu.md)
+holds a menu button and shortcuts to the pages worked in most; and by [0048](0048-admin-holds-admin-pages.md): Access
+restrictions and Partitions are in Admin, with every other page an admin runs. Documented in [the menu](../../reference/concepts/menu.md)
 and, for the extension point, in SQLFlow's `gui/DESIGN.md` (the side bar) and `GuiModule.menu`.
 
 ## Context

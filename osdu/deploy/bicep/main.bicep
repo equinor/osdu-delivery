@@ -151,6 +151,9 @@ type repository = {
   @minValue(30)
   syncIntervalSeconds: int?
 
+  @description('Whether it syncs on its own every syncIntervalSeconds (true), or only when an external trigger or a person asks, holding the commit it has until then (false), so a merge reaches this environment only when its own trigger reports it. Unset leaves it to an administrator, on the External triggers page; set, it is locked there.')
+  autoSync: bool?
+
   @description('For a private remote read with its own token, the vault secret a person puts the token in (a GitHub fine-grained token with read access to the repository\'s contents). It wins over githubApp.')
   credentialSecretName: string?
 
@@ -395,7 +398,7 @@ param sqlConnections { *: sqlConnection } = {
 @description('SKU name of each database sqlConnections creates, e.g. S1 (ignored when existingSqlServer is set). They carry the record data, so they are sized apart from the metadata.')
 param sqlConnectionSku string = 'S1'
 
-@description('The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): { remoteUrl (https), branch (main), syncIntervalSeconds (300, at least 30), credentialSecretName: for a private remote the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository\'s contents), credentialUsername where the host needs one, excludedFlowPaths }. The control plane registers them at start and keeps them as configured; nobody registers them by hand.')
+@description('The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): { remoteUrl (https), branch (main), syncIntervalSeconds (300, at least 30), autoSync (unset: left to an administrator; false syncs only when a trigger or a person asks), credentialSecretName: for a private remote the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository\'s contents), credentialUsername where the host needs one, excludedFlowPaths }. The control plane registers them at start and keeps them as configured; nobody registers them by hand.')
 param repositories { *: repository } = {}
 
 @description('The GitHub App the estate\'s GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md): { appId (its client ID), privateKeySecretName (the vault secret a person puts its .pem in), apiUrl (GitHub Enterprise only) }. A repository on the App\'s GitHub that names no credentialSecretName and leaves useGitHubApp on is read with a short-lived token the App mints for that repository alone, by the control plane and by each worker with its own identity; no token is stored anywhere. Left out, each repository is read with its own token, or with none.')
@@ -1189,6 +1192,9 @@ var repositorySettings = reduce(map(items(repositoriesChecked), r => union(
     'ControlPlane__Bootstrap__Repositories__${r.key}__Branch': r.value.?branch ?? 'main'
     'ControlPlane__Bootstrap__Repositories__${r.key}__SyncIntervalSeconds': string(r.value.?syncIntervalSeconds ?? 300)
   },
+  r.value.?autoSync == null
+    ? {}
+    : { 'ControlPlane__Bootstrap__Repositories__${r.key}__AutoSync': (r.value.?autoSync ?? true) ? 'true' : 'false' },
   empty(repositoryCredentials[r.key])
     ? {}
     : { 'ControlPlane__Bootstrap__Repositories__${r.key}__CredentialReference': repositoryCredentials[r.key] },

@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Each repository can sync only when asked, so a merge reaches an environment when its own trigger says.** An admin
+  turns auto sync off per repository on External triggers > Repositories (or `sqlflow repos auto-sync <name> off`, or
+  `autoSync: false` in the deployment's `repositories`). The repository then holds its commit until an external trigger
+  moves it to exactly the merge it reports (never a later merge, never back) or someone syncs it now, which asks first;
+  registering a partition and other recomputes sync the held commit again
+  ([automatic sync](sqlflow/docs/reference/concepts/repository-auto-sync.md)).
+
 - **The GUI comes in an Equinor design beside SQLFlow's, each light or dark, picked in the title bar or on the sign-in
   page.** The Equinor design takes the Equinor Design System's colours, Equinor's symbol in the title bar and Equinor's
   typeface for titles, both loaded from Equinor's own service. The design and mode a person last wore are kept in their
@@ -535,6 +542,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **Access restrictions and Partitions are in the menu's Admin group, with every other page an admin runs**, where they
+  were under OSDU. The group is shown to admins only; anyone signed in still opens both pages by their address, and
+  Partitions from the title bar's partition picker ([the menu](osdu/docs/reference/concepts/menu.md)).
+- **The Delivery page's cards lead with what needs someone, and the flows that do come first.** Each card shows its flow's
+  records as a ring of shares in place of the bar across it, a verdict under the name (failed, held and whether they can be
+  adopted, drifted, delivering, all delivered) that links to where it is acted on and says why on hover, the delivered,
+  pending, held and failed counts each opening those records in the flow's Records tab, and when the flow last delivered,
+  was verified and took a submission. The page heading counts only what asks for someone, and a flow's Records tab opens
+  narrowed by `?status=`, `?drifted=true`, `?stepHeld=true` or `?restricted=true`
+  ([the Delivery page](osdu/docs/reference/concepts/gui-ledger.md#delivery)).
 - **The GUI opens in the Equinor design's dark mode until a person picks a design**, where it opened in SQLFlow's design in
   the operating system's mode. A browser that kept a light or dark choice opens in the Equinor design in that mode; the
   SQLFlow design is one pick away in the title bar's menu ([the designs](osdu/docs/reference/concepts/gui-designs.md)).

@@ -38,6 +38,7 @@
     "src/features/delivery/valueProof.ts",
     "src/features/delivery/accessRestrictionText.ts",
     "src/features/delivery/removalQueued.ts",
+    "src/features/delivery/flowHealth.ts",
     "src/features/delivery/assertions/assertionReading.ts",
     "src/features/delivery/assertions/dashboard/dashboardModel.ts",
     "src/features/delivery/assertions/dashboard/dashboardTokens.ts",

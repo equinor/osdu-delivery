@@ -300,11 +300,12 @@ variable "sql_connection_sku" {
 }
 
 variable "repositories" {
-  description = "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): remote_url, branch, how often to sync, and for a private remote either the estate's GitHub App (github_app, used for every repository on its GitHub unless use_github_app is false) or the vault secret holding the repository's own token (credential_secret_name, put there by hand: a GitHub fine-grained token with read access to the repository's contents, which wins over the App) with its username where the host needs one. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
+  description = "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): remote_url, branch, how often to sync, whether it syncs on its own (auto_sync: unset leaves it to an administrator on the External triggers page, false syncs it only when a trigger or a person asks, holding its commit until then, so a merge reaches this environment only when its own trigger reports it), and for a private remote either the estate's GitHub App (github_app, used for every repository on its GitHub unless use_github_app is false) or the vault secret holding the repository's own token (credential_secret_name, put there by hand: a GitHub fine-grained token with read access to the repository's contents, which wins over the App) with its username where the host needs one. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
   type = map(object({
     remote_url             = string
     branch                 = optional(string, "main")
     sync_interval_seconds  = optional(number, 300)
+    auto_sync              = optional(bool)
     credential_secret_name = optional(string)
     credential_username    = optional(string)
     use_github_app         = optional(bool, true)

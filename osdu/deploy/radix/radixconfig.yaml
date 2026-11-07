@@ -142,6 +142,10 @@ spec:
             # With a GitHub App instead (read-only, installed on the repository, its .pem in the vault; see
             # sqlflow/docs/reference/guides/github-app.md), the reference names the App and where its key is kept:
             # ${githubapp:app=<the App's client ID>;key=keyvault:<dev key vault>/github-app-private-key}
+            # Every environment syncs the branch on its own interval, so a merge reaches dev, test and prod alike. To have
+            # an environment take a merge only when its own external trigger reports it, add
+            # ControlPlane__Bootstrap__Repositories__estate__AutoSync: "false" to its variables, or leave it unset and turn
+            # Auto sync off on External triggers > Repositories (sqlflow/docs/reference/concepts/repository-auto-sync.md).
             ControlPlane__Bootstrap__Repositories__estate__RemoteUrl: https://github.com/<owner>/<flow repository>
             ControlPlane__Bootstrap__Repositories__estate__Branch: main
             ControlPlane__Bootstrap__Repositories__estate__CredentialReference: ${keyvault:<dev key vault>/git-token}

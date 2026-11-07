@@ -451,9 +451,10 @@ export const osduDeliveryModule: GuiModule = {
   // who added the page (decision 0034). Operate is the day's work: asking, the runs and the workers running them, and the
   // health of what runs; Nodes is listed beside Runs rather than under the folded Health section, where it went unseen.
   // Ledger is what was delivered, flow by flow and record by record, and who did what. OSDU is what OSDU holds, read
-  // live, the checks of it, and its partitions. Build is what is delivered, how and from where, all of it kept in the
+  // live, and the checks of it. Build is what is delivered, how and from where, all of it kept in the
   // repositories: the flows, what a delivered record is built from, and the sources they read. Explore is the data the
-  // flows read and write and how it connects. Admin is who and what may act, and Settings is the person's own. A group of
+  // flows read and write and how it connects. Admin is every page an admin runs (decision
+  // 0048): who and what may act, the access restrictions and the partitions; Settings is the person's own. A group of
   // more than one sort of page lists each sort under a section. The mapping builder is reached from Mappings, which owns
   // its path. The activity bar opens the pages worked in most in one click, in the order the owner asked for (decision
   // 0045): the assistant, the delivery overview, the repositories and their schedules, the Explorer, the mappings and
@@ -484,8 +485,6 @@ export const osduDeliveryModule: GuiModule = {
           "/delivery/assertions",
           "/delivery/inventories",
           "/delivery/dimensions",
-          "/delivery/partitions",
-          "/delivery/access-restrictions",
         ],
       },
       {
@@ -499,13 +498,19 @@ export const osduDeliveryModule: GuiModule = {
         ],
       },
       { id: "explore", label: "Explore", icon: Compass, entries: ["/catalog", "/lineage", "/subscribers", "/schema-changes", "/search"] },
-      { id: "admin", label: "Admin", icon: ShieldCheck, requiresScope: "admin", entries: ["/users", "/external-triggers", "/semantic-layer"] },
+      {
+        id: "admin",
+        label: "Admin",
+        icon: ShieldCheck,
+        requiresScope: "admin",
+        entries: ["/users", "/external-triggers", "/semantic-layer", "/delivery/access-restrictions", "/delivery/partitions"],
+      },
       { id: "settings", label: "Settings", icon: Settings, bottom: true, entries: ["/settings/tokens", "/settings/notifications"] },
     ],
   },
   navItems: [
     { label: "Delivery", to: "/delivery", icon: PackageCheck, testId: "nav-delivery",
-        description: "Every delivery flow as a card with its counts in the picked partition: delivered, pending, held and failed. Open a card for that flow, look up a record by its key, or sync a repository." },
+        description: "Every delivery flow as a card in the picked partition, the ones that need someone first: what is wrong and where to act, its delivered, pending, held and failed counts, and when it last delivered. Look up a record by its key, or sync a repository." },
     { label: "Records", to: "/delivery/records", icon: PackageSearch, testId: "nav-delivery-records",
         description: "The records the ledger took in or sent, newest first. Find one by well name, key, OSDU id or source file across every flow; open it for its timeline, render and OSDU copy." },
     { label: "Removals", to: "/delivery/removals", icon: ListX, testId: "nav-delivery-removals",

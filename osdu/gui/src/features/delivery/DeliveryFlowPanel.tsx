@@ -114,10 +114,15 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     rows, names, many, interfaceName, partitions, partition, headerPartition, outside, unplaced, active, scope, ready, selectInterface,
   } = useInterfaceChoice(pipelineId, SCOPED_TO_LEDGER);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string>(ALL);
-  const [drifted, setDrifted] = useState(false);
-  const [stepHeld, setStepHeld] = useState(false);
-  const [restricted, setRestricted] = useState(false);
+  // A link can open the Records tab narrowed as the Delivery page's counts are (`?status=held`, `?drifted=true`): the
+  // filters start there and are the tab's own from then on.
+  const [status, setStatus] = useState<string>(() => {
+    const asked = searchParams.get("status");
+    return asked !== null && (DELIVERY_RECORD_STATUSES as readonly string[]).includes(asked) ? asked : ALL;
+  });
+  const [drifted, setDrifted] = useState(() => searchParams.get("drifted") === "true");
+  const [stepHeld, setStepHeld] = useState(() => searchParams.get("stepHeld") === "true");
+  const [restricted, setRestricted] = useState(() => searchParams.get("restricted") === "true");
   const [contains, setContains] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [deleteLedgerOpen, setDeleteLedgerOpen] = useState(false);

@@ -291,7 +291,10 @@ own identity. How the Kubernetes layout maps onto Container Apps:
   `syncIntervalSeconds`, and for a private one either the estate's `githubApp` or its own `credentialSecretName`,
   with `credentialUsername` for a host that pairs the token with a username, such as Bitbucket; `useGitHubApp: false`
   keeps the App off one repository). The control plane registers them at start and keeps them as configured: the GUI
-  shows them as set by the configuration, and changing one there is refused.
+  shows them as set by the configuration, and changing one there is refused. `autoSync: false` has a repository sync
+  only when an external trigger or a person asks, holding the commit it has until then, so several environments that
+  sync one repository each take a merge when their own trigger reports it; unset leaves that to an administrator
+  ([automatic sync](../../sqlflow/docs/reference/concepts/repository-auto-sync.md)).
 - **GitHub App**: `githubApp` (`appId`, `privateKeySecretName`, and `apiUrl` for GitHub Enterprise) reads every
   GitHub repository that names no token with a token the App mints for that repository alone. The control plane and
   each worker resolve it with their own identity, so the apps need no setting of their own for it.
