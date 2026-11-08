@@ -30,7 +30,10 @@ export interface OverviewTip {
 
 export interface OverviewHandlers {
   point: (part: OverviewPart | null) => void;
+  /** The reader clicked a part, or pressed Space on it: it stays lit, and nothing opens. */
   pick: (part: OverviewPart) => void;
+  /** The reader double-clicked a part, or pressed Enter on it: its details open. */
+  open: (part: OverviewPart) => void;
   /** Opens or closes a node holding others. */
   toggle: (path: string) => void;
   tip: (tip: OverviewTip | null) => void;
@@ -494,7 +497,7 @@ export class OverviewCanvas {
       .attr("data-found", (field) => (found?.fields.has(field.field.id) === true ? "true" : null));
   }
 
-  /** The handlers every part takes: pointing lights it, a click or Enter picks it. */
+  /** The handlers every part takes: pointing lights it, a click keeps it lit, and a double click opens its details. */
   private wire<E extends SVGElement, D>(parts: Selection<E, D, BaseType, unknown>, part: (datum: D) => OverviewPart): void {
     parts
       .on("mouseenter", (_event, datum) => this.settle(() => this.handlers.point(part(datum)), 0))
@@ -504,12 +507,17 @@ export class OverviewCanvas {
       .on("click", (event: Event, datum) => {
         event.stopPropagation();
         this.handlers.pick(part(datum));
+      })
+      .on("dblclick", (event: Event, datum) => {
+        event.stopPropagation();
+        this.handlers.open(part(datum));
       });
   }
 
   /**
    * A right click on a part opens its menu at the pointer. With `keys`, so does the context menu key or Shift+F10 on it, under
-   * it, and Enter or Space does what a click does, since a group taking the focus is no button the browser presses.
+   * it, Space does what a click does and Enter what a double click does, since a group taking the focus is no button the browser
+   * presses.
    */
   private menued<E extends SVGElement, D>(parts: Selection<E, D, BaseType, unknown>, part: (datum: D) => OverviewMenuTarget, keys: boolean): void {
     parts.on("contextmenu", (event: Event, datum) => {
@@ -534,7 +542,7 @@ export class OverviewCanvas {
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         event.stopPropagation();
-        target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        target.dispatchEvent(new MouseEvent(event.key === "Enter" ? "dblclick" : "click", { bubbles: true }));
       }
     });
   }
@@ -600,7 +608,8 @@ export class OverviewCanvas {
 
   /**
    * Every line a reader can point at, drawn again over everything but the dots, wider than it shows and with nothing to see: what
-   * lights a line is what lights the part it comes from, and a click picks that part, so a line works as its table or its field.
+   * lights a line is what lights the part it comes from, and a click picks that part (a double click opens it), so a line works as
+   * its table or its field.
    */
   private drawEdges(layout: OutlineLayout): void {
     const edges: PlacedEdge[] = [
@@ -651,6 +660,10 @@ export class OverviewCanvas {
       .on("click", (event: MouseEvent, edge) => {
         event.stopPropagation();
         this.handlers.pick(edge.part);
+      })
+      .on("dblclick", (event: MouseEvent, edge) => {
+        event.stopPropagation();
+        this.handlers.open(edge.part);
       });
     this.menued(all, (edge) => edge.part, false);
   }
@@ -742,13 +755,19 @@ export class OverviewCanvas {
       .attr("display", (card) => (card.card.unread.length > 0 && !card.card.folded ? null : "none"))
       .text((card) => `${card.card.unread.length} ${card.card.unread.length === 1 ? "column" : "columns"} not read`)
       .on("click", (event: MouseEvent, card) => {
+        // The words ask for what the table's details list, so one click opens them.
         event.stopPropagation();
-        this.handlers.pick({ type: "card", source: card.card.id });
+        this.handlers.open({ type: "card", source: card.card.id });
       });
 
     this.wire(all.select<SVGGElement>("g.head"), (card) => ({ type: "card", source: card.card.id }));
     all.select<SVGGElement>("g.head").on("click", (event: MouseEvent, card) => {
       event.stopPropagation();
+      // The second click of a double click leaves a table it opened open: the double click opens its details.
+      if (event.detail > 1) {
+        return;
+      }
+
       if (card.card.repeater !== null) {
         this.handlers.toggle(card.card.repeater);
       } else {
@@ -893,16 +912,15 @@ export class OverviewCanvas {
     all.on("focus.reveal", (_event, row) => this.reveal(row.row.path));
     all.on("click", (event: MouseEvent, row) => {
       event.stopPropagation();
+      // The second click of a double click leaves a section it opened open: the double click opens its details.
+      if (event.detail > 1) {
+        return;
+      }
+
       if (row.row.folding && row.row.node.shape !== "choice") {
         this.handlers.toggle(row.row.path);
       } else {
         this.handlers.pick({ type: "row", path: row.row.path });
-      }
-    });
-    all.on("dblclick", (event: MouseEvent, row) => {
-      event.stopPropagation();
-      if (row.row.node.shape === "choice") {
-        this.handlers.toggle(row.row.path);
       }
     });
     all.on("keydown", (event: KeyboardEvent, row) => this.onRowKey(event, row));
@@ -934,7 +952,6 @@ export class OverviewCanvas {
         this.handlers.menu({ type: "row", path: row.row.path }, { x: box.left + 24, y: box.bottom });
         break;
       }
-      case "Enter":
       case " ":
         stop();
         if (row.row.folding && row.row.node.shape !== "choice") {
@@ -943,6 +960,10 @@ export class OverviewCanvas {
           this.handlers.pick({ type: "row", path: row.row.path });
         }
 
+        break;
+      case "Enter":
+        stop();
+        this.handlers.open({ type: "row", path: row.row.path });
         break;
       case "ArrowRight":
         stop();
@@ -992,6 +1013,8 @@ export class OverviewCanvas {
         event.stopPropagation();
         this.handlers.toggle(row.path);
       });
+      // A chevron turns on each click; a double click on it opens no details.
+      chevron.on("dblclick", (event: MouseEvent) => event.stopPropagation());
     }
 
     chevron.attr("transform", `translate(${nameX - 16},0)`);

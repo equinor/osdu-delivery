@@ -4683,10 +4683,13 @@ export const deliveryApi = {
     request: { values?: Record<string, RunValue>; search?: string; after?: string | null; limit?: number },
     scope?: DeliveryFlowScope,
   ) => post<DeliveryStagedRows>(flowPath(pipelineId, "/staged-rows", scope), request),
-  /** The first rows of the record table, or of the child dataset named, every column of it, in the scope `values` name. Answered at once. */
+  /**
+   * The first rows of the record table, or of the child dataset named, every column of it, in the scope `values` name; with a
+   * `search`, the first of those one of whose values holds it, as the rows show it, and their count. Answered at once.
+   */
   tableRows: (
     pipelineId: string,
-    request: { values?: Record<string, RunValue>; dataset?: string; limit?: number },
+    request: { values?: Record<string, RunValue>; dataset?: string; limit?: number; search?: string },
     scope?: DeliveryFlowScope,
   ) => post<DeliveryTableRows>(flowPath(pipelineId, "/table-rows", scope), request),
   /** Previews this record, rendered from its current source row as a delivery would render it now. Answered at once. */

@@ -197,7 +197,7 @@ test.describe.serial("lineage", () => {
 
     // A cache table's panel carries the jump: the partition's cache type, which the cache flows write.
     await adminPage.goBack();
-    await overview.locator('[data-testid="mapping-overview-card-cache.UnitOfMeasure"] g.head').click();
+    await overview.locator('[data-testid="mapping-overview-card-cache.UnitOfMeasure"] g.head').dblclick();
     const inspector = overview.getByTestId("mapping-overview-inspector");
     await inspector.getByTestId("mapping-overview-inspector-lineage").getByTestId("search-open-graph").click();
     await expect(adminPage.getByTestId("lineage-jump-menu")).toContainText("UnitOfMeasure");

@@ -448,10 +448,32 @@ public sealed class SqlServerIngestionSource : IIngestionSource
 
         // A table holding nothing but SQLFlow's columns still has its rows counted.
         var select = columns.Count == 0 ? ["1 AS one"] : columns.Select(c => Shown(c, query.MaxCharacters)).ToList();
-        await using var command = Command(connection, IngestionSql.TableRows(layout, dataset, select));
+
+        // A number or a moment searched for is bound in the forms it reads as, which the statement compares its columns with; one
+        // no column compares with is bound and left unread.
+        var search = string.IsNullOrWhiteSpace(query.Search) ? null : TableSearchTerm.Read(query.Search);
+        await using var command = Command(connection, IngestionSql.TableRows(layout, dataset, select, search is null ? null : IngestionSql.TableSearch(columns, search)));
         BindScope(command, layout);
         command.Parameters.Add(new SqlParameter(IngestionSql.PageParameter, SqlDbType.Int) { Value = query.Limit });
         command.Parameters.Add(new SqlParameter(IngestionSql.TopParameter, SqlDbType.BigInt) { Value = query.CountUpTo + 1 });
+        if (search is not null)
+        {
+            BindSearch(command, search.Pattern);
+            if (search.Float is { } wide)
+            {
+                command.Parameters.Add(new SqlParameter(IngestionSql.SearchFloatParameter, SqlDbType.Float) { Value = wide });
+            }
+
+            if (search.Real is { } narrow)
+            {
+                command.Parameters.Add(new SqlParameter(IngestionSql.SearchRealParameter, SqlDbType.Real) { Value = narrow });
+            }
+
+            if (search.Moment is { } moment)
+            {
+                command.Parameters.Add(new SqlParameter(IngestionSql.SearchMomentParameter, SqlDbType.DateTimeOffset) { Value = moment, Scale = 7 });
+            }
+        }
 
         var rows = new List<IReadOnlyList<string?>>(Math.Min(query.Limit, 1000));
         var cut = new bool[columns.Count];

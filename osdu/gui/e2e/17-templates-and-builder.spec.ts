@@ -471,16 +471,25 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(curveUnit).toHaveAttribute("data-found", "true");
     await expect.poll(() => rowHeight(curveUnit)).toBeGreaterThan(fitted);
     await expect(curveUnit).toBeInViewport();
+
+    // A click keeps a property lit and opens nothing over the canvas; a double click opens how it is filled.
+    const inspector = overview.getByTestId("mapping-overview-inspector");
     await curveUnit.click();
+    await expect(curveUnit).toHaveAttribute("data-picked", "true");
+    await expect(inspector).toHaveAttribute("aria-hidden", "true");
+    await curveUnit.dblclick();
+    await expect(inspector).toHaveAttribute("aria-hidden", "false");
     await expect(overview.getByTestId("mapping-overview-alternative")).toHaveCount(3);
     await overview.getByTestId("mapping-overview-inspector-close").click();
+    await expect(inspector).toHaveAttribute("aria-hidden", "true");
+    await expect(curveUnit).toHaveAttribute("data-picked", "true");
 
-    // A line from a table on the shelf is that table: clicking it says what the table reaches. Clearing the search takes the
-    // view back to the whole mapping it started from, the shelf at its top.
+    // A line from a table on the shelf is that table: double-clicking it says what the table reaches. Clearing the search takes
+    // the view back to the whole mapping it started from, the shelf at its top.
     await detail.getByTestId("mapping-overview-search-clear").click();
     await expect(curveUnit).not.toHaveAttribute("data-found", "true");
     await expect.poll(() => rowHeight(curveUnit)).toBeLessThanOrEqual(fitted);
-    await overview.getByTestId("mapping-overview-edge-cache.UnitOfMeasure-curve").click();
+    await overview.getByTestId("mapping-overview-edge-cache.UnitOfMeasure-curve").dblclick();
     await expect(overview.getByTestId("mapping-overview-readers")).toContainText("data.Curves[].CurveUnit");
     await overview.getByTestId("mapping-overview-inspector-close").click();
 

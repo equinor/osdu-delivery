@@ -16,6 +16,9 @@ keywords:
   - found by
   - preview rows
   - first 100 rows
+  - search a table's rows
+  - find text in any column
+  - double-click for details
   - right-click a table
   - table-rows
   - rendered record
@@ -114,10 +117,11 @@ on stays lit while it is on.
 
 | To | Do |
 | --- | --- |
-| Open or close a section | Click it. Up, Down, Left, Right and Enter do the same from the keyboard. **Open all** opens everything, and **Fold** goes back to where the page started. |
+| Open or close a section | Click it, or press Space on it; Right opens it and Left closes it, and Up and Down move from line to line. **Open all** opens everything, and **Fold** goes back to where the page started. |
 | See the alternatives of a `$coalesce` as lines of their own | Click its chevron. Closed, its line says `first of 3` and passes through every table they read. |
 | Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it, from the columns looked up in it to the properties they fill. A line counts as what it comes from, a line off the shelf as its table, and is lit down to the last row lit on it. |
-| See how a property is filled | Click it. A panel slides in from the right with the way its value takes ([below](#the-way-a-value-is-filled)), its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. Escape or a click on the canvas closes it. |
+| Keep a part lit | Click it, or press Space on it. A property, a column, a table or a line from one stays lit and shaded once the pointer leaves it, and nothing opens over the canvas. A click on another part moves the light; Escape or a click on the canvas puts it out. |
+| See how a property is filled | Double-click it, or press Enter on it (**Details** on its menu does the same). A panel slides in from the right with the way its value takes ([below](#the-way-a-value-is-filled)), its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. While the panel is open, a click on another part shows that part's. Escape closes it and leaves the part lit; a click on the canvas closes it and puts the light out. |
 | Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). |
 | See where a part is populated from | **Open in lineage** on its menu, or the lineage button on its panel, opens the [lineage graph](lineage.md) on its node: a table's, its cache type's, the kind it searches, or for a property each node its value comes from ([below](#opening-a-part-in-lineage)). |
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
@@ -125,7 +129,7 @@ on stays lit while it is on.
 | Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
 | Find a property or a column | Type in **Property or column**, which opens what holds the matches, lights them and counts them beside the field (`14 of 40 found`). Once the typing stops, the canvas zooms to them, close enough to read: the properties found with the columns they read, up to 140% and never under 100%, each property found and each column named by the search shaded. Where the columns are too far from their properties to fit at 100%, the properties alone are framed, from the first. Clearing the search takes the view back to where it was, unless you moved it since. |
 | See every property filled one way | Click its glyph on [the toolbar](#the-toolbar). |
-| Read the document beside the canvas | **YAML** on the toolbar opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
+| Read the document beside the canvas | **YAML** on the toolbar opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click keeps it lit. |
 | Follow a real row through the mapping | **Show a record** on the toolbar previews a staged row of the flow rendering with the mapping (picked beside the record when several do) and shows each column's value and each property's, a repeated property's from its first item. The sentence beside the search gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
 | Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. The foot of the toolbar holds **Open all**, zoom and fit. |
 
@@ -192,7 +196,8 @@ The values the flow's parameters render with, under the canvas: the ones the map
 list them on the canvas, then any other the mapping declares. They are the values that reach a record, each a mapping's default
 under what the flow supplies, `${env:...}` and `${keyvault:...}` references resolved
 ([mapping parameters](../flow/mapping.md)). They are read from one record's render, the record shown or the scope's first, so
-the flow picked and its scope decide them. Pointing at one lights its lines, and a click opens its details.
+the flow picked and its scope decide them. Pointing at one lights its lines, a click keeps them lit, and a double click opens
+its details.
 
 ## The rendered record
 
@@ -212,8 +217,9 @@ the same pasted into a ticket or a chat. A record the render would hold says why
 
 A table's rows open in a grid under the canvas, which a drag on the line between them resizes. The grid lists every column,
 those the mapping reads first, in the order the table on the canvas lists them and marked in the table's colour, and the
-others after them, muted. Pointing at a column's heading lights its lines on the canvas, a click on it opens its panel, and a
-preview asked for from a column brings that column into view. Escape closes the grid once no panel is open.
+others after them, muted. Pointing at a column's heading lights its lines on the canvas, a click keeps them lit, a double click
+opens its panel, and a preview asked for from a column brings that column into view. Escape closes the grid once no panel is
+open and nothing is lit.
 
 | Table | What the grid holds |
 | --- | --- |
@@ -223,6 +229,20 @@ preview asked for from a column brings that column into view. Escape closes the 
 
 The record table's and a child table's rows come from `POST /api/v1/delivery/flows/{pipelineId}/table-rows` ([API](api.md)),
 read in the control plane, at once. Nothing is written.
+
+### Searching the rows
+
+The field at the head of the grid (**Find text in any column**, **Find an id or a value** for a cache table, **Find words in
+OSDU** for a search) searches every row the table holds, where it is held, not only the rows shown. Once the typing stops, the
+grid shows the first 100 rows found, the line over it counts them (`The first 100 of 2,340 rows a delivery reads in this scope
+holding "16/2"`), and each value marks where it matched. The rows found before stay in view, dimmed, while the next search is
+read. A search that finds nothing says how it looked. Escape in the field clears it, and the grid stays open.
+
+| Table | What a search finds |
+| --- | --- |
+| The record table, or a child table | The rows one of whose values, as the grid shows it, holds the text anywhere in it, in any case: a moment in UTC (`2024-05-06T10:00:00Z`), a number in its shortest form, a bit as `true` or `false`. A number or a moment typed whole is found however the database writes it, such as `1234567.123456789` in a `float` column or `2024-01-02T10:15:00.12Z` in a `datetime2` one. A binary column is not searched. The database searches the rows a delivery reads in the scope, those marked deleted left out, so it reads every one of them when few hold the text; the count stops at 100,000 as it does without a search. The search is `search` in the request's body, one line of at most 200 characters. |
+| A cache table | The records whose id or one of whose values holds the text, as the [cache's records](partition-cache.md#where-to-see-it) search them. |
+| A search | The records OSDU's search finds by the text, through the [explorer](explorer.md): whole words, and an id by its start. |
 
 ## The outline
 

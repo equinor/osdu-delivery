@@ -76,9 +76,10 @@ function Unshown({ blocked, error, reason, testId }: { blocked: string | null | 
 /**
  * The values the flow's parameters render with, under the canvas: the ones the mapping reads first, in the order the table on
  * the canvas lists them, then any other the mapping declares. They are read from one record's render, so they are the values
- * that reach a record, every reference resolved. Pointing at one lights its lines, and a click opens its details.
+ * that reach a record, every reference resolved. Pointing at one lights its lines, a click keeps them lit, and a double click
+ * opens its details.
  */
-export function OverviewParameters({ card, focus, session, recordKey, lineage, onPoint, onPick, onClose }: {
+export function OverviewParameters({ card, focus, session, recordKey, lineage, onPoint, onPick, onOpen, onClose }: {
   card: OutlineCard;
   focus: string | null;
   session: ValueCheckSession;
@@ -87,6 +88,7 @@ export function OverviewParameters({ card, focus, session, recordKey, lineage, o
   lineage: readonly PartTarget[];
   onPoint: (part: OverviewPart | null) => void;
   onPick: (part: OverviewPart) => void;
+  onOpen: (part: OverviewPart) => void;
   onClose: () => void;
 }) {
   const { preview, blocked } = useRendered(session, recordKey);
@@ -134,6 +136,7 @@ export function OverviewParameters({ card, focus, session, recordKey, lineage, o
                     onMouseEnter={row.read ? () => onPoint(part) : undefined}
                     onMouseLeave={row.read ? () => onPoint(null) : undefined}
                     onClick={row.read ? () => onPick(part) : undefined}
+                    onDoubleClick={row.read ? () => onOpen(part) : undefined}
                     data-testid={`mapping-overview-parameter-${row.name}`}
                   >
                     <td className={cn("border-b border-border/60 px-3 py-1 font-mono whitespace-nowrap", !row.read && "text-muted-foreground")}>{row.name}</td>

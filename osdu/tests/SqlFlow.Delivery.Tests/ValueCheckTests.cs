@@ -421,6 +421,17 @@ public sealed class ValueCheckTests : IDisposable
         Assert.DoesNotContain(flow.Source.SystemColumns.Updated, columns);
         Assert.All(record.GetProperty("rows").EnumerateArray(), row => Assert.Equal(columns.Count, row.GetArrayLength()));
 
+        // A search narrows the rows and their count to those one of whose values holds it, in any case.
+        static bool Holds(System.Text.Json.JsonElement row, string text)
+            => row.EnumerateArray().Any(value => value.GetString()?.Contains(text, StringComparison.OrdinalIgnoreCase) == true);
+        var wellbore = SampleEstate.Logs()[0].WellboreUwi;
+        var searched = await Ask((TableRowsOperation.SearchArgument, wellbore.ToLowerInvariant()));
+        var holding = record.GetProperty("rows").EnumerateArray().Count(row => Holds(row, wellbore));
+        Assert.InRange(holding, 1, logs - 1);
+        Assert.Equal(holding, searched.GetProperty("rows").GetArrayLength());
+        Assert.Equal(holding, searched.GetProperty("counted").GetInt64());
+        Assert.All(searched.GetProperty("rows").EnumerateArray(), row => Assert.True(Holds(row, wellbore)));
+
         // A child dataset, and a page asked smaller.
         var curves = await Ask((TableRowsOperation.DatasetArgument, "curves"), (TableRowsOperation.LimitArgument, "3"));
         Assert.Equal("curves", curves.GetProperty("dataset").GetString());

@@ -44,7 +44,9 @@ loaders with configuration.
 - **One configuration, every environment.** The same flows run in dev, test and prod.
 - **An AI assistant that builds it with you.** Ask for a new data type and it reads the schema, drafts the mapping and
   opens a pull request for a person to review. It works from definitions and delivery metadata, and reads data only
-  when asked, over what an approved AI context opens ([MCP guide](osdu/docs/reference/guides/mcp.md)).
+  when asked, over what an approved AI context opens ([MCP guide](osdu/docs/reference/guides/mcp.md)). Where the EU AI
+  Act places it: [Is OSDU Delivery high-risk AI?](https://www.youtube.com/watch?v=-JwDR8WOWoQ) (7:38), an
+  interpretation, not legal advice.
 
 ## Try it
 

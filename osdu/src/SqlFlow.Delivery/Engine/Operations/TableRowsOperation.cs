@@ -11,7 +11,7 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// <c>delivery-table-rows</c>: the first rows of one table a flow reads, every column of it, for a mapping overview's look at a
 /// table (osdu/docs/reference/concepts/mapping-overview.md, Looking at a table's rows). The operation reads the record table or
 /// a child dataset with the flow's own connection reference, over the rows a delivery reads in the scope it is given, cut to a
-/// bounded page and a bounded count. It renders nothing and needs nothing of the mapping, so a mapping that does not pass its
+/// bounded page and a bounded count, narrowed by the database to the rows holding a search when one is given. It renders nothing and needs nothing of the mapping, so a mapping that does not pass its
 /// preflight still shows the rows it was written for. Nothing is written.
 /// </summary>
 public sealed class TableRowsOperation : DeliveryOperation
@@ -34,6 +34,11 @@ public sealed class TableRowsOperation : DeliveryOperation
 
     public const string LimitArgument = "limit";
 
+    public const string SearchArgument = "search";
+
+    /// <summary>The longest text a search names.</summary>
+    public const int MaxSearch = 200;
+
     public TableRowsOperation(EngineContext context)
         : base(context)
     {
@@ -54,7 +59,7 @@ public sealed class TableRowsOperation : DeliveryOperation
 
         var source = context.Sources.Open(flow, FlowParameters.Resolve(flow, Values(payload)), context.Loggers);
         var read = await source.ReadTableAsync(
-            new TableRowsQuery { Dataset = dataset, Limit = Limit(payload), MaxCharacters = MaxCharacters, CountUpTo = CountUpTo },
+            new TableRowsQuery { Dataset = dataset, Limit = Limit(payload), MaxCharacters = MaxCharacters, CountUpTo = CountUpTo, Search = payload.Argument(SearchArgument) },
             ct).ConfigureAwait(false);
         return new TableRowsView(
             flow.Label,
@@ -89,7 +94,7 @@ public sealed class TableRowsOperation : DeliveryOperation
 /// <param name="Table">The table, as the flow names it.</param>
 /// <param name="Columns">Its columns, in the table's order, without SQLFlow's system columns.</param>
 /// <param name="Rows">Each row's values, in the order of <paramref name="Columns"/>.</param>
-/// <param name="Counted">How many rows a delivery reads there, counted up to <see cref="TableRowsOperation.CountUpTo"/>.</param>
+/// <param name="Counted">How many rows a delivery reads there (those holding the search, with one), counted up to <see cref="TableRowsOperation.CountUpTo"/>.</param>
 /// <param name="CountCapped">True when there are more than that.</param>
 /// <param name="MaxCharacters">The most characters a value keeps; a column whose values were cut says so.</param>
 /// <param name="ReadUtc">When it was read.</param>

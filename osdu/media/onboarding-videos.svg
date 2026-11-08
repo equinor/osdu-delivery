@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 482" width="1280" height="482" role="img" aria-labelledby="title desc">
   <title id="title">OSDU Delivery onboarding: the videos in parts</title>
-  <desc id="desc">The onboarding videos in parts, in the order to watch them, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. After delivery: what OSDU really holds, and proof that it is right. Build and extend: use the assistant, run from GitHub, or change the framework.</desc>
+  <desc id="desc">The onboarding videos in parts, in the order to watch them, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: which flow to use, how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. After delivery: what OSDU really holds, and proof that it is right. Build and extend: use the assistant, run from GitHub, or change the framework.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1624"/>
@@ -86,10 +86,10 @@
     <rect class="tile" x="258" y="262" width="178" height="172" rx="18"/>
     <rect x="279" y="288" width="34" height="28" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M279 297 H313 M279 306.5 H313 M291 297 V316" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="desc" x="278" y="352">How source files</text>
-    <text class="desc" x="278" y="374">land, and only</text>
-    <text class="desc" x="278" y="396">what changed is</text>
-    <text class="desc" x="278" y="418">written.</text>
+    <text class="desc" x="278" y="352">Which flow to use,</text>
+    <text class="desc" x="278" y="374">how files land, and</text>
+    <text class="desc" x="278" y="396">only what changed</text>
+    <text class="desc" x="278" y="418">is written.</text>
   </g>
   <g>
     <rect class="tile" x="452" y="262" width="178" height="172" rx="18"/>

@@ -345,6 +345,14 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
                 : records.Select(r => r.Row)).ToList();
             var hidden = _flow.Source.SystemColumns.Names();
             var columns = all.SelectMany(row => row.Keys).Where(c => !hidden.Contains(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            // A search keeps the rows one of whose values, as the look shows it, contains it ignoring case, as the database finds them.
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var search = query.Search.Trim();
+                all = all.Where(row => columns.Any(column => SourceRow.Stringify(row.TryGetValue(column, out var held) ? held : null)?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)).ToList();
+            }
+
             var cut = new bool[columns.Count];
             var rows = all.Take(query.Limit).Select(row => (IReadOnlyList<string?>)columns.Select((column, i) =>
             {

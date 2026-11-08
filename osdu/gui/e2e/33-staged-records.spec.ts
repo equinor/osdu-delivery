@@ -77,6 +77,21 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(looked.getByTestId("mapping-overview-rows-said")).toContainText("a delivery reads in this scope");
     await expect(looked.locator('[data-marked="true"]')).toHaveCount(1);
     await expect(looked.getByTestId("mapping-overview-rows-error")).toHaveCount(0);
+
+    // A search is read where the rows are, among all of them: a value of the first row finds the rows holding it, marked where it
+    // matched, and a value no row holds says how the search looked. Escape clears the search first and leaves the grid open.
+    const firstValue = ((await looked.getByTestId("mapping-overview-rows-row").first().locator("td").nth(1).getAttribute("title")) ?? "").slice(0, 40);
+    expect(firstValue).not.toBe("");
+    expect(firstValue).not.toBe("null");
+    const rowSearch = looked.getByTestId("mapping-overview-rows-search");
+    await rowSearch.fill(firstValue);
+    await expect(looked.getByTestId("mapping-overview-rows-said")).toContainText(`holding “${firstValue}”`, { timeout: 60_000 });
+    await expect(looked.getByTestId("mapping-overview-rows-row").first().locator("mark").first()).toBeVisible();
+    await rowSearch.fill("zz-no-row-holds-this-zz");
+    await expect(looked.getByTestId("mapping-overview-rows-empty")).toContainText("No row a delivery reads in this scope holds", { timeout: 60_000 });
+    await rowSearch.press("Escape");
+    await expect(rowSearch).toHaveValue("");
+    await expect(looked.getByTestId("mapping-overview-rows-row").first()).toBeVisible({ timeout: 60_000 });
     await looked.getByTestId("mapping-overview-rows-close").click();
     await expect(looked).toHaveCount(0);
 

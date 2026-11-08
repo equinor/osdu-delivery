@@ -137,3 +137,39 @@ export function rowsOfRecord(names: readonly string[], rows: readonly (readonly 
 
   return matched;
 }
+
+/** A stretch of a value as a preview draws it: matched by the search, or not. */
+export interface MatchRun {
+  text: string;
+  match: boolean;
+}
+
+/**
+ * A value cut where `search` occurs in it, ignoring case, in order: what a preview marks of a value the search found. A value
+ * whose lower case is not as long as it is (a letter that lowers to two) is left whole, unmarked, rather than marked in the
+ * wrong place; so is one the search does not occur in as written, such as a number found by its value.
+ */
+export function matchRuns(text: string, search: string): MatchRun[] {
+  const needle = search.trim().toLowerCase();
+  const lower = text.toLowerCase();
+  if (needle === "" || lower.length !== text.length) {
+    return [{ text, match: false }];
+  }
+
+  const runs: MatchRun[] = [];
+  let at = 0;
+  for (let found = lower.indexOf(needle); found >= 0; found = lower.indexOf(needle, at)) {
+    if (found > at) {
+      runs.push({ text: text.slice(at, found), match: false });
+    }
+
+    runs.push({ text: text.slice(found, found + needle.length), match: true });
+    at = found + needle.length;
+  }
+
+  if (at < text.length || runs.length === 0) {
+    runs.push({ text: text.slice(at), match: false });
+  }
+
+  return runs;
+}

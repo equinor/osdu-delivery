@@ -3,6 +3,40 @@ using System.Text;
 
 namespace SqlFlow.Delivery.Source;
 
+/// <summary>
+/// A search of a look at a table (<see cref="IngestionSql.TableSearch"/>): the <c>LIKE</c> pattern its text is found by
+/// (<see cref="IngestionSql.SearchParameter"/>), and the number and the moment it reads as, which a value equal to it is found by
+/// (<see cref="IngestionSql.SearchFloatParameter"/>, <see cref="IngestionSql.SearchRealParameter"/>,
+/// <see cref="IngestionSql.SearchMomentParameter"/>); null for a form it does not read as.
+/// </summary>
+/// <param name="Pattern">The pattern of <see cref="IngestionSql.ContainsPattern"/>.</param>
+/// <param name="Float">The search as the nearest <c>float</c>, when it is a finite number.</param>
+/// <param name="Real">The search as the nearest <c>real</c>, when it is a number a <c>real</c> holds.</param>
+/// <param name="Moment">The search as a moment, when it is one in RFC 3339 down to the minute: in UTC unless it names its offset.</param>
+internal sealed record TableSearchTerm(string Pattern, double? Float, float? Real, DateTimeOffset? Moment)
+{
+    private static readonly string[] Moments =
+    [
+        "yyyy-MM-dd'T'HH:mmK",
+        "yyyy-MM-dd'T'HH:mm:ssK",
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK",
+    ];
+
+    /// <summary>The search <paramref name="text"/> is, trimmed.</summary>
+    public static TableSearchTerm Read(string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var trimmed = text.Trim();
+        return new TableSearchTerm(
+            IngestionSql.ContainsPattern(trimmed),
+            double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var wide) && double.IsFinite(wide) ? wide : null,
+            float.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var narrow) && float.IsFinite(narrow) ? narrow : null,
+            DateTimeOffset.TryParseExact(trimmed, Moments, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var moment)
+                ? moment
+                : null);
+    }
+}
+
 /// <summary>One child dataset as the SQL builders see it: where it is, how it joins its record, and how its rows are ordered.</summary>
 /// <param name="Name">The name a mapping reads the dataset under.</param>
 /// <param name="Object">The dataset's table.</param>
@@ -148,6 +182,81 @@ public static class IngestionSql
 
     /// <summary>The parameter holding the pattern a listing of a column's values is narrowed to (<see cref="ContainsPattern"/>).</summary>
     public const string SearchParameter = "@search";
+
+    /// <summary>The parameter holding a search read as a <c>float</c> (<see cref="TableSearchTerm.Float"/>).</summary>
+    public const string SearchFloatParameter = "@search_float";
+
+    /// <summary>The parameter holding a search read as a <c>real</c> (<see cref="TableSearchTerm.Real"/>).</summary>
+    public const string SearchRealParameter = "@search_real";
+
+    /// <summary>The parameter holding a search read as a moment in UTC (<see cref="TableSearchTerm.Moment"/>).</summary>
+    public const string SearchMomentParameter = "@search_moment";
+
+    /// <summary>The characters of a value a search of a look at a table reads, as <see cref="SearchParameter"/> holds them.</summary>
+    internal const int SearchedCharacters = 4000;
+
+    /// <summary>
+    /// What a search of a look at a table (<see cref="TableRows"/>) finds a row by: one of <paramref name="columns"/>, read from the
+    /// table as <c>t</c>, whose value contains <see cref="SearchParameter"/>, its text written as the look shows it
+    /// (<see cref="Rendering.SourceRow.Stringify"/>, after <see cref="SourceValues.Normalize"/>) and compared in upper case. A
+    /// moment reads in RFC 3339 in UTC, a date at midnight, a bit as <c>true</c> or <c>false</c>, money to four places, and an
+    /// approximate number to fifteen, which holds the text it is shown with however few places that has. Where the database's
+    /// text cannot be the text shown, the value equal to what <paramref name="term"/> reads as is found too: an approximate number
+    /// longer or larger than fifteen places say, and a moment whose fraction the database writes with its trailing zeros. A
+    /// binary value, shown as base64, is not searched; a table with nothing else finds no row.
+    /// </summary>
+    internal static string TableSearch(IReadOnlyList<SourceColumn> columns, TableSearchTerm term)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(term);
+        var matches = new List<string>(columns.Count);
+        foreach (var column in columns)
+        {
+            var name = $"t.{SourceObjectName.Quote(column.Name)}";
+            var type = column.TypeName.ToLowerInvariant();
+            if (SearchedText(name, type) is { } text)
+            {
+                matches.Add($"UPPER({text}) LIKE {SearchParameter} ESCAPE N'\\'");
+            }
+
+            var equal = type switch
+            {
+                "float" when term.Float is not null => $"{name} = {SearchFloatParameter}",
+                "real" when term.Real is not null => $"{name} = {SearchRealParameter}",
+                "datetime2" when term.Moment is not null => $"{name} = CAST({SearchMomentParameter} AS datetime2(7))",
+                "datetimeoffset" when term.Moment is not null => $"{name} = {SearchMomentParameter}",
+                _ => null,
+            };
+            if (equal is not null)
+            {
+                matches.Add(equal);
+            }
+        }
+
+        return matches.Count == 0 ? "1 = 0" : "(" + string.Join(" OR ", matches) + ")";
+    }
+
+    /// <summary>A column's value as the text a look at a table shows, at most <see cref="SearchedCharacters"/> of it; null for a binary column.</summary>
+    private static string? SearchedText(string name, string type)
+    {
+        var read = SearchedCharacters.ToString(CultureInfo.InvariantCulture);
+        return type switch
+        {
+            "binary" or "varbinary" or "image" or "timestamp" or "rowversion" => null,
+            "char" or "varchar" or "nchar" or "nvarchar" or "sql_variant" or "tinyint" or "smallint" or "int" or "bigint" or "decimal" or "numeric"
+                or "uniqueidentifier" or "time" => $"CAST({name} AS nvarchar({read}))",
+            "text" or "ntext" => $"CAST(SUBSTRING({name}, 1, {read}) AS nvarchar({read}))",
+            "xml" => $"LEFT(CAST({name} AS nvarchar(max)), {read})",
+            "geography" or "geometry" or "hierarchyid" => $"LEFT({name}.ToString(), {read})",
+            "bit" => $"CASE {name} WHEN 1 THEN N'true' WHEN 0 THEN N'false' END",
+            "money" or "smallmoney" => $"CONVERT(nvarchar(40), {name}, 2)",
+            "float" or "real" => $"CAST(TRY_CAST({name} AS decimal(38, 15)) AS nvarchar(60))",
+            "date" => $"CONVERT(nvarchar(10), {name}, 23) + N'T00:00:00Z'",
+            "datetime" or "datetime2" or "smalldatetime" => $"CONVERT(nvarchar(40), {name}, 126) + N'Z'",
+            "datetimeoffset" => $"CONVERT(nvarchar(40), SWITCHOFFSET({name}, '+00:00'), 127)",
+            _ => $"CAST({name} AS nvarchar({read}))",
+        };
+    }
 
     /// <summary>
     /// The <c>LIKE</c> pattern matching a value that contains <paramref name="text"/>, its wildcards taken as written and in
@@ -632,9 +741,10 @@ public static class IngestionSql
     /// (<see cref="IIngestionSource.ReadTableAsync"/>): <paramref name="select"/>, written over the table read as <c>t</c>, of at
     /// most <see cref="PageParameter"/> rows of the scope's records not marked deleted, in the order a read pages in; then how
     /// many such rows there are, counted up to <see cref="TopParameter"/>. A child row is read when its own row is not marked
-    /// deleted either, as a delivery reads it.
+    /// deleted either, as a delivery reads it. A <paramref name="search"/> (<see cref="TableSearch"/>) narrows the rows read and
+    /// the rows counted alike.
     /// </summary>
-    internal static string TableRows(IngestionLayout layout, IngestionDataset? dataset, IReadOnlyList<string> select)
+    internal static string TableRows(IngestionLayout layout, IngestionDataset? dataset, IReadOnlyList<string> select, string? search = null)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(select);
@@ -662,6 +772,11 @@ public static class IngestionSql
             }
 
             order = string.Join(", ", new[] { order }.Concat(dataset.OrderBy.Select(o => $"t.{SourceObjectName.Quote(o)}")));
+        }
+
+        if (search is not null)
+        {
+            predicates.Add(search);
         }
 
         var where = predicates.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", predicates);

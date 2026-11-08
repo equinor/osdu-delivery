@@ -590,6 +590,121 @@ public sealed class SqlServerIngestionSourceTests
     }
 
     [Fact]
+    public async Task A_search_of_a_tables_rows_finds_every_value_as_the_look_shows_it_and_counts_the_rows_found()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Searched",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Searched] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [item_name] nvarchar(100) NULL, "
+                + "[active] bit NULL, [weight] decimal(9,3) NULL, [depth] float NULL, [ratio] real NULL, [price] money NULL, [measured] datetime NULL, "
+                + "[sampled] datetime2(7) NULL, [logged] date NULL, [stamped] datetimeoffset(7) NULL, [spent] time(7) NULL, [ref] uniqueidentifier NULL, "
+                + "[blob] varbinary(16) NULL, [region] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var parts = await CreateTableAsync(
+            estate,
+            "SearchedPart",
+            "[item_key] nvarchar(50) NOT NULL, [part_no] int NOT NULL, [part_name] nvarchar(50) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            string.Empty);
+
+        // A row of every type a look shows, a row of a few, one whose number no fifteen places hold, and one marked deleted.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [item_name], [active], [weight], [depth], [ratio], [price], [measured], [sampled], [logged], [stamped], [spent], [ref], [blob], [region], [UpdatedDate_DW])
+            VALUES
+                (N'item-1', N'Wellbore A-12 (50%)', 1, 1.5, 1234567.123456789, 1.1, 12.3456, '2024-01-02T10:15:00.123', '2024-01-02T10:15:00.12', '2024-03-04',
+                    '2024-05-06T12:00:00+02:00', '10:15:30', '6F9619FF-8B86-D011-B42D-00C04FD430C8', 0x414243, N'north', @loaded),
+                (N'item-2', N'Wellbore B_7', 0, 2.25, 0.3, 2.5, 7, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'south', @loaded),
+                (N'item-3', N'Thing 3', NULL, NULL, 1e30, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'north', @loaded),
+                (N'item-4', N'Wellbore gone', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'north', @loaded);
+            UPDATE {table} SET [DeletedDate_DW] = @changed WHERE [item_key] = N'item-4';
+            INSERT INTO {parts} ([item_key], [part_no], [part_name])
+            VALUES (N'item-1', 1, N'bolt'), (N'item-1', 2, N'nut'), (N'item-2', 1, N'Bolt'), (N'item-4', 1, N'bolt');
+            """);
+        var sample = ItemFlow(estate, "Searched");
+        var flow = sample with
+        {
+            Source = sample.Source with
+            {
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["parts"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[SearchedPart]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                        OrderBy = ["part_no"],
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+
+        async Task<(List<string?> Keys, long Counted)> Found(IIngestionSource from, string search, string? dataset = null)
+        {
+            var read = await from.ReadTableAsync(new TableRowsQuery { Dataset = dataset, Limit = 100, Search = search });
+            var key = read.Columns.Select(c => c.Name).ToList().IndexOf("item_key");
+            return (read.Rows.Select(row => row[key]).ToList(), read.Counted);
+        }
+
+        // The values as the look shows them: a moment in UTC to its last place, a number in its shortest form, a bit as a word.
+        var whole = await source.ReadTableAsync(new TableRowsQuery { Limit = 100 });
+        var names = whole.Columns.Select(c => c.Name).ToList();
+        string? Shown(int row, string column) => whole.Rows[row][names.IndexOf(column)];
+        Assert.Equal(
+            ["true", "1.5", "1234567.123456789", "1.1", "12.3456", "2024-01-02T10:15:00.123Z", "2024-01-02T10:15:00.12Z", "2024-03-04T00:00:00Z", "2024-05-06T10:00:00Z", "10:15:30", "6f9619ff-8b86-d011-b42d-00c04fd430c8", "QUJD"],
+            new[] { "active", "weight", "depth", "ratio", "price", "measured", "sampled", "logged", "stamped", "spent", "ref", "blob" }.Select(column => Shown(0, column)));
+        Assert.Equal("1E+30", Shown(2, "depth"));
+
+        // Each of them, typed as it is shown, finds its row, whatever the database writes it as; a binary value is not searched.
+        for (var row = 0; row < whole.Rows.Count; row++)
+        {
+            for (var column = 0; column < names.Count; column++)
+            {
+                if (whole.Rows[row][column] is { } shown && names[column] != "blob")
+                {
+                    Assert.Contains(Shown(row, "item_key"), (await Found(source, shown)).Keys);
+                }
+            }
+        }
+
+        Assert.Empty((await Found(source, "QUJD")).Keys);
+
+        // A part of a value is found in any case, its wildcards taken as written, and the count is of the rows found: the row marked
+        // deleted is not among them.
+        Assert.Equal(["item-1"], (await Found(source, "wellbore a-12")).Keys);
+        var wellbores = await Found(source, "WELLBORE");
+        Assert.Equal(["item-1", "item-2"], wellbores.Keys);
+        Assert.Equal(2L, wellbores.Counted);
+        Assert.Equal(["item-1"], (await Found(source, "50%")).Keys);
+        Assert.Equal(["item-2"], (await Found(source, "_7")).Keys);
+        Assert.Equal(3L, (await Found(source, "item-")).Counted);
+
+        // A moment is found as it is shown, in UTC, and not at the hour of the offset it was written with.
+        Assert.Equal(["item-1"], (await Found(source, "2024-05-06T10:00")).Keys);
+        Assert.Empty((await Found(source, "2024-05-06T12:00")).Keys);
+
+        // An approximate number is found by its first places, and whole however many it has.
+        Assert.Equal(["item-2"], (await Found(source, "0.3")).Keys);
+        Assert.Equal(["item-3"], (await Found(source, "1e30")).Keys);
+
+        // A child dataset is searched in its own columns, over the rows of the records a delivery reads.
+        var bolts = await Found(source, "bolt", "parts");
+        Assert.Equal(["item-1", "item-2"], bolts.Keys);
+        Assert.Equal(2L, bolts.Counted);
+
+        // A scope narrows a search as it narrows the rows.
+        var scoped = flow with
+        {
+            Parameters = new Dictionary<string, FlowParameter>(StringComparer.Ordinal) { ["region"] = new FlowParameter { Required = true } },
+            Source = flow.Source with
+            {
+                Record = flow.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "region" } },
+            },
+        };
+        var north = estate.Engine.Sources.Open(scoped, new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "north" }, NullLoggerFactory.Instance);
+        Assert.Equal(["item-1"], (await Found(north, "wellbore")).Keys);
+    }
+
+    [Fact]
     public async Task The_query_of_an_attribute_runs_as_written_and_returns_the_rows_a_read_reads()
     {
         await using var estate = await SqlServerIngestionFixture.StartAsync();

@@ -42,9 +42,9 @@ import { useRecordValues, type RecordValues } from "./useRecordValues";
 
 const ABOUT = "Each line is one property of the record, read left to right: the table it starts from, what is done to it, and the property it fills. "
   + "A dot is where a line is looked up in a table on the shelf above. A dashed mark is a condition, and a hollow end an optional property. "
-  + "Click a section to open it, and a property to see how it is filled. Right-click anything for what can be done with it: a table's rows, "
-  + "the parameters' values, the rendered record. A search zooms to what it finds; hold Ctrl and scroll to zoom yourself. Nothing is rendered "
-  + "here, unless you ask for it.";
+  + "Click a section to open it, and a property to keep its lines lit; double-click it to see how it is filled. "
+  + "Right-click anything for what can be done with it: a table's rows, the parameters' values, the rendered record. "
+  + "A search zooms to what it finds; hold Ctrl and scroll to zoom yourself. Nothing is rendered here, unless you ask for it.";
 
 /** How long the view waits for the typing to stop before it moves to what a search found. */
 const SEARCH_SETTLE_MS = 300;
@@ -214,7 +214,10 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const { mapping, yaml } = detail;
   const { flow } = session;
   const [open, setOpen] = useState(() => defaultOpen(outline));
+  // What was clicked stays lit; its details open on a double click, and then follow what is clicked until they are closed.
   const [picked, setPicked] = useState<OverviewPart | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const inspected = detailsOpen ? picked : null;
   const [pointed, setPointed] = useState<OverviewPart | null>(null);
   const [linePointed, setLinePointed] = useState<string | null>(null);
   const [how, setHow] = useState<MappingOutlineHow | null>(null);
@@ -270,6 +273,10 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const handlers = useRef<OverviewHandlers>({
     point: setPointed,
     pick: setPicked,
+    open: (part) => {
+      setPicked(part);
+      setDetailsOpen(true);
+    },
     toggle: (path) => setOpen((current) => {
       const next = new Set(current);
       if (!next.delete(path)) {
@@ -284,7 +291,10 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       const box = frame.current?.getBoundingClientRect();
       setTip(said === null || box === undefined ? null : { ...said, x: said.x - box.left, y: said.y - box.top });
     },
-    clear: () => setPicked(null),
+    clear: () => {
+      setPicked(null);
+      setDetailsOpen(false);
+    },
     leftOut: onProperties,
     menu: (target, at) => {
       menuOpen.current = true;
@@ -300,6 +310,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     const drawn = new OverviewCanvas(svg.current, {
       point: (part) => handlers.current.point(part),
       pick: (part) => handlers.current.pick(part),
+      open: (part) => handlers.current.open(part),
       toggle: (path) => handlers.current.toggle(path),
       tip: (said) => handlers.current.tip(said),
       clear: () => handlers.current.clear(),
@@ -418,19 +429,22 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   }, [how, filtered, placed]);
 
   useEffect(() => {
-    canvas.current?.setInset(0, picked === null ? 0 : Math.min(INSPECTOR_WIDTH, (frame.current?.clientWidth ?? 0) * 0.85));
+    canvas.current?.setInset(0, inspected === null ? 0 : Math.min(INSPECTOR_WIDTH, (frame.current?.clientWidth ?? 0) * 0.85));
+  }, [inspected]);
+
+  useEffect(() => {
     if (picked?.type === "row") {
       canvas.current?.reveal(picked.path);
     }
   }, [picked]);
 
-  // Escape closes what was opened last: the details first, then what is shown under the canvas. A menu open takes it for itself:
-  // the menu is counted open from the moment it is asked for until the key that closed it has gone by, which a render after it
-  // would be too late to say.
-  const pickedOpen = useRef(false);
+  // Escape closes what was opened last: the details first, then what is lit, then what is shown under the canvas. A menu open
+  // takes it for itself: the menu is counted open from the moment it is asked for until the key that closed it has gone by, which
+  // a render after it would be too late to say.
+  const escapes = useRef<{ details: boolean; picked: boolean }>({ details: false, picked: false });
   useEffect(() => {
-    pickedOpen.current = picked !== null;
-  }, [picked]);
+    escapes.current = { details: inspected !== null, picked: picked !== null };
+  }, [inspected, picked]);
 
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -446,7 +460,9 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         return;
       }
 
-      if (pickedOpen.current) {
+      if (escapes.current.details) {
+        setDetailsOpen(false);
+      } else if (escapes.current.picked) {
         setPicked(null);
       } else {
         setLooking(null);
@@ -463,7 +479,8 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     }
   }, []);
 
-  // A pick from the document or the panel can name what is folded, so what holds it opens with it.
+  // A pick from the document or a panel can name what is folded, so what holds it opens with it. A pick lights it; asking for its
+  // details opens them as well.
   const pickShown = useCallback((part: OverviewPart) => {
     if (part.type === "row") {
       opensFor(opensTo(outline, part.path));
@@ -471,6 +488,11 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
 
     setPicked(part);
   }, [outline, opensFor]);
+
+  const openShown = useCallback((part: OverviewPart) => {
+    pickShown(part);
+    setDetailsOpen(true);
+  }, [pickShown]);
 
   const fitView = useCallback(() => canvas.current?.fit(true), []);
 
@@ -569,7 +591,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       return {
         named: path,
         items: [
-          { id: "details", label: "Details", glyph: <PanelRight />, act: () => pickShown(target) },
+          { id: "details", label: "Details", glyph: <PanelRight />, act: () => openShown(target) },
           { id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } },
           lineage,
           { id: "copy", label: "Copy the path", glyph: <Copy />, act: () => copyName(path, "the path") },
@@ -585,7 +607,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       named,
       items: [
         ...(label === null ? [] : [{ id: "preview", label, glyph: card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />, act: () => lookAt(target) }]),
-        { id: "details", label: "Details", glyph: <PanelRight />, act: () => pickShown(target) },
+        { id: "details", label: "Details", glyph: <PanelRight />, act: () => openShown(target) },
         lineage,
         target.type === "field"
           ? { id: "copy", label: "Copy the name", glyph: <Copy />, act: () => copyName(target.field, "the name") }
@@ -663,16 +685,16 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                 <div ref={frame} className="relative h-full min-h-0 min-w-0 overflow-hidden" data-testid="mapping-overview-canvas">
                   <svg ref={svg} className="size-full cursor-grab bg-background active:cursor-grabbing" role="group" aria-label={`How ${mapping.reference} fills a record`} />
                   <OverviewInspector
-                    part={picked}
+                    part={inspected}
                     outline={outline}
                     tables={tables.data ?? null}
                     cached={cached}
                     yaml={yaml}
                     values={record.on ? record.values : NO_VALUES}
-                    lineage={picked === null ? [] : lineageOf(picked)}
-                    onPick={pickShown}
+                    lineage={inspected === null ? [] : lineageOf(inspected)}
+                    onPick={openShown}
                     onPreview={lookAt}
-                    onClose={() => setPicked(null)}
+                    onClose={() => setDetailsOpen(false)}
                   />
                   {tip !== null && <CanvasTip tip={tip} />}
                 </div>
@@ -693,6 +715,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                         lineage={lineageOf({ type: "card", source: lookingCard.id })}
                         onPoint={pointFromBelow}
                         onPick={pickShown}
+                        onOpen={openShown}
                         onClose={() => setLooking(null)}
                       />
                     )}
@@ -705,6 +728,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                         lineage={lineageOf({ type: "card", source: parametersCard.id })}
                         onPoint={pointFromBelow}
                         onPick={pickShown}
+                        onOpen={openShown}
                         onClose={() => setLooking(null)}
                       />
                     )}

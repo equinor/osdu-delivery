@@ -327,7 +327,8 @@ public interface IIngestionSource
     /// column but SQLFlow's system columns, over the rows a delivery reads (the scope's, those marked deleted left out, and for a
     /// child dataset the rows of those records), in the order a read pages in. A value longer than
     /// <see cref="TableRowsQuery.MaxCharacters"/> is cut, by the database, so a page costs the same however wide a value is; the
-    /// rows are counted up to <see cref="TableRowsQuery.CountUpTo"/>, so a count costs the same however many rows there are.
+    /// rows are counted up to <see cref="TableRowsQuery.CountUpTo"/>, so a count costs the same however many rows there are. A
+    /// <see cref="TableRowsQuery.Search"/> narrows both to the rows holding it, searched by the database.
     /// </summary>
     Task<TableRows> ReadTableAsync(TableRowsQuery query, CancellationToken ct = default);
 
@@ -376,6 +377,12 @@ public sealed record TableRowsQuery
 
     /// <summary>How far the rows are counted.</summary>
     public long CountUpTo { get; init; } = 100_000;
+
+    /// <summary>
+    /// Text one of a row's values must contain, ignoring case, as the look shows the value; a number also finds the values equal
+    /// to it. Null for every row. The rows read and their count are both of the rows found.
+    /// </summary>
+    public string? Search { get; init; }
 }
 
 /// <summary>A column of a table looked over: its name, the SQL type it holds, and whether a value of it was cut.</summary>

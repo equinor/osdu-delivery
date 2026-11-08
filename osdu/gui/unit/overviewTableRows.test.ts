@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DeliverySourceTable, MappingOutlineSource } from "../src/api/mappingOutline.ts";
 import type { CardField, OutlineCard } from "../src/features/delivery/overview/outlineModel.ts";
-import { cardPreviewLabel, previewColumns, previewLabel, recordColumnsOf, rowsOfRecord, rowsSourceOf } from "../src/features/delivery/overview/tableRows.ts";
+import { cardPreviewLabel, matchRuns, previewColumns, previewLabel, recordColumnsOf, rowsOfRecord, rowsSourceOf } from "../src/features/delivery/overview/tableRows.ts";
 
 function field(name: string, key = false): CardField {
   return { id: `dataset\u0000${name}`, name, key, displayOnly: false, match: false, read: true, type: null };
@@ -101,5 +101,26 @@ describe("the rows of the record shown", () => {
     assert.equal(rowsOfRecord(names, rows, ["curve_log", "nowhere"], ["L-1", "las"]).size, 0);
     assert.equal(rowsOfRecord(names, rows, null, ["L-1", "las"]).size, 0);
     assert.equal(rowsOfRecord(names, rows, ["curve_log", "curve_source"], null).size, 0);
+  });
+});
+
+describe("what a search marks in a value", () => {
+  it("marks every place the search occurs, in any case, and leaves the rest as it is", () => {
+    assert.deepEqual(matchRuns("Wellbore well-7 WELL", "well"), [
+      { text: "Well", match: true },
+      { text: "bore ", match: false },
+      { text: "well", match: true },
+      { text: "-7 ", match: false },
+      { text: "WELL", match: true },
+    ]);
+    assert.deepEqual(matchRuns("50% done", " 50% "), [{ text: "50%", match: true }, { text: " done", match: false }]);
+  });
+
+  it("leaves a value whole where the search is not in it as written, or no search is given", () => {
+    assert.deepEqual(matchRuns("1.5", "1.50"), [{ text: "1.5", match: false }]);
+    assert.deepEqual(matchRuns("NO 16/2-10", ""), [{ text: "NO 16/2-10", match: false }]);
+    assert.deepEqual(matchRuns("", "x"), [{ text: "", match: false }]);
+    // A letter that lowers to two would move every place after it; the value is left unmarked rather than marked wrong.
+    assert.deepEqual(matchRuns("İstanbul well", "well"), [{ text: "İstanbul well", match: false }]);
   });
 });

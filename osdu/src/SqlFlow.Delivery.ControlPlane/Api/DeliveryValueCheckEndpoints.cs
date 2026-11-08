@@ -105,12 +105,13 @@ public sealed record DeliveryStagedRowsRequest(
 
 /// <summary>
 /// A look at the first rows of a table a flow reads: the flow parameter values its scope is read with, the child dataset to read
-/// (none for the record table), and how many rows.
+/// (none for the record table), how many rows, and the text one of a row's values must hold.
 /// </summary>
 public sealed record DeliveryTableRowsRequest(
     [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
     string? Dataset,
-    int? Limit);
+    int? Limit,
+    string? Search = null);
 
 /// <summary>
 /// The value check: which flows render with a mapping, and the check of a flow's rows queued for a node
@@ -414,6 +415,16 @@ public static class DeliveryValueCheckEndpoints
             }
 
             arguments[TableRowsOperation.LimitArgument] = limit.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (request.Search?.Trim() is { Length: > 0 } search)
+        {
+            if (search.Length > TableRowsOperation.MaxSearch || search.Any(char.IsControl))
+            {
+                return $"A search of a table's rows is one line of at most {TableRowsOperation.MaxSearch} characters.";
+            }
+
+            arguments[TableRowsOperation.SearchArgument] = search;
         }
 
         return null;

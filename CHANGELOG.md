@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A table's rows under a mapping's overview can be searched, in the database rather than among the rows shown.** The field at
+  the head of the grid finds the rows of the record table or a child table one of whose values holds the text as the grid shows
+  it, the cached records whose id or values hold it, or the records OSDU's search finds by it, then shows the first 100 found
+  with their count and marks the matches. `POST /flows/{pipelineId}/table-rows` takes the `search`
+  ([searching the rows](osdu/docs/reference/concepts/mapping-overview.md#searching-the-rows)).
 - **A large dimension build is spread over nodes, a share of its dimensions on each.** A build whose
   dimensions read at least 100,000 records together is split into parts (`parallelism.nodes`, 8 at most, a part per
   `parallelism.minRecordsPerNode` records, 50,000), each built on a node of its own; the run that split it builds the
@@ -547,6 +552,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A click on a mapping's overview keeps a part lit, and a double click opens its details.** A click on a property, a column,
+  a table or a line from one opened the panel over the canvas; it now only lights and shades the part, and a double click or
+  Enter opens the panel, which then follows what is clicked until it is closed. Space opens or closes a section, which Enter did
+  ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md#working-with-it)).
 - **A schedule runs every flow of a wave at once unless it sets `maxConcurrency`, so a fire with more work than one node
   takes asks for more nodes.** A schedule that left the key out ran four flows at a time, one node's run slots, so its
   fire never brought up a second node. Set `maxConcurrency` on a schedule whose flows should spare something they share
