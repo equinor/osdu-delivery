@@ -121,6 +121,14 @@ part, and an idle pool goes back
 ([submissions](../concepts/submissions.md#many-nodes), `parallelism` on the [delivery flow](../flow/delivery.md#parallelism)).
 Each part writes and reads its own work batches in its worker's own copy of the repository, so the workers need no storage
 in common for it. Other runs share a worker, as many at once as a worker's run slots (4).
+
+A schedule's fire queues every flow of a wave at once: a schedule that leaves `maxConcurrency` out has no bound in OSDU
+Delivery, where SQLFlow's default of four, one worker's run slots, would keep a fire on one worker however much work its
+waves hold. A wave of sixteen cache refreshes asks for four workers. A schedule that should spare something its flows
+share sets `maxConcurrency` ([fire width](../../../../sqlflow/docs/reference/flow/schedule.md#fire-width-maxconcurrency)).
+A fire's waves count only the dependencies among the flows it runs, so flows that another schedule's deliveries order run
+side by side ([lineage](../concepts/lineage.md#how-the-nodes-order-flows)). A worker takes a while to start, so a fire
+that is over in seconds finishes on the workers already running.
 The pool never grows past its ceiling (`worker_max_replicas` in Terraform, `workerMaxReplicas` in Bicep, 10 by default).
 
 ## The databases

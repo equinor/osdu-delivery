@@ -709,7 +709,8 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         await context.SaveChangesAsync(ct).ConfigureAwait(false);
 
         // A flow that no longer declares a type for a partition holds none of its records there: its membership goes, so the
-        // next capture of the type by another flow lets go of what only this flow kept.
+        // next capture of the type by another flow lets go of what only this flow kept. A type may hold a hundred thousand
+        // records, so its rows go a batch at a time, each its own short statement.
         foreach (var (scope, flow, type) in released)
         {
             if (await context.DeliveryCacheDefinitions.AnyAsync(c => c.Scope == scope && c.FlowName == flow && c.Name == type, ct).ConfigureAwait(false))
@@ -717,9 +718,8 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
                 continue;
             }
 
-            await context.DeliveryCacheMembers
-                .Where(m => m.Scope == scope && m.FlowName == flow && m.TypeName == type)
-                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await OsduCacheStore.DeleteMembersAsync(
+                context.DeliveryCacheMembers.Where(m => m.Scope == scope && m.FlowName == flow && m.TypeName == type), OsduCacheStore.PageRows, ct).ConfigureAwait(false);
         }
 
         // A partition has one cache holding what every one of its cache flows captures, so the flows searching it should search

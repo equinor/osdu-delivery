@@ -1811,10 +1811,18 @@ public static class DeliveryEndpoints
             query = query.Where(i => i.RecordId.Contains(term) || i.Terms.Contains(term));
         }
 
+        // The page's rows are picked by id from the index that lists a type in record order, which holds every column the
+        // listing filters and orders by, and only those rows are then read whole: a deep page of a large type skips its
+        // rows in the index instead of reading each skipped row's values.
         var total = await query.CountAsync(ct).ConfigureAwait(false);
-        var items = await query
+        var pageIds = query
             .OrderBy(i => i.TypeName).ThenBy(i => i.RecordId)
             .Skip((p - 1) * size).Take(size)
+            .Select(i => i.ItemId);
+        var items = await osdu.DeliveryCacheItems.AsNoTracking()
+            .Where(i => i.Scope == partition && pageIds.Contains(i.ItemId))
+            .OrderBy(i => i.TypeName).ThenBy(i => i.RecordId)
+            .Select(i => new { i.ItemId, i.TypeName, i.EntityType, i.RecordId, i.FieldsJson })
             .ToListAsync(ct).ConfigureAwait(false);
         return TypedResults.Ok(new PagedResult<DeliveryCachedItemDto>(
             items.Select(i => new DeliveryCachedItemDto(i.ItemId, partition, resolved.Version, i.TypeName, i.EntityType, i.RecordId, ParseJson(i.FieldsJson))).ToList(),

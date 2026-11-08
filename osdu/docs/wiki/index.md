@@ -252,6 +252,9 @@ other packages adopt the same contract.
 - [0048: every page an admin runs is in the menu's Admin group](decisions/0048-admin-holds-admin-pages.md): why Access
   restrictions and Partitions moved from OSDU to Admin, why Maintenance stayed under Health, and how a person who is not
   an admin still reaches the two pages.
+- [0049: a schedule runs every flow of a wave at once, in waves of the flows it runs](decisions/0049-schedules-as-wide-as-their-waves.md):
+  why a schedule that sets no `maxConcurrency` is unbounded in OSDU Delivery while SQLFlow keeps four, why a fire's waves
+  count only the flows it runs, and why one cache flow is not split over nodes.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

@@ -104,9 +104,10 @@ flow delivering wells runs in an earlier wave than the one delivering wellbores,
 the well's id from a column ([lineage](lineage.md#how-the-nodes-order-flows)). Only references the order keeps are read,
 so the reads add no cycle.
 
-The order lineage takes is that of the repository's own deliveries. A schedule runs flows of one repository, in that
-repository's waves, so inside a schedule every flow runs after the flows it refers to. Another repository's deliveries
-play no part in this repository's waves; they run in that repository's schedules ([schedules](#which-schedules-run-before-which)).
+The order lineage takes is that of the repository's own deliveries. A schedule runs flows of one repository, ordered by
+the dependencies among the flows it runs, so inside a schedule every flow runs after the flows of that schedule it refers
+to, and a flow only another schedule runs holds back nothing in this one. Another repository's deliveries play no part in
+this repository's waves; they run in that repository's schedules ([schedules](#which-schedules-run-before-which)).
 
 A delivery that checks its records against a cache type, where every cache flow capturing that type also captures what
 the delivery writes, no longer reads it: the cache flow runs after the delivery instead of the two being ordered in

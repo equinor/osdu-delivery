@@ -13,6 +13,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-concept-partition-cache
+  - delivery-concept-cache-merge
   - delivery-table-cache-item
   - delivery-table-cache-definition
 sourceRefs:
@@ -26,9 +27,11 @@ sourceRefs:
 That a cache flow's last capture of a type held a record. It is what lets several flows share one partition's cache: a
 record a flow no longer finds leaves the cache only when no other flow's capture still holds it
 ([Several cache flows, one cache](../concepts/partition-cache.md#several-cache-flows-one-cache)). Current state, not
-history: what each version held is in [`osdu.CacheItem`](cache-item.md). When the repository stops declaring a type
-([`osdu.CacheDefinition`](cache-definition.md)), the sync deletes that flow's rows of it. Not a ledger table: `Scope`
-names the partition.
+history: what each version held is in [`osdu.CacheItem`](cache-item.md). A merge writes only the rows that moved: a hold
+the flow's capture still has is left as it is, one it lost is deleted by its key and one it gained is inserted, so a
+refresh that found what it found last time writes none ([the cache merge](../concepts/cache-merge.md)). When the
+repository stops declaring a type ([`osdu.CacheDefinition`](cache-definition.md)), the sync deletes that flow's rows of
+it, 2,000 at a time. Not a ledger table: `Scope` names the partition.
 
 ## Columns
 
@@ -43,8 +46,8 @@ names the partition.
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_CacheMember` | `Scope`, `TypeName`, `RecordId`, `FlowName` | primary key | none | none | A merge reading who holds each record of the captured types. |
-| `IX_CacheMember_Scope_FlowName_TypeName` | `Scope`, `FlowName`, `TypeName` | index | none | none | A merge replacing one flow's rows of a type, and the sync releasing a type a flow no longer declares. |
+| `PK_CacheMember` | `Scope`, `TypeName`, `RecordId`, `FlowName` | primary key | none | none | A merge reading who holds each record of the captured types, a page at a time in key order, and deleting a hold by its key. |
+| `IX_CacheMember_Scope_FlowName_TypeName` | `Scope`, `FlowName`, `TypeName` | index | none | none | The sync releasing a type a flow no longer declares, a batch at a time. |
 
 ## Written and read by
 

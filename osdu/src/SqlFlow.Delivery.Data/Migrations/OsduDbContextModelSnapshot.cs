@@ -667,6 +667,12 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<byte[]>("FieldsHash")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("binary(32)")
+                        .HasComputedColumnSql("CAST(HASHBYTES('SHA2_256', [FieldsJson]) AS binary(32))", false);
+
                     b.Property<string>("FieldsJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -710,10 +716,20 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     SqlServerIndexBuilderExtensions.IsClustered(b.HasIndex("Scope", "ItemId"));
 
-                    b.HasIndex("Scope", "ToSequence");
+                    b.HasIndex("Scope", "ToSequence")
+                        .HasFilter("[ToSequence] IS NOT NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Scope", "ToSequence"), new[] { "FromSequence", "TypeName", "RecordId" });
+
+                    b.HasIndex("Scope", "TypeName", "RecordId")
+                        .HasFilter("[ToSequence] IS NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Scope", "TypeName", "RecordId"), new[] { "EntityType", "FieldsHash", "ToSequence" });
 
                     b.HasIndex("Scope", "TypeName", "RecordId", "FromSequence")
                         .IsUnique();
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Scope", "TypeName", "RecordId", "FromSequence"), new[] { "ToSequence" });
 
                     b.ToTable("CacheItem", "osdu");
                 });

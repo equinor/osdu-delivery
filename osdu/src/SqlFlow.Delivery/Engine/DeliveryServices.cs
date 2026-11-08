@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using SqlFlow.Catalog;
+using SqlFlow.Core;
 using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Catalog;
@@ -81,6 +82,11 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentKind, InventoryFlowKind>();
         services.AddSingleton<IFlowDocumentKind, RemovalFlowKind>();
         services.AddSingleton<IFlowDocumentKind, DownloadFlowKind>();
+        // A schedule that leaves maxConcurrency out runs every flow of a wave at once. Each flow bounds its own load on
+        // OSDU (its parallelism block), the pool's node maximum bounds the whole, and SQLFlow's default of four, which is
+        // one node's run slots, would keep a fire on one node however much work its waves hold. A schedule that should
+        // spare something it shares sets maxConcurrency; a host that registered its own default first keeps it.
+        services.TryAddSingleton(ScheduleFireDefaults.Unbounded);
         // The repository sync's delivery half, whose rows ride the catalog's transaction: the osdu schema is in its database.
         // Once the sync committed, it makes the ledger moves it asked with this host's ledger, when the host has one.
         services.AddSingleton<ICatalogSyncExtension>(sp => new DeliveryCatalogSync(

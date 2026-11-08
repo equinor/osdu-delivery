@@ -34,6 +34,7 @@ keywords:
   - held record waits for a reference
 related:
   - delivery-flow-cache
+  - delivery-concept-cache-merge
   - delivery-flow-dictionary
   - delivery-cli-cache
   - delivery-concept-change-detection
@@ -229,7 +230,9 @@ another flow lets go of the records only the first one kept.
 3. Asks OSDU's storage service about the records of each OSDU type that a delivery holds and the search did not find
    ([below](#pipelines-bring-the-cache-up-to-date)), and reads the partition's system properties, when it reached OSDU
    ([System properties](#system-properties)).
-4. Merges the capture into the current version and writes the next version, unless nothing moved.
+4. Merges the capture into the current version and writes the next version, unless nothing moved: only the records and
+   holds that moved are written, in statements of bounded size whatever the size of a type
+   ([the cache merge](cache-merge.md)).
 5. Applies the partition's [retention](#retention): prunes the records of the versions it no longer keeps.
 6. Compares each type that moved with the version before, and tags the changes that delivered records were built from.
 
@@ -406,5 +409,6 @@ table is never imported: it is captured from its table, dictionary or dimension 
 ## Related
 
 - [Cache flow](../flow/cache.md): the document that declares what a cache holds.
+- [The cache merge](cache-merge.md): how a refresh writes a version in statements of bounded size.
 - [Change detection](change-detection.md): what else makes a record deliver again.
 - [The ledger](ledger.md): where cache sets and tags are kept.

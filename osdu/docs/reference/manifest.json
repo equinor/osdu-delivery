@@ -1519,6 +1519,44 @@
       ]
     },
     {
+      "id": "delivery-concept-cache-merge",
+      "corpus": "reference",
+      "path": "concepts/cache-merge.md",
+      "title": "The cache merge: how a refresh writes a version in statements of bounded size, whatever the size of a type",
+      "type": "concept",
+      "summary": "How a cache merge compares a capture with the current version by hash and writes only what moved, a page of rows per statement, and what a timeout says.",
+      "keywords": [
+        "cache merge",
+        "merge timeout",
+        "execution timeout expired",
+        "sqlexception timeout cache",
+        "cache refresh slow",
+        "large cache type",
+        "wellbore cache",
+        "fieldshash",
+        "cache item hash",
+        "cache membership",
+        "osdu.cachemember",
+        "open ranges",
+        "page of rows",
+        "command timeout",
+        "merge lock"
+      ],
+      "related": [
+        "delivery-concept-partition-cache",
+        "delivery-flow-cache",
+        "delivery-table-cache-item",
+        "delivery-table-cache-member",
+        "delivery-table-cache-version",
+        "delivery-concept-database"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
+      ]
+    },
+    {
       "id": "delivery-concept-change-detection",
       "corpus": "reference",
       "path": "concepts/change-detection.md",
@@ -2592,6 +2630,7 @@
       ],
       "related": [
         "delivery-flow-cache",
+        "delivery-concept-cache-merge",
         "delivery-flow-dictionary",
         "delivery-cli-cache",
         "delivery-concept-change-detection",
@@ -7969,6 +8008,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-concept-partition-cache",
+        "delivery-concept-cache-merge",
         "delivery-table-cache-version",
         "delivery-table-cache-member",
         "delivery-table-cache-definition"
@@ -7997,6 +8037,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-concept-partition-cache",
+        "delivery-concept-cache-merge",
         "delivery-table-cache-item",
         "delivery-table-cache-definition"
       ],
@@ -10115,7 +10156,8 @@
       "related": [
         "delivery-wiki-0009-searched-references",
         "delivery-wiki-0017-pipelines-update-the-cache",
-        "delivery-wiki-0018-template-folders"
+        "delivery-wiki-0018-template-folders",
+        "delivery-wiki-0049-schedules-as-wide-as-their-waves"
       ],
       "sourceRefs": []
     },
@@ -10411,7 +10453,8 @@
         "whole-node runs"
       ],
       "related": [
-        "delivery-wiki-0006-work-batches"
+        "delivery-wiki-0006-work-batches",
+        "delivery-wiki-0049-schedules-as-wide-as-their-waves"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -11190,6 +11233,33 @@
         "osdu/gui/src/module.tsx",
         "osdu/gui/e2e/02-navigation.spec.ts",
         "osdu/gui/src/features/delivery/PartitionSwitcher.tsx"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0049-schedules-as-wide-as-their-waves",
+      "corpus": "wiki",
+      "path": "decisions/0049-schedules-as-wide-as-their-waves.md",
+      "title": "Decision 0049: a schedule runs every flow of a wave at once, in waves of the flows it runs",
+      "type": "decision",
+      "summary": "Why a schedule that sets no maxConcurrency is unbounded in OSDU Delivery, and why a fire's waves count only the flows that fire runs.",
+      "keywords": [
+        "schedule",
+        "maxconcurrency",
+        "fire width",
+        "waves",
+        "nodes",
+        "scale out"
+      ],
+      "related": [
+        "delivery-wiki-0016-osdu-order",
+        "delivery-wiki-0025-parallelism-and-default-fan-out"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs",
+        "sqlflow/src/SqlFlow.Core/ScheduleFireDefaults.cs",
+        "sqlflow/src/SqlFlow.Catalog/RunScopeExpander.cs",
+        "sqlflow/src/SqlFlow.Lineage/Graph/MemberWaves.cs",
+        "sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs"
       ]
     },
     {

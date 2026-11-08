@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,7 +18,10 @@ namespace SqlFlow.Delivery.Catalog;
 /// each record of the captured types, merges the capture in, and when the cached content moved writes the version row
 /// first, which claims the partition's next sequence so a concurrent write fails instead of interleaving, then the records
 /// that changed, arrived or left, then the membership and the current flag. A record whose values did not change is not
-/// written again: its open range already covers the new version, however many flows captured it. The version is the whole
+/// written again: its open range already covers the new version, however many flows captured it, and a flow's hold of a
+/// record it held before is not written again either. Every statement a merge sends reads or writes at most
+/// <see cref="PageRows"/> rows, so a merge of the largest type is a longer run of statements as short as a small type's,
+/// never one statement as large as the type. The version is the whole
 /// partition's cache and moves when anything in it does; each type it holds carries its own content hash, how it compares
 /// with the version before and the version its content dates from, so a type that only rode along with another's change is
 /// told apart, and its records are not even read. Versions never change once written, so the most recently loaded ones are
@@ -47,7 +51,19 @@ public sealed class OsduCacheStore : ICacheStore
     /// <summary>How many loaded versions stay in memory. A run renders against one; the GUI reads a handful.</summary>
     private const int RetainedVersions = 8;
 
+    /// <summary>
+    /// The most rows one statement reads or removes when it walks a whole version, a type's open ranges, a type's holders or
+    /// a type's membership. Every statement of a merge is then bounded by this, never by the size of the cache, so the
+    /// largest type of a partition (a hundred thousand wellbores and more) is read and written in statements as short as a
+    /// small one's, each well inside the command timeout, and none takes enough locks for SQL Server to lock the whole table.
+    /// </summary>
+    public const int PageRows = 2_000;
+
+    /// <summary>SQL Server's error number for a command the client stopped at its timeout.</summary>
+    private const int CommandTimedOut = -2;
+
     private readonly Func<OsduDbContext> _factory;
+    private readonly int _pageRows;
     private readonly Lock _gate = new();
     private readonly LinkedList<(string Scope, string Version, ReferenceSnapshot Snapshot)> _recent = new();
 
@@ -55,9 +71,17 @@ public sealed class OsduCacheStore : ICacheStore
     private readonly Dictionary<(string Scope, string Version), Task<ReferenceSnapshot>> _reading = new();
 
     public OsduCacheStore(Func<OsduDbContext> factory)
+        : this(factory, PageRows)
+    {
+    }
+
+    /// <summary>A store whose statements read and remove at most <paramref name="pageRows"/> rows each; tests page with a few.</summary>
+    internal OsduCacheStore(Func<OsduDbContext> factory, int pageRows)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageRows, 1);
         _factory = factory;
+        _pageRows = pageRows;
     }
 
     public async Task<string?> CurrentVersionAsync(string scope, CancellationToken ct = default)
@@ -133,7 +157,7 @@ public sealed class OsduCacheStore : ICacheStore
             var read = Task.Run(async () =>
             {
                 await using var db = _factory();
-                var snapshot = await ReadAsync(db, row, CancellationToken.None).ConfigureAwait(false);
+                var snapshot = await ReadAsync(db, row, _pageRows, CancellationToken.None).ConfigureAwait(false);
                 Remember(row.Scope, row.Version, snapshot);
                 return snapshot;
             });
@@ -283,6 +307,8 @@ public sealed class OsduCacheStore : ICacheStore
         var typeNames = captured.Select(t => t.Name).ToList();
         var label = CacheVersionLabel.Mint(capturedUtc);
 
+        var listed = string.Join(", ", typeNames);
+        var step = "taking the partition's merge lock";
         await using var db = _factory();
         var strategy = db.Database.CreateExecutionStrategy();
         try
@@ -295,28 +321,38 @@ public sealed class OsduCacheStore : ICacheStore
 
                 // Refreshes of one partition merge one after another: a second waits for the first to commit and then merges
                 // onto the version it wrote, instead of both claiming the next version and one failing.
+                step = "taking the partition's merge lock";
                 await LockPartitionAsync(db, scope, flowName, ct).ConfigureAwait(false);
 
+                step = "reading which version is current";
                 var currentRow = await db.DeliveryCacheVersions.AsNoTracking()
                     .Where(v => v.Scope == scope && v.Current)
                     .FirstOrDefaultAsync(ct).ConfigureAwait(false);
-                var current = currentRow is null ? null : Recent(scope, currentRow.Version) ?? await ReadAsync(db, currentRow, ct).ConfigureAwait(false);
+                if (currentRow is not null)
+                {
+                    step = $"reading version {currentRow.Version}";
+                }
+
+                var current = currentRow is null ? null : Recent(scope, currentRow.Version) ?? await ReadAsync(db, currentRow, _pageRows, ct).ConfigureAwait(false);
 
                 // Records OSDU no longer holds that only deliveries held lose the deliveries' hold first, so the merge takes
                 // them out unless another cache flow still holds them.
+                step = "releasing the records OSDU no longer holds";
                 await ReleaseGoneAsync(db, scope, capture.Gone, ct).ConfigureAwait(false);
                 await ReleaseRemovedAsync(db, scope, capture.Removed, ct).ConfigureAwait(false);
 
-                var memberRows = await db.DeliveryCacheMembers.AsNoTracking()
-                    .Where(m => m.Scope == scope && typeNames.Contains(m.TypeName))
-                    .Select(m => new { m.TypeName, m.RecordId, m.FlowName })
-                    .ToListAsync(ct).ConfigureAwait(false);
+                // Each captured type is looked up as captured and as the current version spells it, so a hold under either
+                // spelling is found whatever the database's collation.
+                step = $"reading which cache flows hold the records of {listed}";
+                var spellings = typeNames.Concat(typeNames.Select(name => current?.Type(name)?.Name).OfType<string>()).Distinct(StringComparer.Ordinal).ToList();
+                var holders = await HoldersAsync(db, scope, spellings, _pageRows, ct).ConfigureAwait(false);
                 var members = new Dictionary<CacheMemberKey, IReadOnlySet<string>>(CacheMemberKey.Comparer);
-                foreach (var held in memberRows.GroupBy(m => new CacheMemberKey(m.TypeName, m.RecordId), CacheMemberKey.Comparer))
+                foreach (var held in holders.GroupBy(m => new CacheMemberKey(m.TypeName, m.RecordId), CacheMemberKey.Comparer))
                 {
                     members[held.Key] = held.Select(m => m.FlowName).ToHashSet(StringComparer.Ordinal);
                 }
 
+                step = "reading the types the partition's cache flows declare";
                 var declared = await db.DeliveryCacheDefinitions.AsNoTracking()
                     .Where(d => d.Scope == scope)
                     .Select(d => d.Name)
@@ -327,11 +363,14 @@ public sealed class OsduCacheStore : ICacheStore
                 var hash = plan.Snapshot.ContentHash();
                 if (current is not null && string.Equals(hash, current.ContentHash(), StringComparison.Ordinal))
                 {
-                    await WriteMembersAsync(db, scope, flowName, captured, plan, capture.Adds, ct).ConfigureAwait(false);
+                    step = $"writing which records of {listed} cache flow '{flowName}' holds";
+                    await WriteMembersAsync(db, scope, flowName, captured, plan, capture.Adds, holders, _pageRows, ct).ConfigureAwait(false);
+                    step = "committing";
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
                     return new CacheWrite(current, current, Written: false, CacheTypeChanges.None(current));
                 }
 
+                step = "claiming the next version";
                 var sequence = (await db.DeliveryCacheVersions
                     .Where(v => v.Scope == scope)
                     .MaxAsync(v => (int?)v.Sequence, ct).ConfigureAwait(false) ?? 0) + 1;
@@ -347,6 +386,7 @@ public sealed class OsduCacheStore : ICacheStore
                 // was that type. Read before any record is written, since a version written before types were hashed is
                 // dated from the ranges its records hold.
                 var changes = CacheTypeChanges.Compare(current, snapshot);
+                step = "dating the types of the new version";
                 var since = await SinceAsync(db, currentRow, version, types, changes, ct).ConfigureAwait(false);
 
                 // The row goes in first: the unique sequence is what a concurrent write of the same partition collides on.
@@ -368,12 +408,16 @@ public sealed class OsduCacheStore : ICacheStore
                     SystemPropertiesJson = SystemPropertiesJson(snapshot.SystemProperties),
                     Items = types.Sum(t => (long)t.Items.Count),
                 };
+                step = $"writing version {version}";
                 db.DeliveryCacheVersions.Add(row);
                 await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                await WriteItemsAsync(db, scope, sequence, types, changes, ct).ConfigureAwait(false);
-                await WriteMembersAsync(db, scope, flowName, captured, plan, capture.Adds, ct).ConfigureAwait(false);
+                step = $"writing the records of version {version} that arrived, changed or left";
+                await WriteItemsAsync(db, scope, sequence, types, changes, _pageRows, ct).ConfigureAwait(false);
+                step = $"writing which records of {listed} cache flow '{flowName}' holds";
+                await WriteMembersAsync(db, scope, flowName, captured, plan, capture.Adds, holders, _pageRows, ct).ConfigureAwait(false);
 
+                step = $"making version {version} current";
                 await db.DeliveryCacheVersions
                     .Where(v => v.Scope == scope && v.Current)
                     .ExecuteUpdateAsync(set => set.SetProperty(v => v.Current, false), ct).ConfigureAwait(false);
@@ -381,6 +425,7 @@ public sealed class OsduCacheStore : ICacheStore
                     .Where(v => v.Id == row.Id)
                     .ExecuteUpdateAsync(set => set.SetProperty(v => v.Current, true), ct).ConfigureAwait(false);
 
+                step = "committing";
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
                 return new CacheWrite(snapshot, current, Written: true, changes);
             }).ConfigureAwait(false);
@@ -392,12 +437,48 @@ public sealed class OsduCacheStore : ICacheStore
 
             return write;
         }
+        catch (Exception ex) when (TimedOut(ex))
+        {
+            throw new DeliveryException(
+                string.Create(CultureInfo.InvariantCulture,
+                    $"Cache flow '{flowName}' could not merge into the cache of partition '{scope}': the database did not answer within the command timeout of {CommandTimeoutSeconds(db)} s while {step}. Nothing of this capture was kept; the next refresh merges it again."),
+                ex);
+        }
         catch (DbUpdateException ex)
         {
             throw new DeliveryException(
-                $"Cache flow '{flowName}' could not write a version of the cache of partition '{scope}' ({ex.GetBaseException().Message}). Nothing of this capture was kept; run the refresh again.",
+                $"Cache flow '{flowName}' could not write a version of the cache of partition '{scope}' while {step} ({ex.GetBaseException().Message}). Nothing of this capture was kept; run the refresh again.",
                 ex);
         }
+    }
+
+    /// <summary>Whether a statement stopped at its command timeout, as SqlClient reports it directly or under a failed save.</summary>
+    private static bool TimedOut(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException { Number: CommandTimedOut })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The timeout the context's statements run with: its own, or else what a new command on its connection starts with (the
+    /// connection string's Command Timeout, 30 s unless it sets one).
+    /// </summary>
+    private static int CommandTimeoutSeconds(OsduDbContext db)
+    {
+        if (db.Database.GetCommandTimeout() is { } timeout)
+        {
+            return timeout;
+        }
+
+        using var command = db.Database.GetDbConnection().CreateCommand();
+        return command.CommandTimeout;
     }
 
     /// <inheritdoc />
@@ -801,20 +882,45 @@ public sealed class OsduCacheStore : ICacheStore
     /// <summary>
     /// One version with every record whose range covers its sequence, checked against the hash it was written with and, for a
     /// version written since types were hashed, each type against its own: one pass over the records answers both, and a
-    /// type that no longer matches is named.
+    /// type that no longer matches is named. The records are read in pages of <paramref name="pageRows"/> in the order the
+    /// partition stores them, each page a seek of the clustered key from where the last one ended, so reading the version
+    /// of a partition of any size is a run of short statements. Versions never change once written, so the pages read one
+    /// version whoever writes the next meanwhile; a retention pruning it is caught by the hash check below.
     /// </summary>
-    private static async Task<ReferenceSnapshot> ReadAsync(OsduDbContext db, DeliveryCacheVersion row, CancellationToken ct)
+    private static async Task<ReferenceSnapshot> ReadAsync(OsduDbContext db, DeliveryCacheVersion row, int pageRows, CancellationToken ct)
     {
         var scope = row.Scope;
         var sequence = row.Sequence;
-        var items = await db.DeliveryCacheItems.AsNoTracking()
-            .Where(i => i.Scope == scope && i.FromSequence <= sequence && (i.ToSequence == null || i.ToSequence > sequence))
-            .Select(i => new { i.TypeName, i.RecordId, i.FieldsJson })
-            .ToListAsync(ct).ConfigureAwait(false);
-        var byType = items.GroupBy(i => i.TypeName, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
         // One pool for the version: a value many records hold (the field a thousand wellbores lie in) is kept once.
         var pool = new StringPool();
+        var byType = new Dictionary<string, List<ReferenceItem>>(StringComparer.OrdinalIgnoreCase);
+        var after = long.MinValue;
+        while (true)
+        {
+            var page = await db.DeliveryCacheItems.AsNoTracking()
+                .Where(i => i.Scope == scope && i.ItemId > after && i.FromSequence <= sequence && (i.ToSequence == null || i.ToSequence > sequence))
+                .OrderBy(i => i.ItemId)
+                .Select(i => new { i.ItemId, i.TypeName, i.RecordId, i.FieldsJson })
+                .Take(pageRows)
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var item in page)
+            {
+                if (!byType.TryGetValue(item.TypeName, out var items))
+                {
+                    byType[item.TypeName] = items = [];
+                }
+
+                items.Add(new ReferenceItem(item.RecordId, Fields(item.FieldsJson, scope, row.Version, pool)));
+            }
+
+            if (page.Count < pageRows)
+            {
+                break;
+            }
+
+            after = page[^1].ItemId;
+        }
 
         // The version row lists every type, a type that holds no record included, so the loaded version holds exactly the
         // types the merge left and hashes as it did.
@@ -823,9 +929,7 @@ public sealed class OsduCacheStore : ICacheStore
             .Select(type => new ReferenceType(
                 type.Name,
                 type.EntityType,
-                (byType.GetValueOrDefault(type.Name) ?? [])
-                    .OrderBy(i => i.RecordId, StringComparer.Ordinal)
-                    .Select(i => new ReferenceItem(i.RecordId, Fields(i.FieldsJson, scope, row.Version, pool))),
+                (byType.GetValueOrDefault(type.Name) ?? []).OrderBy(i => i.Id, StringComparer.Ordinal),
                 type.Key))
             .ToList();
         var snapshot = new ReferenceSnapshot(
@@ -862,10 +966,12 @@ public sealed class OsduCacheStore : ICacheStore
     /// Compares the new version against what the newest one holds, record by record over every type that arrived, changed or
     /// left: a record that changed ends its open range and begins another, one that arrived begins one, and one that left
     /// ends its range. A type whose content hash did not move is not read at all: the newest version was loaded from exactly
-    /// its open ranges and checked against its hash, so they already cover the new version as they stand.
+    /// its open ranges and checked against its hash, so they already cover the new version as they stand. A record's values
+    /// are compared by the hash the index of the open ranges keeps (<see cref="DeliveryCacheItem.FieldsHash"/>), so the
+    /// comparison reads that index alone, page by page in record order, and never the values themselves.
     /// </summary>
     private static async Task WriteItemsAsync(
-        OsduDbContext db, string scope, int sequence, IReadOnlyList<ReferenceType> types, CacheTypeChanges changes, CancellationToken ct)
+        OsduDbContext db, string scope, int sequence, IReadOnlyList<ReferenceType> types, CacheTypeChanges changes, int pageRows, CancellationToken ct)
     {
         var moved = types.Where(type => changes.Of(type.Name) is not CacheTypeChange.Unchanged).ToList();
         var touched = moved.Select(type => type.Name).Concat(changes.Removed).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -876,19 +982,20 @@ public sealed class OsduCacheStore : ICacheStore
         }
 
         // The type names as the open ranges spell them, matched here without regard to case whatever the database's collation,
-        // so the query below finds a type's ranges however an earlier version spelled it.
-        var spelled = (await db.DeliveryCacheItems.AsNoTracking()
-                .Where(i => i.Scope == scope && i.ToSequence == null)
-                .Select(i => i.TypeName)
-                .Distinct()
-                .ToListAsync(ct).ConfigureAwait(false))
-            .Where(touched.Contains)
-            .ToList();
-        var open = await db.DeliveryCacheItems.AsNoTracking()
-            .Where(i => i.Scope == scope && i.ToSequence == null && spelled.Contains(i.TypeName))
-            .Select(i => new { i.ItemId, i.TypeName, i.EntityType, i.RecordId, i.FieldsJson })
-            .ToListAsync(ct).ConfigureAwait(false);
-        var held = open.ToDictionary(o => (Type: o.TypeName.ToUpperInvariant(), o.RecordId));
+        // so the reads below find a type's ranges however an earlier version spelled it.
+        var spelled = (await TypeNamesAsync(db, scope, openOnly: true, ct).ConfigureAwait(false)).Where(touched.Contains).ToList();
+        var held = new Dictionary<(string Type, string RecordId), OpenRange>();
+        foreach (var name in spelled)
+        {
+            foreach (var range in await OpenRangesAsync(db, scope, name, pageRows, ct).ConfigureAwait(false))
+            {
+                if (!held.TryAdd((range.TypeName.ToUpperInvariant(), range.RecordId), range))
+                {
+                    throw new DeliveryException(
+                        $"The cache of partition '{scope}' holds two open ranges of record {range.RecordId} of type {range.TypeName}, so the newest version holds it twice and no merge can say which to end. Nothing of this capture was kept.");
+                }
+            }
+        }
 
         var closing = new List<long>();
         var arriving = new List<DeliveryCacheItem>();
@@ -902,7 +1009,7 @@ public sealed class OsduCacheStore : ICacheStore
                 var fields = FieldsJson(item);
                 if (held.TryGetValue(key, out var existing))
                 {
-                    if (string.Equals(existing.FieldsJson, fields, StringComparison.Ordinal)
+                    if (existing.FieldsHash.AsSpan().SequenceEqual(DeliveryCacheItem.HashOf(fields))
                         && string.Equals(existing.EntityType, type.EntityType, StringComparison.Ordinal)
                         && string.Equals(existing.TypeName, type.Name, StringComparison.Ordinal))
                     {
@@ -925,7 +1032,7 @@ public sealed class OsduCacheStore : ICacheStore
             }
         }
 
-        closing.AddRange(open.Where(o => !seen.Contains((o.TypeName.ToUpperInvariant(), o.RecordId))).Select(o => o.ItemId));
+        closing.AddRange(held.Where(range => !seen.Contains(range.Key)).Select(range => range.Value.ItemId));
         foreach (var chunk in closing.Chunk(UpdateChunk))
         {
             var ids = chunk.ToList();
@@ -998,51 +1105,196 @@ public sealed class OsduCacheStore : ICacheStore
     /// <summary>
     /// The flow's membership of the captured types becomes exactly what it captured, under the names the cache holds the
     /// types by; a type the merge removed from the partition loses every flow's membership. A capture that adds keeps every
-    /// record its holder held before, and holds the ones it adds as well.
+    /// record its holder held before, and holds the ones it adds as well. Only what moved is written: the merge read every
+    /// holder of the captured types (<paramref name="holders"/>), so a row the flow already holds under the same name is left
+    /// as it is, a row it no longer holds (or holds under another spelling of its type or flow) is removed by its key, and a
+    /// record it newly holds is inserted. A refresh that found what it found last time writes no membership at all.
     /// </summary>
     private static async Task WriteMembersAsync(
-        OsduDbContext db, string scope, string flowName, IReadOnlyList<ReferenceType> captured, CacheMergePlan plan, bool adds, CancellationToken ct)
+        OsduDbContext db,
+        string scope,
+        string flowName,
+        IReadOnlyList<ReferenceType> captured,
+        CacheMergePlan plan,
+        bool adds,
+        IReadOnlyList<CacheHolder> holders,
+        int pageRows,
+        CancellationToken ct)
     {
-        var typeNames = captured.Select(t => t.Name).ToList();
-        if (adds)
+        var byType = holders
+            .Where(h => string.Equals(h.FlowName, flowName, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(h => h.TypeName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var stale = new List<CacheHolder>();
+        var arriving = new List<DeliveryCacheMember>();
+        foreach (var type in captured)
         {
-            // Only the rows of the records it adds are written again, so a record held twice is not inserted twice.
-            foreach (var type in captured)
+            var name = plan.Snapshot.Type(type.Name)?.Name ?? type.Name;
+            var wanted = type.Items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+            var kept = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var row in byType.GetValueOrDefault(type.Name) ?? [])
             {
-                var name = plan.Snapshot.Type(type.Name)?.Name ?? type.Name;
-                foreach (var chunk in type.Items.Select(i => i.Id).Chunk(IdChunk))
+                var holds = wanted.Contains(row.RecordId);
+                if (holds && string.Equals(row.TypeName, name, StringComparison.Ordinal) && string.Equals(row.FlowName, flowName, StringComparison.Ordinal))
                 {
-                    await db.DeliveryCacheMembers
-                        .Where(m => m.Scope == scope && m.FlowName == flowName && (m.TypeName == type.Name || m.TypeName == name) && chunk.Contains(m.RecordId))
-                        .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+                    kept.Add(row.RecordId);
+                }
+                else if (holds || !adds)
+                {
+                    stale.Add(row);
                 }
             }
+
+            arriving.AddRange(wanted.Where(id => !kept.Contains(id))
+                .Select(id => new DeliveryCacheMember { Scope = scope, TypeName = name, RecordId = id, FlowName = flowName }));
         }
-        else
+
+        foreach (var group in stale.GroupBy(h => (h.TypeName, h.FlowName)))
         {
-            await db.DeliveryCacheMembers
-                .Where(m => m.Scope == scope && m.FlowName == flowName && typeNames.Contains(m.TypeName))
-                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            var (typeName, holder) = group.Key;
+            foreach (var chunk in group.Select(h => h.RecordId).Chunk(IdChunk))
+            {
+                await db.DeliveryCacheMembers
+                    .Where(m => m.Scope == scope && m.TypeName == typeName && m.FlowName == holder && chunk.Contains(m.RecordId))
+                    .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            }
         }
+
         if (plan.RemovedTypes.Count > 0)
         {
             var removed = plan.RemovedTypes.ToList();
-            await db.DeliveryCacheMembers
-                .Where(m => m.Scope == scope && removed.Contains(m.TypeName))
-                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await DeleteMembersAsync(db.DeliveryCacheMembers.Where(m => m.Scope == scope && removed.Contains(m.TypeName)), pageRows, ct).ConfigureAwait(false);
         }
 
-        var rows = captured.SelectMany(type =>
-        {
-            var name = plan.Snapshot.Type(type.Name)?.Name ?? type.Name;
-            return type.Items.Select(item => new DeliveryCacheMember { Scope = scope, TypeName = name, RecordId = item.Id, FlowName = flowName });
-        });
-        foreach (var chunk in rows.Chunk(InsertChunk))
+        foreach (var chunk in arriving.Chunk(InsertChunk))
         {
             db.DeliveryCacheMembers.AddRange(chunk);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             db.ChangeTracker.Clear();
         }
+    }
+
+    /// <summary>
+    /// Removes every membership row <paramref name="rows"/> selects, <paramref name="pageRows"/> at a time, each batch its
+    /// own statement, so releasing a type of a hundred thousand records is as many short statements rather than one that
+    /// outlives the command timeout and takes enough locks for SQL Server to lock the whole table.
+    /// </summary>
+    /// <returns>How many rows were removed.</returns>
+    public static async Task<long> DeleteMembersAsync(IQueryable<DeliveryCacheMember> rows, int pageRows, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageRows, 1);
+        long removed = 0;
+        while (true)
+        {
+            var deleted = await rows.Take(pageRows).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            removed += deleted;
+            if (deleted < pageRows)
+            {
+                return removed;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Why a keyset read compares strings with <see cref="string.Compare(string, string)"/>: the comparison is translated to
+    /// SQL, where the column's collation orders it exactly as the index it seeks is ordered; no comparison runs in .NET.
+    /// </summary>
+    private const string KeysetJustification =
+        "Translated to SQL: the column's collation orders the comparison as the index it seeks is ordered, and no comparison runs in .NET.";
+
+    /// <summary>One flow's hold of one record of a type, as <c>osdu.CacheMember</c> stores it.</summary>
+    private sealed record CacheHolder(string TypeName, string RecordId, string FlowName);
+
+    /// <summary>One open range of a record, as the index of the open ranges holds it: its values only as their hash.</summary>
+    private sealed record OpenRange(long ItemId, string TypeName, string EntityType, string RecordId, byte[] FieldsHash);
+
+    /// <summary>
+    /// Every holder of every record of <paramref name="typeNames"/>, read type by type in key order, <paramref name="pageRows"/>
+    /// at a time, each page a seek of the primary key from the record and flow the last one ended at. A name is asked for as
+    /// captured and as the current version spells it, and a row both find (the database's collation folds case) is kept once.
+    /// </summary>
+    [SuppressMessage("Globalization", "CA1309:Use ordinal string comparison", Justification = KeysetJustification)]
+    private static async Task<List<CacheHolder>> HoldersAsync(OsduDbContext db, string scope, IReadOnlyList<string> typeNames, int pageRows, CancellationToken ct)
+    {
+        var holders = new List<CacheHolder>();
+        var seen = new HashSet<CacheHolder>();
+        foreach (var name in typeNames.Distinct(StringComparer.Ordinal))
+        {
+            var afterRecord = string.Empty;
+            var afterFlow = string.Empty;
+            while (true)
+            {
+                var page = await db.DeliveryCacheMembers.AsNoTracking()
+                    .Where(m => m.Scope == scope && m.TypeName == name
+                        && string.Compare(m.RecordId, afterRecord) >= 0
+                        && (string.Compare(m.RecordId, afterRecord) > 0 || string.Compare(m.FlowName, afterFlow) > 0))
+                    .OrderBy(m => m.RecordId).ThenBy(m => m.FlowName)
+                    .Select(m => new CacheHolder(m.TypeName, m.RecordId, m.FlowName))
+                    .Take(pageRows)
+                    .ToListAsync(ct).ConfigureAwait(false);
+                holders.AddRange(page.Where(seen.Add));
+                if (page.Count < pageRows)
+                {
+                    break;
+                }
+
+                (afterRecord, afterFlow) = (page[^1].RecordId, page[^1].FlowName);
+            }
+        }
+
+        return holders;
+    }
+
+    /// <summary>
+    /// The open ranges of type <paramref name="typeName"/> (as the database's collation matches it), read from the index of the
+    /// open ranges in record order, <paramref name="pageRows"/> at a time, each page a seek from the record the last one
+    /// ended at.
+    /// </summary>
+    [SuppressMessage("Globalization", "CA1309:Use ordinal string comparison", Justification = KeysetJustification)]
+    private static async Task<List<OpenRange>> OpenRangesAsync(OsduDbContext db, string scope, string typeName, int pageRows, CancellationToken ct)
+    {
+        var ranges = new List<OpenRange>();
+        var after = string.Empty;
+        while (true)
+        {
+            var page = await db.DeliveryCacheItems.AsNoTracking()
+                .Where(i => i.Scope == scope && i.ToSequence == null && i.TypeName == typeName && string.Compare(i.RecordId, after) > 0)
+                .OrderBy(i => i.RecordId)
+                .Select(i => new OpenRange(i.ItemId, i.TypeName, i.EntityType, i.RecordId, i.FieldsHash))
+                .Take(pageRows)
+                .ToListAsync(ct).ConfigureAwait(false);
+            ranges.AddRange(page);
+            if (page.Count < pageRows)
+            {
+                return ranges;
+            }
+
+            after = page[^1].RecordId;
+        }
+    }
+
+    /// <summary>
+    /// The type names of the partition's ranges (with <paramref name="openOnly"/>, of the ranges the newest version holds), one
+    /// for each name the database's collation tells apart, each found by one seek of an index that leads with the type name
+    /// for the next name after the last: as many seeks as there are types, however many records each holds.
+    /// </summary>
+    private static async Task<List<string>> TypeNamesAsync(OsduDbContext db, string scope, bool openOnly, CancellationToken ct)
+    {
+        var open = openOnly ? " AND i.[ToSequence] IS NULL" : string.Empty;
+        var sql = $"""
+            WITH [names] AS (
+                SELECT TOP (1) i.[TypeName] AS [Value] FROM [osdu].[CacheItem] AS i WHERE i.[Scope] = @scope{open} ORDER BY i.[TypeName]
+                UNION ALL
+                SELECT r.[Value] FROM (
+                    SELECT i.[TypeName] AS [Value], ROW_NUMBER() OVER (ORDER BY i.[TypeName]) AS [n]
+                    FROM [osdu].[CacheItem] AS i JOIN [names] AS p ON i.[Scope] = @scope{open} AND i.[TypeName] > p.[Value]) AS r
+                WHERE r.[n] = 1)
+            SELECT [Value] FROM [names] OPTION (MAXRECURSION 0)
+            """;
+        return await db.Database
+            .SqlQueryRaw<string>(sql, new SqlParameter("@scope", SqlDbType.NVarChar, MaxNameLength) { Value = scope })
+            .ToListAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>Every scalar the record holds, newline separated, so a text search over the cache is one predicate.</summary>
@@ -1150,13 +1402,7 @@ public sealed class OsduCacheStore : ICacheStore
         // The latest version at which a record of each undated type began or ended a range: a change of the type. The names
         // are taken as the ranges spell them, matched without regard to case whatever the database's collation.
         var wanted = new HashSet<string>(undated, StringComparer.OrdinalIgnoreCase);
-        var spelled = (await db.DeliveryCacheItems.AsNoTracking()
-                .Where(i => i.Scope == scope)
-                .Select(i => i.TypeName)
-                .Distinct()
-                .ToListAsync(ct).ConfigureAwait(false))
-            .Where(wanted.Contains)
-            .ToList();
+        var spelled = (await TypeNamesAsync(db, scope, openOnly: false, ct).ConfigureAwait(false)).Where(wanted.Contains).ToList();
         var ranges = (await db.DeliveryCacheItems.AsNoTracking()
                 .Where(i => i.Scope == scope && spelled.Contains(i.TypeName))
                 .GroupBy(i => i.TypeName)

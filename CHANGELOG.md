@@ -542,6 +542,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A schedule runs every flow of a wave at once unless it sets `maxConcurrency`, so a fire with more work than one node
+  takes asks for more nodes.** A schedule that left the key out ran four flows at a time, one node's run slots, so its
+  fire never brought up a second node. Set `maxConcurrency` on a schedule whose flows should spare something they share
+  ([deployment](osdu/docs/reference/guides/deployment.md#the-images)).
+- **A schedule's flows wait only for the flows of the same run they depend on.** A flow that another schedule's deliveries
+  ordered, such as a cache refresh behind a reference-data delivery, waited in its own schedule's run as though those
+  deliveries ran there too; the sixteen cache flows of one estate ran as four waves where they now run as one
+  ([lineage](osdu/docs/reference/concepts/lineage.md#how-the-nodes-order-flows)).
 - **Access restrictions and Partitions are in the menu's Admin group, with every other page an admin runs**, where they
   were under OSDU. The group is shown to admins only; anyone signed in still opens both pages by their address, and
   Partitions from the title bar's partition picker ([the menu](osdu/docs/reference/concepts/menu.md)).
@@ -869,6 +877,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A cache refresh of a large type (a partition's hundred thousand wellbores) no longer fails with `Execution Timeout
+  Expired`: a merge sends statements of at most 2,000 rows, compares records by a hash the database keeps rather than
+  reading their values back, and writes only the holds that moved, and one that still times out names the step it stopped
+  at; the Cache page reads a deep page of a large type from an index ([the cache merge](osdu/docs/reference/concepts/cache-merge.md)).
+  The upgrade builds three indexes over `osdu.CacheItem`, which takes a while on a large cache, so a module migration's
+  statements now have 30 minutes each.
 - A removal that skips a record says why on the record's timeline and in the run log, where both gave only the count: the
   line names the first three records skipped, each with its reason, and how many more
   ([how a removal runs](osdu/docs/reference/concepts/removal-and-reversal.md#removing-records-from-osdu)).

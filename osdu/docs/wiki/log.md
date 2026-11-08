@@ -696,3 +696,12 @@ Partitions, and the navigation spec.
 
 Added decision 0048, which amends 0034; updated `delivery-concept-menu`, `delivery-concept-gui`,
 `delivery-concept-partitions` and `delivery-concept-access-restriction`.
+
+## [2026-11-08] ingest | Schedules as wide as their waves
+
+Source: the human's report that a cache update ran on one node and their requirement that more work start more nodes;
+the cache-osdu schedule's waves from `lineage`, the replica target (`ScaleTargetStore`), SQLFlow's default fire width,
+and the 29 seconds the refresh took.
+
+Added decision 0049, which refines 0016 and extends 0025; updated `delivery-guide-deployment`, `delivery-concept-lineage`
+and `delivery-concept-osdu-order`.

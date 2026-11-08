@@ -280,9 +280,10 @@ well log delivery waits for that cache flow too. With the template read, the OSD
 `*:*:master-data--Wellbore:*`, since its mapping fills `WellboreID`, and lineage runs it after the wellbore delivery
 ([the OSDU order](osdu-order.md#lineage-takes-the-order)).
 
-The same waves are what the repository sync stamps on each pipeline and what a schedule fires its member flows in, so
-"run a flow and its descendants" from a pre flow also runs the cache, assertion and other flows downstream of its
-deliveries.
+The repository sync stamps these waves on each pipeline. A schedule's fire, and a flow run with its descendants, order
+the flows they run by the same dependencies, counting only those among the flows they run: a cache flow that follows a
+delivery of another schedule does not wait in its own schedule's fire, where that delivery does not run. "Run a flow and
+its descendants" from a pre flow also runs the cache, assertion and other flows downstream of its deliveries, after them.
 
 ## When lineage is computed again
 

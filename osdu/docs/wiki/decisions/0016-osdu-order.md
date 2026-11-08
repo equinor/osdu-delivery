@@ -21,11 +21,13 @@ related:
   - delivery-wiki-0009-searched-references
   - delivery-wiki-0017-pipelines-update-the-cache
   - delivery-wiki-0018-template-folders
-updated: 2026-10-22
+  - delivery-wiki-0049-schedules-as-wide-as-their-waves
+updated: 2026-11-08
 ---
 # 0016: OSDU's relationships order a repository's waves, and dependencies between schedules are shown, not enforced
 
-Status: proposed. Documented in [the OSDU order](../../reference/concepts/osdu-order.md) and [lineage](../../reference/concepts/lineage.md).
+Status: proposed, refined by [0049](0049-schedules-as-wide-as-their-waves.md): a fire's waves count only the flows that
+fire runs. Documented in [the OSDU order](../../reference/concepts/osdu-order.md) and [lineage](../../reference/concepts/lineage.md).
 Answers the ordering question [0009](0009-searched-references.md) left to lineage.
 
 > **Amended by [0018](0018-template-folders.md).** "A kind whose template is not saved" below reads "a kind no template

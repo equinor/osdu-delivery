@@ -51,11 +51,13 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
 related:
   - delivery-wiki-0006-work-batches
-updated: 2026-10-30
+  - delivery-wiki-0049-schedules-as-wide-as-their-waves
+updated: 2026-11-08
 ---
 # 0025: What runs at once is a flow's parallelism, and a delivery fans out by default
 
-Status: proposed. Documented in [parallelism](../../reference/flow/delivery.md#parallelism) and
+Status: proposed, extended by [0049](0049-schedules-as-wide-as-their-waves.md) from one delivery to a schedule's fire.
+Documented in [parallelism](../../reference/flow/delivery.md#parallelism) and
 [many nodes](../../reference/concepts/submissions.md#many-nodes).
 
 ## Context

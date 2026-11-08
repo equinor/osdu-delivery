@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -2325,6 +2327,13 @@ public sealed class DeliveryCacheItem
     /// <summary>The captured values as JSON, in whatever shape the paths yielded, names in ordinal order.</summary>
     public string FieldsJson { get; set; } = "{}";
 
+    /// <summary>
+    /// The SHA-256 of <see cref="FieldsJson"/>, which the database computes (<see cref="FieldsHashSql"/>) and keeps in the
+    /// index of the open ranges, so a merge tells a record that changed from one that did not by the hash alone, without
+    /// reading the values back.
+    /// </summary>
+    public byte[] FieldsHash { get; set; } = [];
+
     /// <summary>Every scalar the item holds, newline separated: what a search over cached values matches on.</summary>
     public string Terms { get; set; } = string.Empty;
 
@@ -2333,6 +2342,20 @@ public sealed class DeliveryCacheItem
 
     /// <summary>The sequence of the first version that no longer holds it so; null while the newest version still does.</summary>
     public int? ToSequence { get; set; }
+
+    /// <summary>
+    /// How the database computes <see cref="FieldsHash"/>: SHA-256 over the UTF-16 bytes an <c>nvarchar</c> holds, which
+    /// is what <see cref="HashOf"/> hashes. Not persisted: the hash is kept in the index of the open ranges, which is where
+    /// the merge reads it.
+    /// </summary>
+    public const string FieldsHashSql = "CAST(HASHBYTES('SHA2_256', [FieldsJson]) AS binary(32))";
+
+    /// <summary>The <see cref="FieldsHash"/> the database computes for <paramref name="fieldsJson"/>.</summary>
+    public static byte[] HashOf(string fieldsJson)
+    {
+        ArgumentNullException.ThrowIfNull(fieldsJson);
+        return SHA256.HashData(Encoding.Unicode.GetBytes(fieldsJson));
+    }
 }
 
 /// <summary>
@@ -5166,13 +5189,23 @@ public static class DeliveryModel
             e.Property(i => i.EntityType).HasMaxLength(200).IsRequired();
             OsduId(e.Property(i => i.RecordId)).HasMaxLength(512).IsRequired();
             e.Property(i => i.FieldsJson).IsRequired();
+            e.Property(i => i.FieldsHash).HasColumnType("binary(32)").HasComputedColumnSql(DeliveryCacheItem.FieldsHashSql, stored: false);
             e.Property(i => i.Terms).IsRequired();
             // A record holds one range per distinct content: the type listing is its prefix, so this index answers both a
-            // version's listing of a type and one record's history.
-            e.HasIndex(i => new { i.Scope, i.TypeName, i.RecordId, i.FromSequence }).IsUnique();
-            // The rows the newest version holds (ToSequence null), which a merge compares its result against, and the closed
-            // ranges a retention removes.
-            e.HasIndex(i => new { i.Scope, i.ToSequence });
+            // version's listing of a type and one record's history. The end of each range rides along, so a version's
+            // listing, count and page of a type are read from the index alone, and only the rows a page shows are looked up.
+            e.HasIndex(i => new { i.Scope, i.TypeName, i.RecordId, i.FromSequence }).IsUnique().IncludeProperties(i => new { i.ToSequence });
+            // The rows the newest version holds, by type: what a merge compares its capture against, read page by page in
+            // record order, with each row's hash in place of its values. ToSequence is included because SQL Server looks a
+            // filtered column up in the table to check a query's IS NULL unless the index holds it.
+            e.HasIndex(i => new { i.Scope, i.TypeName, i.RecordId })
+                .HasFilter("[ToSequence] IS NULL")
+                .IncludeProperties(i => new { i.EntityType, i.FieldsHash, i.ToSequence });
+            // The closed ranges: what a retention removes, and what the history counts as ended and changed, from the index
+            // alone.
+            e.HasIndex(i => new { i.Scope, i.ToSequence })
+                .HasFilter("[ToSequence] IS NOT NULL")
+                .IncludeProperties(i => new { i.FromSequence, i.TypeName, i.RecordId });
             // The rows each version began: what a version changed is counted from them, by the history and by a retention
             // recording a version's changes before it removes the version's records.
             e.HasIndex(i => new { i.Scope, i.FromSequence }).IncludeProperties(i => new { i.TypeName, i.RecordId });
