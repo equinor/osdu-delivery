@@ -877,6 +877,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A document whose `flowType` is unknown is refused with a menu that names all fourteen of SQLFlow's built-in kinds, where it
+  left out `sftp`; SQLFlow's flow overview counts the fourteen, gives `api` its three transports and the copy page its S3
+  endpoint. The module's flow overview lists the inventory's `restore`, and its examples, repository layout and `sqlflow
+  validate` output are the welldb sample as it stands ([the OSDU documents](osdu/docs/reference/flow/overview.md)).
 - A cache refresh of a large type (a partition's hundred thousand wellbores) no longer fails with `Execution Timeout
   Expired`: a merge sends statements of at most 2,000 rows, compares records by a hash the database keeps rather than
   reading their values back, and writes only the holds that moved, and one that still times out names the step it stopped
