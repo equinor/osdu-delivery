@@ -1,3 +1,4 @@
+using System.Globalization;
 using SqlFlow.Core;
 using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Engine;
@@ -112,8 +113,31 @@ public sealed class DimensionFlowKind : IFlowDocumentKind
             DimensionFlowDefinition.FlowTypeName,
             "a build loads what the flow's incremental block says, in full with fullLoad or over a backfill window; name the dimensions to build in the payload.");
 
-        // A run names the dimensions it builds or plans, beside the central configuration.
-        DeliveryRunPayload.Parse(parameters).RefuseOtherThan(DimensionFlowDefinition.FlowTypeName, [DeliveryRunPayload.DimensionsProperty]);
+        // A run names the dimensions it builds or plans, beside the central configuration. A part of a build spread over nodes
+        // also names how many runs share the flow's rate limit (osdu/docs/reference/flow/dimension-build.md, Spread over nodes).
+        var payload = DeliveryRunPayload.Parse(parameters);
+        payload.RefuseOtherThan(DimensionFlowDefinition.FlowTypeName, [DeliveryRunPayload.DimensionsProperty, DeliveryRunPayload.RateShareProperty]);
+        if (payload.RateShare is { } share)
+        {
+            // Every part of a split build, the run that split it among them, shares the rate: as many runs as the flow takes nodes at most.
+            if (share < DeliveryRunPayload.MinRateShare || share > FlowParallelism.MaxNodes)
+            {
+                throw new SqlFlowException(
+                    string.Create(CultureInfo.InvariantCulture, $"payload {DeliveryRunPayload.RateShareProperty} is {share}; the parts a dimension build is spread over number {DeliveryRunPayload.MinRateShare} to {FlowParallelism.MaxNodes}."));
+            }
+
+            if (Operation(parameters) != DeliveryOperations.Build)
+            {
+                throw new SqlFlowException(
+                    $"payload {DeliveryRunPayload.RateShareProperty} does not apply to a dimension flow's {DeliveryOperations.Plan} run: only a part of a build spread over nodes shares the build's rate limit.");
+            }
+
+            if (!payload.SelectsDimensions)
+            {
+                throw new SqlFlowException(
+                    $"payload {DeliveryRunPayload.RateShareProperty} marks a part of a build spread over nodes, which names the dimensions it builds ({DeliveryRunPayload.DimensionsProperty}); this payload names none.");
+            }
+        }
     }
 
     /// <summary>The operation a dimension flow runs: build (its default) or plan.</summary>

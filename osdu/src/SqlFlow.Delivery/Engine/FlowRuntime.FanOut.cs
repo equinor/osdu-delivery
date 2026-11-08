@@ -22,8 +22,6 @@ namespace SqlFlow.Delivery.Engine;
 // failed, and closes the submission.
 public sealed partial class FlowRuntime
 {
-    private static readonly TimeSpan MemberProgress = TimeSpan.FromSeconds(60);
-
     private static readonly TimeSpan LeaseSettle = TimeSpan.FromSeconds(30);
 
     /// <summary>How often the first run of a split delivery asks the platform how the parts it queued are doing.</summary>
@@ -39,9 +37,6 @@ public sealed partial class FlowRuntime
 
     /// <summary>What the first run of a split delivery sent itself (the rows it took over and what was left), and how many parts it queued.</summary>
     private sealed record SharesSent(WorkerSummary Work, int Members);
-
-    /// <summary>What waiting for the parts came to: their state once every one ended, and the ones this run stopped.</summary>
-    private sealed record MemberWait(FanOutState State, IReadOnlySet<Guid> Stopped);
 
     /// <summary>
     /// The planning of a deliver run, and the whole delivery when it is split. It is split when the flow lets it, this run can
@@ -126,7 +121,7 @@ public sealed partial class FlowRuntime
         _log.LogInformation(
             "Split the delivery of {Rows} row(s) into {Parts} part(s) of about {PerPart} row(s) (group {GroupId}), each delivered from a node of its own; this run waits for them and closes the delivery.",
             rows, members.Count, rows / members.Count, handle.GroupId);
-        var wait = await WaitForMembersAsync(handle, enqueued, MemberStartGrace, ct).ConfigureAwait(false);
+        var wait = await FanOutWait.UntilEndedAsync(_context, _log, handle, enqueued, MemberStartGrace, MemberPoll, "delivers their rows itself", ct).ConfigureAwait(false);
         track(null);
 
         var totals = IntakeCounts.Empty;
@@ -304,71 +299,5 @@ public sealed partial class FlowRuntime
         return new Dictionary<string, string>(values, StringComparer.Ordinal) { [PartitionNames.RunValue] = partition };
     }
 
-    /// <summary>
-    /// Waits until every part of <paramref name="handle"/> has ended. One no node has started is not waited for for
-    /// ever: once none is running and none has started or ended for <paramref name="stall"/> since <paramref name="since"/>,
-    /// the ones still queued are stopped (the platform cancels a queued run outright, and asks one a node took meanwhile to
-    /// stop) and named in <see cref="MemberWait.Stopped"/>, for this run to deliver their rows. Every node of the pool can be
-    /// holding work, this run's own among them, and a pool at its most nodes starts no more, so waiting on would wait for ever.
-    /// </summary>
-    private async Task<MemberWait> WaitForMembersAsync(FanOutHandle handle, DateTimeOffset since, TimeSpan stall, CancellationToken ct)
-    {
-        var dispatcher = _context.Dispatcher;
-        var lastProgress = _context.Time.GetUtcNow();
-        var lastChange = since;
-        var seen = (Running: 0, Ended: 0);
-        var stopping = false;
-        IReadOnlySet<Guid> stopped = new HashSet<Guid>();
-        while (true)
-        {
-            var state = await dispatcher.StateAsync(handle, ct).ConfigureAwait(false);
-            if (state.AllTerminal)
-            {
-                _log.LogInformation("The parts finished: {State}.", state);
-                return new MemberWait(state, stopped);
-            }
-
-            var now = _context.Time.GetUtcNow();
-            var shape = (Running: state.Running, Ended: state.Members.Count(m => m.IsTerminal));
-            if (shape != seen)
-            {
-                seen = shape;
-                lastChange = now;
-            }
-
-            if (!stopping && state.Running == 0 && now - lastChange >= stall)
-            {
-                stopping = true;
-                stopped = state.Members.Where(m => !m.IsTerminal).Select(m => m.RunId).ToHashSet();
-                _log.LogInformation(
-                    "No node has started {Count} part(s) in {Seconds}s and none is running: every place in the pool holds work. This run stops them and delivers their rows itself.",
-                    stopped.Count, (int)(now - lastChange).TotalSeconds);
-                await dispatcher.CancelAsync(handle, ct).ConfigureAwait(false);
-
-                // Asked again at once: the queued ones have ended by now, and one a node took meanwhile ends when it hears the stop.
-                continue;
-            }
-
-            if (_context.Trace is { } trace ? trace.ProgressDue("members", now) : now - lastProgress >= MemberProgress)
-            {
-                lastProgress = now;
-                _log.LogInformation(RunTrace.Bounded, "Waiting for the parts: {State}.", state);
-            }
-
-            await Task.Delay(MemberPoll, _context.Time, ct).ConfigureAwait(false);
-        }
-    }
-
-    private async Task CancelMembersAsync(FanOutHandle handle)
-    {
-        try
-        {
-            await _context.Dispatcher.CancelAsync(handle, CancellationToken.None).ConfigureAwait(false);
-            _log.LogInformation("Cancelled the parts of group {GroupId} with this run.", handle.GroupId);
-        }
-        catch (Exception ex) when (ex is DeliveryException or InvalidOperationException or System.Data.Common.DbException)
-        {
-            _log.LogWarning("Could not cancel the parts of group {GroupId}: {Message}", handle.GroupId, HeaderRedaction.RedactMessage(ex.Message));
-        }
-    }
+    private Task CancelMembersAsync(FanOutHandle handle) => FanOutWait.CancelAsync(_context, _log, handle);
 }

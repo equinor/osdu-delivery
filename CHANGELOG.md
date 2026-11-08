@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A large dimension build is spread over nodes, a share of its dimensions on each.** A build whose
+  dimensions read at least 100,000 records together is split into parts (`parallelism.nodes`, 8 at most, a part per
+  `parallelism.minRecordsPerNode` records, 50,000), each built on a node of its own; the run that split it builds the
+  largest part, builds what a part did not, and writes the views. A build used one node whatever its size
+  ([builds over nodes](osdu/docs/reference/flow/dimension-nodes.md)).
 - **Each repository can sync only when asked, so a merge reaches an environment when its own trigger says.** An admin
   turns auto sync off per repository on External triggers > Repositories (or `sqlflow repos auto-sync <name> off`, or
   `autoSync: false` in the deployment's `repositories`). The repository then holds its commit until an external trigger

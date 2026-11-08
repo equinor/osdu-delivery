@@ -266,10 +266,23 @@ public sealed partial class DimensionRunner
     /// declares (in full, or incrementally for a flow with an <c>incremental</c> block) unless <paramref name="load"/> asks
     /// for a full load or names the window an incremental load reads.
     /// </summary>
-    public async Task<DimensionBuildOutcome> BuildAsync(IReadOnlyCollection<string> names, DimensionLoadRequest load, Guid runId, string actor, CancellationToken ct)
+    public Task<DimensionBuildOutcome> BuildAsync(IReadOnlyCollection<string> names, DimensionLoadRequest load, Guid runId, string actor, CancellationToken ct)
+        => BuildAsync(names, load, DimensionBuildSpread.None, runId, actor, ct);
+
+    /// <summary>
+    /// Builds the dimensions the run selects (every one when it names none) and keeps each build, loaded as
+    /// <paramref name="load"/> asks. A run the platform can queue runs for spreads a large build over nodes
+    /// (osdu/docs/reference/flow/dimension-build.md, Spread over nodes): it builds a part of the dimensions itself, queues a
+    /// run of the flow for each other part, builds what a part did not, and writes the views once every dimension is built.
+    /// A part (<paramref name="spread"/> names its rate share) builds the dimensions it names and leaves the views to the run
+    /// that split the build.
+    /// </summary>
+    public async Task<DimensionBuildOutcome> BuildAsync(
+        IReadOnlyCollection<string> names, DimensionLoadRequest load, DimensionBuildSpread spread, Guid runId, string actor, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(names);
         ArgumentNullException.ThrowIfNull(load);
+        ArgumentNullException.ThrowIfNull(spread);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         if (load.HasWindow && _flow.Incremental is null)
         {
@@ -292,8 +305,8 @@ public sealed partial class DimensionRunner
             ct).ConfigureAwait(false);
 
         // A flow declaring views names the module's database as the pipelines reading them do; a build that would declare
-        // tables it does not write stops before it builds anything.
-        if (_flow.Views.Count > 0 && await TargetProblemAsync(ledger, ct).ConfigureAwait(false) is { } refused)
+        // tables it does not write stops before it builds anything. A part writes no view: the run that split the build checked.
+        if (!spread.IsPart && _flow.Views.Count > 0 && await TargetProblemAsync(ledger, ct).ConfigureAwait(false) is { } refused)
         {
             throw new DeliveryException(refused);
         }
@@ -301,27 +314,24 @@ public sealed partial class DimensionRunner
         var skipped = selected.Where(d => !d.BuildsIn(partition)).ToList();
         var building = selected.Where(d => d.BuildsIn(partition)).ToList();
         _log.LogInformation(
-            "dimension flow '{Flow}' in partition '{Partition}': {Count} dimension(s) to build{Skipped}",
+            "dimension flow '{Flow}' in partition '{Partition}': {Count} dimension(s) to build{Skipped}{Part}",
             _flow.Name, partition, building.Count,
-            skipped.Count > 0 ? string.Create(CultureInfo.InvariantCulture, $", {skipped.Count} not built in this partition") : string.Empty);
+            skipped.Count > 0 ? string.Create(CultureInfo.InvariantCulture, $", {skipped.Count} not built in this partition") : string.Empty,
+            spread.RateShare is { } share ? string.Create(CultureInfo.InvariantCulture, $", as one part of a build spread over {share} runs") : string.Empty);
 
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
+        if (spread.RateShare is { } runs)
+        {
+            // A part sends under its share of the flow's rate limit, so the build as a whole keeps to the rate.
+            http.RateLimit.Share(runs);
+        }
+
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
         var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging, RequestsAtOnce);
         using var templates = new TemplateCache(_context.DocumentTemplates, _flow.SourcePath);
-        var summaries = new List<DimensionBuildSummary>(selected.Count);
-        var gate = new Lock();
-        await Parallel.ForEachAsync(
-            building,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Parallelism.RecordsAtOnce), CancellationToken = ct },
-            async (dimension, token) =>
-            {
-                var summary = await BuildOneAsync(ledger, search, templates, dimension, partition, load, runId, actor, token).ConfigureAwait(false);
-                lock (gate)
-                {
-                    summaries.Add(summary);
-                }
-            }).ConfigureAwait(false);
+        var scope = new BuildScope(ledger, search, templates, partition, load, runId, actor);
+        var summaries = (spread.IsPart ? null : await SpreadAsync(scope, building, spread, http, ct).ConfigureAwait(false))
+            ?? await BuildHereAsync(scope, building, ct).ConfigureAwait(false);
 
         foreach (var dimension in skipped)
         {
@@ -334,8 +344,8 @@ public sealed partial class DimensionRunner
         var ordered = summaries.OrderBy(s => order[s.Dimension]).ToList();
 
         // The flow's views are written after its dimensions, whichever the run built and even when one failed (its table
-        // holds its last build), and those it no longer declares are dropped.
-        var views = await WriteViewsAsync(ledger, partition, runId, actor, ct).ConfigureAwait(false);
+        // holds its last build), and those it no longer declares are dropped. A part leaves them to the run that split the build.
+        var views = spread.IsPart ? DimensionViewsWritten.None : await WriteViewsAsync(ledger, partition, runId, actor, ct).ConfigureAwait(false);
         var outcome = new DimensionBuildOutcome(
             DeliveryOperations.Build, _flow.Name, partition,
             ordered.Count(s => s.Status == DimensionRunStatus.Completed), ordered.Count(s => s.Status == DimensionRunStatus.Failed), skipped.Count, ordered)
@@ -344,6 +354,29 @@ public sealed partial class DimensionRunner
             ViewsDropped = views.Dropped,
         };
         return outcome.Failed > 0 || outcome.ViewsFailed > 0 ? throw new DimensionBuildsFailedException(outcome) : outcome;
+    }
+
+    /// <summary>
+    /// Builds <paramref name="dimensions"/> in this run, <c>recordsAtOnce</c> at a time, one that fails leaving the others
+    /// building, and returns how each came out.
+    /// </summary>
+    private async Task<List<DimensionBuildSummary>> BuildHereAsync(BuildScope scope, IReadOnlyList<DimensionSpec> dimensions, CancellationToken ct)
+    {
+        var summaries = new List<DimensionBuildSummary>(dimensions.Count);
+        var gate = new Lock();
+        await Parallel.ForEachAsync(
+            dimensions,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Parallelism.RecordsAtOnce), CancellationToken = ct },
+            async (dimension, token) =>
+            {
+                var summary = await BuildOneAsync(
+                    scope.Ledger, scope.Search, scope.Templates, dimension, scope.Partition, scope.Load, scope.RunId, scope.Actor, token).ConfigureAwait(false);
+                lock (gate)
+                {
+                    summaries.Add(summary);
+                }
+            }).ConfigureAwait(false);
+        return summaries;
     }
 
     /// <summary>
@@ -471,14 +504,7 @@ public sealed partial class DimensionRunner
                     loading = await PlanLoadAsync(ledger, dimension, query, load, Now, ct).ConfigureAwait(false);
                     if (loading.Mode == DimensionRunModes.Incremental)
                     {
-                        changedRecords = await search.CountAsync(
-                            new OsduSearchQuery
-                            {
-                                Kind = dimension.Kind,
-                                Query = OsduSearch.Within(query, RecordChanges.Within(RecordChanges.ModifyTime, loading.From, loading.To)),
-                                ReturnedFields = ["id"],
-                            },
-                            ct).ConfigureAwait(false);
+                        changedRecords = await RecordsReadAsync(search, dimension, query, loading, ct).ConfigureAwait(false);
                     }
                 }
 

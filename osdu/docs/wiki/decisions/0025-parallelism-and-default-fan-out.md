@@ -52,11 +52,13 @@ sourceRefs:
 related:
   - delivery-wiki-0006-work-batches
   - delivery-wiki-0049-schedules-as-wide-as-their-waves
+  - delivery-wiki-0050-dimension-builds-over-nodes
 updated: 2026-11-08
 ---
 # 0025: What runs at once is a flow's parallelism, and a delivery fans out by default
 
-Status: proposed, extended by [0049](0049-schedules-as-wide-as-their-waves.md) from one delivery to a schedule's fire.
+Status: proposed, extended by [0049](0049-schedules-as-wide-as-their-waves.md) from one delivery to a schedule's fire,
+and by [0050](0050-dimension-builds-over-nodes.md) to a dimension build.
 Documented in [parallelism](../../reference/flow/delivery.md#parallelism) and
 [many nodes](../../reference/concepts/submissions.md#many-nodes).
 

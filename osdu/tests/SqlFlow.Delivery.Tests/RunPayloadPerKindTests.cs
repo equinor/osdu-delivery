@@ -64,7 +64,7 @@ public sealed class RunPayloadPerKindTests
         [RetrievalDefinition.FlowTypeName] = [DeliveryRunPayload.ForceProperty],
         [CacheDefinition.FlowTypeName] = [],
         [AssertionFlowDefinition.FlowTypeName] = [DeliveryRunPayload.TestsProperty, DeliveryRunPayload.TagsProperty],
-        [DimensionFlowDefinition.FlowTypeName] = [DeliveryRunPayload.DimensionsProperty],
+        [DimensionFlowDefinition.FlowTypeName] = [DeliveryRunPayload.DimensionsProperty, DeliveryRunPayload.RateShareProperty],
         [InventoryFlowDefinition.FlowTypeName] =
             [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.ConfirmProperty, DeliveryRunPayload.SelectionProperty],
         [RemovalFlowDefinition.FlowTypeName] = [DeliveryRunPayload.EntriesProperty, DeliveryRunPayload.ApproveProperty, DeliveryRunPayload.ConfirmProperty],
@@ -139,7 +139,7 @@ public sealed class RunPayloadPerKindTests
         var dimension = new DimensionFlowKind(Loader);
         Assert.StartsWith("payload runId does not apply to a dimension flow", Refusal(dimension, Payloads[DeliveryRunPayload.RunIdProperty]), StringComparison.Ordinal);
         Assert.Equal(
-            "payload confirm does not apply to a dimension flow: only a delivery flow's run deleting the ledger, an inventory flow's remove and restore runs and a removal flow's approved run name the partition they act in; a dimension flow's payload names only dimensions.",
+            "payload confirm does not apply to a dimension flow: only a delivery flow's run deleting the ledger, an inventory flow's remove and restore runs and a removal flow's approved run name the partition they act in; a dimension flow's payload names only dimensions and rateShare.",
             Refusal(dimension, Payloads[DeliveryRunPayload.ConfirmProperty]));
 
         Assert.Equal(

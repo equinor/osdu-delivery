@@ -68,8 +68,11 @@ public sealed record DimensionFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
-    /// <summary>How many dimensions build at once, and how many requests each asks of the search at once (<c>parallelism.recordsAtOnce</c>).</summary>
-    public RunParallelism Parallelism { get; init; } = new();
+    /// <summary>
+    /// How many dimensions one build run builds at once, and how many requests each asks of the search at once
+    /// (<c>parallelism.recordsAtOnce</c>); and the most nodes a build is spread over (<c>parallelism.nodes</c>).
+    /// </summary>
+    public DimensionParallelism Parallelism { get; init; } = new();
 
     /// <summary>
     /// How a build loads the flow's dimensions after their first full load (osdu/docs/reference/flow/dimension-incremental.md):
@@ -778,4 +781,47 @@ public sealed record CleanStep
         CleanStepKind.Replace => "replace",
         _ => "map",
     };
+}
+
+/// <summary>
+/// The <c>parallelism</c> of a dimension flow (osdu/docs/reference/flow/dimension-build.md, Spread over nodes): what one build
+/// run works on at once, and how many nodes a build is spread over. A build whose dimensions read at least twice
+/// <see cref="MinRecordsPerNode"/> records is split into parts, one per that many records and at most <see cref="Nodes"/>
+/// (and never more than the dimensions it builds), each part building its share of the dimensions on a node of its own.
+/// </summary>
+public sealed record DimensionParallelism
+{
+    /// <summary>The fewest records a part reads unless the flow says otherwise.</summary>
+    public const long DefaultMinRecordsPerNode = 50_000;
+
+    /// <summary>
+    /// How many dimensions one build run builds at once, and how many requests each of a dimension's reads asks of the search
+    /// at once; the run as a whole asks at most this many times this many. Default 8.
+    /// </summary>
+    public int RecordsAtOnce { get; init; } = 8;
+
+    /// <summary>
+    /// The most nodes a build is spread over, the node of the run that splits it among them. <see cref="FlowParallelism.DefaultNodes"/>
+    /// unless the flow says otherwise, at most <see cref="FlowParallelism.MaxNodes"/>; 1 keeps every build on one node.
+    /// </summary>
+    public int Nodes { get; init; } = FlowParallelism.DefaultNodes;
+
+    /// <summary>
+    /// The fewest records a part reads, so a node is started only for work enough to be worth starting it: a build whose
+    /// dimensions read fewer than twice this many is built by one run. Default <see cref="DefaultMinRecordsPerNode"/>.
+    /// </summary>
+    public long MinRecordsPerNode { get; init; } = DefaultMinRecordsPerNode;
+
+    /// <summary>
+    /// The parts a build is split into when its <paramref name="dimensions"/> dimensions read <paramref name="records"/>
+    /// records together: one per <see cref="MinRecordsPerNode"/> records, at least one, and at most <see cref="Nodes"/> and
+    /// the dimensions themselves, since a dimension is built by one run. One part is no split at all.
+    /// </summary>
+    public int PartsFor(long records, int dimensions)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(records);
+        ArgumentOutOfRangeException.ThrowIfNegative(dimensions);
+        var most = Math.Max(1, Math.Min(Nodes, dimensions));
+        return (int)Math.Clamp(records / Math.Max(1, MinRecordsPerNode), 1, most);
+    }
 }

@@ -16,6 +16,7 @@ keywords:
   - staging
 related:
   - delivery-flow-dimension
+  - delivery-flow-dimension-nodes
   - delivery-flow-dimension-incremental
   - delivery-flow-dimension-errors
   - delivery-cli-dimensions
@@ -24,6 +25,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Spread.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
@@ -41,10 +43,11 @@ A [dimension flow](dimension.md) is run like any other flow: to build its dimens
 | `build` (default) | Loads each dimension, in full or incrementally as the flow's `incremental` block says ([Full and incremental loads](dimension-incremental.md)): reads its keys, their labels and attributes, cleans keys into values, and keeps what changed. |
 | `plan` | Settles each dimension's field from the templates, counts the records it would read, says how a build would load it (and, loading incrementally, the records that changed in its window), and gives each view's statement and what would stop a build writing it; reads no value and keeps nothing. |
 
-The run payload takes one field, `dimensions`, the names of the dimensions to build; a run naming none builds every
-one. A name the flow does not declare fails the run, listing the flow's dimensions. Anything else in the payload is
-refused before the run starts, for example
-`payload tests does not apply to a dimension flow: only an assertion flow's runs select tests; a dimension flow's payload names only dimensions.`
+The run payload takes `dimensions`, the names of the dimensions to build; a run naming none builds every one. A name
+the flow does not declare fails the run, listing the flow's dimensions. A build spread over nodes queues a part with
+`dimensions` and `rateShare`, the runs sharing the flow's rate limit ([builds over nodes](dimension-nodes.md)). Anything
+else in the payload is refused before the run starts, for example
+`payload tests does not apply to a dimension flow: only an assertion flow's runs select tests; a dimension flow's payload names only dimensions and rateShare.`
 SQLFlow's `fullLoad` (`--full`) makes a build load every dimension in full, and its backfill window (`--from`, `--to`)
 names the window a flow with an `incremental` block reads; its other flags (`--files`, `--filter`, ...) are refused.
 
@@ -90,7 +93,8 @@ For each dimension, in the run's partition:
    more of one table (a large dimension's first load) can have SQL Server lock that table whole until its build commits,
    which makes the writes of other dimensions to it wait meanwhile.
 
-Dimensions build `recordsAtOnce` at a time, and the build asks the search at most `recordsAtOnce` × `recordsAtOnce`
+Dimensions build `recordsAtOnce` at a time in each run, and a large build is spread over nodes, its dimensions dealt
+into parts ([builds over nodes](dimension-nodes.md)). A run asks the search at most `recordsAtOnce` × `recordsAtOnce`
 requests at once, its dimensions together: each of a dimension's reads (value ranges, cursors, counts) asks up to
 `recordsAtOnce` at a time, and its labels and attributes as many as the build has free, so the last dimension building
 asks as much as the whole build may rather than its own share. A dimension that fails keeps what the build before it

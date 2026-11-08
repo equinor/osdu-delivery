@@ -3158,10 +3158,10 @@ internal static partial class FlowMapper
     }
 
     /// <summary>
-    /// The parallelism block of an assertion, dimension, inventory or retrieval flow: what one run works on at once, written
+    /// The parallelism block of an assertion, inventory, download or retrieval flow: what one run works on at once, written
     /// <c>recordsAtOnce</c> as on a delivery flow (osdu/docs/reference/flow/delivery.md, parallelism), so a flow's settings
     /// read alike whatever its kind. <paramref name="what"/> says what the kind runs at once, for the message refusing the
-    /// old name.
+    /// old name. A dimension flow's block also spreads a build over nodes (<see cref="DimensionMapper"/>).
     /// </summary>
     internal static RunParallelism MapRunParallelism(RunParallelismYaml? p, string what, string source)
     {

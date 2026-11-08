@@ -113,11 +113,41 @@ internal static class DimensionMapper
             Target = target,
             Views = DimensionViewMapper.MapViews(y.Views, target, name, dimensions, source),
             Reliability = FlowMapper.MapReliability(y.Reliability, "a dimension flow", takesRecordsAtOnce: true, source),
-            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, "the dimensions built at once, and the searches each asks at once", source),
+            Parallelism = MapParallelism(y.Parallelism, source),
             Incremental = MapIncremental(y.Incremental, source),
         };
 
         return flow;
+    }
+
+    /// <summary>
+    /// The <c>parallelism</c> block (osdu/docs/reference/flow/dimension.md, parallelism): what one build run works on at once,
+    /// written <c>recordsAtOnce</c> as on a delivery flow, and the nodes a build is spread over
+    /// (osdu/docs/reference/flow/dimension-build.md, Spread over nodes), each setting's range checked.
+    /// </summary>
+    private static DimensionParallelism MapParallelism(DimensionParallelismYaml? declared, string source)
+    {
+        var defaults = new DimensionParallelism();
+        var run = FlowMapper.MapRunParallelism(
+            declared is null ? null : new RunParallelismYaml { RecordsAtOnce = declared.RecordsAtOnce, Concurrency = declared.Concurrency },
+            "the dimensions built at once, and the searches each asks at once",
+            source);
+        var parallelism = new DimensionParallelism
+        {
+            RecordsAtOnce = run.RecordsAtOnce,
+            Nodes = declared?.Nodes ?? defaults.Nodes,
+            MinRecordsPerNode = declared?.MinRecordsPerNode ?? defaults.MinRecordsPerNode,
+        };
+        if (parallelism.Nodes is < 1 or > FlowParallelism.MaxNodes)
+        {
+            throw new FlowValidationException(
+                string.Create(CultureInfo.InvariantCulture, $"{source}: parallelism.nodes is {parallelism.Nodes}; it must be between 1 and {FlowParallelism.MaxNodes}: the most nodes a build is spread over, 1 keeping it on one."));
+        }
+
+        return parallelism.MinRecordsPerNode < 1
+            ? throw new FlowValidationException(
+                string.Create(CultureInfo.InvariantCulture, $"{source}: parallelism.minRecordsPerNode is {parallelism.MinRecordsPerNode}; it must be at least 1: the fewest records a part of a build spread over nodes reads."))
+            : parallelism;
     }
 
     /// <summary>The <c>incremental</c> block, its settings checked; null when the flow loads every dimension in full on every build.</summary>

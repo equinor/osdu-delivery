@@ -5,6 +5,7 @@ using SqlFlow.Core;
 using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Dimensions;
+using SqlFlow.Delivery.Engine.FanOut;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Execution;
 using SqlFlow.Orchestration;
@@ -19,7 +20,8 @@ namespace SqlFlow.Delivery.Engine;
 /// <c>fullLoad</c> makes a build load in full whatever the flow declares, and a backfill window names the window a flow
 /// loading incrementally reads. The engine's log becomes the run log and live trace, the outcome becomes
 /// <c>run.json</c>, and every build is kept in the flow's ledger. A build run in which a dimension failed ends failed,
-/// still carrying its outcome, with every other dimension built.
+/// still carrying its outcome, with every other dimension built. A run the platform handed a fan-out spreads a large build
+/// over nodes (osdu/docs/reference/flow/dimension-build.md, Spread over nodes).
 /// </summary>
 public sealed class DimensionExecutor : IFlowDocumentExecutor
 {
@@ -52,7 +54,11 @@ public sealed class DimensionExecutor : IFlowDocumentExecutor
         var (runLogger, events, _) = RunArtifacts.BuildEventPlumbing(options, flow.Name);
         var loggers = new RunLogLoggerFactory(runLogger, events, runId, flow.Name);
         var log = loggers.CreateLogger("run");
-        var context = _provider.GetRequiredService<EngineContext>().ForRun(loggers);
+        // The fan-out the platform handed the run, through which a large build is spread over nodes (osdu/docs/reference/flow/
+        // dimension-build.md, Spread over nodes); a run without one builds every dimension itself.
+        var context = _provider.GetRequiredService<EngineContext>()
+            .ForRun(loggers)
+            .WithFanOut(options.FanOut is { } fanOut ? new RunFanOutDispatcher(fanOut) : null);
 
         var stopwatch = Stopwatch.StartNew();
         object result;
@@ -125,7 +131,7 @@ public sealed class DimensionExecutor : IFlowDocumentExecutor
         var load = new DimensionLoadRequest(parameters.FullLoad, Utc(parameters.BackfillFrom), Utc(parameters.BackfillTo));
         return operation == DeliveryOperations.Plan
             ? await runner.PlanAsync(payload.Dimensions, load, ct).ConfigureAwait(false)
-            : await runner.BuildAsync(payload.Dimensions, load, runId, actor, ct).ConfigureAwait(false);
+            : await runner.BuildAsync(payload.Dimensions, load, DimensionBuildSpread.Of(parameters), runId, actor, ct).ConfigureAwait(false);
     }
 
     /// <summary>A bound of a backfill window as UTC: SQLFlow carries the window in UTC, and one with no kind is taken as such.</summary>

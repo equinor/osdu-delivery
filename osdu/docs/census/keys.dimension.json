@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 141,
+  "keyCount": 143,
   "keys": [
     {
       "path": "batch",
@@ -632,7 +632,21 @@
       "path": "parallelism",
       "type": "object",
       "required": false,
-      "description": "What one run works on at once: `recordsAtOnce`, how much a build asks of the search at once. A dimension flow fans nothing out across the fleet."
+      "description": "What one run works on at once (`recordsAtOnce`, how much a build asks of the search at once), and how a large build is spread over nodes (`nodes`, `minRecordsPerNode`): its dimensions dealt into parts, each built on a node of its own."
+    },
+    {
+      "path": "parallelism.nodes",
+      "type": "integer",
+      "required": false,
+      "description": "The most nodes a build is spread over, 1 to 64, the node of the run that splits it among them. A build reading at least twice `minRecordsPerNode` records is split into parts, one per that many records, at most this many and never more than the dimensions it builds; each part builds its share of the dimensions on a node of its own. 1 keeps every build on one node.",
+      "default": "8"
+    },
+    {
+      "path": "parallelism.minRecordsPerNode",
+      "type": "integer",
+      "required": false,
+      "description": "The fewest records a part of a build spread over nodes reads, counted as a plan counts them (those the query matches for a full load, those that changed in the window for an incremental one), so a node is started only for work enough to be worth it. At least 1.",
+      "default": "50000"
     },
     {
       "path": "parallelism.recordsAtOnce",

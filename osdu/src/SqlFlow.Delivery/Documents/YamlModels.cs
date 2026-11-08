@@ -979,6 +979,22 @@ internal sealed class RunParallelismYaml
     public int? Concurrency { get; set; }
 }
 
+/// <summary>
+/// A dimension flow's <c>parallelism</c> block: what one build run works on at once, written <see cref="RecordsAtOnce"/> as
+/// on a delivery flow, and the most nodes a build is spread over.
+/// </summary>
+internal sealed class DimensionParallelismYaml
+{
+    public int? RecordsAtOnce { get; set; }
+
+    public int? Nodes { get; set; }
+
+    public long? MinRecordsPerNode { get; set; }
+
+    /// <summary>Renamed <see cref="RecordsAtOnce"/>; refused here.</summary>
+    public int? Concurrency { get; set; }
+}
+
 internal sealed class FlowRetryYaml
 {
     public int? Attempts { get; set; }
@@ -1971,7 +1987,7 @@ internal sealed class DimensionFlowYaml
 
     public FlowReliabilityYaml? Reliability { get; set; }
 
-    public RunParallelismYaml? Parallelism { get; set; }
+    public DimensionParallelismYaml? Parallelism { get; set; }
 
     /// <summary>How a build loads the dimensions after their first full load; left out, every build loads them in full.</summary>
     public DimensionIncrementalYaml? Incremental { get; set; }

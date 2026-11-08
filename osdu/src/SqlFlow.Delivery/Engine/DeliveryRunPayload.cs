@@ -449,7 +449,7 @@ public sealed record DeliveryRunPayload
         [RedeliverProperty] = "only a delivery flow's deliver runs send records again",
         [RerenderProperty] = "only a delivery flow's runs bring records up to date",
         [SlicesProperty] = "only a delivery flow's intake members plan slices",
-        [RateShareProperty] = "only the parts of a split delivery share its rate limit",
+        [RateShareProperty] = "only the parts of a split delivery or dimension build share its rate limit",
         [InterfaceProperty] = "only a delivery flow's runs name an interface",
         [InterfacesProperty] = "only a delivery flow's runs select interfaces",
         [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove and restore runs and a removal flow's approved run name the partition they act in",

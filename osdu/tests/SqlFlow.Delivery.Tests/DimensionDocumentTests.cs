@@ -3,6 +3,7 @@ using SqlFlow.Core.Lineage;
 using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine;
+using SqlFlow.Delivery.Engine.Dimensions;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
@@ -60,6 +61,93 @@ public class DimensionDocumentTests
             "flows/dims.yaml: reliability.concurrency is now parallelism.recordsAtOnce",
             Refused(Head + "reliability: { concurrency: 4 }\n" + Curves).Message,
             StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A build is spread over at most <c>parallelism.nodes</c> nodes (8 unless the flow says otherwise), a part per
+    /// <c>minRecordsPerNode</c> records (50,000), each setting's range checked, and the delivery's own key refused.
+    /// </summary>
+    [Fact]
+    public void A_build_is_spread_over_the_nodes_the_flow_allows_a_part_per_minRecordsPerNode_records()
+    {
+        var defaults = Parse(Head + Curves).Parallelism;
+        Assert.Equal((8, 50_000L), (defaults.Nodes, defaults.MinRecordsPerNode));
+        var declared = Parse(Head + "parallelism: { recordsAtOnce: 4, nodes: 3, minRecordsPerNode: 1000 }\n" + Curves).Parallelism;
+        Assert.Equal((4, 3, 1_000L), (declared.RecordsAtOnce, declared.Nodes, declared.MinRecordsPerNode));
+        Assert.Equal(64, Parse(Head + "parallelism: { nodes: 64 }\n" + Curves).Parallelism.Nodes);
+
+        Assert.Equal(
+            "flows/dims.yaml: parallelism.nodes is 0; it must be between 1 and 64: the most nodes a build is spread over, 1 keeping it on one.",
+            Refused(Head + "parallelism: { nodes: 0 }\n" + Curves).Message);
+        Assert.StartsWith("flows/dims.yaml: parallelism.nodes is 65;", Refused(Head + "parallelism: { nodes: 65 }\n" + Curves).Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "flows/dims.yaml: parallelism.minRecordsPerNode is 0; it must be at least 1: the fewest records a part of a build spread over nodes reads.",
+            Refused(Head + "parallelism: { minRecordsPerNode: 0 }\n" + Curves).Message);
+        Assert.Contains("minRowsPerNode", Refused(Head + "parallelism: { minRowsPerNode: 10 }\n" + Curves).Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The parts a build is split into: one per <c>minRecordsPerNode</c> records, at most <c>nodes</c>, and never more than
+    /// the dimensions it builds, since one run builds a dimension.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 10, 1)]
+    [InlineData(99_999, 10, 1)]
+    [InlineData(100_000, 10, 2)]
+    [InlineData(1_000_000, 10, 8)]
+    [InlineData(1_000_000, 3, 3)]
+    [InlineData(1_000_000, 1, 1)]
+    [InlineData(1_000_000, 0, 1)]
+    public void The_parts_come_from_the_records_read_bounded_by_the_nodes_and_the_dimensions(long records, int dimensions, int parts)
+        => Assert.Equal(parts, new DimensionParallelism().PartsFor(records, dimensions));
+
+    /// <summary>
+    /// The dimension reading the most records goes first, each to the part reading the fewest so far, and no part is left
+    /// empty; ties go by the order the flow declares them, and each part lists its dimensions in that order.
+    /// </summary>
+    [Fact]
+    public void Dimensions_are_dealt_into_parts_the_largest_first_to_the_part_reading_the_fewest()
+    {
+        var flow = Parse(Head + """
+            dimensions:
+              - { name: Small, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+              - { name: Large, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+              - { name: Medium, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+              - { name: Tiny, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+              - { name: Larger, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+            """);
+        var records = new Dictionary<string, long>(StringComparer.Ordinal) { ["Small"] = 10, ["Large"] = 90, ["Medium"] = 50, ["Tiny"] = 0, ["Larger"] = 100 };
+
+        var parts = DimensionShares.Deal(flow.Dimensions, records, 2);
+
+        // Larger (100) and Large (90) open the two parts; Medium (50) joins Large, which read the fewer (140 now); Small (10)
+        // and Tiny (0) join Larger (110 then).
+        Assert.Equal(
+            [["Small", "Tiny", "Larger"], ["Large", "Medium"]],
+            parts.Select(p => p.Select(d => d.Name).ToArray()).ToArray());
+        Assert.Equal(5, DimensionShares.Deal(flow.Dimensions, records, 5).Count(p => p.Count == 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DimensionShares.Deal(flow.Dimensions, records, 6));
+    }
+
+    /// <summary>
+    /// A part of a build spread over nodes is a build run naming its dimensions and the runs sharing the rate; the share is
+    /// refused on a plan, without dimensions, and outside the parts a build is spread over.
+    /// </summary>
+    [Fact]
+    public void A_part_names_its_dimensions_and_its_rate_share_and_only_a_build_takes_one()
+    {
+        var kind = new DimensionFlowKind(new DeliveryDocumentLoader());
+        kind.ValidateParameters(new RunParameters { Operation = "build", Payload = """{"dimensions":["CurveMnemonic"],"rateShare":4}""" });
+
+        Assert.Equal(
+            "payload rateShare does not apply to a dimension flow's plan run: only a part of a build spread over nodes shares the build's rate limit.",
+            Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters { Operation = "plan", Payload = """{"dimensions":["CurveMnemonic"],"rateShare":4}""" })).Message);
+        Assert.Equal(
+            "payload rateShare marks a part of a build spread over nodes, which names the dimensions it builds (dimensions); this payload names none.",
+            Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters { Payload = """{"rateShare":4}""" })).Message);
+        Assert.Equal(
+            "payload rateShare is 65; the parts a dimension build is spread over number 2 to 64.",
+            Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters { Payload = """{"dimensions":["CurveMnemonic"],"rateShare":65}""" })).Message);
     }
 
     [Fact]

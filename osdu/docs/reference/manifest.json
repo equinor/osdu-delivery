@@ -4419,6 +4419,7 @@
         "delivery-flow-dimension-clean",
         "delivery-flow-dimension-table",
         "delivery-flow-dimension-incremental",
+        "delivery-flow-dimension-nodes",
         "delivery-flow-dimension-build",
         "delivery-flow-dimension-errors",
         "delivery-concept-dimension-blueprint",
@@ -4551,6 +4552,7 @@
       ],
       "related": [
         "delivery-flow-dimension",
+        "delivery-flow-dimension-nodes",
         "delivery-flow-dimension-incremental",
         "delivery-flow-dimension-errors",
         "delivery-cli-dimensions",
@@ -4560,6 +4562,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Spread.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
@@ -4680,6 +4683,39 @@
         "osdu/src/SqlFlow.Delivery/Engine/Search/RecordChanges.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261010190424_DimensionIncrementalLoads.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-nodes",
+      "corpus": "reference",
+      "path": "flow/dimension-nodes.md",
+      "title": "Dimension builds over nodes: parts, how dimensions are dealt, and what the splitting run does",
+      "type": "flow-reference",
+      "summary": "How a dimension build is spread over nodes: nodes and minRecordsPerNode, how its dimensions are dealt into parts, and what each run does.",
+      "keywords": [
+        "nodes",
+        "minrecordspernode",
+        "spread over nodes",
+        "dimension build nodes",
+        "one node",
+        "fan-out",
+        "parts",
+        "rateshare",
+        "scale out"
+      ],
+      "yamlPath": "parallelism",
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-build",
+        "delivery-flow-dimension-incremental",
+        "delivery-concept-submissions"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Spread.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FanOut/FanOutWait.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs"
       ]
     },
     {
@@ -10454,7 +10490,8 @@
       ],
       "related": [
         "delivery-wiki-0006-work-batches",
-        "delivery-wiki-0049-schedules-as-wide-as-their-waves"
+        "delivery-wiki-0049-schedules-as-wide-as-their-waves",
+        "delivery-wiki-0050-dimension-builds-over-nodes"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -11260,6 +11297,32 @@
         "sqlflow/src/SqlFlow.Catalog/RunScopeExpander.cs",
         "sqlflow/src/SqlFlow.Lineage/Graph/MemberWaves.cs",
         "sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0050-dimension-builds-over-nodes",
+      "corpus": "wiki",
+      "path": "decisions/0050-dimension-builds-over-nodes.md",
+      "title": "Decision 0050: a large dimension build is spread over nodes, a share of its dimensions on each",
+      "type": "decision",
+      "summary": "Why a dimension build is split by its dimensions, sized by the records they read, with the splitting run building the largest part and the views.",
+      "keywords": [
+        "dimension build",
+        "nodes",
+        "minrecordspernode",
+        "scale out",
+        "fan-out",
+        "parts"
+      ],
+      "related": [
+        "delivery-wiki-0025-parallelism-and-default-fan-out",
+        "delivery-wiki-0049-schedules-as-wide-as-their-waves"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Spread.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FanOut/FanOutWait.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs"
       ]
     },
     {

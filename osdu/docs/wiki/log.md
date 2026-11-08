@@ -705,3 +705,12 @@ and the 29 seconds the refresh took.
 
 Added decision 0049, which refines 0016 and extends 0025; updated `delivery-guide-deployment`, `delivery-concept-lineage`
 and `delivery-concept-osdu-order`.
+
+## [2026-11-08] ingest | Dimension builds over nodes
+
+Source: the human's report that a dimension build ran on one node and their wish to build many dimensions concurrently;
+the full and incremental builds of an estate's metadata dimension flow kept in a local catalog (each build's time and
+counters in `osdu.DimensionRun`), the dimension executor, and the delivery's split over nodes.
+
+Added decision 0050, which extends 0025; added `delivery-flow-dimension-nodes`; updated `delivery-flow-dimension`,
+`delivery-flow-dimension-build` and `delivery-cli-run`.
