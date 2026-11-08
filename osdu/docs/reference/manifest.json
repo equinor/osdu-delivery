@@ -2413,7 +2413,10 @@
         "open in lineage",
         "where a table is populated from",
         "zoom to a search",
-        "canvas toolbar"
+        "canvas toolbar",
+        "explain the yaml",
+        "explain this",
+        "ask the assistant about a mapping"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2435,17 +2438,20 @@
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "osdu/gui/src/features/delivery/overview/MappingOverview.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewCanvas.ts",
+        "osdu/gui/src/features/delivery/overview/OverviewExplain.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewInspector.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewLineage.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRail.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRendered.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRows.tsx",
+        "osdu/gui/src/features/delivery/overview/OverviewYaml.tsx",
         "osdu/gui/src/features/delivery/overview/outlineLayout.ts",
         "osdu/gui/src/features/delivery/overview/outlineLineage.ts",
         "osdu/gui/src/features/delivery/overview/outlineModel.ts",
         "osdu/gui/src/features/delivery/overview/partTargets.ts",
         "osdu/gui/src/features/delivery/overview/recordMarkdown.ts",
         "osdu/gui/src/features/delivery/overview/tableRows.ts",
+        "osdu/gui/src/features/delivery/overview/yamlExplain.ts",
         "osdu/gui/src/features/delivery/lineageTargets.ts"
       ]
     },

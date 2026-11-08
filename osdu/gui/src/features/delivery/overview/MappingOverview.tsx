@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExplainMark } from "@/components/ExplainTip";
 import { repoApi } from "@/api/endpoints";
 import { SearchInput } from "@/components/SearchInput";
+import { useExplain } from "@/features/chat/ExplainContext";
 import { usePersistentLayout } from "@/layout/workbench/usePersistentLayout";
 import { cn } from "@/lib/utils";
 import { deliveryApi, type DeliveryMappingDetail, type MappingDraftIssue, type MappingOutline, type MappingOutlineHow } from "../../../api/delivery";
@@ -24,6 +25,7 @@ import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
 import { OverviewCanvas, type OverviewHandlers, type OverviewMenuTarget, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
+import { OverviewExplain } from "./OverviewExplain";
 import { INSPECTOR_WIDTH, OverviewInspector } from "./OverviewInspector";
 import { PartLineageEntry } from "./OverviewLineage";
 import { partTargets, type LineagePlace, type PartTarget } from "./partTargets";
@@ -31,6 +33,7 @@ import { OverviewRail } from "./OverviewRail";
 import { OverviewDocument, OverviewParameters } from "./OverviewRendered";
 import { OverviewRows } from "./OverviewRows";
 import { OverviewYaml } from "./OverviewYaml";
+import type { ExplainedYaml } from "./yamlExplain.ts";
 import { layoutOf } from "./outlineLayout.ts";
 import { lineageOfPart, type LineageScope } from "./outlineLineage.ts";
 import {
@@ -49,11 +52,15 @@ const ABOUT = "Each line is one property of the record, read left to right: the 
 /** How long the view waits for the typing to stop before it moves to what a search found. */
 const SEARCH_SETTLE_MS = 300;
 
-/** What the panel under the canvas shows: a table's rows, the values the parameters render with, or the rendered record. */
+/**
+ * What the panel under the canvas shows: a table's rows, the values the parameters render with, the rendered record, or the
+ * assistant explaining lines of the YAML (each question its own conversation, numbered so asking again starts afresh).
+ */
 type Looking =
   | { what: "rows"; card: string; field: string | null }
   | { what: "parameters"; field: string | null }
-  | { what: "document" };
+  | { what: "document" }
+  | { what: "explain"; asked: number; subject: string; question: string };
 
 /** The parts of a record's key, from the JSON array a staged row names it by; null for text that is not one. */
 function keyParts(keyJson: string | null | undefined): string[] | null {
@@ -228,8 +235,12 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   // Whether a menu is open, from the moment it is asked for until the key that closed it has gone by (see Escape below).
   const menuOpen = useRef(false);
   const [looking, setLooking] = useState<Looking | null>(null);
+  const explainer = useExplain();
+  const asked = useRef(0);
   const layout = usePersistentLayout("sqlflow.delivery.mapping.overview.layout");
   const rowsLayout = usePersistentLayout("sqlflow.delivery.mapping.overview.rows.layout");
+  // A conversation needs more of the height than a table's rows, so the explanation's panel keeps a size of its own.
+  const explainLayout = usePersistentLayout("sqlflow.delivery.mapping.overview.explain.layout");
 
   const [partition] = useActivePartition();
   const tables = useQuery({
@@ -460,6 +471,11 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         return;
       }
 
+      // Inside the explanation the key is the conversation's: a follow-up being written is not closed under its writer.
+      if (event.target instanceof Element && event.target.closest("[data-overview-explain]") !== null) {
+        return;
+      }
+
       if (escapes.current.details) {
         setDetailsOpen(false);
       } else if (escapes.current.picked) {
@@ -551,7 +567,9 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const problems = issues.filter((issue) => issue.target === null);
   const lookingCard = looking?.what !== "rows" ? null : cards.find((card) => card.id === looking.card && rowsSourceOf(card) !== null) ?? null;
   const parametersCard = cards.find((card) => card.source.kind === "parameters") ?? null;
-  const lookingAt = lookingCard !== null || (looking?.what === "parameters" && parametersCard !== null) || looking?.what === "document";
+  const explaining = looking?.what === "explain" ? looking : null;
+  const lookingAt = lookingCard !== null || (looking?.what === "parameters" && parametersCard !== null) || looking?.what === "document" || explaining !== null;
+  const belowLayout = explaining === null ? rowsLayout : explainLayout;
   const recordKey = record.on ? record.line?.keyJson ?? null : null;
 
   /** What the menu on `target` names it by, and what it offers there, where it stands in lineage among it. */
@@ -619,6 +637,12 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const menuOf = menuFor(menu?.target ?? null);
   const { entity: recordEntity, version: recordVersion } = entityOf(outline.kind);
 
+  // Explain over the YAML answers under the canvas, where a table's rows open, so the lines it explains stay in view beside it.
+  const explainYaml = explainer === null ? null : (code: ExplainedYaml) => {
+    asked.current += 1;
+    setLooking({ what: "explain", asked: asked.current, ...explainer.codeQuestion(code) });
+  };
+
   // Leaving the canvas for what is shown under it leaves a moment's wait behind, which would put the light out again.
   const pointFromBelow = (part: OverviewPart | null) => {
     canvas.current?.stopPointing();
@@ -678,8 +702,8 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
             <ResizablePanelGroup
               orientation="vertical"
               className="min-h-0 flex-1"
-              defaultLayout={lookingAt ? rowsLayout.defaultLayout : undefined}
-              onLayoutChanged={lookingAt ? rowsLayout.onLayoutChanged : undefined}
+              defaultLayout={lookingAt ? belowLayout.defaultLayout : undefined}
+              onLayoutChanged={lookingAt ? belowLayout.onLayoutChanged : undefined}
             >
               <ResizablePanel id="overview-canvas-frame" minSize="25" className="flex min-h-0 min-w-0 flex-col">
                 <div ref={frame} className="relative h-full min-h-0 min-w-0 overflow-hidden" data-testid="mapping-overview-canvas">
@@ -699,7 +723,15 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                   {tip !== null && <CanvasTip tip={tip} />}
                 </div>
               </ResizablePanel>
-              {lookingAt && (
+              {explaining !== null && (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel id="overview-explain" defaultSize="65" minSize={240} maxSize="85" className="flex min-h-0 min-w-0 flex-col">
+                    <OverviewExplain key={explaining.asked} subject={explaining.subject} question={explaining.question} onClose={() => setLooking(null)} />
+                  </ResizablePanel>
+                </>
+              )}
+              {lookingAt && explaining === null && (
                 <>
                   <ResizableHandle withHandle />
                   <ResizablePanel id="overview-rows" defaultSize="40" minSize={120} maxSize="70" className="flex min-h-0 min-w-0 flex-col">
@@ -761,6 +793,11 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                     if (node !== null) {
                       pickShown({ type: "row", path: node.path });
                     }
+                  }}
+                  onExplain={explainYaml}
+                  blockOf={(line) => {
+                    const node = nodeAtLine(outline, line);
+                    return node?.line == null || node.endLine == null ? null : { range: { start: node.line, end: node.endLine }, named: node.path.split("|")[0] };
                   }}
                 />
               </ResizablePanel>

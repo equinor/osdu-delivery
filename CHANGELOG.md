@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A mapping's YAML on its overview can be explained by the assistant, with the answer beside it.** **Explain** in the
+  YAML's heading, or **Explain this** on a line's right-click menu, asks about the lines selected, the property a line
+  writes or the whole mapping, and the conversation opens under the canvas, where a table's rows open, rather than in
+  the drawer over the page ([explaining the YAML](osdu/docs/reference/concepts/mapping-overview.md#explaining-the-yaml)).
 - **A table's rows under a mapping's overview can be searched, in the database rather than among the rows shown.** The field at
   the head of the grid finds the rows of the record table or a child table one of whose values holds the text as the grid shows
   it, the cached records whose id or values hold it, or the records OSDU's search finds by it, then shows the first 100 found

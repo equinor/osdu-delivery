@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { FileCode } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { cn } from "@/lib/utils";
@@ -168,14 +168,16 @@ function covers(d: Declared, line: number, column: number): boolean {
   return !(line === span.endLine && column >= span.endColumn);
 }
 
-/** The heading of a block of a flow's YAML: the file, the lines shown, and a way to copy them. */
-export function YamlHeading({ file, first, last, copy, copyLabel = "Copy the dimension's YAML", copyTestId = "blueprint-yaml-copy" }: {
+/** The heading of a block of a flow's YAML: the file, the lines shown, what the pane offers over them, and a way to copy them. */
+export function YamlHeading({ file, first, last, copy, copyLabel = "Copy the dimension's YAML", copyTestId = "blueprint-yaml-copy", actions }: {
   file: string | null;
   first: number | null;
   last: number | null;
   copy: string | null;
   copyLabel?: string;
   copyTestId?: string;
+  /** The pane's own buttons, before Copy. */
+  actions?: ReactNode;
 }) {
   return (
     <header className="flex min-w-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
@@ -183,9 +185,10 @@ export function YamlHeading({ file, first, last, copy, copyLabel = "Copy the dim
       <span className="text-[13px] font-semibold">YAML</span>
       {file !== null && <span className="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground">{file}</span>}
       {first !== null && last !== null && <span className="shrink-0 text-[11.5px] text-muted-foreground">lines {first}–{last}</span>}
-      {copy !== null && (
-        <span className="ml-auto shrink-0">
-          <CopyButton iconOnly label={copyLabel} text={copy} testId={copyTestId} />
+      {(actions !== undefined || copy !== null) && (
+        <span className="ml-auto flex shrink-0 items-center gap-0.5">
+          {actions}
+          {copy !== null && <CopyButton iconOnly label={copyLabel} text={copy} testId={copyTestId} />}
         </span>
       )}
     </header>

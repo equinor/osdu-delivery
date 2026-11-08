@@ -28,6 +28,9 @@ keywords:
   - where a table is populated from
   - zoom to a search
   - canvas toolbar
+  - explain the yaml
+  - explain this
+  - ask the assistant about a mapping
 related:
   - delivery-flow-mapping
   - delivery-flow-mapping-lookups
@@ -47,17 +50,20 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
   - osdu/gui/src/features/delivery/overview/OverviewCanvas.ts
+  - osdu/gui/src/features/delivery/overview/OverviewExplain.tsx
   - osdu/gui/src/features/delivery/overview/OverviewInspector.tsx
   - osdu/gui/src/features/delivery/overview/OverviewLineage.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRail.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRendered.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRows.tsx
+  - osdu/gui/src/features/delivery/overview/OverviewYaml.tsx
   - osdu/gui/src/features/delivery/overview/outlineLayout.ts
   - osdu/gui/src/features/delivery/overview/outlineLineage.ts
   - osdu/gui/src/features/delivery/overview/outlineModel.ts
   - osdu/gui/src/features/delivery/overview/partTargets.ts
   - osdu/gui/src/features/delivery/overview/recordMarkdown.ts
   - osdu/gui/src/features/delivery/overview/tableRows.ts
+  - osdu/gui/src/features/delivery/overview/yamlExplain.ts
   - osdu/gui/src/features/delivery/lineageTargets.ts
 ---
 
@@ -130,6 +136,7 @@ on stays lit while it is on.
 | Find a property or a column | Type in **Property or column**, which opens what holds the matches, lights them and counts them beside the field (`14 of 40 found`). Once the typing stops, the canvas zooms to them, close enough to read: the properties found with the columns they read, up to 140% and never under 100%, each property found and each column named by the search shaded. Where the columns are too far from their properties to fit at 100%, the properties alone are framed, from the first. Clearing the search takes the view back to where it was, unless you moved it since. |
 | See every property filled one way | Click its glyph on [the toolbar](#the-toolbar). |
 | Read the document beside the canvas | **YAML** on the toolbar opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click keeps it lit. |
+| Have lines of the document explained | **Explain** in the YAML's heading asks the assistant about the lines selected, or the whole mapping, and the answer opens under the canvas ([below](#explaining-the-yaml)). |
 | Follow a real row through the mapping | **Show a record** on the toolbar previews a staged row of the flow rendering with the mapping (picked beside the record when several do) and shows each column's value and each property's, a repeated property's from its first item. The sentence beside the search gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
 | Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. The foot of the toolbar holds **Open all**, zoom and fit. |
 
@@ -163,8 +170,10 @@ when no step changed it first.
 | A property, or a dot on its line | Its **Details**, **Show in the YAML**, which opens the document at the lines that write it, **Open in lineage** for what its value comes from, and a copy of its path. |
 | The record's heading | **Preview the rendered record**, the YAML, **Open in lineage** for the kind, and a copy of the kind. |
 | The canvas | **Fit to the window**, **Open all** or **Fold**, the YAML, and **Open in lineage** for the mapping. |
+| A line of the YAML | **Explain this** and **Copy**, over the lines selected, or else the lines that write the property the line is in, or else the line alone; the menu's heading names the lines and the property. Without the assistant the browser's own menu opens. |
 
-Escape closes a menu first, then the details, then what is shown under the canvas.
+Escape closes a menu first, then the details, then what is shown under the canvas. In an explanation, Escape is the
+conversation's and leaves it open.
 
 ## Opening a part in lineage
 
@@ -243,6 +252,20 @@ read. A search that finds nothing says how it looked. Escape in the field clears
 | The record table, or a child table | The rows one of whose values, as the grid shows it, holds the text anywhere in it, in any case: a moment in UTC (`2024-05-06T10:00:00Z`), a number in its shortest form, a bit as `true` or `false`. A number or a moment typed whole is found however the database writes it, such as `1234567.123456789` in a `float` column or `2024-01-02T10:15:00.12Z` in a `datetime2` one. A binary column is not searched. The database searches the rows a delivery reads in the scope, those marked deleted left out, so it reads every one of them when few hold the text; the count stops at 100,000 as it does without a search. The search is `search` in the request's body, one line of at most 200 characters. |
 | A cache table | The records whose id or one of whose values holds the text, as the [cache's records](partition-cache.md#where-to-see-it) search them. |
 | A search | The records OSDU's search finds by the text, through the [explorer](explorer.md): whole words, and an id by its start. |
+
+## Explaining the YAML
+
+With the [assistant](../../../../sqlflow/docs/reference/guides/chat-assistant.md#explain) configured, the YAML's heading
+offers **Explain**, as every code window does: it asks about the lines selected, each line whole, or the whole mapping when
+nothing is selected. A right-click on a line offers **Explain this** over the lines selected, or else over the lines that
+write the property the line is in ([the menus](#the-menus)).
+
+The answer opens under the canvas, where a table's rows open, rather than in the drawer over the page, so the lines it
+explains stay in view beside it; a drag on the line between them resizes it, and the size is kept apart from the rows'.
+The question says which lines of how many (`YAML, lines 97 to 102 of 250`), the panel's heading repeats it, and the
+conversation is followed up in the panel. Each question is a new conversation, kept with the others on the Assistant page,
+where it stays after the panel closes. Looking at a table's rows, the parameters' values or the rendered record takes the
+panel's place.
 
 ## The outline
 
