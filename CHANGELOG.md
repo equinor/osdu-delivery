@@ -895,6 +895,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A schedule's fire keeps a disabled or manual member's place in the order: the flows after it in its chain wait for the
+  flows before it, where they ran in the fire's first wave. A cache flow capturing what a disabled delivery delivers now
+  runs at the end of its section, after the `ing` flow that delivery reads; a flow run with its descendants orders a
+  disabled descendant's chain the same way ([lineage](osdu/docs/reference/concepts/lineage.md#how-the-nodes-order-flows)).
 - A cache flow that leaves its partitions to the registry runs before the deliveries of a named partition that read what it
   holds, where lineage left the two unordered and a delivery could render against a cache its refresh had not yet
   brought up to date; a delivery to every partition likewise waits for the cache flows of each named partition it reads

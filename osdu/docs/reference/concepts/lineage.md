@@ -285,7 +285,10 @@ well log delivery waits for that cache flow too. With the template read, the OSD
 
 The repository sync stamps these waves on each pipeline. A schedule's fire, and a flow run with its descendants, order
 the flows they run by the same dependencies, counting only those among the flows they run: a cache flow that follows a
-delivery of another schedule does not wait in its own schedule's fire, where that delivery does not run. "Run a flow and
+delivery of another schedule does not wait in its own schedule's fire, where that delivery does not run. A member of the
+same schedule that is `mode: disabled` or `mode: manual` keeps its place in the order, though it does not run: the cache
+flow capturing what a disabled delivery delivers still runs after the `ing` flow that delivery reads, at the end of its
+section, not in the fire's first wave ([schedules](../../../../sqlflow/docs/reference/flow/schedule.md)). "Run a flow and
 its descendants" from a pre flow also runs the cache, assertion and other flows downstream of its deliveries, after them.
 
 ## When lineage is computed again

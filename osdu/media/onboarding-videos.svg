@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 482" width="1280" height="482" role="img" aria-labelledby="title desc">
   <title id="title">OSDU Delivery onboarding: the videos in parts</title>
-  <desc id="desc">The onboarding videos in parts, in the order to watch them, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: which flow to use, how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. After delivery: what OSDU really holds, and proof that it is right. Build and extend: use the assistant, run from GitHub, or change the framework.</desc>
+  <desc id="desc">The onboarding videos in parts, in the order to watch them, each video tagged for data engineers, for extending the framework, or both. Start here: why it exists, and how its parts fit together. Into the tables: which flow to use, how source files land, and only what changed is written. Row to record: how a row becomes an OSDU record, and when it sends again. Into OSDU: how records reach OSDU, and how each is accounted for. After delivery: what OSDU really holds, and proof that it is right. Build and extend: lay out the estate repository, use the assistant, run from GitHub, or change the framework.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1624"/>
@@ -120,9 +120,9 @@
   <g>
     <rect class="tile" x="1034" y="262" width="178" height="172" rx="18"/>
     <path d="M1064 292 L1055 302 L1064 312 M1080 292 L1089 302 L1080 312 M1075 288 L1069 316" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="desc" x="1054" y="352">Use the assistant,</text>
-    <text class="desc" x="1054" y="374">run from GitHub,</text>
-    <text class="desc" x="1054" y="396">or change the</text>
-    <text class="desc" x="1054" y="418">framework.</text>
+    <text class="desc" x="1054" y="352">Lay out the estate,</text>
+    <text class="desc" x="1054" y="374">use the assistant,</text>
+    <text class="desc" x="1054" y="396">run from GitHub, or</text>
+    <text class="desc" x="1054" y="418">change the code.</text>
   </g>
 </svg>
