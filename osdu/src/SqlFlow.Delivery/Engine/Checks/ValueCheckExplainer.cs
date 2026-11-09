@@ -1,4 +1,5 @@
 using System.Globalization;
+using SqlFlow.Delivery.Json;
 
 namespace SqlFlow.Delivery.Engine.Checks;
 
@@ -265,11 +266,8 @@ public static class ValueCheckExplainer
 
     private static string First(IReadOnlyList<string> items, string otherwise) => items.Count > 0 ? items[0] : otherwise;
 
-    private static string Leaf(string target)
-    {
-        var at = target.LastIndexOf('.');
-        return at < 0 ? target : target[(at + 1)..];
-    }
+    /// <summary>The last property a target names, as the record holds its name: <c>Unit</c> of <c>osdu.data.Curves[].Unit</c>, <c>lra.dataID</c> of <c>osdu.tags['lra.dataID']</c>.</summary>
+    private static string Leaf(string target) => RecordPathNotation.LastName(target);
 
     private static string Code(string text) => "`" + text.Replace("`", "'", StringComparison.Ordinal) + "`";
 

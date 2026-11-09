@@ -1,7 +1,8 @@
 // Vendored from SQLFlow (https://github.com/TahirRiaz/sqlflow-v3, commit ddd4ea12160bda044f75dcad2bbec5099c3a7263)
 // src/SqlFlow.Acquire/Runtime/JsonPathReader.cs. Namespace and exception type changed; the JsonElement behaviour is
 // unchanged. SelectNodes was added here for the reference cache, which walks JsonNode trees and needs a property
-// step to reach through an array of objects.
+// step to reach through an array of objects. A quoted name in brackets is read to its closing quote, escapes undone
+// (RecordPathNotation), where SQLFlow's copy ends it at the first ']' and keeps a backslash escape as written.
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -265,6 +266,36 @@ public static class JsonPathReader
 
             if (c == '[')
             {
+                // A quoted name is read to its closing quote, so a ']' or a quote it holds is part of it, and its escapes are
+                // undone: tags['lra.dataID'], data['a]b'], data['it\'s'].
+                var quote = i + 1;
+                while (quote < path.Length && path[quote] is ' ' or '\t')
+                {
+                    quote++;
+                }
+
+                if (quote < path.Length && path[quote] is '\'' or '"')
+                {
+                    if (!RecordPathNotation.TryReadQuoted(path, quote, out var quoted, out var after, out var why))
+                    {
+                        throw new DeliveryException($"JSON path '{path}': {why}.");
+                    }
+
+                    while (after < path.Length && path[after] is ' ' or '\t')
+                    {
+                        after++;
+                    }
+
+                    if (after >= path.Length || path[after] != ']')
+                    {
+                        throw new DeliveryException($"Unterminated '[' in JSON path '{path}'.");
+                    }
+
+                    segments.Add(PathSegment.OfProperty(quoted));
+                    i = after + 1;
+                    continue;
+                }
+
                 var close = path.IndexOf(']', i + 1);
                 if (close < 0)
                 {

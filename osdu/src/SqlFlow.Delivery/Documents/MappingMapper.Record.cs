@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Expressions;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Search;
 using SqlFlow.Delivery.Templates;
@@ -20,12 +21,17 @@ namespace SqlFlow.Delivery.Documents;
 /// <c>$where</c> holds for. A list holding nodes is a list of values, each item a literal or a value node, or a list of
 /// objects, each item an object laid out as the tree is. A bare column name reads the row the node is in (under a
 /// <c>$forEach</c>, the item's row), and <c>$dataset.&lt;column&gt;</c> the dataset's own row from anywhere. A property
-/// whose own name starts with <c>$</c> is written with one more: <c>$$name</c>.
+/// whose own name starts with <c>$</c> is written with one more: <c>$$name</c>. A key is one property name, whatever it
+/// holds: a name holding a dot, a bracket or a space (<c>lra.securityClassification</c> under <c>tags</c>) is one property,
+/// which the template takes where it takes names it does not declare (osdu/docs/reference/flow/mapping-property-names.md).
 /// </summary>
 internal static partial class MappingMapper
 {
     /// <summary>What starts every word of the mapping language, so a key or a reference that starts with it is never a record property or a column.</summary>
     internal const string Marker = "$";
+
+    /// <summary>The mapping's key that lays out the record, which every node's location starts with: <c>record.data.Name</c>.</summary>
+    internal const string RecordKey = "record";
 
     internal const string FromKey = "$from";
     internal const string ExprKey = "$expr";
@@ -135,8 +141,8 @@ internal static partial class MappingMapper
         var entries = new List<MappingEntry>();
         foreach (var (key, node) in record)
         {
-            var location = "record." + key;
-            Node(node, [PropertyName(key, $"{source}: {location}")], location, root, entries, source);
+            var location = RecordPathNotation.Append(RecordKey, key);
+            Node(node, [new TemplatePathSegment(RootPropertyName(key, $"{source}: {location}"), false)], location, root, entries, source);
         }
 
         return entries;
@@ -211,7 +217,7 @@ internal static partial class MappingMapper
         return lookups;
     }
 
-    private static void Node(object? node, IReadOnlyList<string> path, string location, TreeScope scope, List<MappingEntry> entries, string source)
+    private static void Node(object? node, IReadOnlyList<TemplatePathSegment> path, string location, TreeScope scope, List<MappingEntry> entries, string source)
     {
         var at = $"{source}: {location}";
         switch (node)
@@ -236,7 +242,7 @@ internal static partial class MappingMapper
                 foreach (var (key, child) in map)
                 {
                     var name = KeyText(key);
-                    Node(child, [.. path, PropertyName(name, at)], location + "." + name, scope, entries, source);
+                    Node(child, [.. path, new TemplatePathSegment(PropertyName(name, at), false)], RecordPathNotation.Append(location, name), scope, entries, source);
                 }
 
                 return;
@@ -297,7 +303,7 @@ internal static partial class MappingMapper
         return true;
     }
 
-    private static MappingEntry Literal(JsonNode node, IReadOnlyList<string> path, string location, int index, string source)
+    private static MappingEntry Literal(JsonNode node, IReadOnlyList<TemplatePathSegment> path, string location, int index, string source)
         => new()
         {
             Index = index,
@@ -312,7 +318,7 @@ internal static partial class MappingMapper
     /// written once. An item is never a list of its own, and a list with an object among its items is a list of objects
     /// (<see cref="ListOfObjects"/>); a list of objects whose items come from rows is a <c>$forEach</c> node.
     /// </summary>
-    private static MappingEntry ListOfValues(List<object> list, IReadOnlyList<string> path, string location, TreeScope scope, int index, string source)
+    private static MappingEntry ListOfValues(List<object> list, IReadOnlyList<TemplatePathSegment> path, string location, TreeScope scope, int index, string source)
     {
         var at = $"{source}: {location}";
         var target = Target(path, at);
@@ -393,7 +399,7 @@ internal static partial class MappingMapper
     /// variable it fills takes one or the other, and a path steps into one array at most, so an item's properties never
     /// repeat rows and a list of objects is never inside the items of another array.
     /// </summary>
-    private static MappingEntry ListOfObjects(List<object> list, IReadOnlyList<string> path, string location, TreeScope scope, int index, string source)
+    private static MappingEntry ListOfObjects(List<object> list, IReadOnlyList<TemplatePathSegment> path, string location, TreeScope scope, int index, string source)
     {
         var at = $"{source}: {location}";
         var target = Target(path, at);
@@ -405,7 +411,7 @@ internal static partial class MappingMapper
 
         var example = $"- {{ TechnicalAssuranceTypeID: {{ {ExprKey}: iif(startsWith(log_source, \"COMP\"), \"Certified\", \"Unevaluated\") }} }}";
         var first = list.FindIndex(IsObjectItem);
-        var itemPath = path.Take(path.Count - 1).Append(path[^1] + "[]").ToList();
+        IReadOnlyList<TemplatePathSegment> itemPath = [.. path.Take(path.Count - 1), path[^1] with { IntoArray = true }];
         var itemScope = scope with { List = location };
         var parts = new List<MappingEntry>(list.Count);
         var literals = new JsonArray();
@@ -435,7 +441,7 @@ internal static partial class MappingMapper
                     foreach (var (key, child) in map)
                     {
                         var name = KeyText(key);
-                        Node(child, [.. itemPath, PropertyName(name, itemAt)], $"{itemLocation}.{name}", itemScope, properties, source);
+                        Node(child, [.. itemPath, new TemplatePathSegment(PropertyName(name, itemAt), false)], RecordPathNotation.Append(itemLocation, name), itemScope, properties, source);
                     }
 
                     parts.Add(new MappingEntry { Index = index, Location = itemLocation, Target = target, Properties = properties });
@@ -467,7 +473,7 @@ internal static partial class MappingMapper
     /// item, each reading the item's row. Its own <c>$when</c> and <c>$required</c> read the row the node is in, since they
     /// decide for the whole array; its <c>$where</c> reads each child row, and keeps the rows it holds for.
     /// </summary>
-    private static void Repeat(IDictionary<object, object> map, IReadOnlyList<string> path, string location, TreeScope scope, List<MappingEntry> entries, string source)
+    private static void Repeat(IDictionary<object, object> map, IReadOnlyList<TemplatePathSegment> path, string location, TreeScope scope, List<MappingEntry> entries, string source)
     {
         var at = $"{source}: {location}";
         foreach (var key in map.Keys.Select(KeyText))
@@ -530,17 +536,17 @@ internal static partial class MappingMapper
         };
 
         var itemScope = scope with { Child = child };
-        var itemPath = path.Take(path.Count - 1).Append(path[^1] + "[]").ToList();
+        IReadOnlyList<TemplatePathSegment> itemPath = [.. path.Take(path.Count - 1), path[^1] with { IntoArray = true }];
         foreach (var (key, node) in item)
         {
             var name = KeyText(key);
-            var itemLocation = $"{location}.{ItemKey}.{name}";
-            Node(node, [.. itemPath, PropertyName(name, $"{source}: {location}.{ItemKey}")], itemLocation, itemScope, entries, source);
+            var itemLocation = RecordPathNotation.Append($"{location}.{ItemKey}", name);
+            Node(node, [.. itemPath, new TemplatePathSegment(PropertyName(name, $"{source}: {location}.{ItemKey}"), false)], itemLocation, itemScope, entries, source);
         }
     }
 
     /// <summary>A value node: one value read from a column, a literal, the cache or a search, and the settings beside it.</summary>
-    private static MappingEntry Value(IDictionary<object, object> map, IReadOnlyList<string> path, string location, TreeScope scope, int index, string source)
+    private static MappingEntry Value(IDictionary<object, object> map, IReadOnlyList<TemplatePathSegment> path, string location, TreeScope scope, int index, string source)
     {
         var at = $"{source}: {location}";
         foreach (var key in map.Keys.Select(KeyText))
@@ -966,7 +972,7 @@ internal static partial class MappingMapper
     /// one. The node's <c>$when</c>, <c>$required</c> and description decide for all of them, so an alternative takes none
     /// of them. The entry returned is the first alternative, carrying the node's settings and the rest of the alternatives.
     /// </summary>
-    private static MappingEntry Coalesce(IDictionary<object, object> map, IReadOnlyList<string> path, string location, TreeScope scope, int index, string source)
+    private static MappingEntry Coalesce(IDictionary<object, object> map, IReadOnlyList<TemplatePathSegment> path, string location, TreeScope scope, int index, string source)
     {
         var at = $"{source}: {location}";
         const string Example = $"{CoalesceKey}: [ {{ {FromKey}: log_name }}, {{ {FromKey}: log_source }} ]";
@@ -1391,11 +1397,32 @@ internal static partial class MappingMapper
     private static string Written(DatasetColumn column, TreeScope scope)
         => column.Child is null && scope.Child is not null ? $"{DatasetReference}.{column.Column}" : column.Column;
 
-    /// <summary>A key naming a property of the record: one name, never a path, and <c>$$name</c> for a name that starts with <c>$</c>.</summary>
+    /// <summary>
+    /// A key naming a property of the record: the name exactly as the record holds it, <c>$$name</c> for a name that starts
+    /// with <c>$</c>. A key is one name, whatever it holds: a dot, a bracket or a space inside it is part of the name, and
+    /// whether the object it is written in takes that name is the template's to say (the preflight's check of each target).
+    /// The spaces around a key are not part of it (the tree's keys are read trimmed), and a name is never empty.
+    /// </summary>
     private static string PropertyName(string key, string at)
     {
         var name = PropertyOfKey(key);
-        if (!PropertyPattern().IsMatch(name))
+        if (name.Trim().Length == 0)
+        {
+            throw new FlowValidationException($"{at}: a key is empty, and a property of the record is named; write its name, or remove it.");
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// A key directly under <c>record</c>: one of the record's own properties (<c>acl</c>, <c>legal</c>, <c>tags</c>,
+    /// <c>data</c> and the others its template declares), which Storage names without a dot, a bracket or a space, so such a
+    /// key here is a path written as a key.
+    /// </summary>
+    private static string RootPropertyName(string key, string at)
+    {
+        var name = PropertyName(key, at);
+        if (!RecordPathNotation.IsPlain(name))
         {
             throw new FlowValidationException(
                 $"{at}: '{key}' is not a property name. A key in the record is one property of it, so nest the properties a path names rather than writing the path.");
@@ -1404,8 +1431,8 @@ internal static partial class MappingMapper
         return name;
     }
 
-    private static TemplatePath Target(IReadOnlyList<string> path, string at)
-        => TemplatePath.TryParse(TemplatePath.Prefix + "." + string.Join('.', path), out var target, out var error)
+    private static TemplatePath Target(IReadOnlyList<TemplatePathSegment> path, string at)
+        => TemplatePath.TryCreate(path, out var target, out var error)
             ? target!
             : throw new FlowValidationException($"{at}: {error}.");
 
@@ -1419,7 +1446,7 @@ internal static partial class MappingMapper
             case IDictionary<object, object> map:
                 foreach (var (key, value) in map)
                 {
-                    if (MappedItem(value, $"{at}.{KeyText(key)}") is { } found)
+                    if (MappedItem(value, RecordPathNotation.Append(at, KeyText(key))) is { } found)
                     {
                         return found;
                     }
@@ -1573,9 +1600,6 @@ internal static partial class MappingMapper
     /// <summary>A path into a record from its root: property names joined by dots, as <c>data.ExtensionProperties.wdms</c>.</summary>
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")]
     internal static partial Regex ParentPathPattern();
-
-    [GeneratedRegex(@"^[^\.\[\]\s]+$")]
-    private static partial Regex PropertyPattern();
 
     /// <summary>A <c>$findAll</c> line a row meets by holding nothing under a field: <c>FieldList is empty</c>.</summary>
     [GeneratedRegex(@"^\s*(?<field>[^\s=]+)\s+is\s+empty\s*$")]

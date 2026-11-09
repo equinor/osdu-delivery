@@ -124,7 +124,7 @@ written where the template takes an object`.
 - **Opt in, per column.** Only the columns that name `decode: json` are decoded; every other column stays text. Only a
   table type's column takes it: an OSDU type's path yields its JSON as it is, and `decode` there is refused.
 - **Names and types as the column holds them.** Every property name is kept exactly, a name holding a dot (`lra.dataID`)
-  included, and every string, number, boolean, array and object keeps its JSON type. The object is kept as the cache
+  included (a mapping can also write such a tag as a key of its own, [property names holding a dot](mapping-property-names.md)), and every string, number, boolean, array and object keeps its JSON type. The object is kept as the cache
   keeps every object: its properties in ordinal order of their names, a property holding `null` left out, and each number
   in its shortest form (`1.50` is `1.5`). So a row whose text changes only in spacing or property order is the same value,
   and writes no new version.

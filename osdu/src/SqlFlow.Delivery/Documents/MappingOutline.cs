@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Snapshots;
@@ -473,17 +474,32 @@ public sealed record MappingOutline(
             level.Add(Node(entry, PathTo(segments, segments.Count - 1), segments[^1].Name));
         }
 
-        /// <summary>The path down to the step at <paramref name="depth"/>, the steps above it into an array marked as such.</summary>
+        /// <summary>
+        /// The path down to the step at <paramref name="depth"/>, the steps above it into an array marked as such, and a name
+        /// holding a dot, a bracket or a space in brackets (<c>tags['lra.dataID']</c>).
+        /// </summary>
         private static string PathTo(IReadOnlyList<TemplatePathSegment> segments, int depth)
-            => string.Join('.', segments.Take(depth + 1).Select((segment, index) => index < depth ? segment.ToString() : segment.Name));
+        {
+            var path = string.Empty;
+            for (var index = 0; index <= depth; index++)
+            {
+                path = RecordPathNotation.Append(path, segments[index].Name);
+                if (index < depth && segments[index].IntoArray)
+                {
+                    path += "[]";
+                }
+            }
 
-        /// <summary>Where the document writes the object at <paramref name="depth"/>, as a node's location names it.</summary>
+            return path;
+        }
+
+        /// <summary>Where the document writes the object at <paramref name="depth"/>, as a node's location names it: each key as the document writes it.</summary>
         private static string LocationOf(IReadOnlyList<TemplatePathSegment> segments, int depth)
         {
             var location = RecordRoot;
             for (var index = 0; index <= depth; index++)
             {
-                location += "." + segments[index].Name;
+                location = RecordPathNotation.Append(location, MappingMapper.KeyOfProperty(segments[index].Name));
                 if (index < depth && segments[index].IntoArray)
                 {
                     location += "." + ItemWord;
@@ -583,8 +599,8 @@ public sealed record MappingOutline(
                     var item = new Branch(itemPath, number, MappingOutlineShape.Group) { Lines = LinesAt(part.Location) };
                     foreach (var property in part.Properties)
                     {
-                        var within = string.Join('.', property.Target.WithinItem);
-                        item.Children.Add(Node(property, $"{itemPath}.{within}", within));
+                        var within = property.Target.WithinItem.Aggregate(string.Empty, RecordPathNotation.Append);
+                        item.Children.Add(Node(property, within.StartsWith('[') ? itemPath + within : $"{itemPath}.{within}", string.Join('.', property.Target.WithinItem)));
                     }
 
                     branch.Children.Add(item);
@@ -962,7 +978,7 @@ public sealed record MappingOutline(
                     {
                         if (childKey is YamlScalarNode { Value: { } name })
                         {
-                            Walk(text, $"{location}.{name}", childKey, child);
+                            Walk(text, RecordPathNotation.Append(location, name), childKey, child);
                         }
                     }
 

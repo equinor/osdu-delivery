@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json.Nodes;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
 
@@ -54,7 +55,7 @@ internal sealed class ListValues
         ArgumentNullException.ThrowIfNull(record);
         foreach (var name in _recordLists)
         {
-            if (record[name] is null && (covers is null || covers($"{TemplatePath.Prefix}.{name}")))
+            if (record[name] is null && (covers is null || covers(TemplatePath.TextOf(RecordPathNotation.Append(string.Empty, name)))))
             {
                 record[name] = new JsonArray();
             }
@@ -90,7 +91,7 @@ internal sealed class ListValues
         var level = _levels.GetOrAdd(schemaPath, Declared);
         foreach (var name in level.NoNullItems)
         {
-            if (value[name] is not JsonArray items || (covers is not null && !covers($"{target}.{name}")))
+            if (value[name] is not JsonArray items || (covers is not null && !covers(RecordPathNotation.Append(target, name))))
             {
                 continue;
             }
@@ -110,10 +111,10 @@ internal sealed class ListValues
             switch (value[name])
             {
                 case JsonObject inner when !intoItems:
-                    RemoveNullItems(inner, path, $"{target}.{name}", covers);
+                    RemoveNullItems(inner, path, RecordPathNotation.Append(target, name), covers);
                     break;
                 case JsonArray items when intoItems:
-                    var itemTarget = $"{target}.{name}[]";
+                    var itemTarget = RecordPathNotation.Append(target, name) + "[]";
                     foreach (var item in items)
                     {
                         if (item is JsonObject each)
@@ -198,7 +199,7 @@ internal sealed class ListValues
         _ => null,
     };
 
-    private static string Join(string schemaPath, string name) => schemaPath.Length == 0 ? name : $"{schemaPath}.{name}";
+    private static string Join(string schemaPath, string name) => RecordPathNotation.Append(schemaPath, name);
 
     /// <param name="NoNullItems">The lists the object declares whose items take no null, so a null item is dropped from them.</param>
     /// <param name="Inner">The objects (false) and lists of objects (true) the object declares, whose own lists are looked into in turn.</param>

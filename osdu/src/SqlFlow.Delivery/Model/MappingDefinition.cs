@@ -77,7 +77,7 @@ public sealed record MappingDefinition
     public IReadOnlyList<string> LinkPaths() => Entries
         .SelectMany(e => e.ValueNodes)
         .Where(n => n.Source?.Kind == MappingSourceKind.Link)
-        .Select(n => string.Join('.', n.Target.Segments.Select(s => s.Name)))
+        .Select(n => n.Target.SchemaPath)
         .Distinct(StringComparer.Ordinal)
         .ToList();
 

@@ -78,9 +78,14 @@ public sealed class SchemaSnapshot
 
     private SchemaProperty? ResolveUncached(string dottedPath)
     {
+        if (RecordPathNotation.Names(dottedPath) is not { } names)
+        {
+            return null;
+        }
+
         var current = EffectiveRoot;
         SchemaProperty? result = null;
-        foreach (var segment in dottedPath.Split('.', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var segment in names)
         {
             var next = Child(current, segment);
             if (next is null)
@@ -114,9 +119,14 @@ public sealed class SchemaSnapshot
 
     private SchemaProperty? ResolveThroughFormsUncached(string dottedPath)
     {
+        if (RecordPathNotation.Names(dottedPath) is not { } names)
+        {
+            return null;
+        }
+
         var current = EffectiveRoot;
         SchemaProperty? result = null;
-        foreach (var segment in dottedPath.Split('.', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var segment in names)
         {
             var next = Child(current, segment) ?? ChildOfForms(current, segment);
             if (next is null)

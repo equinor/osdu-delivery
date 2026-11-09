@@ -164,7 +164,8 @@ as a modifier's settings do not:
 
 A condition holds of a field or a column as an assertion flow's `where` does: one of the values it reads has to meet it,
 and `exists: false` and `empty: true` hold of a value that is not there. A `where` field of the record stage starts at a
-root of the record (`data`, `acl`, `tags`, ...); arrays are crossed implicitly or with `[*]`.
+root of the record (`data`, `acl`, `tags`, ...); arrays are crossed implicitly or with `[*]`, and a name holding a dot is
+written in brackets and quotes, `tags['lra.securityClassification']` ([property names holding a dot](mapping-property-names.md)).
 
 ## Where an assertion is written
 

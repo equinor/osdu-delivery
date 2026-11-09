@@ -5569,6 +5569,7 @@
         "delivery-flow-mapping-child",
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-assertions",
+        "delivery-flow-mapping-property-names",
         "delivery-concept-templates",
         "delivery-concept-preflight",
         "delivery-flow-delivery",
@@ -5987,6 +5988,54 @@
       ]
     },
     {
+      "id": "delivery-flow-mapping-property-names",
+      "corpus": "reference",
+      "path": "flow/mapping-property-names.md",
+      "title": "Property names holding a dot: a tag such as lra.securityClassification, and tags['...'] in a path",
+      "type": "flow-reference",
+      "summary": "A mapping key is one property name, a dot in it included: where the template takes such a name, and how each path writes it, tags['lra.securityClassification'].",
+      "keywords": [
+        "dotted tag",
+        "tag name with a dot",
+        "property name with a dot",
+        "lra tags",
+        "lra.securityClassification",
+        "bracket notation",
+        "quoted name",
+        "tags['name']",
+        "free keys",
+        "open object",
+        "nest the properties a path names",
+        "is not a property name"
+      ],
+      "yamlPath": "record.<property> (documentType: mapping)",
+      "related": [
+        "delivery-flow-mapping",
+        "delivery-flow-mapping-values",
+        "delivery-flow-mapping-assertions",
+        "delivery-flow-assertion",
+        "delivery-flow-cache-origins",
+        "delivery-concept-templates",
+        "delivery-concept-preflight",
+        "delivery-cli-validate"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Json/RecordPathNotation.cs",
+        "osdu/src/SqlFlow.Delivery/Json/JsonPathReader.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplatePath.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/SchemaWalk.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/SearchFields.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionTemplates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/Evaluators.cs",
+        "osdu/gui/src/features/delivery/recordPath.ts",
+        "osdu/specs/core/INTEGRATION.md"
+      ]
+    },
+    {
       "id": "delivery-flow-mapping-transformations",
       "corpus": "reference",
       "path": "flow/mapping-transformations.md",
@@ -6070,6 +6119,7 @@
         "delivery-flow-mapping-child",
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-assertions",
+        "delivery-flow-mapping-property-names",
         "delivery-concept-preflight",
         "delivery-flow-delivery",
         "delivery-guide-writing-a-mapping"

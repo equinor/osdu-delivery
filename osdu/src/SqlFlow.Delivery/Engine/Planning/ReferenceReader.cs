@@ -54,7 +54,7 @@ public sealed class ReferenceReader
                 var id = TargetId.WithoutVersion(value);
                 if (!string.Equals(id, ownId, StringComparison.Ordinal) && seen.Add(id))
                 {
-                    references.Add(new RecordReference(id, path.Text[(TemplatePath.Prefix.Length + 1)..]));
+                    references.Add(new RecordReference(id, path.RecordPath));
                 }
             }
         }

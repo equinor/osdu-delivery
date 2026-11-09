@@ -1,7 +1,7 @@
 import type {
   DeliveryTemplateDetail, DeliveryTemplateVariable, MappingDraft, MappingDraftEntry,
 } from "../../api/delivery";
-import { KEY_NAME } from "./mappingDraft";
+import { isWithin, parsePath } from "./recordPath";
 
 /** One row of the variables list: a variable a mapping can fill, a key under an object with free keys, or an entry the template does not let a mapping fill. */
 export interface VariableRow {
@@ -68,7 +68,7 @@ export function withKeyVariables(
 
 /** The variable `target` is under `holder`: a free key of an object that takes them, or any path inside an open object. Null for neither. */
 function heldVariable(holder: DeliveryTemplateVariable, target: string): DeliveryTemplateVariable | null {
-  if (!target.startsWith(`${holder.path}.`)) {
+  if (target === holder.path || !isWithin(target, holder.path) || target.startsWith("[]", holder.path.length)) {
     return null;
   }
 
@@ -76,7 +76,11 @@ function heldVariable(holder: DeliveryTemplateVariable, target: string): Deliver
     return insideVariable(holder, target);
   }
 
-  return holder.keyValueType !== null && KEY_NAME.test(target.slice(holder.path.length + 1)) ? keyVariable(holder, target) : null;
+  // A free key is one name below the object, whatever it holds: osdu.tags.Source, osdu.tags['lra.dataID'].
+  const inner = parsePath(target).steps;
+  const outer = parsePath(holder.path).steps;
+  const oneName = inner !== null && outer !== null && inner.length === outer.length + 1 && inner[inner.length - 1].kind === "property";
+  return holder.keyValueType !== null && oneName ? keyVariable(holder, target) : null;
 }
 
 function unknownVariable(target: string): DeliveryTemplateVariable {

@@ -327,7 +327,7 @@ public sealed class AssertionRunner
                         Kind = test.Kind,
                         Query = AssertionQueries.Of(test),
                         Spatial = test.Spatial,
-                        Sort = test.Sort.Select(s => (s.Field, s.Descending)).ToList(),
+                        Sort = test.Sort.Select(s => (GroupEvaluator.SearchField(s.Field), s.Descending)).ToList(),
                     },
                     Search = search,
                     Storage = storage,

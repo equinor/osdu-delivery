@@ -1,4 +1,5 @@
 import { deliveryApi, type DeliveryTemplateRole, type DeliveryTemplateVariable } from "../../api/delivery";
+import { holderOfPath, lastStepStart, pathNames } from "./recordPath";
 
 /**
  * How the template a repository's file holds is read as JSON text, by the Schema JSON tab and by the download alike, so the
@@ -49,9 +50,12 @@ export function shapeText(variable: Pick<DeliveryTemplateVariable, "shape" | "ty
   }
 }
 
-/** How deep a variable sits below the record's sections: osdu.data.Name is 1, osdu.data.Curves[].CurveUnit is 2. */
+/**
+ * How deep a variable sits below the record's sections: osdu.data.Name is 1, osdu.data.Curves[].CurveUnit is 2, and
+ * osdu.tags['lra.dataID'] is 1, its name one step whatever it holds.
+ */
 export function pathDepth(path: string): number {
-  return Math.max(0, path.split(".").length - 2);
+  return Math.max(0, (pathNames(path) ?? path.split(".")).length - 2);
 }
 
 /**
@@ -59,19 +63,19 @@ export function pathDepth(path: string): number {
  * a property of the record itself (osdu.data, osdu.id), which no variable holds.
  */
 export function holderPath(path: string): string | null {
-  const at = path.lastIndexOf(".");
-  if (at <= 0) {
+  const held = holderOfPath(path);
+  if (held === null) {
     return null;
   }
 
-  const holder = path.slice(0, at).replace(/\[\]$/, "");
+  const holder = held.replace(/\[\]$/, "");
   return holder === "osdu" ? null : holder;
 }
 
-/** A path split into what leads to the variable and the variable's own name, so the name can stand out. */
+/** A path split into what leads to the variable and the variable's own step, so the name can stand out: `osdu.tags` and `['lra.dataID']`. */
 export function splitPath(path: string): { parent: string; leaf: string } {
-  const at = path.lastIndexOf(".");
-  return at < 0 ? { parent: "", leaf: path } : { parent: path.slice(0, at + 1), leaf: path.slice(at + 1) };
+  const at = lastStepStart(path);
+  return at <= 0 ? { parent: "", leaf: path } : { parent: path.slice(0, at), leaf: path.slice(at) };
 }
 
 /** Who writes a variable no mapping may fill, as a short label; null for a variable a mapping fills. */

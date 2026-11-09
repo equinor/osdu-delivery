@@ -907,7 +907,7 @@ public sealed class MappingRenderer
         {
             foreach (var required in _requiredData)
             {
-                var target = $"{TemplatePath.Prefix}.data.{required}";
+                var target = TemplatePath.TextOf(RecordPathNotation.Append("data", required));
                 if (!selection.Covers(target) || data[required] is not null)
                 {
                     continue;

@@ -119,7 +119,7 @@ it in the object that holds it, the entity types it points to (`x-osdu-relations
 | `osdu.kind` | string | required; written by OSDU Delivery |
 | `osdu.acl.owners` | list of string | required |
 | `osdu.legal.legaltags` | list of string | required |
-| `osdu.tags` | object with free keys | each key takes a string; a mapping fills `osdu.tags.<name>` |
+| `osdu.tags` | object with free keys | each key takes a string; a mapping fills `osdu.tags.<name>`, and a name holding a dot as `osdu.tags['<name>']` ([property names holding a dot](../flow/mapping-property-names.md)) |
 | `osdu.data.Name` | string | |
 | `osdu.data.WellboreID` | string | points to `master-data--Wellbore` |
 | `osdu.data.TopMeasuredDepth` | number | unit context `UOM:length` |

@@ -141,16 +141,11 @@ public sealed class EntrySelection
         return IsAll || _paths.Any(path => Within(target, path));
     }
 
-    /// <summary>Whether <paramref name="inner"/> is <paramref name="outer"/> or lies inside it: a property of it, or of its items.</summary>
-    public static bool Within(string inner, string outer)
-    {
-        ArgumentNullException.ThrowIfNull(inner);
-        ArgumentNullException.ThrowIfNull(outer);
-        return string.Equals(inner, outer, StringComparison.Ordinal)
-            || (inner.Length > outer.Length
-                && inner.StartsWith(outer, StringComparison.Ordinal)
-                && (inner[outer.Length] == '.' || inner.AsSpan(outer.Length).StartsWith("[].", StringComparison.Ordinal)));
-    }
+    /// <summary>
+    /// Whether <paramref name="inner"/> is <paramref name="outer"/> or lies inside it: a property of it, a name in brackets
+    /// among them (<c>osdu.tags['lra.dataID']</c> inside <c>osdu.tags</c>), or a property of its items.
+    /// </summary>
+    public static bool Within(string inner, string outer) => TemplatePath.IsWithin(inner, outer);
 }
 
 /// <summary>

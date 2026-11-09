@@ -7,6 +7,7 @@ import type {
   MappingDraftInput, MappingDraftModifier, MappingDraftModifierKind,
 } from "../../api/delivery";
 import { assertionText } from "./mappingAssertionText";
+import { holderOfPath, repeaterOfPath } from "./recordPath";
 
 /** The access and legal variables every record carries, which a mapping gives as non-empty lists of strings. */
 export const ENVELOPE_TARGETS: readonly string[] = [
@@ -33,9 +34,6 @@ export const COLUMN_NAME = /^[A-Za-z0-9_-]+$/;
 
 /** A column as an entry reads it: `column`, or `child.column` inside a repeater. */
 export const DATASET_COLUMN = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)?$/;
-
-/** A key under an object with free keys (a tag name): anything but dots, brackets and whitespace. */
-export const KEY_NAME = /^[^.[\]\s]+$/;
 
 export const MODIFIER_KINDS: readonly MappingDraftModifierKind[] = ["trim", "upper", "lower", "split", "replace", "equals", "date", "number", "id", "ref"];
 
@@ -152,10 +150,18 @@ function isPlainObject(parsed: ReturnType<typeof parseJson>): boolean {
     && Object.keys(parsed.value as object).length > 0;
 }
 
-/** Where a property of an item of the list at `list` lies inside the item: `Detail.Note` for `osdu.data.X[].Detail.Note`. */
+/**
+ * Where a property of an item of the list at `list` lies inside the item: `Detail.Note` for `osdu.data.X[].Detail.Note`,
+ * `['a.b']` for `osdu.data.X[]['a.b']`, whose name holds a dot.
+ */
 export function withinItem(list: string, target: string): string {
-  const prefix = `${list}[].`;
-  return target.startsWith(prefix) ? target.slice(prefix.length) : target;
+  const items = `${list}[]`;
+  if (!target.startsWith(items) || target.length === items.length) {
+    return target;
+  }
+
+  const rest = target.slice(items.length);
+  return rest.startsWith(".") ? rest.slice(1) : rest.startsWith("[") ? rest : target;
 }
 
 /** The lookup a find all line keys by, from its `wellbore.GeoContexts.FieldID`; null when it keys by none. */
@@ -244,8 +250,7 @@ export function inputsFor(variable: Pick<DeliveryTemplateVariable, "shape" | "pa
 
 /** The list of objects a target inside a repeated item belongs to: osdu.data.Curves for osdu.data.Curves[].CurveID. */
 export function repeaterOf(target: string): string | null {
-  const at = target.indexOf("[]");
-  return at < 0 ? null : target.slice(0, at);
+  return repeaterOfPath(target);
 }
 
 /**
@@ -258,8 +263,8 @@ export function targetOrder(target: string, order: ReadonlyMap<string, number>):
     return own;
   }
 
-  const at = target.lastIndexOf(".");
-  const holder = at < 0 ? undefined : order.get(target.slice(0, at));
+  const held = holderOfPath(target);
+  const holder = held === null ? undefined : order.get(held);
   return holder !== undefined ? holder + 0.5 : Number.MAX_SAFE_INTEGER;
 }
 

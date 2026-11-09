@@ -2,6 +2,7 @@ using System.Collections;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using SqlFlow.Core;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 
 namespace SqlFlow.Delivery.Documents;
@@ -555,17 +556,27 @@ internal static partial class ConditionReader
             $"{source}: {at} names a column of the rows the known values' query answers, and {Convert.ToString(raw, CultureInfo.InvariantCulture) ?? "nothing"} is not a column name; write a value that is the same in every row into the query (SELECT 'welldb' AS source_system)."),
     };
 
-    /// <summary>A path into an OSDU record: dotted names from a root property, arrays crossed implicitly or with [*] and [n].</summary>
+    /// <summary>
+    /// A path into an OSDU record: dotted names from a root property, arrays crossed implicitly or with [*] and [n], and a name
+    /// holding a dot, a bracket or a space written in brackets and quotes (<c>tags['lra.securityClassification']</c>,
+    /// osdu/docs/reference/flow/mapping-property-names.md). It is returned as written, which every reader of a record path reads.
+    /// </summary>
     public static string RecordPath(string? declared, string at, string source)
     {
         var path = declared?.Trim() ?? string.Empty;
         if (!PathPattern().IsMatch(path))
         {
             throw new FlowValidationException(
-                $"{source}: {at} '{Shown(path)}' is not a path into a record: names separated by dots, such as data.FacilityName or data.VerticalMeasurements[*].VerticalMeasurement.");
+                $"{source}: {at} '{Shown(path)}' is not a path into a record: names separated by dots, such as data.FacilityName or data.VerticalMeasurements[*].VerticalMeasurement, "
+                + "and a name holding a dot, a bracket or a space in brackets and quotes, such as tags['lra.securityClassification'].");
         }
 
-        var root = path.Split('.', '[')[0];
+        if (!RecordPathNotation.TryParse(path, out var steps, out var why))
+        {
+            throw new FlowValidationException($"{source}: {at} '{Shown(path)}' is not a path into a record: {why}.");
+        }
+
+        var root = steps[0].Name!;
         if (!RecordRoots.Contains(root))
         {
             throw new FlowValidationException(
@@ -719,7 +730,16 @@ internal static partial class ConditionReader
         _ => Convert.ToString(operand, CultureInfo.InvariantCulture),
     };
 
-    [GeneratedRegex(@"^[A-Za-z_$@][\w$@-]*(\[(\*|\d+)\])*(\.[A-Za-z_$@][\w$@-]*(\[(\*|\d+)\])*)*$", RegexOptions.CultureInvariant)]
+    /// <summary>A name a record path writes bare: a letter, an underscore, <c>$</c> or <c>@</c>, then word characters, <c>$</c>, <c>@</c> and hyphens.</summary>
+    private const string BareName = @"[A-Za-z_$@][\w$@-]*";
+
+    /// <summary>A name in brackets and quotes, single or double, each holding escapes and no control character.</summary>
+    private const string QuotedName = @"\[\s*(?:'(?:[^'\\\x00-\x1f]|\\.)*'|""(?:[^""\\\x00-\x1f]|\\.)*"")\s*\]";
+
+    /// <summary>A step into the items of an array: every item, or one by its place.</summary>
+    private const string ItemStep = @"\[(?:\*|\d+)\]";
+
+    [GeneratedRegex("^(?:" + BareName + "|" + QuotedName + ")(?:" + ItemStep + ")*(?:(?:\\." + BareName + "|\\.?" + QuotedName + ")(?:" + ItemStep + ")*)*$", RegexOptions.CultureInvariant)]
     private static partial Regex PathPattern();
 
     [GeneratedRegex(@"^[A-Za-z][\w-]*--[A-Za-z][\w-]*$", RegexOptions.CultureInvariant)]

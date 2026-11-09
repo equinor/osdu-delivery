@@ -27,6 +27,7 @@ related:
   - delivery-flow-mapping-child
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
+  - delivery-flow-mapping-property-names
   - delivery-concept-preflight
   - delivery-flow-delivery
   - delivery-guide-writing-a-mapping

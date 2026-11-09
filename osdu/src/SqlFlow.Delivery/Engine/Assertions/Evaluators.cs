@@ -859,8 +859,12 @@ internal sealed class GroupEvaluator(int index, GroupAssertion assertion, int ex
         return Result(failures.Count == 0 && !countFails, actual, message, found.Count, failures.Count + (countFails ? 1 : 0), found.Count, failures.Take(Examples).ToList());
     }
 
-    /// <summary>A record path as the search names a field: arrays are not stepped into by name there.</summary>
-    internal static string SearchField(string path) => System.Text.RegularExpressions.Regex.Replace(path, @"\[(\*|\d+)\]", string.Empty);
+    /// <summary>
+    /// A record path as the search names a field: its property names joined by dots, arrays not stepped into by name there
+    /// (<c>data.Curves.CurveID</c> for <c>data.Curves[*].CurveID</c>), and a name in brackets written after its dot, as the
+    /// index names a tag (<c>tags.lra.dataID</c> for <c>tags['lra.dataID']</c>).
+    /// </summary>
+    internal static string SearchField(string path) => RecordPathNotation.SearchName(path) ?? path;
 
     /// <summary>
     /// The field the search aggregates (<see cref="OsduField.AggregateBy"/>): a property of data the schema has indexed as

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Snapshots;
 
 namespace SqlFlow.Delivery.Templates;
@@ -185,6 +186,64 @@ public sealed class OsduTemplate
 
         return null;
     }
+
+    /// <summary>
+    /// Why the template has no variable at <paramref name="path"/>, a path <see cref="Find"/> answers null for, when the
+    /// deepest variable the path goes through tells: a path that runs past a free key of an object that takes any name
+    /// (<c>osdu.tags.lra.securityClassification</c>, where <c>tags</c> takes a text under <c>lra</c>), or a name holding a
+    /// dot, a bracket or a space under an object that declares its properties by name. Null when nothing more is known than
+    /// that the template has no such variable.
+    /// </summary>
+    public string? Missing(TemplatePath path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (Find(path) is not null)
+        {
+            return null;
+        }
+
+        for (var holder = path.Parent; holder is not null; holder = holder.Parent)
+        {
+            if (!_byPath.TryGetValue(holder.Text, out var variable))
+            {
+                continue;
+            }
+
+            var below = path.Segments.Skip(holder.Segments.Count).ToList();
+            if (variable.KeyValueType is { } valueType && below.Count > 1)
+            {
+                var name = string.Join('.', below.Select(s => s.Name));
+                var under = TemplatePath.TextOf(RecordPathNotation.Append(holder.RecordPath, below[0].Name));
+                return $"{holder.Text} takes {Described(valueType)} under each name it holds, so {under} holds no properties of its own. "
+                    + $"A name holding a dot is one key: write '{name}' as one key under {holder.Leaf}, which fills {TemplatePath.TextOf(RecordPathNotation.Append(holder.RecordPath, name))}";
+            }
+
+            var first = below[0].Name;
+            if (variable.Shape is TemplateVariableShape.Group or TemplateVariableShape.GroupList && !RecordPathNotation.IsPlain(first))
+            {
+                // A path written as one key (GeoContexts.FieldID, Curves[].CurveID) the template has when it is read as a path.
+                var meant = TemplatePath.TryParse($"{holder.Text}{(variable.Shape == TemplateVariableShape.GroupList ? "[]" : string.Empty)}.{first}", out var written, out _)
+                    && Find(written!) is not null
+                        ? $"; to write {written!.Text}, nest the properties a path names rather than writing the path"
+                        : string.Empty;
+                return $"{holder.Text} declares its properties by name, and none is called '{first}'. A key is one property name, and a name "
+                    + $"holding a dot, a bracket or a space is written only where the template takes names it does not declare, such as tags or an open object{meant}";
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string Described(string valueType) => valueType switch
+    {
+        "string" => "a text",
+        "integer" => "an integer",
+        "object" or "array" => $"an {valueType}",
+        "any" => "any value",
+        _ => $"a {valueType}",
+    };
 
     /// <summary>Builds the template of a schema.</summary>
     public static OsduTemplate From(SchemaSnapshot schema)

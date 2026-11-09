@@ -27,6 +27,7 @@ related:
   - delivery-flow-mapping-child
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
+  - delivery-flow-mapping-property-names
   - delivery-concept-templates
   - delivery-concept-preflight
   - delivery-flow-delivery
@@ -372,8 +373,12 @@ under a ledger of their own (`ledger:`, see [Ledger identity](interfaces.md#ledg
 **Every word of the mapping language starts with `$`, and every other key is a property of the record.** A template's
 property is therefore never read as the language, whatever it is called, and neither is a column. The `record` block holds
 the record's own properties (`acl`, `legal`, `tags`, `data`, and any other the template declares), and below each the
-properties it holds, nested as the record nests them. A key is one property name, never a dotted path:
-`record.data: 'VerticalMeasurement.VerticalMeasurement' is not a property name. A key in the record is one property of it, so nest the properties a path names rather than writing the path.`
+properties it holds, nested as the record nests them. A key is one property name, never a path: a key holding a dot is
+one name (a tag such as `lra.securityClassification`), which the template takes only where it takes names it does not
+declare, `tags` and an open object ([property names holding a dot](mapping-property-names.md)). Directly under `record`
+such a key is refused as the mapping is read, and under an object that declares its properties the preflight refuses it,
+naming the path it meant:
+`record['data.Name']: 'data.Name' is not a property name. A key in the record is one property of it, so nest the properties a path names rather than writing the path.`
 
 A property is one of these nodes ([mapping values](mapping-values.md) has each in full):
 
@@ -586,6 +591,7 @@ The node, condition and expression messages are on [mapping values](mapping-valu
 - [Mapping expressions](mapping-expressions.md): `$expr`, `$when` and `$where`.
 - [Mapping lookups](mapping-lookups.md) and [mapping modifiers](mapping-modifiers.md).
 - [Mapping assertions](mapping-assertions.md): `$assert`, the rules a property's value must meet.
+- [Property names holding a dot](mapping-property-names.md): a tag such as `lra.securityClassification`, and `tags['...']` in a path.
 - [Mapping $parent](mapping-parent.md): a custom template's records reading sections of their canonical parent.
 - [Mapping $child](mapping-child.md): a canonical record linking the custom records that stand beside it.
 - [Templates](../concepts/templates.md): the template folders a mapping reads, and where `template.version` comes from.

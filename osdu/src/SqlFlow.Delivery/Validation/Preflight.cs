@@ -332,7 +332,9 @@ public static partial class Preflight
         var variable = template.Find(entry.Target);
         if (variable is null)
         {
-            issues.Add(ValidationIssue.Error($"{name} fills a variable that template {template.Kind} version {template.Version} does not have."));
+            issues.Add(ValidationIssue.Error(template.Missing(entry.Target) is { } why
+                ? $"{name} fills a variable that template {template.Kind} version {template.Version} does not have: {why}."
+                : $"{name} fills a variable that template {template.Kind} version {template.Version} does not have."));
             return;
         }
 

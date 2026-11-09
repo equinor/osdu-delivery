@@ -80,7 +80,7 @@ internal sealed partial class ValueTally
 
         foreach (var name in schema.RequiredAt("data"))
         {
-            var target = $"{TemplatePath.Prefix}.data.{name}";
+            var target = TemplatePath.TextOf(RecordPathNotation.Append("data", name));
             if (selection.Covers(target) && !_variables.ContainsKey(target))
             {
                 _variables[target] = new VariableTally(target, null, null, limits);
@@ -143,7 +143,7 @@ internal sealed partial class ValueTally
         var findings = inspection.Assertions;
         foreach (var failure in findings?.Failures ?? [])
         {
-            if (_variables.TryGetValue($"{TemplatePath.Prefix}.{failure.At}", out var asserted))
+            if (_variables.TryGetValue(TemplatePath.TextOf(failure.At), out var asserted))
             {
                 var sample = ItemOf(failure, inspection) is { } item ? basis with { Item = item + 1 } : basis;
                 Note(
@@ -453,19 +453,24 @@ internal sealed partial class ValueTally
     /// </summary>
     private static int? ItemOf(Validation.AssertionFailure failure, RecordInspection inspection)
     {
-        var open = failure.Path.IndexOf('[', StringComparison.Ordinal);
-        var close = open < 0 ? -1 : failure.Path.IndexOf(']', open);
-        if (close < 0 || !int.TryParse(failure.Path.AsSpan(open + 1, close - open - 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var place))
+        if (!RecordPathNotation.TryParse(failure.Path, out var steps, out _))
         {
             return null;
         }
 
+        var at = steps.ToList().FindIndex(step => step.Kind == RecordPathStepKind.Index);
+        if (at <= 0)
+        {
+            return null;
+        }
+
+        var place = steps[at].Index;
         if (failure.Path.StartsWith(DatasetColumn.Prefix + ".", StringComparison.Ordinal))
         {
             return place;
         }
 
-        var array = $"{TemplatePath.Prefix}.{failure.Path[..open]}";
+        var array = TemplatePath.TextOf(RecordPathNotation.Write(steps.Take(at)));
         var written = inspection.Outcomes
             .Where(o => o.Kind == EntryOutcomeKind.Value && o.Item is not null && o.Entry?.Target.Repeater?.Text == array)
             .Select(o => o.Item!.Value)

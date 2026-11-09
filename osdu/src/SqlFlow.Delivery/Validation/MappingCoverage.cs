@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
@@ -83,7 +84,7 @@ public static class MappingCoverage
         var issues = new List<ValidationIssue>();
         foreach (var required in schema.RequiredAt("data"))
         {
-            var target = $"{TemplatePath.Prefix}.data.{required}";
+            var target = TemplatePath.TextOf(RecordPathNotation.Append("data", required));
             var entry = mapping.Entries.FirstOrDefault(e => e.Target.Text == target);
             if (entry is not null)
             {
@@ -96,7 +97,7 @@ public static class MappingCoverage
                 continue;
             }
 
-            var properties = mapping.Entries.Where(e => e.Target.Text.StartsWith(target + ".", StringComparison.Ordinal)).ToList();
+            var properties = mapping.Entries.Where(e => RecordPathNotation.Below(e.Target.Text, target) is { } rest && !rest.StartsWith("[]", StringComparison.Ordinal)).ToList();
             if (properties.Count == 0)
             {
                 issues.Add(ValidationIssue.Error($"{where}: template {mapping.Template.Kind} requires {target}, which the mapping does not fill.", target));
@@ -306,24 +307,26 @@ public static class MappingCoverage
     /// Records what a literal writes below <paramref name="path"/>, given every value it writes there (one for a literal
     /// the entry writes; one per item for the items of a list). An object writes each property it holds a value for, and a
     /// list of objects writes the properties of its items at <c>path[].name</c>. A property every holder carries is written
-    /// as surely as the literal is; one only some of them carry is written for those, so no more than sometimes.
+    /// as surely as the literal is; one only some of them carry is written for those, so no more than sometimes. A property
+    /// whose name holds a dot is one step, written in brackets (<c>osdu.tags['lra.dataID']</c>).
     /// </summary>
     private static void WrittenBy(LiteralWalk walk, string path, IReadOnlyList<JsonNode> values, CoverageState state)
     {
         var objects = values.OfType<JsonObject>().ToList();
         if (objects.Count > 0)
         {
-            WrittenInside(walk, path + ".", objects, state);
+            WrittenInside(walk, path, objects, state);
         }
 
         var items = values.OfType<JsonArray>().SelectMany(list => list).ToList();
         if (items.Count > 0 && items.All(item => item is JsonObject))
         {
-            WrittenInside(walk, path + "[].", items.Cast<JsonObject>().ToList(), state);
+            WrittenInside(walk, path + "[]", items.Cast<JsonObject>().ToList(), state);
         }
     }
 
-    private static void WrittenInside(LiteralWalk walk, string prefix, List<JsonObject> holders, CoverageState state)
+    /// <summary>Records each property <paramref name="holders"/> hold at <paramref name="holder"/>, the template path of the object they are.</summary>
+    private static void WrittenInside(LiteralWalk walk, string holder, List<JsonObject> holders, CoverageState state)
     {
         var names = holders.SelectMany(holder => holder).Where(property => property.Value is not null).Select(property => property.Key)
             .Distinct(StringComparer.Ordinal).ToList();
@@ -331,7 +334,7 @@ public static class MappingCoverage
         {
             var values = holders.Select(holder => holder[name]).OfType<JsonNode>().ToList();
             var reached = values.Count == holders.Count ? state : CoverageState.Sometimes;
-            var path = prefix + name;
+            var path = RecordPathNotation.Append(holder, name);
             walk.Written[path] = Best(walk.Written, path, reached);
 
             // What the literal gives the property, so a view can show it where the property is: each value once, as written.
@@ -367,7 +370,7 @@ public static class MappingCoverage
             var reached = new Dictionary<string, CoverageState>(StringComparer.Ordinal);
             if (part.Static is JsonObject item)
             {
-                LiteralPaths(list.Target.Text + "[].", item, reached, values);
+                LiteralPaths(list.Target.Text + "[]", item, reached, values);
             }
 
             foreach (var property in part.Properties)
@@ -380,7 +383,7 @@ public static class MappingCoverage
 
                 if (property.Static is JsonObject literal)
                 {
-                    LiteralPaths(property.Target.Text + ".", literal, reached, values);
+                    LiteralPaths(property.Target.Text, literal, reached, values);
                 }
                 else if (property.Static is JsonValue value)
                 {
@@ -417,8 +420,8 @@ public static class MappingCoverage
         }
     }
 
-    /// <summary>Every property a literal object holds a value for below <paramref name="prefix"/>, written on every row, with the values it gives them.</summary>
-    private static void LiteralPaths(string prefix, JsonObject literal, Dictionary<string, CoverageState> reached, Dictionary<string, List<string>> values)
+    /// <summary>Every property a literal object at <paramref name="holder"/> holds a value for, written on every row, with the values it gives them.</summary>
+    private static void LiteralPaths(string holder, JsonObject literal, Dictionary<string, CoverageState> reached, Dictionary<string, List<string>> values)
     {
         foreach (var (name, child) in literal)
         {
@@ -427,12 +430,12 @@ public static class MappingCoverage
                 continue;
             }
 
-            var path = prefix + name;
+            var path = RecordPathNotation.Append(holder, name);
             reached[path] = CoverageState.Always;
             switch (child)
             {
                 case JsonObject nested:
-                    LiteralPaths(path + ".", nested, reached, values);
+                    LiteralPaths(path, nested, reached, values);
                     break;
                 case JsonValue value:
                     Add(values, path, ValueText(value));
@@ -464,7 +467,7 @@ public static class MappingCoverage
         foreach (var variable in template.Fillable)
         {
             var below = variable.Path.Text;
-            if (!below.StartsWith(path + ".", StringComparison.Ordinal) && !below.StartsWith(path + "[].", StringComparison.Ordinal))
+            if (below == path || !TemplatePath.IsWithin(below, path))
             {
                 continue;
             }

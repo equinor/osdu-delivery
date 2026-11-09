@@ -5,6 +5,7 @@
 import type {
   DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineHow, MappingOutlineLookup, MappingOutlineNode, MappingOutlineRead, MappingOutlineSource, MappingOutlineStep,
 } from "../../../api/mappingOutline.ts";
+import { outlinePathOf, parsePath } from "../recordPath.ts";
 
 /** What the cache knows of a type, which is what names a table of pairs. */
 export interface CachedTypeFields {
@@ -820,15 +821,24 @@ export function valueAt(record: Record<string, unknown> | null | undefined, path
     return undefined;
   }
 
+  const steps = parsePath(outlinePathOf(path)).steps;
+  if (steps === null) {
+    return undefined;
+  }
+
   let value: unknown = record;
-  for (const step of path.split("|")[0].split(".")) {
+  for (const step of steps) {
     if (value === null || typeof value !== "object") {
       return undefined;
     }
 
-    const array = step.endsWith("[]");
-    const held = (value as Record<string, unknown>)[array ? step.slice(0, -2) : step];
-    value = array ? (Array.isArray(held) ? held[0] : undefined) : held;
+    if (step.kind === "property") {
+      value = Array.isArray(value) ? undefined : (value as Record<string, unknown>)[step.name];
+    } else if (step.kind === "items") {
+      value = Array.isArray(value) ? value[0] : undefined;
+    } else {
+      return undefined;
+    }
   }
 
   return value;

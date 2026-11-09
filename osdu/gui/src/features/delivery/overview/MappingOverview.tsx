@@ -24,6 +24,7 @@ import { ProblemView } from "../TemplateSheet";
 import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
+import { isWithin, outlinePathOf } from "../recordPath";
 import { OverviewCanvas, type OverviewHandlers, type OverviewMenuTarget, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
 import { OverviewExplain } from "./OverviewExplain";
 import { INSPECTOR_WIDTH, OverviewInspector } from "./OverviewInspector";
@@ -367,7 +368,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     const path = opened.current;
     if (path !== null) {
       opened.current = null;
-      const under = placed.rows.filter((row) => row.row.path === path || row.row.path.startsWith(`${path}.`) || row.row.path.startsWith(`${path}[]`) || row.row.path.startsWith(`${path}|`));
+      const under = placed.rows.filter((row) => isWithin(outlinePathOf(row.row.path), path) || row.row.path.startsWith(`${path}|`));
       if (under.length > 0) {
         canvas.current?.revealRows(path, under[under.length - 1].row.path);
       }
@@ -605,7 +606,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     }
 
     if (target.type === "row") {
-      const path = target.path.split("|")[0];
+      const path = outlinePathOf(target.path);
       return {
         named: path,
         items: [
@@ -797,7 +798,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                   onExplain={explainYaml}
                   blockOf={(line) => {
                     const node = nodeAtLine(outline, line);
-                    return node?.line == null || node.endLine == null ? null : { range: { start: node.line, end: node.endLine }, named: node.path.split("|")[0] };
+                    return node?.line == null || node.endLine == null ? null : { range: { start: node.line, end: node.endLine }, named: outlinePathOf(node.path) };
                   }}
                 />
               </ResizablePanel>

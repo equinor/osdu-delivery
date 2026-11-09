@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
 
@@ -94,9 +95,14 @@ public sealed class SchemaRules
 
     private RuleNode? AtUncached(string dottedPath)
     {
+        if (RecordPathNotation.Names(dottedPath) is not { } names)
+        {
+            return null;
+        }
+
         var current = Root;
         RuleNode? result = null;
-        foreach (var segment in dottedPath.Split('.', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var segment in names)
         {
             var next = current.Property(segment);
             if (next is null)

@@ -532,7 +532,8 @@ public class YamlDocumentLoaderTests
         Assert.Contains("record.data.Symbol reads no value", Refused("Symbol: { $required: false }"), StringComparison.Ordinal);
         Assert.Contains("'column a' is not a column", Refused("Symbol: { $from: column a }"), StringComparison.Ordinal);
         Assert.Contains("a column of the dataset's own row is $dataset.a", Refused("Symbol: { $from: dataset.a }"), StringComparison.Ordinal);
-        Assert.Contains("'Curves[].CurveID' is not a property name", Refused("\"Curves[].CurveID\": { $from: a }"), StringComparison.Ordinal);
+        // A key is one property name, whatever it holds; the template refuses one it does not take (DottedPropertyNameTests).
+        Assert.Contains("osdu.data['Curves[].CurveID']", loader.ParseMapping(TestSchema.MappingDocument("\"Curves[].CurveID\": { $from: a }"), "m.yaml").Entries.Select(e => e.Target.Text));
         Assert.Contains("duplicate key", Refused("Name: { $from: other }"), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("lays out $item, the items of an array whose rows a $forEach node repeats", Refused("Curves: { $item: { CurveID: { $from: curve_id } } }"), StringComparison.Ordinal);
         Assert.Contains("'curves.curve_id' is not a column", Refused("Symbol: { $from: curves.curve_id }"), StringComparison.Ordinal);

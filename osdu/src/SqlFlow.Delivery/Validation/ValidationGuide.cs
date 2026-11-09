@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Http;
+using SqlFlow.Delivery.Json;
 
 namespace SqlFlow.Delivery.Validation;
 
@@ -207,19 +208,18 @@ public static class ValidationGuide
         }
         else
         {
+            if (PlaceSteps(body) is not { } steps)
+            {
+                return null;
+            }
+
             var current = rules.Root;
             var holder = current;
             RuleNode? last = null;
             var name = string.Empty;
-            foreach (var segment in body.Split('.'))
+            foreach (var (stepName, inItem) in steps)
             {
-                var inItem = segment.EndsWith("[]", StringComparison.Ordinal);
-                name = inItem ? segment[..^2] : segment;
-                if (name.Length == 0)
-                {
-                    return null;
-                }
-
+                name = stepName;
                 holder = current;
                 last = Declared(current, name);
                 if (last is null)
@@ -282,10 +282,36 @@ public static class ValidationGuide
         => finding.Path.EndsWith(']') && !finding.At.EndsWith("[]", StringComparison.Ordinal) ? finding.At + "[]" : finding.At;
 
     /// <summary>The place of the object holding the property at <paramref name="at"/>; the record's for a property of its own.</summary>
-    private static string HolderOf(string at)
+    private static string HolderOf(string at) => RecordPathNotation.HolderOf(at);
+
+    /// <summary>
+    /// The properties a place as a finding names it walks through (<c>data.Curves[].CurveID</c>, <c>tags['lra.dataID']</c>),
+    /// each with whether the place goes on into its items; null for what is not such a place.
+    /// </summary>
+    private static List<(string Name, bool InItem)>? PlaceSteps(string at)
     {
-        var dot = at.LastIndexOf('.');
-        return dot < 0 ? string.Empty : at[..dot];
+        if (!RecordPathNotation.TryParse(at, out var steps, out _))
+        {
+            return null;
+        }
+
+        var places = new List<(string Name, bool InItem)>(steps.Count);
+        foreach (var step in steps)
+        {
+            switch (step.Kind)
+            {
+                case RecordPathStepKind.Property:
+                    places.Add((step.Name!, false));
+                    break;
+                case RecordPathStepKind.Items when places.Count > 0 && !places[^1].InItem:
+                    places[^1] = (places[^1].Name, true);
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        return places;
     }
 
     /// <summary>The rules of a property an object names, among its own or among the forms a choice allows.</summary>
@@ -527,31 +553,23 @@ public static class ValidationGuide
             return (true, current);
         }
 
-        foreach (var segment in path.Split('.'))
+        if (!RecordPathNotation.TryParse(path, out var steps, out _))
         {
-            var bracket = segment.IndexOf('[', StringComparison.Ordinal);
-            var name = bracket < 0 ? segment : segment[..bracket];
-            if (name.Length > 0)
+            return (false, null);
+        }
+
+        foreach (var step in steps)
+        {
+            switch (step.Kind)
             {
-                if (current is not JsonObject obj || !obj.TryGetPropertyValue(name, out var child))
-                {
+                case RecordPathStepKind.Property when current is JsonObject obj && obj.TryGetPropertyValue(step.Name!, out var child):
+                    current = child;
+                    break;
+                case RecordPathStepKind.Index when current is JsonArray list && step.Index < list.Count:
+                    current = list[step.Index];
+                    break;
+                default:
                     return (false, null);
-                }
-
-                current = child;
-            }
-
-            for (var at = bracket; at >= 0 && at < segment.Length; at = segment.IndexOf('[', at + 1))
-            {
-                var close = segment.IndexOf(']', at);
-                if (close < 0
-                    || !int.TryParse(segment.AsSpan(at + 1, close - at - 1), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
-                    || current is not JsonArray list || index >= list.Count)
-                {
-                    return (false, null);
-                }
-
-                current = list[index];
             }
         }
 
@@ -564,19 +582,19 @@ public static class ValidationGuide
         JsonNode? current = record;
         if (at.Length > 0)
         {
-            foreach (var segment in at.Split('.'))
+            if (PlaceSteps(at) is not { } steps)
             {
-                var inItem = segment.EndsWith("[]", StringComparison.Ordinal);
-                var name = inItem ? segment[..^2] : segment;
-                if (name.Length > 0)
-                {
-                    if (current is not JsonObject obj || !obj.TryGetPropertyValue(name, out var child))
-                    {
-                        return null;
-                    }
+                return null;
+            }
 
-                    current = child;
+            foreach (var (name, inItem) in steps)
+            {
+                if (current is not JsonObject obj || !obj.TryGetPropertyValue(name, out var child))
+                {
+                    return null;
                 }
+
+                current = child;
 
                 if (inItem)
                 {
@@ -727,11 +745,15 @@ public static class ValidationGuide
             return "the record";
         }
 
-        var dot = path.LastIndexOf('.');
-        return dot < 0 ? path : path[(dot + 1)..];
+        return RecordPathNotation.LastName(path);
     }
 
-    private static string Readable(string at) => at.Length == 0 ? "the record" : at.Replace("[]", string.Empty, StringComparison.Ordinal);
+    private static string Readable(string at)
+        => at.Length == 0
+            ? "the record"
+            : RecordPathNotation.TryParse(at, out var steps, out _)
+                ? RecordPathNotation.Write(steps.Where(s => s.Kind != RecordPathStepKind.Items))
+                : at.Replace("[]", string.Empty, StringComparison.Ordinal);
 
     private static string Listed(IReadOnlyList<string> values, int count)
     {

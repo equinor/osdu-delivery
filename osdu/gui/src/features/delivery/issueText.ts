@@ -43,19 +43,23 @@ export interface IssueHeadline {
   reason: string;
 }
 
+// The steps of a template path after osdu, as a hold writes them: each a name after a dot, the step into an array's items, or a
+// name in brackets and quotes, which may hold a dot, a space, a colon or a comma (`.tags['lra.dataID']`).
+const STEPS = String.raw`(?:\.[^\s:,.[\]]+|\[\]|\['(?:[^'\\]|\\.)*'\])+`;
+
 // A render's hold names the template path it holds for first: `osdu.data.X: why`, or `osdu.data.X[].Y, in 3 of 12 items: why`.
-const HEADED = /^osdu\.([^\s:,]+)(?:, ([^:]+))?: ([\s\S]+)$/;
+const HEADED = new RegExp(String.raw`^osdu(${STEPS})(?:, ([^:]+))?: ([\s\S]+)$`);
 
 /** The property an issue's error names first, and what it says of it. */
 export function issueHeadline(text: string): IssueHeadline {
   const match = HEADED.exec(text);
   return match === null
     ? { property: null, scope: null, reason: text }
-    : { property: match[1], scope: match[2] ?? null, reason: match[3] };
+    : { property: match[1].startsWith(".") ? match[1].slice(1) : match[1], scope: match[2] ?? null, reason: match[3] };
 }
 
 // A render holds a record for each reason on its own, joined by "; ": a reason starts where a property heads one.
-const NEXT_HOLD = /; (?=osdu\.[^\s:,]+(?:, [^:]+)?: )/;
+const NEXT_HOLD = new RegExp(String.raw`; (?=osdu${STEPS}(?:, [^:]+)?: )`);
 
 /** The reasons an issue's error joins, each headed by the property it names; one reason for an error naming none. */
 export function issueHolds(text: string): string[] {

@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using SqlFlow.Delivery.Engine.Planning;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Snapshots;
@@ -275,7 +276,7 @@ public sealed partial class ValueChecker
             }
 
             var one = EntrySelection.Of([path!]);
-            var required = schema.RequiredAt("data").Select(name => $"{TemplatePath.Prefix}.data.{name}");
+            var required = schema.RequiredAt("data").Select(name => TemplatePath.TextOf(RecordPathNotation.Append("data", name)));
             if (!mapping.Entries.Any(entry => one.Includes(entry.Target.Text)) && !required.Any(one.Covers))
             {
                 throw new DeliveryException(
@@ -293,23 +294,23 @@ public sealed partial class ValueChecker
             .SelectMany(a => a.Assertion.Where)
             .Select(filter => filter.Field)
             .OfType<string>()
-            .Select(field => FieldBrackets().Replace(field, string.Empty))
+            .Select(SchemaPathOf)
+            .OfType<string>()
             .Distinct(StringComparer.Ordinal)
             .ToList();
         foreach (var field in conditions)
         {
             paths.AddRange(mapping.Entries
-                .Where(entry => entry.Target.SchemaPath == field
-                    || field.StartsWith(entry.Target.SchemaPath + ".", StringComparison.Ordinal)
-                    || entry.Target.SchemaPath.StartsWith(field + ".", StringComparison.Ordinal))
+                .Where(entry => RecordPathNotation.IsWithin(field, entry.Target.SchemaPath) || RecordPathNotation.IsWithin(entry.Target.SchemaPath, field))
                 .Select(entry => entry.Target));
         }
 
         return EntrySelection.Of(paths.Distinct().ToList());
     }
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"\[(\*|\d+)\]", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
-    private static partial System.Text.RegularExpressions.Regex FieldBrackets();
+    /// <summary>A record path a condition reads as the schema names it: its property names, the steps into arrays left out; null for what is not a path.</summary>
+    private static string? SchemaPathOf(string field)
+        => RecordPathNotation.TryParse(field, out var steps, out _) ? RecordPathNotation.Write(steps.Where(s => s.Kind == RecordPathStepKind.Property)) : null;
 
     /// <summary>Why a delivery never renders the row, or null when it does: a row the ingestion table marks deleted, or one the source cannot give whole.</summary>
     private static string? Unfit(SourceRecord record)

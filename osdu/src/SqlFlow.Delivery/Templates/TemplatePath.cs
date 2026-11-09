@@ -1,19 +1,21 @@
-using System.Text.RegularExpressions;
+using SqlFlow.Delivery.Json;
 
 namespace SqlFlow.Delivery.Templates;
 
 /// <summary>One step of a template path: a property name, and whether the path steps into the items of the array it names.</summary>
 public readonly record struct TemplatePathSegment(string Name, bool IntoArray)
 {
-    public override string ToString() => IntoArray ? Name + "[]" : Name;
+    /// <summary>The step as a path writes it after the one before, without the dot before a bare name: <c>Curves[]</c>, <c>['lra.dataID']</c>.</summary>
+    public override string ToString() => RecordPathNotation.Name(Name) + (IntoArray ? "[]" : string.Empty);
 }
 
 /// <summary>
 /// The address of a template variable: <c>osdu.</c> followed by the property path in the OSDU record, with <c>[]</c>
 /// marking the step into an array of objects (<c>osdu.data.Curves[].CurveID</c>). A path steps into at most one array:
-/// a repeater inside a repeated item is not supported.
+/// a repeater inside a repeated item is not supported. A property whose name holds a dot, a bracket or a space is one step,
+/// written in brackets and quotes (<c>osdu.tags['lra.securityClassification']</c>, <see cref="RecordPathNotation"/>).
 /// </summary>
-public sealed partial class TemplatePath : IEquatable<TemplatePath>
+public sealed class TemplatePath : IEquatable<TemplatePath>
 {
     /// <summary>The first word of every template path.</summary>
     public const string Prefix = "osdu";
@@ -21,8 +23,9 @@ public sealed partial class TemplatePath : IEquatable<TemplatePath>
     private TemplatePath(IReadOnlyList<TemplatePathSegment> segments)
     {
         Segments = segments;
-        Text = Prefix + "." + string.Join('.', segments.Select(s => s.ToString()));
-        SchemaPath = string.Join('.', segments.Select(s => s.Name));
+        RecordPath = Write(segments, withItems: true);
+        Text = TextOf(RecordPath);
+        SchemaPath = Write(segments, withItems: false);
     }
 
     public IReadOnlyList<TemplatePathSegment> Segments { get; }
@@ -30,7 +33,10 @@ public sealed partial class TemplatePath : IEquatable<TemplatePath>
     /// <summary>The path as a mapping writes it: <c>osdu.data.Curves[].CurveID</c>.</summary>
     public string Text { get; }
 
-    /// <summary>The dotted path from the record root the schema resolves, arrays stepped into implicitly: <c>data.Curves.CurveID</c>.</summary>
+    /// <summary>The path from the record root, steps into arrays marked: <c>data.Curves[].CurveID</c>, as a check of a record names a place.</summary>
+    public string RecordPath { get; }
+
+    /// <summary>The path from the record root the schema resolves, arrays stepped into implicitly: <c>data.Curves.CurveID</c>.</summary>
     public string SchemaPath { get; }
 
     /// <summary>The first property name after <c>osdu.</c>: <c>data</c>, <c>acl</c>, <c>legal</c>, <c>tags</c>.</summary>
@@ -81,6 +87,45 @@ public sealed partial class TemplatePath : IEquatable<TemplatePath>
         return new TemplatePath(segments.ToList());
     }
 
+    /// <summary>
+    /// A path from the steps a mapping lays out, or why it is not one: every name holds something, the path steps into one
+    /// array at most, and never ends at the items of one.
+    /// </summary>
+    public static bool TryCreate(IReadOnlyList<TemplatePathSegment> segments, out TemplatePath? path, out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(segments);
+        path = null;
+        error = null;
+        if (segments.Count == 0)
+        {
+            error = "a target names at least one property, such as osdu.data.Name";
+            return false;
+        }
+
+        if (segments.Any(s => string.IsNullOrEmpty(s.Name)))
+        {
+            error = "a target names no property with an empty name";
+            return false;
+        }
+
+        var shown = TextOf(Write(segments, withItems: true));
+        if (segments.Count(s => s.IntoArray) > 1)
+        {
+            error = $"target '{shown}' steps into more than one array; a repeater inside a repeated item is not supported";
+            return false;
+        }
+
+        if (segments[^1].IntoArray)
+        {
+            var array = TextOf(Write([.. segments.Take(segments.Count - 1), segments[^1] with { IntoArray = false }], withItems: true));
+            error = $"target '{shown}' names the items of an array; target a property inside them, such as {array}[].Name, or the array itself as {array}";
+            return false;
+        }
+
+        path = new TemplatePath(segments.ToList());
+        return true;
+    }
+
     /// <summary>Parses a path as a mapping writes it, or says why it is not one.</summary>
     public static bool TryParse(string? text, out TemplatePath? path, out string? error)
     {
@@ -93,42 +138,59 @@ public sealed partial class TemplatePath : IEquatable<TemplatePath>
         }
 
         var trimmed = text.Trim();
-        if (!trimmed.StartsWith(Prefix + ".", StringComparison.Ordinal))
+        var rest = trimmed.StartsWith(Prefix + ".", StringComparison.Ordinal)
+            ? trimmed[(Prefix.Length + 1)..]
+            : trimmed.StartsWith(Prefix + "[", StringComparison.Ordinal) ? trimmed[Prefix.Length..] : null;
+        if (rest is null)
         {
             error = $"target '{trimmed}' must start with '{Prefix}.', the template of the OSDU record, such as osdu.data.Name";
             return false;
         }
 
-        var parts = trimmed[(Prefix.Length + 1)..].Split('.');
-        var segments = new List<TemplatePathSegment>(parts.Length);
-        foreach (var part in parts)
+        if (!RecordPathNotation.TryParse(rest, out var steps, out var why))
         {
-            var match = SegmentPattern().Match(part);
-            if (!match.Success)
+            error = $"target '{trimmed}' has an invalid property name: {why}";
+            return false;
+        }
+
+        var segments = new List<TemplatePathSegment>(steps.Count);
+        foreach (var step in steps)
+        {
+            switch (step.Kind)
             {
-                error = $"target '{trimmed}' has an invalid property name '{part}'";
-                return false;
+                case RecordPathStepKind.Property:
+                    segments.Add(new TemplatePathSegment(step.Name!, false));
+                    break;
+                case RecordPathStepKind.Items when !segments[^1].IntoArray:
+                    segments[^1] = segments[^1] with { IntoArray = true };
+                    break;
+                case RecordPathStepKind.Items:
+                    error = $"target '{trimmed}' has an invalid property name: {segments[^1].Name}[][] steps into the items of its items";
+                    return false;
+                default:
+                    error = $"target '{trimmed}' has an invalid property name: {step} names {(step.Kind == RecordPathStepKind.Index ? "one item" : "every item")} of an array, and a target names the items of an array with []";
+                    return false;
             }
-
-            segments.Add(new TemplatePathSegment(match.Groups["name"].Value, match.Groups["array"].Success));
         }
 
-        if (segments.Count(s => s.IntoArray) > 1)
-        {
-            error = $"target '{trimmed}' steps into more than one array; a repeater inside a repeated item is not supported";
-            return false;
-        }
-
-        if (segments[^1].IntoArray)
-        {
-            var array = string.Join('.', segments.Select(s => s.Name));
-            error = $"target '{trimmed}' names the items of an array; target a property inside them, such as {Prefix}.{array}[].Name, or the array itself as {Prefix}.{array}";
-            return false;
-        }
-
-        path = new TemplatePath(segments);
-        return true;
+        return TryCreate(segments, out path, out error);
     }
+
+    /// <summary>
+    /// The template path of a path from the record root as a check of a record names it (<c>tags['lra.dataID']</c>):
+    /// <c>osdu.</c> before a bare first name, <c>osdu</c> before a quoted one.
+    /// </summary>
+    public static string TextOf(string recordPath)
+    {
+        ArgumentNullException.ThrowIfNull(recordPath);
+        return recordPath.StartsWith('[') ? Prefix + recordPath : Prefix + "." + recordPath;
+    }
+
+    /// <summary>
+    /// Whether the variable at <paramref name="inner"/> is the one at <paramref name="outer"/> or lies inside it: a property
+    /// of it, or of its items. Both are template paths as <see cref="Text"/> writes them.
+    /// </summary>
+    public static bool IsWithin(string inner, string outer) => RecordPathNotation.IsWithin(inner, outer);
 
     public bool Equals(TemplatePath? other) => other is not null && string.Equals(Text, other.Text, StringComparison.Ordinal);
 
@@ -137,6 +199,21 @@ public sealed partial class TemplatePath : IEquatable<TemplatePath>
     public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Text);
 
     public override string ToString() => Text;
+
+    private static string Write(IReadOnlyList<TemplatePathSegment> segments, bool withItems)
+    {
+        var path = string.Empty;
+        foreach (var segment in segments)
+        {
+            path = RecordPathNotation.Append(path, segment.Name);
+            if (withItems && segment.IntoArray)
+            {
+                path += "[]";
+            }
+        }
+
+        return path;
+    }
 
     private int IndexOfArrayStep()
     {
@@ -150,7 +227,4 @@ public sealed partial class TemplatePath : IEquatable<TemplatePath>
 
         return -1;
     }
-
-    [GeneratedRegex(@"^(?<name>[^\.\[\]\s]+)(?<array>\[\])?$")]
-    private static partial Regex SegmentPattern();
 }

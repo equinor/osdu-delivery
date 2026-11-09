@@ -486,7 +486,9 @@ distinct references per assertion).
 
 A path is dotted from the record's root, which is one of `id`, `kind`, `version`, `acl`, `legal`, `data`, `tags`,
 `ancestry`, `meta`, `createTime`, `createUser`, `modifyTime` and `modifyUser`. Arrays are crossed implicitly
-(`data.Curves.Mnemonic` is every curve's mnemonic), or with `[*]` or `[n]`. A null is no value.
+(`data.Curves.Mnemonic` is every curve's mnemonic), or with `[*]` or `[n]`. A null is no value. A name holding a dot, a
+bracket or a space is written in brackets and quotes, `tags['lra.securityClassification']`
+([property names holding a dot](mapping-property-names.md)).
 
 ## Bulk data
 

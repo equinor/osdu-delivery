@@ -4,6 +4,7 @@ using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Protocols.Dspdm;
 using SqlFlow.Delivery.Identity;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 
@@ -143,7 +144,7 @@ internal static class RouteRehearsal
 
         notes.Add($"An update copies data.{string.Join(", data.", preserved)} forward from the record OSDU holds (target.protocolOptions.preserveDataKeys), so those keys are sent as that record has them, not as rendered.");
         var linked = linkPaths
-            .Where(link => link.Split('.') is ["data", var key] && preserved.Contains(key, StringComparer.Ordinal))
+            .Where(link => RecordPathNotation.Names(link) is ["data", var key] && preserved.Contains(key, StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal)
             .ToList();
         if (linked.Count > 0)

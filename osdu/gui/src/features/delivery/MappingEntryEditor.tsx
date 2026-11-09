@@ -18,10 +18,11 @@ import { MappingAssertionsSection } from "./MappingAssertionEditor";
 import { ChoiceOrText, FindByLinesEditor, IconAction, ModifierListEditor, Section, type ChoiceOption } from "./MappingEditorParts";
 import { assertionsOf, noAssertionsReason, recordFieldOf, takesAssertions, type AssertionPart } from "./mappingAssertions";
 import {
-  ACCESS_TARGETS, alternativeText, bareColumn, emptyEntry, entryText, findLinesOf, findsOf, ID_MODIFIER_KINDS, inputsFor, KEY_NAME, knownColumns,
+  ACCESS_TARGETS, alternativeText, bareColumn, emptyEntry, entryText, findLinesOf, findsOf, ID_MODIFIER_KINDS, inputsFor, knownColumns,
   MODIFIER_KINDS, moveItem, parseJson, putEntry, repeaterOf, staticModeFor, withinItem, type FindLine, type StaticMode,
 } from "./mappingDraft";
 import { shapeText } from "./templateFormat";
+import { appendName, isPlainName, itemSteps, pathNames, repeaterOfPath } from "./recordPath";
 
 /** What the entry editor edits: the variable, its entry, and the holder when the target is a new key of an object with free keys. */
 export interface EntryEditorTarget {
@@ -275,7 +276,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
 
   const mode: StaticMode = jsonMode ? "json" : typedMode;
   const staticResult = choice === "Static" ? staticJsonOf(mode, staticState, valueVariable) : { json: null, error: null };
-  const newTarget = keyHolder !== null ? `${keyHolder.path}.${keyName.trim()}` : variable.path;
+  const newTarget = keyHolder !== null ? appendName(keyHolder.path, keyName.trim()) : variable.path;
   // Inside the items of an array a child dataset's rows fill, a column reads the item's row; the items of a list of objects
   // read the dataset row, as the record's own properties do.
   const repeatedIn = repeaterOf(newTarget);
@@ -322,7 +323,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
     || (choice === "Parent" && parentValue);
   // The paths of the template, which a custom template copied from its parent shares, offered as the section to take.
   const parentOptions: ChoiceOption[] = variables
-    .filter((candidate) => candidate.role === "Mapping" && candidate.path.startsWith("osdu.data.") && !candidate.path.includes("[]"))
+    .filter((candidate) => candidate.role === "Mapping" && candidate.path.startsWith("osdu.data.") && itemSteps(candidate.path) === 0)
     .map((candidate) => ({ value: candidate.path.slice("osdu.".length), group: "Paths of the template, as its parent's copy holds them" }));
   const childOptions: ChoiceOption[] = childKinds.map((kind) => ({ value: kind, group: "Templates linked to this one" }));
   const buildsId = modifiers.some((modifier) => ID_MODIFIER_KINDS.includes(modifier.kind));
@@ -331,10 +332,10 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
 
   // The variables an item of this list of objects holds, in template order, each a property the item may fill. A list of
   // objects inside the items is left out, since an array inside the items of another is not supported.
-  const itemPrefix = `${variable.path}[].`;
+  const itemPrefix = `${variable.path}[]`;
   const itemVariables = objectItem
-    ? variables.filter((candidate) => candidate.path.startsWith(itemPrefix) && candidate.role === "Mapping" && !candidate.nested
-      && !candidate.path.slice(itemPrefix.length).includes("[]"))
+    ? variables.filter((candidate) => candidate.path.length > itemPrefix.length && candidate.path.startsWith(itemPrefix) && candidate.role === "Mapping" && !candidate.nested
+      && repeaterOfPath(candidate.path) === variable.path && itemSteps(candidate.path) === 1)
     : [];
   const strayProperties = properties.filter((property) => !itemVariables.some((candidate) => candidate.path === property.target));
 
@@ -343,8 +344,6 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
     const name = keyName.trim();
     if (name === "") {
       keyError = "Name the key.";
-    } else if (!KEY_NAME.test(name)) {
-      keyError = "A key name holds no dots, brackets or spaces.";
     } else if (draft.entries.some((candidate) => candidate.target === newTarget)) {
       keyError = `${newTarget} already has an entry.`;
     }
@@ -455,7 +454,8 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
 
     if (next === "Parent") {
       // A custom template is a copy of its parent, so the section most often taken is the one at the variable's own path.
-      if (parentPath.trim() === "" && newTarget.startsWith("osdu.") && !newTarget.includes("[]")) {
+      // A $parent path names plain properties, so a target holding a name in brackets offers none.
+      if (parentPath.trim() === "" && newTarget.startsWith("osdu.") && itemSteps(newTarget) === 0 && !newTarget.includes("[")) {
         setParentPath(newTarget.slice("osdu.".length));
       }
 
@@ -586,7 +586,10 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
         )}
 
         {keyHolder !== null && (
-          <Section title="Key" hint={`A key under ${keyHolder.path}, which takes any key with a ${keyHolder.keyValueType ?? "string"} value.`}>
+          <Section
+            title="Key"
+            hint={`A key under ${keyHolder.path}, which takes any key with a ${keyHolder.keyValueType ?? "string"} value. A name holding a dot, such as lra.securityClassification, is one key.`}
+          >
             <div className="flex items-center gap-1">
               <span className="font-mono text-[12px] text-muted-foreground">{keyHolder.path}.</span>
               <Input
@@ -597,6 +600,11 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
                 data-testid="mapping-builder-entry-key"
               />
             </div>
+            {keyName.trim() !== "" && !isPlainName(keyName.trim()) && (
+              <p className="text-[11px] text-muted-foreground" data-testid="mapping-builder-entry-key-target">
+                One key, which the template names <span className="font-mono">{newTarget}</span>.
+              </p>
+            )}
           </Section>
         )}
 
@@ -707,7 +715,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
                   className="flex items-center gap-2 rounded-md border border-border p-2"
                   data-testid={`mapping-builder-entry-property-${name}`}
                 >
-                  <span className="w-44 shrink-0 break-all font-mono text-[12px]" style={{ paddingLeft: (name.split(".").length - 1) * 12 }}>
+                  <span className="w-44 shrink-0 break-all font-mono text-[12px]" style={{ paddingLeft: ((pathNames(name) ?? name.split(".")).length - 1) * 12 }}>
                     {name}
                   </span>
                   <span className="w-24 shrink-0 text-[11px] text-muted-foreground">{shapeText(property)}</span>
@@ -1226,7 +1234,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
               input: choice,
               required,
               templateRequired: keyHolder === null && variable.required,
-              severalValues: variable.shape === "ValueList" || variable.shape === "GroupList" || newTarget.includes("[]") || findsAll,
+              severalValues: variable.shape === "ValueList" || variable.shape === "GroupList" || itemSteps(newTarget) > 0 || findsAll,
             }}
             columns={known.columns}
             columnPlaceholder={columnPlaceholder}

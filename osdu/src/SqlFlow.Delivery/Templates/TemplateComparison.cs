@@ -261,21 +261,7 @@ public static class TemplateComparer
 
     /// <summary>The variable that holds <paramref name="path"/>, or null for a property of the record itself.</summary>
     private static string? HolderPath(string path)
-    {
-        var dot = path.LastIndexOf('.');
-        if (dot <= 0)
-        {
-            return null;
-        }
-
-        var holder = path[..dot];
-        if (holder.EndsWith("[]", StringComparison.Ordinal))
-        {
-            holder = holder[..^2];
-        }
-
-        return string.Equals(holder, TemplatePath.Prefix.TrimEnd('.'), StringComparison.Ordinal) ? null : holder;
-    }
+        => TemplatePath.TryParse(path, out var parsed, out _) ? parsed!.Parent?.Text : null;
 
     private static Dictionary<string, List<string>> ByName(IEnumerable<string> files)
         => files.Distinct(StringComparer.Ordinal)

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Search;
@@ -327,17 +328,21 @@ public static partial class AssertionTemplates
     /// </summary>
     internal static TemplateVariable? Resolve(OsduTemplate template, string path, string at, string where, ICollection<string> problems)
     {
-        var dotted = Steps().Replace(path, string.Empty);
+        // The path as a template names the property: its names, the steps into arrays left out, each name written as a
+        // template path writes it, so tags['Source'] and tags.Source are one property, and tags['lra.dataID'] one tag.
+        var segments = RecordPathNotation.TryParse(path, out var steps, out _)
+            ? steps.Where(s => s.Kind == RecordPathStepKind.Property).Select(s => s.Name!).ToArray()
+            : Steps().Replace(path, string.Empty).Split('.');
+        var dotted = SchemaPathOf(segments.Length);
         var variable = template.Variables.FirstOrDefault(v => string.Equals(v.Path.SchemaPath, dotted, StringComparison.Ordinal));
         if (variable is not null)
         {
             return variable;
         }
 
-        var segments = dotted.Split('.');
         for (var length = segments.Length - 1; length >= 1; length--)
         {
-            var prefix = string.Join('.', segments.Take(length));
+            var prefix = SchemaPathOf(length);
             var holder = template.Variables.FirstOrDefault(v => string.Equals(v.Path.SchemaPath, prefix, StringComparison.Ordinal));
             if (holder is null)
             {
@@ -360,6 +365,8 @@ public static partial class AssertionTemplates
         var suggestion = Closest(dotted, template.Variables.Select(v => v.Path.SchemaPath));
         problems.Add($"{at}: '{path}' is not a property of {where}{(suggestion is null ? "." : $"; did you mean '{suggestion}'?")}");
         return null;
+
+        string SchemaPathOf(int count) => RecordPathNotation.Write(segments.Take(count).Select(RecordPathStep.OfProperty));
     }
 
     private static void CheckCondition(TemplateVariable variable, string path, ValueCondition condition, string at, string where, ICollection<string> problems)

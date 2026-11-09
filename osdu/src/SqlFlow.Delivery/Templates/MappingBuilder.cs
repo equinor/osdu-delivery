@@ -607,13 +607,14 @@ public static partial class MappingBuilder
         foreach (var (entry, index) in draft.Entries.Select((entry, index) => (entry, index)))
         {
             var target = entry.Target.Trim();
-            if (!TemplatePath.TryParse(target, out _, out var targetError))
+            if (!TemplatePath.TryParse(target, out var parsed, out var targetError))
             {
                 Error(char.ToUpperInvariant(targetError![0]) + targetError[1..] + ".", target);
                 continue;
             }
 
-            if (!seen.Add(target))
+            // One variable, however its target is written: osdu.tags['Source'] is osdu.tags.Source.
+            if (!seen.Add(parsed!.Text))
             {
                 Error($"{target} has more than one entry.", target);
             }

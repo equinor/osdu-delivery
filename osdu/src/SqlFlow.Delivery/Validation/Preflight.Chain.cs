@@ -145,7 +145,7 @@ public static partial class Preflight
             .Select(entry => new Write(
                 entry.Target.Segments.Select(s => s.Name).ToList(),
                 entry.IsRepeater || entry.IsList || schema.Resolve(entry.Target.SchemaPath)?.Type == SchemaType.Array,
-                string.Join('.', entry.Target.Segments.Select(s => s.Name))))
+                entry.Target.SchemaPath))
             .DistinctBy(write => write.Text, StringComparer.Ordinal)
             .ToList();
 

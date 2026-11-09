@@ -115,16 +115,17 @@ internal sealed class SchemaWalk
         return walk.Found;
     }
 
-    /// <summary>Where a walk is: the path every value of the property shares, and the position inside what is checked.</summary>
+    /// <summary>
+    /// Where a walk is: the path every value of the property shares, and the position inside what is checked. A name holding a
+    /// dot, a bracket or a space is one step in brackets (<c>tags['lra.dataID']</c>), as a template path names it.
+    /// </summary>
     internal readonly record struct Place(string At, string Path)
     {
         /// <summary>The place of property <paramref name="name"/> of an object here; an item of a list names its property with [].</summary>
         public Place Property(string name, bool inItem)
-            => new(Join(inItem ? At + "[]" : At, name), Join(Path, name));
+            => new(RecordPathNotation.Append(inItem ? At + "[]" : At, name), RecordPathNotation.Append(Path, name));
 
         public Place Item(int index) => this with { Path = string.Create(CultureInfo.InvariantCulture, $"{Path}[{index}]") };
-
-        private static string Join(string left, string name) => left.Length == 0 ? name : $"{left}.{name}";
     }
 
     /// <summary>What a walk found: the problems and the parts not checked (listed up to the limits, counted exactly), the ids at relationships, and how much it checked.</summary>

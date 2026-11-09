@@ -23,7 +23,7 @@ public static class AssertionQueries
         }
 
         // The range leaves its upper bound out: a date takes in the whole of its day, an instant itself.
-        var clause = OsduQuery.Range(OsduField.Date(field), null, after.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
+        var clause = OsduQuery.Range(OsduField.Date(GroupEvaluator.SearchField(field)), null, after.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
         return OsduSearch.Within(test.Query, clause.Text);
     }
 }

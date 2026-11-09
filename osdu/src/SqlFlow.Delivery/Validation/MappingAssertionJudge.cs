@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using SqlFlow.Delivery.Engine.Assertions;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Templates;
@@ -206,11 +206,14 @@ public static partial class MappingAssertionJudge
         _ => SourceRow.Stringify(raw) is { } text && !string.IsNullOrWhiteSpace(text) ? JsonValue.Create(text) : null,
     };
 
-    /// <summary>A property path as findings name it: the template path without its <c>osdu.</c> (<c>data.Curves[].CurveID</c>).</summary>
+    /// <summary>
+    /// A property path as findings name it: the template path without its <c>osdu.</c> (<c>data.Curves[].CurveID</c>,
+    /// <c>tags['lra.dataID']</c>).
+    /// </summary>
     public static string At(TemplatePath target)
     {
         ArgumentNullException.ThrowIfNull(target);
-        return target.Text[(TemplatePath.Prefix.Length + 1)..];
+        return target.RecordPath;
     }
 
     /// <summary>One assertion over the places a record holds its property: the record, or each item of the array it is in.</summary>
@@ -375,13 +378,13 @@ public static partial class MappingAssertionJudge
     /// </summary>
     private static IReadOnlyList<JsonNode> Selected(JsonObject record, Place place, TemplatePath target, string field)
     {
-        if (place.Item is { } item && target.Repeater is { } repeater && !Indexed().IsMatch(field))
+        if (place.Item is { } item && target.Repeater is { } repeater
+            && RecordPathNotation.TryParse(field, out var steps, out _) && !steps.Any(s => s.Kind == RecordPathStepKind.Index))
         {
-            var dotted = Wildcards().Replace(field, string.Empty);
-            var prefix = repeater.SchemaPath + ".";
-            if (dotted.StartsWith(prefix, StringComparison.Ordinal))
+            var dotted = RecordPathNotation.Write(steps.Where(s => s.Kind != RecordPathStepKind.Wildcard));
+            if (RecordPathNotation.Below(dotted, repeater.SchemaPath) is { } inside && !inside.StartsWith("[]", StringComparison.Ordinal))
             {
-                return RecordValues.Select(item, dotted[prefix.Length..]);
+                return RecordValues.Select(item, inside);
             }
         }
 
@@ -476,14 +479,8 @@ public static partial class MappingAssertionJudge
 
     private static string Shown(JsonNode? value) => value is null ? "(no value)" : RecordValues.Text(value);
 
-    private static string Join(string path, string name) => path.Length == 0 ? name : path + "." + name;
+    private static string Join(string path, string name) => RecordPathNotation.Append(path, name);
 
     /// <summary>One place a record holds a property: the object holding it (null when it is not there), its name, its path, and the item it is in.</summary>
     private readonly record struct Place(JsonObject? Holder, string Name, string Path, JsonObject? Item);
-
-    [GeneratedRegex(@"\[\d+\]", RegexOptions.CultureInvariant)]
-    private static partial Regex Indexed();
-
-    [GeneratedRegex(@"\[\*\]", RegexOptions.CultureInvariant)]
-    private static partial Regex Wildcards();
 }

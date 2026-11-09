@@ -5,6 +5,7 @@
 
 import type { MappingDraftAssertion, MappingDraftAssertionFilter, MappingDraftEntry, MappingDraftInput } from "../../api/delivery";
 import type { AssertionStage } from "../../api/validation";
+import { parsePath, writePath } from "./recordPath";
 
 /** The most assertions one entry states. */
 export const MAX_ENTRY_ASSERTIONS = 20;
@@ -313,8 +314,15 @@ export function assertionConflicts(assertions: readonly MappingDraftAssertion[],
 
 /**
  * A variable's path as a record path a condition of the record stage reads: `data.Curves.CurveID` for
- * `osdu.data.Curves[].CurveID`, arrays crossed implicitly so a field inside the same array reads the same item.
+ * `osdu.data.Curves[].CurveID`, arrays crossed implicitly so a field inside the same array reads the same item, and a name
+ * holding a dot kept in its brackets (`tags['lra.dataID']`).
  */
 export function recordFieldOf(path: string): string {
-  return path.replace(/^osdu\./, "").replaceAll("[]", "");
+  const parsed = parsePath(path);
+  if (parsed.steps === null) {
+    return path.replace(/^osdu\./, "").replaceAll("[]", "");
+  }
+
+  const steps = path.startsWith("osdu.") || path.startsWith("osdu[") ? parsed.steps.slice(1) : parsed.steps;
+  return writePath(steps.filter((step) => step.kind !== "items"));
 }

@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A mapping writes a property whose name holds a dot, such as the tag `lra.securityClassification`, as a key of its own.**
+  A key of the record tree is one name, a dot, a bracket or a space in it included, so such a tag is written beside the
+  record's other tags with its own `$from`, `$required` and `$assert`, rather than built as a whole `tags` object first.
+  The template takes such a name under `tags` and inside an open object; every path names it in brackets
+  (`osdu.tags['lra.securityClassification']`), and a search names it `tags.lra.securityClassification`
+  ([property names holding a dot](osdu/docs/reference/flow/mapping-property-names.md)).
 - **A mapping's YAML on its overview can be explained by the assistant, with the answer beside it.** **Explain** in the
   YAML's heading, or **Explain this** on a line's right-click menu, asks about the lines selected, the property a line
   writes or the whole mapping, and the conversation opens under the canvas, where a table's rows open, rather than in
@@ -556,6 +562,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- A mapping key holding a dot under `data` (`GeoContexts.FieldID:`) is read as one property name and refused by the preflight,
+  `sqlflow check` and the builder, which name the path it meant, rather than refused as the mapping is read, so
+  `sqlflow validate`, which reads no template, no longer reports it; a key holding a dot directly under `record` is still
+  refused as it is read ([property names holding a dot](osdu/docs/reference/flow/mapping-property-names.md)).
 - **A click on a mapping's overview keeps a part lit, and a double click opens its details.** A click on a property, a column,
   a table or a line from one opened the panel over the canvas; it now only lights and shades the part, and a double click or
   Enter opens the panel, which then follows what is clicked until it is closed. Space opens or closes a section, which Enter did

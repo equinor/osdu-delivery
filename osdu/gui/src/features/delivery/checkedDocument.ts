@@ -3,6 +3,7 @@
 // the workbook of its issues as a file to save.
 
 import type { RecordNode } from "./osduRecordModel.ts";
+import { parsePath, writePath, type PathStep } from "./recordPath.ts";
 
 /** How a template path starts; a document's own paths begin at what follows it. */
 const TEMPLATE_PREFIX = "osdu.";
@@ -19,17 +20,56 @@ const WORKBOOK_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheet
  * has no such value, which is what a value left out of it comes to.
  */
 export function pathsOfVariable(document: RecordNode, variable: string): string[] {
-  const wanted = variable.startsWith(TEMPLATE_PREFIX) ? variable.slice(TEMPLATE_PREFIX.length) : variable;
+  const steps = variableSteps(variable);
   const found: string[] = [];
-  const walk = (node: RecordNode) => {
-    if (node.path.replace(/\[\d+\]/g, "[]") === wanted) {
+  const walk = (node: RecordNode, at: number) => {
+    if (at === steps.length) {
       found.push(node.path);
+      return;
     }
 
-    node.children.forEach(walk);
+    const child = node.kind === "object" ? node.children.find((candidate) => candidate.key === steps[at].name) : undefined;
+    if (child === undefined) {
+      return;
+    }
+
+    if (!steps[at].items) {
+      walk(child, at + 1);
+    } else if (child.kind === "array") {
+      child.children.forEach((item) => walk(item, at + 1));
+    }
   };
-  walk(document);
+  if (steps.length > 0) {
+    walk(document, 0);
+  }
+
   return found;
+}
+
+/**
+ * The properties a template variable walks through from the record's root, each with whether it goes on into the items of
+ * the array there: `osdu.data.Aliases[].Name` is data, Aliases and its items, then Name; `osdu.tags['lra.dataID']` is tags,
+ * then the one tag `lra.dataID`. None for what is not a path.
+ */
+function variableSteps(variable: string): { name: string; items: boolean }[] {
+  const parsed = parsePath(variable);
+  if (parsed.steps === null) {
+    return [];
+  }
+
+  const prefixed = variable.startsWith(TEMPLATE_PREFIX) || variable.startsWith(`${TEMPLATE_PREFIX.slice(0, -1)}[`);
+  const steps: { name: string; items: boolean }[] = [];
+  for (const step of prefixed ? parsed.steps.slice(1) : parsed.steps) {
+    if (step.kind === "property") {
+      steps.push({ name: step.name, items: false });
+    } else if (step.kind === "items" && steps.length > 0) {
+      steps[steps.length - 1].items = true;
+    } else {
+      return [];
+    }
+  }
+
+  return steps;
 }
 
 /**
@@ -38,7 +78,7 @@ export function pathsOfVariable(document: RecordNode, variable: string): string[
  * itself cannot show. Empty when every place that could hold it does.
  */
 export function missingFromDocument(document: RecordNode, variable: string): ReadonlyMap<string, string> {
-  const steps = (variable.startsWith(TEMPLATE_PREFIX) ? variable.slice(TEMPLATE_PREFIX.length) : variable).split(".");
+  const steps = variableSteps(variable);
   const missing = new Map<string, string>();
   const walk = (node: RecordNode, at: number) => {
     if (node.kind !== "object") {
@@ -46,17 +86,27 @@ export function missingFromDocument(document: RecordNode, variable: string): Rea
     }
 
     const step = steps[at];
-    const repeated = step.endsWith("[]");
-    const key = repeated ? step.slice(0, -2) : step;
-    const child = node.children.find((candidate) => candidate.key === key);
+    const child = node.children.find((candidate) => candidate.key === step.name);
     if (child === undefined) {
-      missing.set(node.path, steps.slice(at).join("."));
+      missing.set(node.path, lacking(steps.slice(at)));
     } else if (at + 1 < steps.length) {
-      (repeated ? child.children : [child]).forEach((next) => walk(next, at + 1));
+      (step.items ? child.children : [child]).forEach((next) => walk(next, at + 1));
     }
   };
-  walk(document, 0);
+  if (steps.length > 0) {
+    walk(document, 0);
+  }
+
   return missing;
+}
+
+/** What an object lacks, from the property it does not hold on: the name alone for one property, else the path from there. */
+function lacking(steps: readonly { name: string; items: boolean }[]): string {
+  if (steps.length === 1 && !steps[0].items) {
+    return steps[0].name;
+  }
+
+  return writePath(steps.flatMap((step): PathStep[] => (step.items ? [{ kind: "property", name: step.name }, { kind: "items" }] : [{ kind: "property", name: step.name }])));
 }
 
 /**

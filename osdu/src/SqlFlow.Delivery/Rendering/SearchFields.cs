@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Search;
 using SqlFlow.Delivery.Snapshots;
@@ -236,6 +237,11 @@ public static class SearchFields
     public static IndexedShape RecordProperty(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (TagNamed(path) is { } tag)
+        {
+            return tag;
+        }
+
         if (!OsduPath.IsPath(path))
         {
             return IndexedShape.Refused($"'{path}' is not a property path a query can name.");
@@ -267,6 +273,28 @@ public static class SearchFields
         return IndexedShape.Refused(under.Count > 0
             ? $"{path} is not a value the index holds of the record; under {segments[0]} it holds {string.Join(", ", under)}."
             : $"{path} is not a property the index holds of the record. A record's own values are {string.Join(", ", RecordProperties.Keys.Where(k => !k.Contains('.', StringComparison.Ordinal)))}, the ACL, legal, ancestry and index values under them, and a tag as tags.<name>; its data is under data.");
+    }
+
+    /// <summary>
+    /// A tag whose name a path cannot write bare, written in brackets (<c>tags['lra.securityClassification']</c>): the
+    /// flattened map takes a dotted key and the objects it would name alike, so the index holds the tag's value as a keyword
+    /// under its dotted name (<c>tags.lra.securityClassification</c>). A name holding anything a query reads as syntax (a
+    /// space, a colon) cannot be named in a query at all. Null for any other path, which is read as it always has been.
+    /// </summary>
+    private static IndexedShape? TagNamed(string path)
+    {
+        if (!(path.StartsWith(TagsRoot + "[", StringComparison.Ordinal) || path.StartsWith(TagsRoot + ".[", StringComparison.Ordinal))
+            || !RecordPathNotation.TryParse(path, out var steps, out _)
+            || steps is not [{ Kind: RecordPathStepKind.Property }, { Kind: RecordPathStepKind.Property, Name: { } name }])
+        {
+            return null;
+        }
+
+        var field = TagsRoot + "." + name;
+        return OsduPath.IsPath(field)
+            ? new IndexedShape(OsduField.Keyword(field), false, null)
+            : IndexedShape.Refused(
+                $"{path} is a tag whose name holds what a query reads as syntax; the search names a tag by its name after tags., in letters, digits, underscores and dots only, so no query can name this one.");
     }
 
     /// <summary>Whether <paramref name="path"/> names a property of the record's data, which its kind's schema describes.</summary>

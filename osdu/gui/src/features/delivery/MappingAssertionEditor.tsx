@@ -20,6 +20,7 @@ import {
   MAX_ASSERTION_NAME, MAX_ENTRY_ASSERTIONS, newAssertion, omitBlocked, OPERATOR_MEANINGS, operandExample, operandFor, operandProblem,
   recordFieldOf, takesTolerance, toleranceOf, type AssertionNode,
 } from "./mappingAssertions";
+import { isWithin, repeaterOfPath } from "./recordPath";
 import { bareColumn, moveItem } from "./mappingDraft";
 import { assertionActionWord, assertionStageWord } from "./validationModel";
 
@@ -240,8 +241,9 @@ function AssertionForm({ target, number, assertion, others, node, columns, colum
   const fieldsList = `${ids}-fields`;
   // A condition inside a repeated array most often reads another field of the same item, so one of those is the example.
   const ownField = recordFieldOf(target);
-  const itemPrefix = target.includes("[]") ? `${recordFieldOf(target.slice(0, target.lastIndexOf("[]")))}.` : null;
-  const fieldExample = (itemPrefix === null ? undefined : fields.find((field) => field.startsWith(itemPrefix) && field !== ownField)) ?? "data.Name";
+  const repeater = repeaterOfPath(target);
+  const itemHolder = repeater === null ? null : recordFieldOf(repeater);
+  const fieldExample = (itemHolder === null ? undefined : fields.find((field) => field !== ownField && field !== itemHolder && isWithin(field, itemHolder))) ?? "data.Name";
   const reads = filterReads(stage);
 
   const trimmedName = name.trim();

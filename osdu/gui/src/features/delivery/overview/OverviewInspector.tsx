@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../../../api/delivery";
+import { lastStepStart, outlinePathOf } from "../recordPath";
 import type { OverviewPart } from "./OverviewCanvas";
 import { PartLineageButton, SourceGlyph } from "./OverviewLineage";
 import type { PartTarget } from "./partTargets";
@@ -199,7 +200,7 @@ function Way({ flow, node, cards, value, values, onPick }: {
           default:
             return (
               <Stage key={index} last={last} title="Written to">
-                <span className="block min-w-0 font-mono text-[12px] [overflow-wrap:anywhere]">{node.path.split("|")[0]}</span>
+                <span className="block min-w-0 font-mono text-[12px] [overflow-wrap:anywhere]">{outlinePathOf(node.path)}</span>
                 {value !== undefined
                   ? <Shown value={value} />
                   : flow.unverified && <span className="text-[12px] text-muted-foreground">Written even when the cache holds no such record.</span>}
@@ -398,8 +399,9 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
   const node = part?.type === "row" ? nodeAt(outline, part.path) : null;
   const card = part !== null && part.type !== "row" ? cards.find((candidate) => candidate.id === part.source) ?? null : null;
   const preview = card === null ? null : cardPreviewLabel(card);
-  const title = node !== null ? node.path.split("|")[0] : part?.type === "field" ? part.field : card?.title ?? "";
-  const leaf = title.lastIndexOf(".");
+  const title = node !== null ? outlinePathOf(node.path) : part?.type === "field" ? part.field : card?.title ?? "";
+  const leafStart = node !== null ? lastStepStart(title) : title.lastIndexOf(".") + 1;
+  const leaf = leafStart > 0 ? leafStart - 1 : -1;
 
   return (
     <aside

@@ -30,6 +30,7 @@ import {
   type RecordModel, type RecordNode,
 } from "./osduRecordModel";
 import { RecordName } from "./RecordName";
+import { inspectorPath } from "./recordPath";
 import { failureText } from "./answers";
 import { ProblemView, TaskProgress } from "./TemplateSheet";
 
@@ -1079,9 +1080,10 @@ function RecordInspector({ read, level, back, ledgerVersion, onOpenLink, onBack,
     }
   };
   // An element a check names: its branch opened as fields, the value's own branch for a value; the envelope's views for a
-  // value of the record itself, its access and legal.
+  // value of the record itself, its access and legal. A check names a key holding a dot in brackets (tags['lra.dataID']),
+  // which the inspector holds as the step after tags.
   const openPath = (path: string) => {
-    const target = model.byPath.get(path);
+    const target = model.byPath.get(path) ?? model.byPath.get(inspectorPath(path));
     if (target === undefined || (target.kind === "leaf" && target.parent === "")) {
       select(path.startsWith("acl") || path.startsWith("legal") ? ACCESS : RECORD);
       return;
