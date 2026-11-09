@@ -3,9 +3,10 @@
 // the YAML and checks it.
 
 import type {
-  DeliveryCachedType, DeliveryTemplateVariable, MappingDraft, MappingDraftAssertion, MappingDraftEntry, MappingDraftFind, MappingDraftFindAll,
-  MappingDraftInput, MappingDraftModifier, MappingDraftModifierKind,
+  DeliveryCachedType, DeliveryTemplateVariable, MappingDraft, MappingDraftAssertion, MappingDraftEntry, MappingDraftFindAll,
+  MappingDraftInput, MappingDraftModifier, MappingDraftModifierKind, MappingDraftRowRule,
 } from "../../api/delivery";
+import { comparisonsOf, findByPhrase, type DraftFind } from "./findByLines";
 import { assertionText } from "./mappingAssertionText";
 import { holderOfPath, repeaterOfPath } from "./recordPath";
 
@@ -73,31 +74,7 @@ export function moveItem<T>(items: readonly T[], index: number, delta: number): 
   return next;
 }
 
-/** One findBy line as a form edits it: the field compared, and a dataset column or a fixed text. */
-export interface FindLine {
-  field: string;
-  mode: "column" | "text";
-  value: string;
-}
-
-/** A column as the draft stores it: trimmed, and without the dataset. prefix a person may type out of habit. */
-export function bareColumn(text: string): string {
-  return text.trim().replace(/^dataset\./, "");
-}
-
-/** The draft's findBy lines as a form edits them. */
-export function findLinesOf(finds: readonly MappingDraftFind[]): FindLine[] {
-  return finds.map((find): FindLine => (find.literal !== null && find.literal !== ""
-    ? { field: find.field, mode: "text", value: find.literal }
-    : { field: find.field, mode: "column", value: find.column ?? "" }));
-}
-
-/** A form's findBy lines as the draft stores them. */
-export function findsOf(lines: readonly FindLine[]): MappingDraftFind[] {
-  return lines.map((line) => (line.mode === "text"
-    ? { field: line.field.trim(), column: null, literal: line.value }
-    : { field: line.field.trim(), column: bareColumn(line.value), literal: null }));
-}
+export { bareColumn, findLinesOf, findsOf, newFindLine, type FindLine, type FindPart } from "./findByLines";
 
 /** An entry with no settings beyond its target and input. */
 export function emptyEntry(target: string, input: MappingDraftInput): MappingDraftEntry {
@@ -667,8 +644,8 @@ function otherwiseText(modifier: MappingDraftModifier): string {
   }
 }
 
-/** The value one findBy compares: a dataset column, or a fixed text. */
-function operandOf(find: MappingDraftFind): string {
+/** The value one findBy comparison compares with: a dataset column, or a fixed text. */
+function operandOf(find: DraftFind): string {
   return find.literal !== null && find.literal.trim() !== "" ? quoted(find.literal) : `dataset.${find.column ?? ""}`;
 }
 
@@ -690,14 +667,18 @@ export function lookupLines(entry: MappingDraftEntry): string[] {
     ];
   }
 
+  // A line of several comparisons is one line of the lookup: the record must meet every one of them.
   const prefix = entry.input === "Search" ? "search" : "cache";
-  return entry.findBy.map((find) => `${prefix}.${entry.cacheType ?? ""}.${find.field} = ${operandOf(find)}`);
+  return entry.findBy.map((find) => comparisonsOf(find)
+    .map((comparison, index) => `${index === 0 ? `${prefix}.${entry.cacheType ?? ""}.` : ""}${comparison.field} = ${operandOf(comparison)}`)
+    .join(" and "));
 }
 
 /**
- * The lookup as one phrase, the way the renderer words it: the fields that compare the same value run together, and
- * the phrases after the first read as alternatives. `Code/Name/id = dataset.elev_meas_ref`, and empty for an entry
- * that looks nothing up. The cached type or the search is left out: the entry's source already names it.
+ * The lookup as one phrase, the way the renderer words it: the fields that compare the same value run together, a line of
+ * several comparisons reads as them joined by "and", and the phrases after the first read as alternatives.
+ * `Code/Name/id = dataset.elev_meas_ref`, and empty for an entry that looks nothing up. The cached type or the search is
+ * left out: the entry's source already names it.
  */
 export function lookupText(entry: MappingDraftEntry): string {
   if (!looksUp(entry)) {
@@ -708,18 +689,7 @@ export function lookupText(entry: MappingDraftEntry): string {
     return findAllText(entry.findAll);
   }
 
-  const groups: { fields: string[]; operand: string }[] = [];
-  for (const find of entry.findBy) {
-    const operand = operandOf(find);
-    const last = groups.at(-1);
-    if (last !== undefined && last.operand === operand) {
-      last.fields.push(find.field);
-    } else {
-      groups.push({ fields: [find.field], operand });
-    }
-  }
-
-  return groups.map((group) => `${group.fields.join("/")} = ${group.operand}`).join(" or ");
+  return findByPhrase(entry.findBy, operandOf);
 }
 
 /**
@@ -739,7 +709,7 @@ export function knownColumns(draft: MappingDraft): { columns: string[]; children
       children.add(entry.child);
     }
 
-    for (const find of entry.findBy) {
+    for (const find of entry.findBy.flatMap(comparisonsOf)) {
       if (find.column !== null && find.column !== "") {
         columns.add(find.column);
       }
@@ -757,7 +727,7 @@ export function knownColumns(draft: MappingDraft): { columns: string[]; children
     }
   }
 
-  for (const find of draft.lookups.flatMap((lookup) => lookup.findBy)) {
+  for (const find of draft.lookups.flatMap((lookup) => lookup.findBy).flatMap(comparisonsOf)) {
     if (find.column !== null && find.column !== "") {
       columns.add(find.column);
     }
@@ -816,4 +786,17 @@ export function staticModeFor(variable: Pick<DeliveryTemplateVariable, "shape" |
     default:
       return value === undefined || typeof value === "string" ? "text" : "json";
   }
+}
+
+/**
+ * A rule on the rows (`dataset.assert`) as one line: its name, else what it asserts over which rows
+ * (`curves: curve_unit exists`, `count { atLeast: 2 }`, `unique log_name, per run`).
+ */
+export function rowRuleText(rule: MappingDraftRowRule): string {
+  const rows = rule.rows === null ? "" : `${rule.rows}: `;
+  const asserted = rule.kind === "count"
+    ? `count ${rule.count ?? ""}`
+    : rule.kind === "unique" ? `unique ${rule.unique.join(", ")}` : `${rule.column ?? ""} ${rule.operator} ${rule.operand}`;
+  const text = `${rows}${asserted}${rule.per === "run" ? ", per run" : ""}`.trim();
+  return rule.name !== null && rule.name.trim() !== "" ? `${rule.name.trim()} (${text})` : text;
 }

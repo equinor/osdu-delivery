@@ -103,6 +103,9 @@ public sealed record MappingDraft
     /// </summary>
     public string? IdFrom { get; init; }
 
+    /// <summary>The rules on the rows the mapping renders from (<c>dataset.assert</c>), in the order the document writes them.</summary>
+    public IReadOnlyList<MappingDraftRowRule> Rules { get; init; } = [];
+
     public IReadOnlyList<MappingDraftParameter> Parameters { get; init; } = [];
 
     /// <summary>The record sets the mapping's search entries look in.</summary>
@@ -284,13 +287,76 @@ public sealed record MappingDraftAssertion
 }
 
 /// <summary>
+/// One rule on the rows a mapping renders from (<c>dataset.assert</c>, osdu/docs/reference/flow/mapping-dataset-assertions.md),
+/// as the draft holds it: what it judges (<see cref="Kind"/>), over which rows, its condition and settings, each written back
+/// as the document writes it.
+/// </summary>
+public sealed record MappingDraftRowRule
+{
+    public const string ValueKind = "value";
+    public const string CountKind = "count";
+    public const string UniqueKind = "unique";
+
+    /// <summary><c>value</c> (a column and a condition), <c>count</c> or <c>unique</c>.</summary>
+    public string Kind { get; init; } = ValueKind;
+
+    /// <summary><c>record</c> (the default): judged as each record renders; <c>run</c>: once a run, over every row of its scope.</summary>
+    public string Per { get; init; } = MappingMapper.PerRecord;
+
+    /// <summary>The child dataset whose rows it reads; null for the record's own row of the record table.</summary>
+    public string? Rows { get; init; }
+
+    /// <summary>For a value rule: the column judged.</summary>
+    public string? Column { get; init; }
+
+    /// <summary>For a value rule: the condition's operator.</summary>
+    public string Operator { get; init; } = "equals";
+
+    /// <summary>For a value rule: the operand, one line of YAML as it follows the operator.</summary>
+    public string Operand { get; init; } = string.Empty;
+
+    /// <summary>For a count rule: the comparison, one line of YAML as it follows <c>count:</c> (<c>{ atLeast: 2 }</c>, or a number).</summary>
+    public string? Count { get; init; }
+
+    /// <summary>For a unique rule: the columns no two rows share.</summary>
+    public IReadOnlyList<string> Unique { get; init; } = [];
+
+    /// <summary>For a value rule over a child dataset's rows: true when one row has to meet it, false when every row does.</summary>
+    public bool AnyRow { get; init; }
+
+    public bool IgnoreCase { get; init; }
+
+    public double? Tolerance { get; init; }
+
+    /// <summary><c>hold</c> (the default) or <c>report</c>.</summary>
+    public string OnFail { get; init; } = AssertionWords.Hold;
+
+    /// <summary>The conditions selecting the rows it reads; each reads a column (<c>column</c>, or <c>child.column</c> for a child dataset's).</summary>
+    public IReadOnlyList<MappingDraftAssertionFilter> Where { get; init; } = [];
+
+    public string? Name { get; init; }
+
+    public string? Description { get; init; }
+}
+
+/// <summary>
 /// One condition an assertion is judged under: what it reads (<c>field</c>, a path into the record, for the record stage;
 /// <c>column</c>, a column as the draft names one, for the incoming stage), its operator and its operand.
 /// </summary>
 public sealed record MappingDraftAssertionFilter(string Reads, string Path, string Operator, string Operand, bool IgnoreCase = false, double? Tolerance = null);
 
-/// <summary>One findBy line: the cached field, and the column (<c>column</c> or <c>child.column</c>) or literal it must equal.</summary>
-public sealed record MappingDraftFind(string Field, string? Column, string? Literal);
+/// <summary>
+/// One findBy line: the cached field, and the column (<c>column</c> or <c>child.column</c>) or literal it must equal. A line of
+/// a cache entry or a lookup may compare more fields in <see cref="And"/>, each one comparison with none of its own, which a
+/// record must meet together with this one (<c>Well = well_name and Mnemonic = curve_mnemonic</c>); null or empty for a line
+/// of one.
+/// </summary>
+public sealed record MappingDraftFind(string Field, string? Column, string? Literal, IReadOnlyList<MappingDraftFind>? And = null)
+{
+    /// <summary>Every comparison of the line, this one first.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<MappingDraftFind> Comparisons => And is { Count: > 0 } more ? [this, .. more] : [this];
+}
 
 /// <summary>
 /// One modifier: trim, upper, lower, split, replace, equals, date, number or id, with its settings; an id carries its template
@@ -734,7 +800,7 @@ public static partial class MappingBuilder
             error($"{at}: say how a row finds its record with at least one findBy line, such as FacilityName = wellbore_uwi.", target);
         }
 
-        foreach (var find in lookup.FindBy)
+        foreach (var find in lookup.FindBy.SelectMany(line => CompositeIssues(line, at, target, error)))
         {
             if (!FieldPath().IsMatch(find.Field ?? string.Empty) || find.Field!.StartsWith(Marker, StringComparison.Ordinal))
             {
@@ -760,7 +826,7 @@ public static partial class MappingBuilder
             }
         }
 
-        if (lookup.Modifiers.Count > 0 && lookup.FindBy.Count > 0 && lookup.FindBy.All(f => !string.IsNullOrWhiteSpace(f.Literal)))
+        if (lookup.Modifiers.Count > 0 && lookup.FindBy.Count > 0 && lookup.FindBy.SelectMany(f => f.Comparisons).All(f => !string.IsNullOrWhiteSpace(f.Literal)))
         {
             error($"{at}: modifiers change the dataset value a findBy line compares, and every line compares a fixed text; remove the modifiers.", target);
         }
@@ -1162,7 +1228,7 @@ public static partial class MappingBuilder
                     error($"{name}: say which cached record to read with at least one findBy line.", target);
                 }
 
-                foreach (var find in entry.FindBy)
+                foreach (var find in entry.FindBy.SelectMany(line => CompositeIssues(line, name, target, error)))
                 {
                     if (!FieldPath().IsMatch(find.Field ?? string.Empty) || find.Field!.StartsWith(Marker, StringComparison.Ordinal))
                     {
@@ -1193,6 +1259,11 @@ public static partial class MappingBuilder
                 if (entry.FindBy.Count == 0)
                 {
                     error($"{name}: say which record to find with at least one findBy line.", target);
+                }
+
+                if (entry.FindBy.Any(find => find.And is { Count: > 0 }))
+                {
+                    error($"{name}: a search asks the platform for one property at a time, so each findBy line compares one; write each as a line of its own, tried in order.", target);
                 }
 
                 foreach (var find in entry.FindBy)
@@ -1400,6 +1471,15 @@ public static partial class MappingBuilder
             Line("  idFrom: " + Scalar(idFrom));
         }
 
+        if (draft.Rules.Count > 0)
+        {
+            Line("  assert:");
+            foreach (var rule in draft.Rules)
+            {
+                WriteRule(rule, "    ", Line);
+            }
+        }
+
         Line(string.Empty);
         Line("parameters:");
         foreach (var parameter in draft.Parameters)
@@ -1494,6 +1574,7 @@ public static partial class MappingBuilder
             Label = mapping.Dataset.Label,
             Identity = mapping.Dataset.Identity,
             IdFrom = mapping.Dataset.IdFrom == MappingIdSource.Key ? MappingMapper.IdFromKey : null,
+            Rules = mapping.Dataset.Assertions.Select(DraftRule).ToList(),
             Parameters = mapping.Parameters.Select(kv => new MappingDraftParameter(kv.Key, kv.Value.Required, kv.Value.Default, kv.Value.Description)).ToList(),
             Searches = mapping.Searches.Values
                 .OrderBy(s => s.Name, StringComparer.Ordinal)
@@ -1646,7 +1727,57 @@ public static partial class MappingBuilder
         Description = assertion.Description,
     };
 
-    private static MappingDraftFind DraftFind(FindBy find) => new(find.Field, find.Column is null ? null : ColumnText(find.Column), find.Literal);
+    /// <summary>A rule on the rows as the draft holds it: its condition and settings written back as the document writes them.</summary>
+    private static MappingDraftRowRule DraftRule(DatasetAssertion rule) => new()
+    {
+        Kind = rule.Kind switch
+        {
+            DatasetAssertionKind.Count => MappingDraftRowRule.CountKind,
+            DatasetAssertionKind.Unique => MappingDraftRowRule.UniqueKind,
+            _ => MappingDraftRowRule.ValueKind,
+        },
+        Per = rule.Per == DatasetAssertionPer.Run ? MappingMapper.PerRun : MappingMapper.PerRecord,
+        Rows = rule.Rows,
+        Column = rule.Column,
+        Operator = rule.Condition is { } condition ? AssertionText.Of(condition.Operator) : "equals",
+        Operand = rule.Condition is { } written ? ConditionReader.Written(written) : string.Empty,
+        Count = rule.Count is { } count ? CountText(count) : null,
+        Unique = rule.Columns,
+        AnyRow = rule.AnyRow,
+        IgnoreCase = rule.Condition?.IgnoreCase ?? false,
+        Tolerance = rule.Condition?.Tolerance,
+        OnFail = AssertionWords.Of(rule.OnFail),
+        Where = rule.Where
+            .Select(filter => new MappingDraftAssertionFilter(
+                MappingMapper.ColumnSetting,
+                ColumnText(filter.Column!),
+                AssertionText.Of(filter.Condition.Operator),
+                ConditionReader.Written(filter.Condition),
+                filter.Condition.IgnoreCase,
+                filter.Condition.Tolerance))
+            .ToList(),
+        Name = rule.Named ? rule.Label : null,
+        Description = rule.Description,
+    };
+
+    /// <summary>A count's comparison as <c>count:</c> writes it: a number meaning equals, or a map of its terms (<c>{ atLeast: 2, atMost: 5 }</c>).</summary>
+    private static string CountText(Comparison count)
+    {
+        if (count.Terms is [{ Operator: ComparisonOperator.EqualTo } only])
+        {
+            return only.Value.Text;
+        }
+
+        return "{ " + string.Join(", ", count.Terms.Select(term => term.Operator == ComparisonOperator.Between
+            ? $"between: [{term.Value.Text}, {term.Upper!.Text}]"
+            : $"{AssertionText.Of(term.Operator)}: {term.Value.Text}")) + " }";
+    }
+
+    private static MappingDraftFind DraftFind(FindBy find) => new(
+        find.Field,
+        find.Column is null ? null : ColumnText(find.Column),
+        find.Literal,
+        find.IsComposite ? find.And.Select(DraftFind).ToList() : null);
 
     private static MappingDraftModifier DraftModifier(Modifier modifier) => new(
         modifier.Kind.ToString().ToLowerInvariant(),
@@ -2262,6 +2393,87 @@ public static partial class MappingBuilder
     }
 
     /// <summary>
+    /// One rule on the rows, as an item of <c>dataset.assert</c>: its name, then the rows it reads, what it judges, the settings
+    /// that differ from their defaults, its conditions and its description.
+    /// </summary>
+    private static void WriteRule(MappingDraftRowRule rule, string indent, Action<string> line)
+    {
+        var more = indent + "  ";
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(rule.Name))
+        {
+            lines.Add(MappingMapper.NameSetting + ": " + Scalar(rule.Name.Trim()));
+        }
+
+        if (string.Equals(rule.Per?.Trim(), MappingMapper.PerRun, StringComparison.Ordinal))
+        {
+            lines.Add(MappingMapper.PerSetting + ": " + MappingMapper.PerRun);
+        }
+
+        if (!string.IsNullOrWhiteSpace(rule.Rows))
+        {
+            lines.Add(MappingMapper.RowsSetting + ": " + Scalar(rule.Rows.Trim()));
+        }
+
+        switch (rule.Kind?.Trim())
+        {
+            case MappingDraftRowRule.CountKind:
+                lines.Add(MappingMapper.CountSetting + ": " + OneLine(rule.Count));
+                break;
+            case MappingDraftRowRule.UniqueKind:
+                lines.Add(MappingMapper.UniqueSetting + ": [" + string.Join(", ", rule.Unique.Select(c => FlowScalar(c.Trim()))) + "]");
+                break;
+            default:
+                lines.Add(MappingMapper.ColumnSetting + ": " + Scalar((rule.Column ?? string.Empty).Trim()));
+                lines.Add(OneLine(rule.Operator) + ": " + OneLine(rule.Operand));
+                if (rule.IgnoreCase)
+                {
+                    lines.Add("ignoreCase: true");
+                }
+
+                if (rule.Tolerance is { } tolerance)
+                {
+                    lines.Add("tolerance: " + tolerance.ToString("R", CultureInfo.InvariantCulture));
+                }
+
+                if (rule.AnyRow)
+                {
+                    lines.Add(MappingMapper.ValuesSetting + ": any");
+                }
+
+                break;
+        }
+
+        if (!string.Equals(rule.OnFail?.Trim(), AssertionWords.Hold, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(rule.OnFail))
+        {
+            lines.Add(MappingMapper.OnFailSetting + ": " + rule.OnFail.Trim());
+        }
+
+        line(indent + "- " + lines[0]);
+        foreach (var written in lines.Skip(1))
+        {
+            line(more + written);
+        }
+
+        if (rule.Where.Count > 0)
+        {
+            var scope = string.IsNullOrWhiteSpace(rule.Rows) ? null : rule.Rows.Trim();
+            line(more + MappingMapper.WhereSetting + ":");
+            foreach (var filter in rule.Where)
+            {
+                line(more + "  - " + MappingMapper.ColumnSetting + ": " + Scalar(ScopedColumn(filter.Path ?? string.Empty, scope)));
+                line(more + "    " + OneLine(filter.Operator) + ": " + OneLine(filter.Operand));
+                WriteConditionSettings(filter.IgnoreCase, filter.Tolerance, more + "    ", line);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(rule.Description))
+        {
+            line(more + "description: " + Scalar(rule.Description.Trim()));
+        }
+    }
+
+    /// <summary>
     /// A word or an operand of an assertion as one line of YAML: what the draft lacks is reported as an issue, and the YAML
     /// written beside the issues keeps its shape.
     /// </summary>
@@ -2608,13 +2820,46 @@ public static partial class MappingBuilder
     };
 
     /// <summary>A findBy line as the document writes it: the field of the record read, then the column in the entry's scope or a quoted text.</summary>
-    private static string FindByText(MappingDraftFind find, string? scope)
+    /// <summary>
+    /// The comparisons of one findBy line of a cache entry or a lookup, each to be checked as a line of one is, after what a
+    /// line of several may not do is reported: compare a field twice, which no record meets but by holding both values
+    /// under it, or nest comparisons inside a comparison, which the mapping cannot write.
+    /// </summary>
+    private static IReadOnlyList<MappingDraftFind> CompositeIssues(MappingDraftFind line, string at, string? target, Action<string, string?> error)
     {
-        var operand = !string.IsNullOrWhiteSpace(find.Literal)
-            ? QuotedText(find.Literal)
-            : ScopedColumn(find.Column ?? string.Empty, scope);
-        return $"{find.Field?.Trim()} = {operand}";
+        var comparisons = line.Comparisons;
+        if (comparisons.Count == 1)
+        {
+            return comparisons;
+        }
+
+        if (comparisons.Skip(1).Any(comparison => comparison.And is { Count: > 0 }))
+        {
+            error($"{at}: a findBy line compares its fields one after another, joined by and; a comparison holds none of its own.", target);
+        }
+
+        var twice = comparisons
+            .Select(comparison => comparison.Field?.Trim() ?? string.Empty)
+            .Where(field => field.Length > 0)
+            .GroupBy(field => field.StartsWith("data.", StringComparison.Ordinal) ? field["data.".Length..] : field, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (twice is not null)
+        {
+            error($"{at}: findBy compares {twice.Key} twice on one line; a line compares each field once, and a record must meet every comparison of it.", target);
+        }
+
+        return comparisons;
     }
+
+    /// <summary>A findBy line as the mapping writes it: each comparison <c>field = operand</c>, joined by <c>and</c>.</summary>
+    private static string FindByText(MappingDraftFind find, string? scope)
+        => string.Join(" and ", find.Comparisons.Select(comparison =>
+        {
+            var operand = !string.IsNullOrWhiteSpace(comparison.Literal)
+                ? QuotedText(comparison.Literal)
+                : ScopedColumn(comparison.Column ?? string.Empty, scope);
+            return $"{comparison.Field?.Trim()} = {operand}";
+        }));
 
     /// <summary>A fixed text a findBy or find all line compares with, in the quotes that do not occur in it.</summary>
     private static string QuotedText(string text) => text.Contains('\'', StringComparison.Ordinal) ? "\"" + text + "\"" : "'" + text + "'";

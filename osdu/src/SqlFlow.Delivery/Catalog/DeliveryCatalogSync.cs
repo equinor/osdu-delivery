@@ -900,7 +900,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         ChildDatasets = mapping.ChildDatasets,
         Parameters = mapping.Parameters.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList(),
         Entries = mapping.Entries.Count,
-        Assertions = mapping.Assertions().Count(),
+        Assertions = mapping.Assertions().Count() + mapping.Dataset.Assertions.Count,
         LegalTags = mapping.Envelope.LegalTags,
         Countries = mapping.Envelope.OtherRelevantDataCountries,
         Owners = mapping.Envelope.Owners,

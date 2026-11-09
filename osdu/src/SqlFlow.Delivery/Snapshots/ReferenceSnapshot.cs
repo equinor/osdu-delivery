@@ -192,6 +192,10 @@ public sealed class ReferenceType
     // because one snapshot is shared by every render worker of a run. A GetOrAdd race builds the index twice and
     // keeps one; the loser is discarded, which is wasted work rather than a wrong answer.
     private readonly ConcurrentDictionary<string, FieldIndex> _indexes = new(StringComparer.OrdinalIgnoreCase);
+
+    // The combinations of fields findBy lines compare together, each indexed on first use as a single field is, by the
+    // fields' names joined by a line break, which no field name holds.
+    private readonly ConcurrentDictionary<string, CompositeIndex> _composites = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, bool> _recordIdPaths = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string>? _fieldNames;
     private Dictionary<string, ReferenceItem>? _byId;
@@ -299,7 +303,7 @@ public sealed class ReferenceType
     }
 
     /// <summary>
-    /// The item whose <paramref name="field"/> holds <paramref name="value"/>, as <see cref="Find"/> matches it: null
+    /// The item whose <paramref name="field"/> holds <paramref name="value"/>, as <see cref="Find(string, string, bool)"/> matches it: null
     /// when nothing matches, and when the value names several items.
     /// </summary>
     public ReferenceItem? Match(string field, string value, bool ignoreSeparators = false)
@@ -329,12 +333,241 @@ public sealed class ReferenceType
         return value is null ? ReferenceMatch.None : Index(field).Lookup(value.Trim(), ignoreSeparators);
     }
 
+    /// <summary>
+    /// Matches several values at once, each against its own field: the item that holds every one of them, as a findBy line
+    /// written with <c>and</c> asks (<c>Well = well_name and Mnemonic = curve_mnemonic</c>). One comparison is
+    /// <see cref="Find(string, string, bool)"/>.
+    /// <para>
+    /// The tiers are a single field's, applied to the comparisons together: the items holding every value exactly, then,
+    /// only when no item does, the items holding every value once case is ignored, then, only with
+    /// <paramref name="ignoreSeparators"/> and only when that finds none either, the items holding every value once
+    /// punctuation and spacing are folded away too. Exactly one item at the first tier that finds any is the match; several
+    /// match none of them and are listed, as several answering one value are. A field holding a set meets a comparison when
+    /// any one of its values does.
+    /// </para>
+    /// <para>
+    /// Each combination of fields a line compares is indexed the first time a line asks for it, as a single field is: every
+    /// item under the values it holds at those fields together, so a lookup is one probe however common each value is alone.
+    /// The index lives with this version of the type, for the combinations mappings compare, and is built again from the
+    /// next version a render loads; nothing of it is stored. A combination an item holds more than
+    /// <see cref="MaxCombinationsPerItem"/> sets of values under (sets at several fields multiply) is not indexed, and is
+    /// matched by reading the items the rarest of its values names instead, which finds the same items.
+    /// </para>
+    /// </summary>
+    public ReferenceMatch Find(IReadOnlyList<(string Field, string Value)> comparisons, bool ignoreSeparators = false)
+    {
+        ArgumentNullException.ThrowIfNull(comparisons);
+        if (comparisons.Count == 0)
+        {
+            throw new ArgumentException("A match compares at least one field.", nameof(comparisons));
+        }
+
+        if (comparisons.Count == 1)
+        {
+            return Find(comparisons[0].Field, comparisons[0].Value, ignoreSeparators);
+        }
+
+        var asked = new List<(string Field, string Value)>(comparisons.Count);
+        foreach (var (field, value) in comparisons)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(field);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return ReferenceMatch.None;
+            }
+
+            asked.Add((ReferenceField.Normalize(field), value.Trim()));
+        }
+
+        var fields = asked.Select(a => a.Field).ToArray();
+        var values = asked.Select(a => a.Value).ToArray();
+        var index = _composites.GetOrAdd(string.Join('\n', fields), _ => BuildComposite(fields));
+        var tiers = ignoreSeparators
+            ? new[] { ReferenceMatchKind.Exact, ReferenceMatchKind.IgnoringCase, ReferenceMatchKind.IgnoringSeparators }
+            : [ReferenceMatchKind.Exact, ReferenceMatchKind.IgnoringCase];
+        foreach (var tier in tiers)
+        {
+            var holders = index.IsIndexed ? index.Holders(values, tier) : Holding(asked, tier);
+            if (holders.Count == 1)
+            {
+                return ReferenceMatch.Of(holders[0], tier);
+            }
+
+            if (holders.Count > 1)
+            {
+                return new ReferenceMatch(null, holders, tier);
+            }
+        }
+
+        return ReferenceMatch.None;
+    }
+
+    /// <summary>
+    /// The most sets of values one item may hold under a combination of fields for the combination to be indexed. A field
+    /// holding a set gives one per value, and sets at several fields multiply (ten aliases beside ten names are a hundred),
+    /// so a combination some item holds more of is matched by <see cref="Holding"/> instead of growing the index without
+    /// bound.
+    /// </summary>
+    public const int MaxCombinationsPerItem = 64;
+
+    /// <summary>
+    /// The index of one combination of fields (<see cref="CompositeIndex"/>): each item under every set of values it holds
+    /// at those fields together, exactly and without case, and with punctuation and spacing folded away on first use.
+    /// <see cref="CompositeIndex.Unindexed"/> when an item holds more than <see cref="MaxCombinationsPerItem"/> sets.
+    /// </summary>
+    private CompositeIndex BuildComposite(string[] fields)
+    {
+        var exact = new Dictionary<string[], object>(TermsComparer.Ordinal);
+        var folded = new Dictionary<string[], object>(TermsComparer.IgnoringCase);
+        foreach (var item in _items)
+        {
+            if (Combinations(item, fields, fold: false) is not { } sets)
+            {
+                return CompositeIndex.Unindexed;
+            }
+
+            foreach (var set in sets)
+            {
+                FieldIndex.Add(exact, set, item);
+                FieldIndex.Add(folded, set, item);
+            }
+        }
+
+        return new CompositeIndex(exact, folded, () =>
+        {
+            var separated = new Dictionary<string[], object>(TermsComparer.Ordinal);
+            foreach (var item in _items)
+            {
+                foreach (var set in Combinations(item, fields, fold: true) ?? [])
+                {
+                    FieldIndex.Add(separated, set, item);
+                }
+            }
+
+            return separated;
+        });
+    }
+
+    /// <summary>
+    /// Every set of values <paramref name="item"/> holds at <paramref name="fields"/> together, one value per field, in the
+    /// order of the fields: none when it holds nothing at one of them, and null when it holds more than
+    /// <see cref="MaxCombinationsPerItem"/>. With <paramref name="fold"/> each value is folded as
+    /// <see cref="ReferenceKeyFold.Separators"/> folds it, and one that folds to nothing is left out, as the single-field
+    /// index leaves it out.
+    /// </summary>
+    private List<string[]>? Combinations(ReferenceItem item, string[] fields, bool fold)
+    {
+        var sets = new List<string[]> { new string[fields.Length] };
+        for (var i = 0; i < fields.Length; i++)
+        {
+            var terms = (TermsOf(item, fields[i]) ?? [])
+                .Select(term => fold ? ReferenceKeyFold.Separators(term) : term)
+                .Where(term => term.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (terms.Count == 0)
+            {
+                return [];
+            }
+
+            if ((long)sets.Count * terms.Count > MaxCombinationsPerItem)
+            {
+                return null;
+            }
+
+            var grown = new List<string[]>(sets.Count * terms.Count);
+            foreach (var set in sets)
+            {
+                foreach (var term in terms)
+                {
+                    var next = (string[])set.Clone();
+                    next[i] = term;
+                    grown.Add(next);
+                }
+            }
+
+            sets = grown;
+        }
+
+        return sets;
+    }
+
+    /// <summary>
+    /// The terms <paramref name="item"/> holds under <paramref name="field"/>, as the field's index is built from them
+    /// (<see cref="Terms"/>): its values, or for the record id the id and its code; null when it holds nothing there.
+    /// </summary>
+    private IReadOnlyList<string>? TermsOf(ReferenceItem item, string field)
+        => Value(item, field) is not { } held ? null : MeansRecordId(field) ? RecordIdTerms(item.Id).ToList() : held.Terms;
+
+    /// <summary>
+    /// The items, in snapshot order, that meet every comparison at <paramref name="tier"/>, for a combination too wide to
+    /// index: the comparison whose value the fewest items hold names the candidates, and each is kept when it holds every
+    /// other comparison's value too, compared as that tier compares.
+    /// </summary>
+    private List<ReferenceItem> Holding(List<(string Field, string Value)> asked, ReferenceMatchKind tier)
+    {
+        var candidates = new IReadOnlyList<ReferenceItem>[asked.Count];
+        var fewest = 0;
+        for (var i = 0; i < asked.Count; i++)
+        {
+            candidates[i] = Index(asked[i].Field).Holders(asked[i].Value, tier);
+            if (candidates[i].Count == 0)
+            {
+                return [];
+            }
+
+            if (candidates[i].Count < candidates[fewest].Count)
+            {
+                fewest = i;
+            }
+        }
+
+        var held = new List<ReferenceItem>();
+        foreach (var item in candidates[fewest])
+        {
+            var meetsAll = true;
+            for (var i = 0; i < asked.Count && meetsAll; i++)
+            {
+                meetsAll = i == fewest || Holds(item, asked[i].Field, asked[i].Value, tier);
+            }
+
+            if (meetsAll)
+            {
+                held.Add(item);
+            }
+        }
+
+        return held;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="item"/> holds <paramref name="value"/> under <paramref name="field"/> as <paramref name="tier"/>
+    /// compares: the terms the field's index is built from (<see cref="Terms"/>), compared ordinally, without case, or folded
+    /// as <see cref="ReferenceKeyFold.Separators"/> folds them, exactly as the index itself finds them.
+    /// </summary>
+    private bool Holds(ReferenceItem item, string field, string value, ReferenceMatchKind tier)
+    {
+        if (TermsOf(item, field) is not { } terms)
+        {
+            return false;
+        }
+
+        if (tier == ReferenceMatchKind.IgnoringSeparators)
+        {
+            var key = ReferenceKeyFold.Separators(value);
+            return key.Length > 0 && terms.Any(term => string.Equals(ReferenceKeyFold.Separators(term), key, StringComparison.Ordinal));
+        }
+
+        var comparison = tier == ReferenceMatchKind.Exact ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        return terms.Any(term => string.Equals(term, value, comparison));
+    }
+
     /// <summary>True when two or more items hold exactly the same value under this field, so matching on it is order-dependent.</summary>
     public bool IsAmbiguous(string field) => Index(field).Ambiguous;
 
     /// <summary>
     /// Every item whose <paramref name="field"/> holds <paramref name="value"/> (trimmed) without regard to case, in
-    /// snapshot order: a field holding a set is held by an item when any one of its values is. Where <see cref="Find"/>
+    /// snapshot order: a field holding a set is held by an item when any one of its values is. Where <see cref="Find(string, string, bool)"/>
     /// names the one record a value stands for, this reads every record keyed by it: the access groups a data office lists
     /// for a field, however many there are. None when nothing holds the value.
     /// </summary>
@@ -616,6 +849,111 @@ public sealed class ReferenceType
     }
 
     /// <summary>
+    /// One combination of fields' index (<see cref="BuildComposite"/>): each set of values the items hold at those fields
+    /// together, exactly and without case, naming one item as itself or several as a list, in snapshot order; and, built on
+    /// first use, the sets with punctuation and spacing folded away. <see cref="Unindexed"/> stands for a combination
+    /// matched by reading candidates instead.
+    /// </summary>
+    private sealed class CompositeIndex
+    {
+        private readonly Dictionary<string[], object>? _exact;
+        private readonly Dictionary<string[], object>? _folded;
+        private readonly Func<Dictionary<string[], object>>? _buildSeparated;
+        private Dictionary<string[], object>? _separated;
+
+        public CompositeIndex(Dictionary<string[], object>? exact, Dictionary<string[], object>? folded, Func<Dictionary<string[], object>>? buildSeparated)
+        {
+            _exact = exact;
+            _folded = folded;
+            _buildSeparated = buildSeparated;
+        }
+
+        /// <summary>A combination some item holds too many sets of values under to index (<see cref="MaxCombinationsPerItem"/>).</summary>
+        public static CompositeIndex Unindexed { get; } = new(null, null, null);
+
+        public bool IsIndexed => _exact is not null;
+
+        /// <summary>
+        /// Every distinct item holding <paramref name="values"/> at the combination's fields together as
+        /// <paramref name="tier"/> compares, in snapshot order: exactly, without case, or with punctuation and spacing folded
+        /// away too. None for values one of which folds to nothing.
+        /// </summary>
+        public IReadOnlyList<ReferenceItem> Holders(string[] values, ReferenceMatchKind tier)
+        {
+            if (_exact is null || _folded is null || _buildSeparated is null)
+            {
+                throw new InvalidOperationException("A combination that is not indexed is matched by reading its candidates.");
+            }
+
+            switch (tier)
+            {
+                case ReferenceMatchKind.Exact:
+                    return FieldIndex.Items(_exact, values);
+                case ReferenceMatchKind.IgnoringCase:
+                    return FieldIndex.Items(_folded, values);
+                case ReferenceMatchKind.IgnoringSeparators:
+                    var folded = values.Select(ReferenceKeyFold.Separators).ToArray();
+                    if (folded.Any(value => value.Length == 0))
+                    {
+                        return [];
+                    }
+
+                    // Built once and shared by every render worker; a race builds it twice and keeps one.
+                    return FieldIndex.Items(LazyInitializer.EnsureInitialized(ref _separated, _buildSeparated), folded);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(tier), tier, "Items are held by values exactly, without case, or folded.");
+            }
+        }
+    }
+
+    /// <summary>Compares two sets of values element by element, each pair as one string comparer compares them.</summary>
+    private sealed class TermsComparer : IEqualityComparer<string[]>
+    {
+        private readonly StringComparer _comparer;
+
+        private TermsComparer(StringComparer comparer) => _comparer = comparer;
+
+        public static TermsComparer Ordinal { get; } = new(StringComparer.Ordinal);
+
+        public static TermsComparer IgnoringCase { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public bool Equals(string[]? x, string[]? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null || x.Length != y.Length)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < x.Length; i++)
+            {
+                if (!_comparer.Equals(x[i], y[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public int GetHashCode(string[] obj)
+        {
+            ArgumentNullException.ThrowIfNull(obj);
+            var hash = new HashCode();
+            foreach (var value in obj)
+            {
+                hash.Add(value, _comparer);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+
+    /// <summary>
     /// One field's index: its terms exactly, the terms several items hold, and the terms under folded case, each naming one
     /// item as itself or several as a list; and, built on first use, the terms with punctuation and spacing folded away.
     /// </summary>
@@ -647,7 +985,8 @@ public sealed class ReferenceType
         /// added. Items are added as <see cref="ReferenceType.Terms"/> gives them, every term of one item before the next
         /// item's, so an item the key already names is the last it names, and only the last is compared.
         /// </summary>
-        public static void Add(Dictionary<string, object> index, string key, ReferenceItem item)
+        public static void Add<TKey>(Dictionary<TKey, object> index, TKey key, ReferenceItem item)
+            where TKey : notnull
         {
             if (!index.TryGetValue(key, out var held))
             {
@@ -668,6 +1007,33 @@ public sealed class ReferenceType
 
         /// <summary>Every distinct item holding the term under folded case, in snapshot order.</summary>
         public IReadOnlyList<ReferenceItem> All(string term) => Items(_folded, term);
+
+        /// <summary>
+        /// Every distinct item holding the term as <paramref name="tier"/> compares, in snapshot order: exactly, without case,
+        /// or with punctuation and spacing folded away too. None for a term that folds to nothing.
+        /// </summary>
+        public IReadOnlyList<ReferenceItem> Holders(string term, ReferenceMatchKind tier)
+        {
+            switch (tier)
+            {
+                case ReferenceMatchKind.Exact:
+                    return _duplicates.TryGetValue(term, out var holders) ? holders
+                        : _exact.TryGetValue(term, out var item) ? [item]
+                        : [];
+                case ReferenceMatchKind.IgnoringCase:
+                    return Items(_folded, term);
+                case ReferenceMatchKind.IgnoringSeparators:
+                    if (ReferenceKeyFold.Separators(term) is not { Length: > 0 } key)
+                    {
+                        return [];
+                    }
+
+                    // Built once and shared by every render worker; a race builds it twice and keeps one.
+                    return Items(LazyInitializer.EnsureInitialized(ref _separatorFolded, _buildSeparatorFolded), key);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(tier), tier, "Items are held by a term exactly, without case, or folded.");
+            }
+        }
 
         public ReferenceMatch Lookup(string term, bool ignoreSeparators)
         {
@@ -707,7 +1073,8 @@ public sealed class ReferenceType
                 : new ReferenceMatch(null, folded, ReferenceMatchKind.IgnoringSeparators);
         }
 
-        private static IReadOnlyList<ReferenceItem> Items(Dictionary<string, object> index, string key) => index.TryGetValue(key, out var held)
+        public static IReadOnlyList<ReferenceItem> Items<TKey>(Dictionary<TKey, object> index, TKey key)
+            where TKey : notnull => index.TryGetValue(key, out var held)
             ? held switch
             {
                 ReferenceItem one => [one],

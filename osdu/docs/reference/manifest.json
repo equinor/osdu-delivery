@@ -5569,6 +5569,7 @@
         "delivery-flow-mapping-child",
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-assertions",
+        "delivery-flow-mapping-dataset-assertions",
         "delivery-flow-mapping-property-names",
         "delivery-concept-templates",
         "delivery-concept-preflight",
@@ -5632,6 +5633,7 @@
       "yamlPath": "(documentType: mapping) record.<property>.$assert",
       "related": [
         "delivery-flow-mapping-values",
+        "delivery-flow-mapping-dataset-assertions",
         "delivery-flow-mapping",
         "delivery-flow-assertion",
         "delivery-concept-preflight",
@@ -5726,6 +5728,60 @@
         "osdu/tests/SqlFlow.Delivery.Tests/ChildRenderTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildRecordReadTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildLedgerTests.cs",
+        "osdu/docs/census/keys.mapping.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-mapping-dataset-assertions",
+      "corpus": "reference",
+      "path": "flow/mapping-dataset-assertions.md",
+      "title": "Rules on the incoming rows (dataset.assert): what the rows a mapping renders from must hold",
+      "type": "flow-reference",
+      "summary": "Rules a mapping states on the rows it renders from: a column of each row, how many child rows, values no two rows share, per record or over the run.",
+      "keywords": [
+        "dataset.assert",
+        "rule on the incoming rows",
+        "row rule",
+        "incoming record set",
+        "child rows count",
+        "unique rows",
+        "duplicate rows in the run",
+        "per: run",
+        "rows: curves",
+        "unique: [curve_id]",
+        "count: { atLeast: 2 }",
+        "assertion on a column",
+        "held for a rule on the rows"
+      ],
+      "yamlPath": "(documentType: mapping) dataset.assert",
+      "related": [
+        "delivery-flow-mapping-assertions",
+        "delivery-flow-mapping",
+        "delivery-flow-delivery",
+        "delivery-flow-assertion",
+        "delivery-concept-preflight",
+        "delivery-concept-explorer",
+        "delivery-cli-values"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.DatasetAssertions.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DatasetAssertion.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/DatasetAssertionJudge.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/RunRowsFindings.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/MappingAssertionJudge.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/ValueChecker.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionLoaderTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionRenderTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionRunTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/RunRowsFindingsTests.cs",
         "osdu/docs/census/keys.mapping.json"
       ]
     },
@@ -5850,6 +5906,7 @@
         "delivery-concept-partition-cache",
         "delivery-concept-change-detection",
         "delivery-concept-preflight",
+        "delivery-flow-mapping-lookups-composite",
         "delivery-wiki-pattern-catalog"
       ],
       "sourceRefs": [
@@ -5868,6 +5925,44 @@
         "osdu/src/SqlFlow.Delivery.Search/OsduQuery.cs",
         "osdu/src/SqlFlow.Delivery.Search/ServiceParser.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/AccessListTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-mapping-lookups-composite",
+      "corpus": "reference",
+      "path": "flow/mapping-lookups-composite.md",
+      "title": "A findBy line of several comparisons: finding a cached record by several fields together, joined by and",
+      "type": "flow-reference",
+      "summary": "A $findBy line joined by and finds the cached record holding every value: a lookup table keyed by one column, read by several of its columns.",
+      "keywords": [
+        "composite lookup",
+        "lookup by several columns",
+        "multi-column join",
+        "$findBy and",
+        "identity key",
+        "lookup table key",
+        "composite key",
+        "findBy several fields"
+      ],
+      "yamlPath": "(documentType: mapping) record.<property>.$findBy, lookups.<name>.$findBy",
+      "related": [
+        "delivery-flow-mapping-lookups",
+        "delivery-guide-lookup-table-cache",
+        "delivery-flow-cache",
+        "delivery-concept-partition-cache",
+        "delivery-concept-change-detection",
+        "delivery-concept-preflight",
+        "delivery-table-cache-set-entry"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs"
       ]
     },
     {
@@ -7089,6 +7184,8 @@
         "ingestion table",
         "cache",
         "mapping",
+        "identity key",
+        "several key columns",
         "json",
         "csv",
         "types[].table",
@@ -7099,6 +7196,7 @@
       ],
       "related": [
         "delivery-flow-cache",
+        "delivery-flow-mapping-lookups-composite",
         "delivery-concept-partition-cache",
         "delivery-flow-dictionary",
         "delivery-flow-mapping-modifiers",
@@ -11385,6 +11483,34 @@
       ]
     },
     {
+      "id": "delivery-wiki-0051-lookups-match-several-fields-on-one-line",
+      "corpus": "wiki",
+      "path": "decisions/0051-lookups-match-several-fields-on-one-line.md",
+      "title": "Decision 0051: a lookup matches several fields on one findBy line, and a cached type keeps one key",
+      "type": "decision",
+      "summary": "Why a record is found by several fields joined by and on one $findBy line, not by a composite key, and how its misses and its index are kept.",
+      "keywords": [
+        "composite lookup",
+        "multi-column join",
+        "identity key",
+        "findBy and",
+        "composite miss",
+        "composite index"
+      ],
+      "related": [
+        "delivery-wiki-0009-searched-references",
+        "delivery-wiki-0044-findings-say-why-and-prove-it"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs"
+      ]
+    },
+    {
       "id": "delivery-wiki-linked-canonical-and-custom-records",
       "corpus": "wiki",
       "path": "patterns/linked-canonical-and-custom-records.md",
@@ -11452,7 +11578,8 @@
         "delivery-wiki-0038-download-flow",
         "delivery-wiki-0028-renamed-pipelines-move-their-ledger",
         "delivery-wiki-0036-enrich-in-the-mapping",
-        "delivery-wiki-0037-request-correlation"
+        "delivery-wiki-0037-request-correlation",
+        "delivery-wiki-0051-lookups-match-several-fields-on-one-line"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",

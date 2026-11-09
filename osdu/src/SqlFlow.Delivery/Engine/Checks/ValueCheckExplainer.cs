@@ -77,6 +77,11 @@ public static class ValueCheckExplainer
                     : $"{Joined(cause.Columns.Select(Code).ToList(), "and")} are empty";
             case ValueCheckCause.IdNotHeld:
                 return $"The cache holds no {Code(cause.EntityType ?? Joined(cause.Types, "or"))} record {Named(values.Select(IdCode).ToList(), others)}";
+            case ValueCheckCause.NoMatch when cause.Together:
+                return $"No {Code(First(cause.Types, "record"))} in the cache holds {Joined(cause.Fields.Select(Code).ToList(), "and")} together as {Named(values, others)}"
+                    + (cause.IgnoreSeparators ? ", even with punctuation and spacing ignored" : string.Empty);
+            case ValueCheckCause.Ambiguous when cause.Together:
+                return $"{Named(values, others)} at {Joined(cause.Fields.Select(Code).ToList(), "and")} together matches {cause.Candidates.Count.ToString(CultureInfo.InvariantCulture)} {Code(First(cause.Types, "cached"))} records ({string.Join(", ", cause.Candidates.Select(Code))}), so none is taken";
             case ValueCheckCause.NoMatch:
                 return $"No {Code(First(cause.Types, "record"))} in the cache has {Fields(cause)} equal to {Named(values, others)}"
                     + (cause.IgnoreSeparators ? ", even with punctuation and spacing ignored" : string.Empty);

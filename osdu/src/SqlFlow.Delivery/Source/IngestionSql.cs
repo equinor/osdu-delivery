@@ -420,6 +420,75 @@ public static class IngestionSql
     }
 
     /// <summary>
+    /// How many rows of the record table the run's scope holds, not marked deleted: what a <c>count</c> rule judged once a run
+    /// compares (osdu/docs/reference/flow/mapping-dataset-assertions.md). Every row of the scope, whatever window a read fixed.
+    /// </summary>
+    public static string RunCount(IngestionLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        var predicates = RunScope(layout);
+        return $"SELECT COUNT_BIG(*) FROM {RecordRows(layout)} r{(predicates.Count == 0 ? string.Empty : " WHERE " + string.Join(" AND ", predicates))};";
+    }
+
+    /// <summary>
+    /// The rows of the record table in the run's scope, not marked deleted, that share the values of <paramref name="columns"/>
+    /// with another such row: each row's record key (first, in key order), its values in the columns, and how many rows hold
+    /// the same values; at most <c>@top</c> of them, ordered by the values, and in the last column how many there are in all.
+    /// A row with no value in one of the columns (null, or blank text) is compared with none. Text compares exactly, by a binary
+    /// collation, as a <c>unique</c> rule compares a record's rows of a child dataset.
+    /// </summary>
+    /// <param name="layout">The read's layout.</param>
+    /// <param name="columns">The rule's columns, each with whether it holds text.</param>
+    public static string RunShared(IngestionLayout layout, IReadOnlyList<(string Name, bool Text)> columns)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(columns);
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException("A comparison of shared values names at least one column.", nameof(columns));
+        }
+
+        var predicates = RunScope(layout);
+        predicates.AddRange(columns.Select(c => c.Text
+            ? $"NULLIF(LTRIM(RTRIM(r.{SourceObjectName.Quote(c.Name)})), N'') IS NOT NULL"
+            : $"r.{SourceObjectName.Quote(c.Name)} IS NOT NULL"));
+        var keys = layout.Key.Select((k, i) => $"r.{SourceObjectName.Quote(k.Name)} AS k{i.ToString(CultureInfo.InvariantCulture)}");
+        var values = columns.Select((c, i) => $"r.{SourceObjectName.Quote(c.Name)} AS v{i.ToString(CultureInfo.InvariantCulture)}");
+        var partition = columns.Select(c => c.Text ? $"r.{SourceObjectName.Quote(c.Name)} COLLATE Latin1_General_100_BIN2" : $"r.{SourceObjectName.Quote(c.Name)}");
+        var keyNames = string.Join(", ", layout.Key.Select((_, i) => "k" + i.ToString(CultureInfo.InvariantCulture)));
+        var valueNames = string.Join(", ", columns.Select((_, i) => "v" + i.ToString(CultureInfo.InvariantCulture)));
+        return $"""
+            WITH compared AS (
+                SELECT {string.Join(", ", keys.Concat(values))}, COUNT_BIG(*) OVER (PARTITION BY {string.Join(", ", partition)}) AS sharing
+                FROM {RecordRows(layout)} r
+                WHERE {string.Join(" AND ", predicates)}
+            )
+            SELECT TOP ({TopParameter}) {keyNames}, {valueNames}, sharing, COUNT_BIG(*) OVER () AS shared_rows
+            FROM compared
+            WHERE sharing > 1
+            ORDER BY {valueNames}, {keyNames};
+            """;
+    }
+
+    /// <summary>The predicates every row a rule judged once a run reads meets: the run's scope, and not marked deleted.</summary>
+    private static List<string> RunScope(IngestionLayout layout)
+    {
+        var predicates = new List<string>();
+        var scope = ScopePredicate(layout, "r");
+        if (scope.Length > 0)
+        {
+            predicates.Add(scope);
+        }
+
+        if (layout.Deleted is { } deleted)
+        {
+            predicates.Add($"r.{SourceObjectName.Quote(deleted)} IS NULL");
+        }
+
+        return predicates;
+    }
+
+    /// <summary>
     /// One page of the record table's keys in the scope, with each row's change moment, its value in the order the read pages
     /// in, and, when the table carries the soft-delete column, when it was marked deleted (the last columns), resuming after the
     /// previous page's last value: every row, whatever its moment. The rows the flow's filter keeps (<see cref="SourceKeyRead.Read"/>),

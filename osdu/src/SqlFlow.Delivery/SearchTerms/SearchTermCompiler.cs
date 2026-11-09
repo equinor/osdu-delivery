@@ -266,12 +266,15 @@ public static class SearchTermCompiler
         return modifiers.All(m => m.Kind is ModifierKind.Trim or ModifierKind.Number or ModifierKind.Date) ? SearchRouteKeeps.Order : SearchRouteKeeps.Value;
     }
 
-    /// <summary>The lines of a node's <c>findBy</c> that compare a column, grouped by the column they compare.</summary>
+    /// <summary>
+    /// The lines of a node's <c>findBy</c> that compare a column, grouped by the column they compare: a line of several
+    /// comparisons is listed under each column it compares.
+    /// </summary>
     private static IEnumerable<(DatasetColumn Column, IReadOnlyList<FindBy> Lines)> LinesByColumn(MappingEntry node)
         => node.FindBy
-            .Where(line => line.Column is not null)
-            .GroupBy(line => line.Column!)
-            .Select(group => (group.Key, (IReadOnlyList<FindBy>)group.ToList()));
+            .SelectMany(line => line.Comparisons.Where(c => c.Column is not null).Select(c => (Column: c.Column!, Line: line)))
+            .GroupBy(pair => pair.Column)
+            .Select(group => (group.Key, (IReadOnlyList<FindBy>)group.Select(pair => pair.Line).Distinct().ToList()));
 
     /// <summary>
     /// Where a cache node finds its record and what it reads of it, in the record's own paths, from the cached type a cache
@@ -281,6 +284,14 @@ public static class SearchTermCompiler
     private static (SearchRouteFind? Find, string? Problem) CacheFind(MappingSource source, IReadOnlyList<FindBy> lines, Func<string, SearchCacheType?> cacheTypes)
     {
         var typeName = source.CacheType ?? string.Empty;
+        if (lines.FirstOrDefault(line => line.IsComposite) is { } together)
+        {
+            // A record found by several values at once is not found by one of them: a search for one value would name
+            // every record that shares it.
+            var columns = together.Comparisons.Select(c => c.Column is { } column ? column.ToString() : $"'{c.Literal}'");
+            return (null, $"its {typeName} record is found by {string.Join(" and ", columns)} together, which one value cannot stand for");
+        }
+
         if (cacheTypes(typeName) is not { } type)
         {
             return (null, $"the cached type {typeName} is declared by no cache flow of the repository");

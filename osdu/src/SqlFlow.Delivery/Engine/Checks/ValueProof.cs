@@ -237,6 +237,16 @@ public sealed class ValueProver
     /// <summary>The step that reads the partition's cache, or null when the finding is not about the cache or the cache is not one SQL reads.</summary>
     private ValueProofStep? CacheStep(ValueProofRequest request, ValueCheckCause cause, List<string> notes)
     {
+        if (cause.Together && cause.Kind == ValueCheckCause.NoMatch)
+        {
+            // The cache step counts the records holding each value at the fields compared, and 0 proves none holds it. Values
+            // a line compared together are each held by some record as often as not; what is missing is a record holding
+            // them all, which a count of each does not show, so no step claims to prove it.
+            notes.Add(
+                $"The values were looked up together, on a findBy line comparing {string.Join(" and ", cause.Fields)}, so the proof has no step of the cache: a count of the records holding each value would not show that none holds them all.");
+            return null;
+        }
+
         if (CacheQuery(request, cause, ScriptRows) is not { } query)
         {
             if (cause.Kind is ValueCheckCause.IdNotHeld or ValueCheckCause.NoMatch or ValueCheckCause.Ambiguous or ValueCheckCause.NoType or ValueCheckCause.FieldEmpty)

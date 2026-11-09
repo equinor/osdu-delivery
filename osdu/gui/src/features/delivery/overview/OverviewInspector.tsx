@@ -3,7 +3,7 @@ import { Check, KeyRound, ShieldCheck, SlidersHorizontal, Table2, X } from "luci
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../../../api/delivery";
+import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode, MappingOutlineRowRule } from "../../../api/delivery";
 import { lastStepStart, outlinePathOf } from "../recordPath";
 import type { OverviewPart } from "./OverviewCanvas";
 import { PartLineageButton, SourceGlyph } from "./OverviewLineage";
@@ -78,7 +78,11 @@ function Compared({ stage, cards, values, onPick }: {
   const sources = new Set(lines.map((line) => line.operand.read?.source ?? null));
   const [only] = sources;
   const against = sources.size === 1 && only !== null && only !== undefined ? sourceName(cards, only) : "Compared with";
+  // A leading column numbers the lines, tried in turn, when there are several, and says "and" before a comparison that
+  // joins the one before it on the same line.
   const numbered = lines.length > 1;
+  const lineCount = lines.filter((line) => !line.and).length;
+  const lineNumbers = lines.map((_, index) => lines.slice(0, index + 1).filter((line) => !line.and).length);
   // A row's value is shown once, at the first line comparing its column: the lines after it compare the same value.
   const shownAt = new Map<string, number>();
   lines.forEach((line, index) => {
@@ -102,7 +106,11 @@ function Compared({ stage, cards, values, onPick }: {
         const read = line.operand.read;
         return (
           <Fragment key={`${index}-${line.field}`}>
-            {numbered && <span className="text-[11px] text-muted-foreground tabular-nums">{index + 1}</span>}
+            {numbered && (
+              <span className="text-[11px] text-muted-foreground tabular-nums" data-testid="mapping-overview-compared-mark">
+                {line.and ? "and" : lineCount > 1 ? lineNumbers[index] : ""}
+              </span>
+            )}
             <FieldButton source={lookup.source} field={line.field} cards={cards} onPick={onPick} />
             <span className="font-mono text-[12px] text-muted-foreground">=</span>
             <span className="min-w-0" data-testid="mapping-overview-compared-operand">
@@ -291,6 +299,36 @@ function RowPanel({ node, cards, lines, values, onPick }: {
   );
 }
 
+/** What breaking a rule on the rows does, and when it is judged. */
+function ruleOutcome(rule: MappingOutlineRowRule): string {
+  const when = rule.per === "run" ? "Judged once a run, over every row of its scope." : "Judged as each record renders.";
+  return `${when} ${rule.onFail === "report" ? "A record that breaks it is sent, and the failure recorded." : "A record that breaks it is held."}`;
+}
+
+/** Rules a mapping states on the rows it renders from (`dataset.assert`), as the rules on a value are listed. */
+function RowRules({ title, rules }: { title: string; rules: readonly MappingOutlineRowRule[] }) {
+  if (rules.length === 0) {
+    return null;
+  }
+
+  return (
+    <Section title={title}>
+      <ul className="flex min-w-0 flex-col gap-1.5" data-testid="mapping-overview-row-rules">
+        {rules.map((rule) => (
+          <li key={rule.label} className="flex min-w-0 items-start gap-1.5 text-[12px]">
+            <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0">
+              <span className="font-medium">{rule.label}</span>
+              <span className="block font-mono text-[11.5px] text-muted-foreground [overflow-wrap:anywhere]">{rule.expected}</span>
+              <span className="block text-muted-foreground">{ruleOutcome(rule)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
 /** A property that reads a field, as a link to it. */
 function PropertyLink({ node, onPick }: { node: MappingOutlineNode; onPick: (part: OverviewPart) => void }) {
   return (
@@ -310,6 +348,7 @@ function PropertyLink({ node, onPick }: { node: MappingOutlineNode; onPick: (par
 function FieldPanel({ card, name, outline, value, onPick }: { card: OutlineCard; name: string; outline: MappingOutline; value: string | undefined; onPick: (part: OverviewPart) => void }) {
   const field = card.fields.find((candidate) => candidate.name === name);
   const readers = readersOf(outline, card.id, name);
+  const rules = (outline.dataset.rules ?? []).filter((rule) => rule.reads.some((read) => read.source === card.id && read.field === name));
   return (
     <>
       <p className="text-[12.5px] text-muted-foreground">
@@ -328,15 +367,18 @@ function FieldPanel({ card, name, outline, value, onPick }: { card: OutlineCard;
           <ul className="flex min-w-0 flex-col">{readers.map((node) => <PropertyLink key={node.path} node={node} onPick={onPick} />)}</ul>
         </Section>
       )}
+      <RowRules title="Rules reading it" rules={rules} />
     </>
   );
 }
 
 function CardPanel({ card, outline, onPick }: { card: OutlineCard; outline: MappingOutline; onPick: (part: OverviewPart) => void }) {
   const readers = readersOf(outline, card.id, null);
+  const rules = (outline.dataset.rules ?? []).filter((rule) => rule.source === card.id);
   return (
     <>
       <p className="text-[12.5px] text-muted-foreground">{card.source.detail ?? card.role}</p>
+      <RowRules title="Rules on these rows" rules={rules} />
       {readers.length > 0 && (
         <Section title={`Reaches ${readers.length} ${readers.length === 1 ? "property" : "properties"}`}>
           <ul className="flex min-w-0 flex-col" data-testid="mapping-overview-readers">{readers.map((node) => <PropertyLink key={node.path} node={node} onPick={onPick} />)}</ul>

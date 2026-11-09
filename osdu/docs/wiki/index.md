@@ -258,6 +258,9 @@ other packages adopt the same contract.
 - [0050: a large dimension build is spread over nodes, a share of its dimensions on each](decisions/0050-dimension-builds-over-nodes.md):
   why a build is split by its dimensions, sized by the records they read, why the splitting run builds the largest part
   and the views, and why neither the flow's file nor one dimension is split.
+- [0051: a lookup matches several fields on one findBy line, and a cached type keeps one key](decisions/0051-lookups-match-several-fields-on-one-line.md):
+  why a table no one column tells apart is keyed by an identity column and read by a line joined by `and`, why a miss is
+  recorded by all its values together, and why the index for it lives in memory, not in the database.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

@@ -166,6 +166,19 @@ public sealed class EditorCensusTests
             .Concat(MappingMapper.AssertionQuantities);
         var unnamed = words.Where(word => !grammar.Contains(word, StringComparison.Ordinal)).ToList();
         Assert.True(unnamed.Count == 0, $"record.<name> does not describe: {string.Join(", ", unnamed)}");
+
+        // A rule on the rows is read by hand too, so its free-form entry names each of its words and the conditions it takes.
+        var rule = Keys(Census("keys.mapping.json")).Single(k => k["path"]!.GetValue<string>() == "dataset.assert[]");
+        Assert.True(rule["freeForm"]?.GetValue<bool>() ?? false, "dataset.assert[] is a rule the mapper reads by hand.");
+        var ruleGrammar = rule["description"]!.GetValue<string>();
+        var ruleWords = MappingMapper.DatasetAssertionSettings
+            .Concat(MappingMapper.DatasetAssertionPers)
+            .Concat(MappingMapper.DatasetAssertionActions)
+            .Concat(MappingMapper.AssertionQuantities)
+            .Concat(ConditionReader.Operators.Where(o => o != "resolves"))
+            .Append(MappingMapper.DatasetReference + ".<column>");
+        var ruleUnnamed = ruleWords.Where(word => !ruleGrammar.Contains(word, StringComparison.Ordinal)).ToList();
+        Assert.True(ruleUnnamed.Count == 0, $"dataset.assert[] does not describe: {string.Join(", ", ruleUnnamed)}");
     }
 
     [Fact]

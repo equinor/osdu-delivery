@@ -19,7 +19,7 @@ import { ChoiceOrText, FindByLinesEditor, IconAction, ModifierListEditor, Sectio
 import { assertionsOf, noAssertionsReason, recordFieldOf, takesAssertions, type AssertionPart } from "./mappingAssertions";
 import {
   ACCESS_TARGETS, alternativeText, bareColumn, emptyEntry, entryText, findLinesOf, findsOf, ID_MODIFIER_KINDS, inputsFor, knownColumns,
-  MODIFIER_KINDS, moveItem, parseJson, putEntry, repeaterOf, staticModeFor, withinItem, type FindLine, type StaticMode,
+  MODIFIER_KINDS, moveItem, newFindLine, parseJson, putEntry, repeaterOf, staticModeFor, withinItem, type FindLine, type StaticMode,
 } from "./mappingDraft";
 import { shapeText } from "./templateFormat";
 import { appendName, isPlainName, itemSteps, pathNames, repeaterOfPath } from "./recordPath";
@@ -487,7 +487,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
 
       setCacheField("id");
       if (findBy.length === 0 || previous === "Cache") {
-        setFindBy([{ field: "", mode: "column", value: "" }]);
+        setFindBy([newFindLine("")]);
       }
 
       return;
@@ -504,7 +504,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
 
     if (findBy.length === 0 || previous === "Search") {
       const fields = repoTypes.find((candidate) => candidate.name === type)?.fields ?? [];
-      setFindBy([{ field: fields[0] ?? "id", mode: "column", value: "" }]);
+      setFindBy([newFindLine(fields[0] ?? "id")]);
     }
   };
 
@@ -955,13 +955,14 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
             title="Find the record by"
             hint={choice === "Search"
               ? "Tried in order. Each line asks the platform for the one record whose property is exactly the value, and the first that finds one wins. Several matching records, or a value that cannot be asked for, hold the record."
-              : "Tried in order. The first line that finds a record wins, and several matching records hold the record."}
+              : "Tried in order. The first line that finds a record wins, and several matching records hold the record. A line may compare several fields, each added with +: the record has to meet them all."}
             fieldOptions={choice === "Search" ? searchedFields : fieldOptions}
             fieldPlaceholder={choice === "Search" ? "data.FacilityName" : "Cached field"}
             newField={choice === "Search" ? "" : typeFields[0] ?? "id"}
             columnsList={columnsList}
             columnPlaceholder={columnPlaceholder}
             emptyText={choice === "Search" ? "Add at least one line, or no record can be searched for." : "Add at least one line, or no cached record can be found."}
+            allowAnd={choice === "Cache"}
             testId="mapping-builder-entry-findby"
           >
             {choice === "Cache" && (

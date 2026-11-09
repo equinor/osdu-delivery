@@ -2,10 +2,11 @@ import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { deliveryApi, type DeliveryCacheGap } from "../../api/delivery";
 import { PagedTable, type Column } from "@/components/PagedTable";
+import { compositeLookedUp } from "./findByLines";
 
 /** What each kind of gap means for the records built without it, as the table's tooltip says it. */
 const GAP_MEANING: Record<string, string> = {
-  unlisted: "No cached record answered to the value, so the records were built without one: a wellbore the cache does not hold yet.",
+  unlisted: "No cached record answered to the value, or to the values a line compared together, so the records were built without one: a wellbore the cache does not hold yet.",
   listed: "No row was listed under any key a $findAll read (a wellbore's field, every one of its countries): a field or a country no access group lists yet.",
   unverified: "The records reference an id the cache holds no record under, written because the mapping says $unverified.",
   empty: "The path read held nothing, so the records were built without a value there: a wellbore without a field, or an empty field a $findAll asked for.",
@@ -47,12 +48,18 @@ export function DeliveryCacheGaps({ scope, type }: { scope: string; type: string
       header: "Looked for",
       fill: true,
       floor: 260,
-      render: (gap) => (
-        <span className="min-w-0 truncate font-mono text-[12.5px]" title={`${gap.path} = ${gap.value || gap.key}`}>
-          <span className="text-muted-foreground">{gap.path} = </span>
-          {gap.kind === "unlisted" && gap.value ? gap.value : gap.key}
-        </span>
-      ),
+      render: (gap) => {
+        // Values a findBy line of several comparisons looked up together, which no row met all of.
+        const together = gap.kind === "unlisted" ? compositeLookedUp(gap.path, gap.value) : null;
+        return together !== null
+          ? <span className="min-w-0 truncate font-mono text-[12.5px]" title={together}>{together}</span>
+          : (
+            <span className="min-w-0 truncate font-mono text-[12.5px]" title={`${gap.path} = ${gap.value || gap.key}`}>
+              <span className="text-muted-foreground">{gap.path} = </span>
+              {gap.kind === "unlisted" && gap.value ? gap.value : gap.key}
+            </span>
+          );
+      },
     },
     {
       id: "records",

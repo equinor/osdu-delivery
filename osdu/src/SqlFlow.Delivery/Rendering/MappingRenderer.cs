@@ -299,6 +299,7 @@ public sealed class MappingRenderer
 
         var (document, key, sourceKey, targetId) = Start(record, holds);
         searched.OwnerId = targetId;
+        JudgeRows(record, searched.Assertions);
         Assemble(document, new RowValues(this, record, holds, usages, searched), holds);
         var asserted = Assert(document, searched.Assertions);
 
@@ -408,8 +409,23 @@ public sealed class MappingRenderer
     /// <summary>The assertions the mapping states, each with the node that states it, in document order.</summary>
     public IReadOnlyList<(MappingEntry Entry, NodeAssertion Assertion)> Assertions => _assertions;
 
-    /// <summary>A log for what one record's assertions find, or null when the mapping states none.</summary>
-    private Validation.AssertionLog? AssertionsLog() => _assertions.Count == 0 ? null : new Validation.AssertionLog(_mapping.Reference);
+    /// <summary>A log for what one record's assertions find, or null when the mapping states none its render judges.</summary>
+    private Validation.AssertionLog? AssertionsLog()
+        => _assertions.Count == 0 && !_mapping.Dataset.Assertions.Any(r => r.Per == DatasetAssertionPer.Record)
+            ? null
+            : new Validation.AssertionLog(_mapping.Reference);
+
+    /// <summary>
+    /// Judges the mapping's rules on the rows a record renders from, each record's own (<c>dataset.assert</c>,
+    /// osdu/docs/reference/flow/mapping-dataset-assertions.md): before anything is written, since they read the rows alone.
+    /// </summary>
+    private void JudgeRows(SourceRecord record, Validation.AssertionLog? log)
+    {
+        if (log is not null && _mapping.Dataset.Assertions.Count > 0)
+        {
+            Validation.DatasetAssertionJudge.Judge(record, _mapping.Dataset.Assertions, log);
+        }
+    }
 
     /// <summary>
     /// Judges the mapping's record-stage assertions on the record as it was assembled and leaves out what those that failed
@@ -447,6 +463,13 @@ public sealed class MappingRenderer
         var searched = new RenderTrail { Assertions = AssertionsLog(), NotesMisses = true };
         var trail = new InspectionTrail(selection);
         var (document, key, sourceKey, _) = Start(record, holds);
+
+        // The rules on the rows are the record's as a whole, so an inspection of every entry judges them as a render does.
+        if (selection.IsAll)
+        {
+            JudgeRows(record, searched.Assertions);
+        }
+
         Assemble(document, new RowValues(this, record, holds, [], searched), holds, trail);
 
         // The record-stage assertions of the entries evaluated are judged on what they wrote; nothing is left out, so each

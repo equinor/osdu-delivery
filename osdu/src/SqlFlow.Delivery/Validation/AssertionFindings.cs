@@ -272,6 +272,20 @@ public sealed class AssertionLog
     public void Fail(string at, string path, NodeAssertion assertion, AssertionAction action, string value, string reason)
     {
         ArgumentNullException.ThrowIfNull(assertion);
+        Fail(at, path, assertion.Label, assertion.Stage, action, value, reason);
+    }
+
+    /// <summary>Records one failure of the assertion or rule called <paramref name="label"/>, counted under what it does.</summary>
+    /// <param name="at">What every record shares: a property (<c>data.Curves[].Mnemonic</c>), or the incoming rows (<c>dataset.curves</c>).</param>
+    /// <param name="path">Where the value was found.</param>
+    /// <param name="label">What the assertion or rule is called.</param>
+    /// <param name="stage">The stage it judges.</param>
+    /// <param name="action">What the failure does.</param>
+    /// <param name="value">The value, as text.</param>
+    /// <param name="reason">Why it fails.</param>
+    public void Fail(string at, string path, string label, AssertionStage stage, AssertionAction action, string value, string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
         Failed++;
         switch (action)
         {
@@ -291,8 +305,8 @@ public sealed class AssertionLog
             _failures.Add(new AssertionFailure(
                 at,
                 AssertionFindings.Kept(path, AssertionFindings.MaxValueChars),
-                assertion.Label,
-                AssertionWords.Of(assertion.Stage),
+                label,
+                AssertionWords.Of(stage),
                 AssertionWords.Of(action),
                 AssertionFindings.Kept(reason, AssertionFindings.MaxMessageChars),
                 AssertionFindings.Kept(value, AssertionFindings.MaxValueChars)));

@@ -39,7 +39,8 @@ export interface MappingOutlineRead {
 export interface MappingOutlineLookup {
   source: string;
   field?: string | null;
-  matches: { field: string; value: string }[];
+  /** The comparisons, in order; `and` marks one that joins the comparison before it on the same findBy line. */
+  matches: { field: string; value: string; and?: boolean }[];
 }
 
 /** One thing done to a value on its way to the property. */
@@ -92,12 +93,29 @@ export interface MappingOutlineNode {
 }
 
 /** What a mapping does, laid out for a person to read: everything it reads, and how each property of the record is filled. */
+/** A rule a mapping states on the rows it renders from (`dataset.assert`, osdu/docs/reference/flow/mapping-dataset-assertions.md). */
+export interface MappingOutlineRowRule {
+  label: string;
+  /** What it asserts, in words. */
+  expected: string;
+  onFail: string;
+  /** `record`: judged as each record renders; `run`: once a run, over the record table's rows in its scope. */
+  per: string;
+  /** The source whose rows it reads: `dataset`, or `dataset.<child>`. */
+  source: string;
+  /** The fields it reads: the ones it judges, and those its `where` selects rows by. */
+  reads: MappingOutlineRead[];
+  description?: string | null;
+  line?: number | null;
+  endLine?: number | null;
+}
+
 export interface MappingOutline {
   reference: string;
   kind: string;
   description?: string | null;
   enrichment: boolean;
-  dataset: { system: string; key: string[]; label?: string | null; identity: string[]; idFrom: string };
+  dataset: { system: string; key: string[]; label?: string | null; identity: string[]; idFrom: string; rules?: MappingOutlineRowRule[] };
   sources: MappingOutlineSource[];
   record: MappingOutlineNode[];
   enrichments: { name: string; mapping?: string | null; rows?: string | null; bulk: boolean; description?: string | null }[];

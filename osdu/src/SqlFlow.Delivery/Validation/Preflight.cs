@@ -718,19 +718,7 @@ public static partial class Preflight
         }
         else
         {
-            var fields = entry.FindBy.Select(f => f.Field).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var known = fields.Where(f => cached.HasField(f) || cached.MeansRecordId(f)).ToList();
-            if (known.Count == 0)
-            {
-                issues.Add(ValidationIssue.Error($"{name} finds {cached.Name} by {string.Join(" or ", fields)}, and cache version '{references.Version}' caches none of those. Cached: {cachedFields}."));
-            }
-            else
-            {
-                foreach (var field in fields.Except(known, StringComparer.OrdinalIgnoreCase))
-                {
-                    issues.Add(ValidationIssue.Warning($"{name} finds {cached.Name} by '{field}', which cache version '{references.Version}' does not cache. Cached: {cachedFields}."));
-                }
-            }
+            CheckFindFields(name, entry.FindBy, cached, references, issues);
         }
 
         if (source.ReadsRecordId && cached.IsLookup)
@@ -772,6 +760,39 @@ public static partial class Preflight
     }
 
     /// <summary>
+    /// 7b. The fields a node's findBy lines compare: a line finds a record only when the cache holds every field it compares,
+    /// so the node is refused when no line can, and each field the cache does not hold is a warning naming the line it
+    /// leaves unable to find one. A line of one field reads as it always has.
+    /// </summary>
+    private static void CheckFindFields(string name, IReadOnlyList<FindBy> lines, ReferenceType cached, ReferenceSnapshot references, List<ValidationIssue> issues)
+    {
+        var cachedFields = string.Join(", ", cached.FieldNames.Prepend("id"));
+        bool Holds(string field) => cached.HasField(field) || cached.MeansRecordId(field);
+        if (!lines.Any(line => line.Comparisons.All(c => Holds(c.Field))))
+        {
+            var fields = string.Join(" or ", lines.Select(FieldsOf).Distinct(StringComparer.OrdinalIgnoreCase));
+            issues.Add(ValidationIssue.Error(lines.Any(line => line.IsComposite)
+                ? $"{name} finds {cached.Name} by {fields}, and cache version '{references.Version}' caches every field of none of those lines. Cached: {cachedFields}."
+                : $"{name} finds {cached.Name} by {fields}, and cache version '{references.Version}' caches none of those. Cached: {cachedFields}."));
+            return;
+        }
+
+        var warned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in lines)
+        {
+            foreach (var field in line.Comparisons.Select(c => c.Field).Where(f => !Holds(f) && warned.Add(f)))
+            {
+                issues.Add(ValidationIssue.Warning(line.IsComposite
+                    ? $"{name} finds {cached.Name} by {FieldsOf(line)}, and cache version '{references.Version}' does not cache '{field}', so that line finds no record. Cached: {cachedFields}."
+                    : $"{name} finds {cached.Name} by '{field}', which cache version '{references.Version}' does not cache. Cached: {cachedFields}."));
+            }
+        }
+    }
+
+    /// <summary>The fields a findBy line compares, as a message names them: <c>Code</c>, or <c>Well and Mnemonic</c>.</summary>
+    private static string FieldsOf(FindBy line) => string.Join(" and ", line.Comparisons.Select(c => c.Field));
+
+    /// <summary>
     /// 7d. A <c>$findAll</c>: the cache holds the field its key compares, and every row it reads is judged by fields the
     /// cache captures. A field no row of a type holds reads as empty on every row, so asking for it to be empty would let
     /// every row the key finds through (the field groups of a country, taken for its country groups) where the likelier
@@ -810,11 +831,10 @@ public static partial class Preflight
         }
 
         var foundFields = string.Join(", ", found.FieldNames.Prepend("id"));
-        var findFields = lookup.FindBy.Select(f => f.Field).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (!findFields.Any(f => found.HasField(f) || found.MeansRecordId(f)))
+        if (!lookup.FindBy.Any(line => line.Comparisons.All(f => found.HasField(f.Field) || found.MeansRecordId(f.Field))))
         {
             issues.Add(ValidationIssue.Error(
-                $"{name}: lookup '{lookup.Name}' finds {found.Name} by {string.Join(" or ", findFields)}, and cache version '{references.Version}' caches none of those. Cached: {foundFields}."));
+                $"{name}: lookup '{lookup.Name}' finds {found.Name} by {string.Join(" or ", lookup.FindBy.Select(FieldsOf))}, and cache version '{references.Version}' caches none of those. Cached: {foundFields}."));
         }
 
         var path = findAll.Operand.LookupPath!;
@@ -1096,7 +1116,8 @@ public static partial class Preflight
             return;
         }
 
-        var lines = entry.FindBy.Where(f => f.Column is not null).ToList();
+        // A line of several comparisons finds a record by the value with the others the row gives, which only a row shows.
+        var lines = entry.FindBy.Where(f => !f.IsComposite && f.Column is not null).ToList();
         if (lines.Count == 0)
         {
             return;
@@ -1242,6 +1263,27 @@ public static partial class Preflight
             foreach (var column in entry.Columns)
             {
                 Require(column, entry.Where);
+            }
+        }
+
+        // The rules on the incoming rows read the record's row, a child dataset's rows, or the record table as a run reads it.
+        foreach (var rule in mapping.Dataset.Assertions)
+        {
+            if (rule.Rows is { } rows && !sourceColumns.ContainsKey(rows))
+            {
+                issues.Add(ValidationIssue.Error($"{where}: {rule.Location} reads the rows of child dataset '{rows}', which the flow does not declare under source.datasets."));
+                continue;
+            }
+
+            var judged = rule.Kind switch
+            {
+                DatasetAssertionKind.Value => [new DatasetColumn(rule.Rows, rule.Column!)],
+                DatasetAssertionKind.Unique => rule.Columns.Select(c => new DatasetColumn(rule.Rows, c)).ToList(),
+                _ => new List<DatasetColumn>(),
+            };
+            foreach (var column in judged.Concat(rule.Where.Select(f => f.Column).OfType<DatasetColumn>()))
+            {
+                Require(column, rule.Location);
             }
         }
     }

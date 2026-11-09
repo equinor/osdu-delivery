@@ -33,7 +33,7 @@ internal readonly record struct ReplaceFields(string Match, string Field);
 
 /// <summary>
 /// The one way a replace looks a value up, whether its table is written in the mapping or read from the cache. A table is a
-/// <see cref="ReferenceType"/> and a value is matched by the cache's own rules (<see cref="ReferenceType.Find"/>): an exact
+/// <see cref="ReferenceType"/> and a value is matched by the cache's own rules (<see cref="ReferenceType.Find(string, string, bool)"/>): an exact
 /// match wins, case is ignored only when that finds one row, and a value several rows answer to selects none of them,
 /// unless every one of those rows gives the same value, in which case which of them was meant makes no difference.
 /// </summary>

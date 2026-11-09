@@ -78,6 +78,9 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
     /// <summary>Every selection a read was opened for, in order.</summary>
     public List<SourceSelection> Selections { get; } = [];
 
+    /// <summary>How many times a run's rules judged once a run read the tables, which a test uses to prove a run judged them once, or not at all.</summary>
+    public int RunJudgements { get; private set; }
+
     /// <summary>What a shape check reports as wrong with the tables, as the SQL Server source reports a missing table; null when nothing is.</summary>
     public string? ShapeProblem { get; set; }
 
@@ -425,6 +428,45 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
                     .ToList())
                 .ToList();
             return Task.FromResult(new ProofRows(columns, listed.Take(query.Limit).ToList(), listed.Count > query.Limit));
+        }
+
+        public Task<IReadOnlyList<RunRowsAnswer>> JudgeRunAsync(IReadOnlyList<DatasetAssertion> rules, int maxListed, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(rules);
+            ArgumentOutOfRangeException.ThrowIfLessThan(maxListed, 1);
+            _tables.RunJudgements++;
+            var scope = _tables.Records.Where(r => InScope(r) && r.DeletedUtc is null).ToList();
+            var answers = new List<RunRowsAnswer>(rules.Count);
+            foreach (var rule in rules)
+            {
+                if (rule.Per != DatasetAssertionPer.Run || rule.Kind == DatasetAssertionKind.Value)
+                {
+                    throw new ArgumentException($"{rule.Location} is judged as each record renders, not once a run.", nameof(rules));
+                }
+
+                if (rule.Kind == DatasetAssertionKind.Count)
+                {
+                    answers.Add(new RunRowsAnswer { Rule = rule, Rows = scope.Count });
+                    continue;
+                }
+
+                // As the database compares them: a row lacking a value in one of the columns shares none, and values compare exactly.
+                var compared = scope
+                    .Select(r => (Record: r, Values: rule.Columns.Select(c => SourceRow.Stringify(r.Row.TryGetValue(c, out var held) ? held : null)).ToList()))
+                    .Where(r => r.Values.All(v => !string.IsNullOrWhiteSpace(v)))
+                    .Select(r => (r.Record, Values: r.Values.Select(v => v!).ToList()))
+                    .ToList();
+                var sharing = compared
+                    .GroupBy(r => string.Join((char)0x1f, r.Values), StringComparer.Ordinal)
+                    .Where(g => g.Count() > 1)
+                    .SelectMany(g => g.Select(r => new RunSharedRow(KeyOf(r.Record), r.Values, g.Count())))
+                    .OrderBy(r => string.Join((char)0x1f, r.Values), StringComparer.Ordinal)
+                    .ThenBy(r => r.Key.Json, StringComparer.Ordinal)
+                    .ToList();
+                answers.Add(new RunRowsAnswer { Rule = rule, Shared = sharing.Take(maxListed).ToList(), SharedRows = sharing.Count });
+            }
+
+            return Task.FromResult<IReadOnlyList<RunRowsAnswer>>(answers);
         }
 
         public Task<IReadOnlyList<KeyRange>> SliceBoundsAsync(SourceHeader header, int slices, CancellationToken ct = default)

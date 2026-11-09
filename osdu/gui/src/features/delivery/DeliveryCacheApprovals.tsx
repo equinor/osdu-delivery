@@ -18,6 +18,7 @@ import { TruncatedText } from "@/components/TruncatedText";
 import { useOwnedPanel } from "@/layout/workbench/useOwnedPanel";
 import { ChangeBadge } from "./ChangeMark";
 import { DeliveryCacheGaps } from "./DeliveryCacheGaps";
+import { compositeLookedUp } from "./findByLines";
 import { RecordId } from "./DeliveryCacheRecords";
 
 /** The bottom panel content ids this surface owns. */
@@ -71,6 +72,14 @@ function useDecideTags(onDecided?: () => void) {
 }
 
 /**
+ * What a change moved away from, as its row shows it: for values a findBy line of several comparisons looked up together and
+ * a row now meets, each field with its value (`Well = A-12 and Mnemonic = GR`); otherwise the value as kept.
+ */
+function lookedUp(tag: DeliveryUpdateTag): string {
+  return (tag.change === "listed" ? compositeLookedUp(tag.path, tag.oldValue) : null) ?? tag.oldValue ?? "";
+}
+
+/**
  * The value before and after, as one line: what OSDU holds now struck through, what the cache holds now beside it. For a
  * key a lookup table now lists, the key the records looked up, and what its row gives them.
  */
@@ -81,7 +90,7 @@ function ValueChange({ row, maxWidth }: { row: DeliveryUpdateTag; maxWidth: numb
     <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
       {row.oldValue === null
         ? <span className="font-sans text-muted-foreground">no value</span>
-        : <TruncatedText text={row.oldValue} mono maxWidth={maxWidth} className={cn("text-muted-foreground", !listed && "line-through")} />}
+        : <TruncatedText text={lookedUp(row)} mono maxWidth={maxWidth} className={cn("text-muted-foreground", !listed && "line-through")} />}
       <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
       <NewValue tag={row} maxWidth={maxWidth} />
     </span>
@@ -274,7 +283,7 @@ function TagDetail({ tag, onDecided }: { tag: DeliveryUpdateTag; onDecided: () =
             ? <span className="text-[12px] text-muted-foreground">no value</span>
             : (
               <span className={cn("break-all font-mono text-[12px] text-muted-foreground", tag.change !== "listed" && "line-through")}>
-                {tag.oldValue}
+                {lookedUp(tag)}
               </span>
             )}
         </DetailPair>

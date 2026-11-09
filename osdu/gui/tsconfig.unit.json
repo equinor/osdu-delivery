@@ -34,6 +34,7 @@
     "src/features/delivery/repositorySync.ts",
     "src/features/delivery/scopeDefaults.ts",
     "src/features/delivery/mappingSearch.ts",
+    "src/features/delivery/findByLines.ts",
     "src/features/delivery/sourceQuery.ts",
     "src/features/delivery/valueProof.ts",
     "src/features/delivery/accessRestrictionText.ts",

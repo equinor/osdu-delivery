@@ -1108,6 +1108,9 @@ internal sealed class MappingDatasetYaml
 
     /// <summary>What the OSDU id's unique segment is made from: <c>deliveryKey</c> (the default) or <c>key</c>.</summary>
     public string? IdFrom { get; set; }
+
+    /// <summary>The rules on the rows the mapping renders from (<c>dataset.assert</c>), each a map read by the mapper.</summary>
+    public List<object>? Assert { get; set; }
 }
 
 internal sealed class RetrievalYaml

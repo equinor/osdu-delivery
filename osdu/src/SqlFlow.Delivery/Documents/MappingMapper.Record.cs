@@ -6,6 +6,7 @@ using SqlFlow.Delivery.Expressions;
 using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Search;
+using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Documents;
@@ -192,7 +193,7 @@ internal static partial class MappingMapper
             }
 
             var modifiers = Modifiers(Get(map, ModifiersKey), Has(map, ModifiersKey), TreeScope.Root, at);
-            if (modifiers.Count > 0 && findBy.All(f => f.Column is null))
+            if (modifiers.Count > 0 && findBy.SelectMany(f => f.Comparisons).All(f => f.Column is null))
             {
                 throw new FlowValidationException($"{at}: {ModifiersKey} change incoming dataset values, and this lookup's {FindByKey} reads none; cache values are never modified.");
             }
@@ -692,7 +693,7 @@ internal static partial class MappingMapper
         }
 
         var modifiers = Modifiers(Get(map, ModifiersKey), Has(map, ModifiersKey), scope, at);
-        var comparesColumn = findAll is not null ? findAll.Operand.Column is not null : findBy.Any(f => f.Column is not null);
+        var comparesColumn = findAll is not null ? findAll.Operand.Column is not null : findBy.SelectMany(f => f.Comparisons).Any(f => f.Column is not null);
         if (modifiers.Count > 0 && read.Resolves && !comparesColumn)
         {
             var found = read.Kind == MappingSourceKind.Search ? "what a search finds is" : "cache values are";
@@ -885,6 +886,12 @@ internal static partial class MappingMapper
         var empty = new List<string>();
         foreach (var line in lines)
         {
+            if (AndParts(line).Count > 1)
+            {
+                throw new FlowValidationException(
+                    $"{at}: {FindAllKey} '{line}' joins conditions with and; a {FindAllKey} takes each condition as a line of its own, every one of which a row must meet: one <field> = <value>, and any number of <field> is empty.");
+            }
+
             if (EmptyLinePattern().Match(line) is { Success: true } emptiness)
             {
                 var emptyField = CachedField(emptiness.Groups["field"].Value, line, at);
@@ -1187,7 +1194,9 @@ internal static partial class MappingMapper
 
     /// <summary>
     /// A cache or a search node's <c>$findBy</c>: one line or a list, each comparing a field of the record the node reads
-    /// with a column or a quoted text, tried in order until one finds a record.
+    /// with a column or a quoted text, tried in order until one finds a record. A line of a cache node may compare several
+    /// fields, joined by <c>and</c> (<c>Well = well_name and Mnemonic = curve_mnemonic</c>), which a record must meet every
+    /// one of; a search asks the platform one property at a time, so its lines compare one each.
     /// </summary>
     private static List<FindBy> FindByLines(object? value, MappingSource read, TreeScope scope, string at)
     {
@@ -1204,52 +1213,137 @@ internal static partial class MappingMapper
         var result = new List<FindBy>(lines.Count);
         foreach (var line in lines)
         {
-            var match = FindByPattern().Match(line);
-            if (!match.Success)
+            var parts = AndParts(line);
+            if (parts.Count == 1)
             {
-                throw new FlowValidationException(
-                    $"{at}: {FindByKey} '{line}' must read <field> = <column>, or <field> = 'text' for a fixed text, such as {example}.");
-            }
-
-            var field = match.Groups["field"].Value;
-            if (field.StartsWith(Marker, StringComparison.Ordinal)
-                || field.StartsWith(MappingSource.CachePrefix + ".", StringComparison.Ordinal)
-                || field.StartsWith(MappingSource.SearchPrefix + ".", StringComparison.Ordinal))
-            {
-                throw new FlowValidationException(
-                    $"{at}: {FindByKey} '{line}' names '{field}'; a line compares a field of the record the node reads, written as the record names it, such as {example}.");
-            }
-
-            if (field.Split('.').Any(p => !FieldPattern().IsMatch(p)))
-            {
-                throw new FlowValidationException($"{at}: {FindByKey} '{line}' names an invalid field '{field}'.");
-            }
-
-            // A search compares a property of the records' data, named the way a query names it: unquoted, so only
-            // letters, digits and underscores, and never the record's own metadata, which the indexer maps apart from
-            // the schema and a lookup has no business comparing.
-            if (read.Kind == MappingSourceKind.Search && (!field.StartsWith(SearchDataPrefix, StringComparison.Ordinal) || !OsduPath.IsPath(field)))
-            {
-                throw new FlowValidationException(
-                    $"{at}: {FindByKey} '{line}' compares '{field}', and a search compares a property under data, named by dotted names of letters, digits and underscores, such as {example}.");
-            }
-
-            var operand = match.Groups["operand"].Value.Trim();
-            if (Quoted(operand) is { } literal)
-            {
-                if (literal.Length == 0)
-                {
-                    throw new FlowValidationException($"{at}: {FindByKey} '{line}' compares with empty text.");
-                }
-
-                result.Add(new FindBy(read.CacheType!, field, null, literal) { Prefix = read.Prefix });
+                result.Add(Comparison(line, read, scope, at, example));
                 continue;
             }
 
-            result.Add(new FindBy(read.CacheType!, field, Column(operand, scope, $"{at}: {FindByKey} '{line}'"), null) { Prefix = read.Prefix });
+            if (read.Kind == MappingSourceKind.Search)
+            {
+                throw new FlowValidationException(
+                    $"{at}: {FindByKey} '{line}' compares several properties at once, and a search asks the platform for one property at a time; write each as a line of its own, tried in order.");
+            }
+
+            if (parts.Any(part => part.Length == 0))
+            {
+                throw new FlowValidationException(
+                    $"{at}: {FindByKey} '{line}' has nothing on one side of an and; each side compares one field, such as {example} and Name = 'text'.");
+            }
+
+            var comparisons = parts.Select(part => Comparison(part, read, scope, at, example)).ToList();
+            if (comparisons.GroupBy(c => ReferenceField.Normalize(c.Field), StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1) is { } twice)
+            {
+                throw new FlowValidationException(
+                    $"{at}: {FindByKey} '{line}' compares {twice.Key} twice; a line compares each field once, and a record must meet every comparison of it.");
+            }
+
+            result.Add(comparisons[0] with { And = comparisons.Skip(1).ToList() });
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// One comparison of a findBy line, <c>&lt;field&gt; = &lt;column&gt;</c> or <c>&lt;field&gt; = 'text'</c>: a whole line,
+    /// or one side of an <c>and</c>, which the messages quote as written.
+    /// </summary>
+    private static FindBy Comparison(string text, MappingSource read, TreeScope scope, string at, string example)
+    {
+        if (DanglingAndPattern().IsMatch(text))
+        {
+            throw new FlowValidationException(
+                $"{at}: {FindByKey} '{text}' has nothing on one side of an and; each side compares one field, such as {example} and Name = 'text'.");
+        }
+
+        var match = FindByPattern().Match(text);
+        if (!match.Success)
+        {
+            throw new FlowValidationException(
+                $"{at}: {FindByKey} '{text}' must read <field> = <column>, or <field> = 'text' for a fixed text, such as {example}.");
+        }
+
+        var field = match.Groups["field"].Value;
+        if (field.StartsWith(Marker, StringComparison.Ordinal)
+            || field.StartsWith(MappingSource.CachePrefix + ".", StringComparison.Ordinal)
+            || field.StartsWith(MappingSource.SearchPrefix + ".", StringComparison.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{at}: {FindByKey} '{text}' names '{field}'; a line compares a field of the record the node reads, written as the record names it, such as {example}.");
+        }
+
+        if (field.Split('.').Any(p => !FieldPattern().IsMatch(p)))
+        {
+            throw new FlowValidationException($"{at}: {FindByKey} '{text}' names an invalid field '{field}'.");
+        }
+
+        // A search compares a property of the records' data, named the way a query names it: unquoted, so only
+        // letters, digits and underscores, and never the record's own metadata, which the indexer maps apart from
+        // the schema and a lookup has no business comparing.
+        if (read.Kind == MappingSourceKind.Search && (!field.StartsWith(SearchDataPrefix, StringComparison.Ordinal) || !OsduPath.IsPath(field)))
+        {
+            throw new FlowValidationException(
+                $"{at}: {FindByKey} '{text}' compares '{field}', and a search compares a property under data, named by dotted names of letters, digits and underscores, such as {example}.");
+        }
+
+        var operand = match.Groups["operand"].Value.Trim();
+        if (Quoted(operand) is { } literal)
+        {
+            if (literal.Length == 0)
+            {
+                throw new FlowValidationException($"{at}: {FindByKey} '{text}' compares with empty text.");
+            }
+
+            return new FindBy(read.CacheType!, field, null, literal) { Prefix = read.Prefix };
+        }
+
+        return new FindBy(read.CacheType!, field, Column(operand, scope, $"{at}: {FindByKey} '{text}'"), null) { Prefix = read.Prefix };
+    }
+
+    /// <summary>
+    /// The comparisons of a findBy line: its text cut at each <c>and</c> that stands as a word of its own, in any case,
+    /// outside a quoted text, each part trimmed. A line without one is one part, so <c>Name = 'Rock and Roll'</c> compares
+    /// one field.
+    /// </summary>
+    internal static List<string> AndParts(string line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        var parts = new List<string>();
+        var start = 0;
+        char? quote = null;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (quote is { } open)
+            {
+                if (c == open)
+                {
+                    quote = null;
+                }
+
+                continue;
+            }
+
+            if (c is '\'' or '"')
+            {
+                quote = c;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c)
+                && i + 4 < line.Length
+                && string.Compare(line, i + 1, "and", 0, 3, StringComparison.OrdinalIgnoreCase) == 0
+                && char.IsWhiteSpace(line[i + 4]))
+            {
+                parts.Add(line[start..i].Trim());
+                start = i + 4;
+                i += 3;
+            }
+        }
+
+        parts.Add(line[start..].Trim());
+        return parts;
     }
 
     /// <summary>

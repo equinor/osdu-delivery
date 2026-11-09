@@ -27,6 +27,7 @@ related:
   - delivery-concept-partition-cache
   - delivery-concept-change-detection
   - delivery-concept-preflight
+  - delivery-flow-mapping-lookups-composite
   - delivery-wiki-pattern-catalog
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
@@ -68,6 +69,7 @@ render pins; how types get there is the [cache flow](cache.md)'s and the
 | You need | Write | Reads |
 | --- | --- | --- |
 | The id, or a field, of the one record a code or name stands for | `$cache: <Type>.id` or `<Type>.<field>` with `$findBy` | The partition's cache |
+| The one record several values stand for together (a well and a mnemonic) | `$findBy: <field> = <column> and <field> = <column>` | The partition's cache ([a line of several comparisons](mapping-lookups-composite.md)) |
 | Several values of one record (its id and the groups of its field) | a `lookups:` entry, read with `$lookup: <name>.<field>` | The partition's cache, once per row |
 | One value from every row that matches, as a list (access groups) | `$cache: <Type>.<field>` with `$findAll` | The partition's cache |
 | The id of a business record too large a set to cache (wellbores) | a `searches:` entry, read with `$search: <name>` and `$findBy` | The OSDU search service, during the run |
@@ -113,6 +115,10 @@ exactly one record wins. A node's [modifiers](mapping-modifiers.md) change the i
 it; what the cache holds is OSDU's own and is never modified, so `$modifiers` on a node whose lines compare only quoted
 texts is refused (`$modifiers change incoming dataset values, and this node's $findBy reads none; cache values are never
 modified.`).
+
+A line of a `$cache` node or a lookup may compare several fields, joined by `and`, and finds the record that holds every
+value: `well = wellbore_name and mnemonic = curve_mnemonic`. How such a line is matched, recorded and indexed is on
+[a line of several comparisons](mapping-lookups-composite.md).
 
 ### How a value is matched
 
@@ -276,6 +282,7 @@ Refused when the mapping is read:
 | two `=` lines | `... it takes one such line, the key the rows are found by, and any number of <field> is empty.` |
 | only `is empty` lines | `$findAll needs the line the rows are found by, <field> = <value>, ...` |
 | on a `$from` or `$search` node | `$findAll reads every row of a cached type that matches, so it belongs to a $cache node; ...` |
+| a line joined by `and` | `... joins conditions with and; a $findAll takes each condition as a line of its own, ...` |
 | with `$ignoreSeparators` | `... remove $ignoreSeparators.` |
 
 The preflight also refuses a key field the cache version does not hold, a field asked to be empty that no row of the
@@ -376,9 +383,9 @@ record:
 Every `$search` node names a declared search, every declared search is read by a node (an unread one is refused, since
 each value it asks costs a call), and two searches may not look in one kind. A `$search` node gives the found record's
 id only, with the trailing `:`. Its `$findBy` lines name properties under `data.`, as the schema names them, with dotted
-names of letters, digits and underscores, and are tried in order: the first line that finds exactly one record wins,
-and a line is asked only when every line before it found nothing. Modifiers change the incoming value before it is
-asked for.
+names of letters, digits and underscores, one property a line (a line joined by `and` is refused), and are tried in
+order: the first line that finds exactly one record wins, and a line is asked only when every line before it found
+nothing. Modifiers change the incoming value before it is asked for.
 
 ### How each line is asked
 

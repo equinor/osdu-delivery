@@ -332,6 +332,21 @@ describe("a value's way", () => {
       ["Kind", "'wellbore'", null],
     ]);
     assert.equal(compared.changed, false, "nothing changed the column first, so its value in the row is what is compared");
+    assert.deepEqual(compared.lines.map((line) => line.and), [false, false, false], "each comparison is a line of its own, tried in turn");
+  });
+
+  it("marks a comparison that joins the one before it on a line written with and", () => {
+    const together: MappingOutlineFlow = {
+      ...found,
+      steps: [{ kind: "find", label: "cache", detail: "", text: "cache.CurveMap.curve_type", lookups: [{ source: "cache.CurveMap", field: "curve_type", matches: [
+        { field: "well", value: "dataset.well" },
+        { field: "mnemonic", value: "dataset.mnemonic", and: true },
+        { field: "mnemonic", value: "dataset.mnemonic" },
+      ] }] }],
+    };
+    const compared = wayOf(together)[1];
+    assert.ok(compared.kind === "compared");
+    assert.deepEqual(compared.lines.map((line) => [line.field, line.and]), [["well", false], ["mnemonic", true], ["mnemonic", false]]);
   });
 
   it("says a value a step changed is compared as that step leaves it, and finds a child table's column", () => {

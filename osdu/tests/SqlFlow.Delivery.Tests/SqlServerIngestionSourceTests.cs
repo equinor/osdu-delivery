@@ -378,6 +378,98 @@ public sealed class SqlServerIngestionSourceTests
     }
 
     [Fact]
+    public async Task The_rules_judged_once_a_run_count_and_compare_every_row_of_the_scope_in_the_database_as_the_memory_tables_do()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Judged",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Judged] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [log_source] nvarchar(40) NULL, "
+            + "[log_name] nvarchar(80) NULL, [run_no] int NULL, [notes] nvarchar(max) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+
+        // In the COMPOSITE scope: a and b share GR in run 1, c spells it gr, d's name is blank and e's and e2's are null, h and
+        // i share RHOB in runs 1 and 2. f shares GR but is marked deleted, and g shares it from another scope.
+        (string Key, string Source, string? Name, int Run, bool Deleted)[] rows =
+        [
+            ("a", "COMPOSITE", "GR", 1, false), ("b", "COMPOSITE", "GR", 1, false), ("c", "COMPOSITE", "gr", 1, false),
+            ("d", "COMPOSITE", "  ", 1, false), ("e", "COMPOSITE", null, 1, false), ("e2", "COMPOSITE", null, 1, false),
+            ("f", "COMPOSITE", "GR", 1, true), ("g", "CPI", "GR", 1, false), ("h", "COMPOSITE", "RHOB", 1, false), ("i", "COMPOSITE", "RHOB", 2, false),
+        ];
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [log_source], [log_name], [run_no], [UpdatedDate_DW], [DeletedDate_DW])
+            VALUES {string.Join(", ", rows.Select(r => string.Create(CultureInfo.InvariantCulture,
+                $"(N'{r.Key}', N'{r.Source}', {(r.Name is null ? "NULL" : $"N'{r.Name}'")}, {r.Run}, @loaded, {(r.Deleted ? "@changed" : "NULL")})")))};
+            """);
+        var item = ItemFlow(estate, "Judged");
+        var flow = item with
+        {
+            Parameters = new Dictionary<string, FlowParameter>(StringComparer.Ordinal) { ["logSource"] = new FlowParameter { Required = true } },
+            Source = item.Source with
+            {
+                Record = item.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["log_source"] = "logSource" } },
+            },
+        };
+        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["logSource"] = "COMPOSITE" };
+        var rules = DatasetAssertionLoaderTests.Mapping("""
+            - per: run
+              count: { atMost: 5 }
+            - per: run
+              unique: [log_name]
+            - per: run
+              unique: [log_name, run_no]
+            """).Dataset.Assertions;
+
+        var source = estate.Engine.Sources.Open(flow, values, NullLoggerFactory.Instance);
+        var answers = await source.JudgeRunAsync(rules, 100);
+
+        // Eight rows in the scope, not marked deleted. GR and RHOB are each shared by two of them, exactly as written (gr is
+        // another value, and a blank or missing name shares nothing); GR in run 1 by two once the run is compared too.
+        Assert.Equal(8, answers[0].Rows);
+        Assert.Equal(4, answers[1].SharedRows);
+        Assert.Equal([("a", "GR", 2L), ("b", "GR", 2L), ("h", "RHOB", 2L), ("i", "RHOB", 2L)], answers[1].Shared.Select(r => (r.Key.Values[0], r.Values[0], r.Sharing)));
+        Assert.Equal(2, answers[2].SharedRows);
+        Assert.All(answers[2].Shared, r => Assert.Equal(["GR", "1"], r.Values));
+
+        // A bound lists that many rows and counts every one.
+        var bounded = Assert.Single(await source.JudgeRunAsync([rules[1]], 1));
+        Assert.Equal((1, 4L), (bounded.Shared.Count, bounded.SharedRows));
+
+        // The memory tables the fast suites run on answer the same.
+        var memory = new MemoryIngestionTables();
+        foreach (var row in rows)
+        {
+            memory.Add(new MemoryRecord
+            {
+                Row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["item_key"] = row.Key, ["log_source"] = row.Source, ["log_name"] = row.Name, ["run_no"] = row.Run,
+                },
+                DeletedUtc = row.Deleted ? Changed : null,
+            });
+        }
+
+        var remembered = await memory.Open(flow, values, NullLoggerFactory.Instance).JudgeRunAsync(rules, 100);
+        Assert.Equal(answers.Select(Said), remembered.Select(Said));
+
+        // A column the database does not compare, or one the table lacks, is refused naming the rule.
+        var compared = DatasetAssertionLoaderTests.Mapping("""
+            - per: run
+              unique: [notes]
+            - per: run
+              unique: [missing]
+            """).Dataset.Assertions;
+        var unbounded = await Assert.ThrowsAsync<FlowValidationException>(() => source.JudgeRunAsync([compared[0]], 100));
+        Assert.Contains("the mapping's dataset.assert[0] compares column 'notes'", unbounded.Message, StringComparison.Ordinal);
+        Assert.Contains("whose values the database does not compare", unbounded.Message, StringComparison.Ordinal);
+        var missing = await Assert.ThrowsAsync<FlowValidationException>(() => source.JudgeRunAsync([compared[1]], 100));
+        Assert.Contains("the mapping's dataset.assert[1] compares column 'missing', which the table", missing.Message, StringComparison.Ordinal);
+
+        static string Said(RunRowsAnswer answer) => string.Create(CultureInfo.InvariantCulture,
+            $"{answer.Rows}/{answer.SharedRows}/{string.Join(";", answer.Shared.Select(r => $"{r.Key.Json}={string.Join(",", r.Values)}x{r.Sharing}"))}");
+    }
+
+    [Fact]
     public async Task Staged_rows_are_paged_by_key_searched_in_the_database_and_counted_across_their_child_tables()
     {
         await using var estate = await SqlServerIngestionFixture.StartAsync();

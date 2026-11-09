@@ -12,7 +12,7 @@ import { isLookupEntityType } from "./cacheFormat";
 import { ChoiceOrText, FindByLinesEditor, IconAction, ModifierListEditor, Section, type ChoiceOption } from "./MappingEditorParts";
 import {
   COLUMN_NAME, emptyEntry, findLinesOf, findsOf, ID_MODIFIER_KINDS, knownColumns, LOOKUP_NAME, LOOKUP_TARGET_PREFIX, lookupReaders, lookupText,
-  MODIFIER_KINDS, modifierText, type FindLine,
+  MODIFIER_KINDS, modifierText, newFindLine, type FindLine,
 } from "./mappingDraft";
 
 /** The lookup the editor edits: the lookup as the draft holds it (null for a new one), and a number per opening. */
@@ -41,7 +41,7 @@ function LookupForm({
   const [name, setName] = useState(original?.name ?? "");
   const [cacheType, setCacheType] = useState(original?.cacheType ?? cacheTypes.find((type) => !isLookupEntityType(type.entityType))?.name ?? "");
   const [findBy, setFindBy] = useState<FindLine[]>(() => (original === null
-    ? [{ field: cacheTypes.find((type) => type.name === cacheType)?.fields[0] ?? "", mode: "column", value: "" }]
+    ? [newFindLine(cacheTypes.find((type) => type.name === cacheType)?.fields[0] ?? "")]
     : findLinesOf(original.findBy)));
   const [modifiers, setModifiers] = useState<MappingDraftModifier[]>(original?.modifiers ?? []);
   const [ignoreSeparators, setIgnoreSeparators] = useState(original?.ignoreSeparators ?? false);
@@ -139,13 +139,14 @@ function LookupForm({
           lines={findBy}
           onChange={setFindBy}
           title="Find the record by"
-          hint="Tried in order, each comparing a field of the cached record with a column of the dataset's own row or a fixed text; the first line that finds exactly one record wins. A lookup that finds nothing holds a required entry reading it and gives nothing to one that is not; several matching records hold the record."
+          hint="Tried in order, each comparing a field of the cached record with a column of the dataset's own row or a fixed text; the first line that finds exactly one record wins. A line may compare several fields, each added with +, and the record has to meet them all. A lookup that finds nothing holds a required entry reading it and gives nothing to one that is not; several matching records hold the record."
           fieldOptions={[...new Set([...fields, "id"])].map((field) => ({ value: field, group: "Cached fields" }))}
           fieldPlaceholder="FacilityName"
           newField={fields[0] ?? ""}
           columnsList={columnsList}
           columnPlaceholder="wellbore_uwi"
           emptyText="Add at least one line, or no record can be found."
+          allowAnd
           testId="mapping-builder-lookup-findby"
         >
           <Label className="flex items-center gap-2 text-[13px] font-normal">

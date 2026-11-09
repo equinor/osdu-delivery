@@ -210,7 +210,7 @@ fail with `types[<n>] names more than one origin; a type has one: ...`.
 | `attributes` | OSDU | Facts of other records attached to each cached record under a name, read exactly as a dimension's attributes are: a path, a list of up to three paths each but the last reading the references the next records are found by (`WellName: [data.WellID, data.FacilityName]`), or settings with `keep`, `many`, `decode`, `maxReferences` and `trim`. See [cache attributes](cache-attributes.md). |
 | `lookupKinds` | OSDU | The one kind each entity type's records are looked up in when an attribute reads through a reference to one, as a dimension's `lookupKinds`. Only beside `attributes`. |
 | `table` | table | The ingestion table, as a three-part name `[database].[schema].[table]` (`OsduData.silver.UnitAlias`). |
-| `key` | table | The column each row is keyed by, which a mapping matches on. Required for a table, refused on any other origin. |
+| `key` | table | The column each row is keyed by, one unique value per row, which a mapping matches on; a table no one column tells apart is keyed by an identity column and matched by several columns on [a line joined by `and`](mapping-lookups-composite.md). Required for a table, refused on any other origin. |
 | `dictionary` | dictionary | The name of a dictionary document, `dictionaries/<name>.yaml` in the nearest `dictionaries/` folder above the flow. |
 | `dimension`, `dimensionFlow` | dimension | The dimension, and the dimension flow that declares it. Both are required. |
 | `onChange` | all | Overrides the flow's `onChange` for this type. |

@@ -30,7 +30,7 @@ import { MappingBuilderLookups, type LookupEditing } from "./MappingBuilderLooku
 import { MappingBuilderVariables } from "./MappingBuilderVariables";
 import { MappingEntryEditor, type EntryEditorTarget } from "./MappingEntryEditor";
 import { MappingProposeSheet } from "./MappingProposeSheet";
-import { bareColumn, COLUMN_NAME, emptyEntry, LOOKUP_TARGET_PREFIX, putEntry, renameLookup } from "./mappingDraft";
+import { bareColumn, COLUMN_NAME, emptyEntry, LOOKUP_TARGET_PREFIX, putEntry, renameLookup, rowRuleText } from "./mappingDraft";
 import { entityName } from "./templateFormat";
 import { problemText } from "./problemText";
 import { ProblemView } from "./TemplateSheet";
@@ -706,6 +706,20 @@ export default function MappingBuilderPage() {
                   delivered under, so choose before anything is delivered.
                 </p>
               </div>
+              {draft.rules !== undefined && draft.rules.length > 0 && (
+                <div className="flex flex-col gap-1.5" data-testid="mapping-builder-row-rules">
+                  <span className="text-sm font-medium">Rules on the rows</span>
+                  <ul className="flex flex-col gap-0.5">
+                    {draft.rules.map((rule, index) => (
+                      <li key={`${index}-${rule.name ?? ""}`} className="font-mono text-[12px] [overflow-wrap:anywhere]">{rowRuleText(rule)}</li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">
+                    The mapping's <span className="font-mono">dataset.assert</span>, judged on the rows a record renders from. They are kept as they are when
+                    the draft is saved; edit them in the mapping's YAML.
+                  </p>
+                </div>
+              )}
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="mapping-builder-label">Label</Label>
                 <Input

@@ -117,14 +117,14 @@ public sealed partial class ValueChecker
             batch.Add(record);
             if (batch.Count == _limits.Batch)
             {
-                await InspectAsync(batch, resolved.Renderer, selection, parallelism, rounds, tally, ct).ConfigureAwait(false);
+                await InspectAsync(batch, resolved.Renderer, selection, header.RunRows, parallelism, rounds, tally, ct).ConfigureAwait(false);
                 batch.Clear();
             }
         }
 
         if (batch.Count > 0)
         {
-            await InspectAsync(batch, resolved.Renderer, selection, parallelism, rounds, tally, ct).ConfigureAwait(false);
+            await InspectAsync(batch, resolved.Renderer, selection, header.RunRows, parallelism, rounds, tally, ct).ConfigureAwait(false);
         }
 
         if (dryRun is not null)
@@ -324,7 +324,8 @@ public sealed partial class ValueChecker
     /// order the scope was read. A search that is still unanswered after the last round holds the entry that asked it.
     /// </summary>
     private static async Task InspectAsync(
-        List<SourceRecord> batch, MappingRenderer renderer, EntrySelection selection, int parallelism, int rounds, ValueTally tally, CancellationToken ct)
+        List<SourceRecord> batch, MappingRenderer renderer, EntrySelection selection, RunRowsFindings runRows, int parallelism, int rounds, ValueTally tally,
+        CancellationToken ct)
     {
         var inspections = new RecordInspection[batch.Count];
         Inspect(Enumerable.Range(0, batch.Count).ToList(), batch, renderer, selection, parallelism, inspections, ct);
@@ -340,7 +341,12 @@ public sealed partial class ValueChecker
         for (var i = 0; i < batch.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            tally.Add(batch[i], inspections[i], renderer);
+
+            // A check of every entry judges the record as a whole, so what the rules judged once a run found of it joins in.
+            var inspection = selection.IsAll && !runRows.IsEmpty
+                ? inspections[i] with { Assertions = runRows.Apply(batch[i], inspections[i].Assertions) }
+                : inspections[i];
+            tally.Add(batch[i], inspection, renderer);
         }
     }
 

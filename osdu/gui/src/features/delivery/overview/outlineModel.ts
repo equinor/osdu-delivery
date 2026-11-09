@@ -415,10 +415,14 @@ export interface WayOperand {
   read: MappingOutlineRead | null;
 }
 
-/** One line of a lookup: the field of the table it looks in, and what that field has to hold. */
+/**
+ * One comparison of a lookup: the field of the table it looks in, and what that field has to hold. `and` marks one that
+ * joins the comparison before it on the same findBy line, which a row must meet together with it.
+ */
 export interface WayLine {
   field: string;
   operand: WayOperand;
+  and: boolean;
 }
 
 /**
@@ -460,7 +464,7 @@ export function wayOf(flow: MappingOutlineFlow): WayStage[] {
         stages.push({ kind: "changed", steps: [step] });
       }
     } else {
-      stages.push({ kind: "compared", step, lookup, lines: lookup.matches.map((match) => ({ field: match.field, operand: operandOf(reads, match.value) })), changed });
+      stages.push({ kind: "compared", step, lookup, lines: lookup.matches.map((match) => ({ field: match.field, operand: operandOf(reads, match.value), and: match.and === true })), changed });
       stages.push({ kind: "fetched", lookup });
     }
 

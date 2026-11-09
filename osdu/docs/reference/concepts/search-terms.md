@@ -232,6 +232,7 @@ words them:
 | `the cached type <Type> is declared by no cache flow of the repository` | a lookup of a type nothing captures |
 | `the cached type <Type> holds rows of a table, not records OSDU holds, so a search of the platform cannot find them` | a lookup of a table or dictionary type |
 | `the cached type <Type> does not capture <field>` | a `$findBy` field, or the field read, is not captured |
+| `its <Type> record is found by <column> and <column> together, which one value cannot stand for` | the column is compared on a [line of several comparisons](../flow/mapping-lookups-composite.md) |
 | `the mapping declares no search <Name>` | a `$search` naming no `searches:` entry |
 
 Whether a route can be compared is then decided against the [templates](templates.md) the mapping reads, as the

@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A `$findBy` line finds a cached record by several fields together, joined by `and`.** `well = wellbore_name and
+  mnemonic = curve_mnemonic` finds the row holding both values, so a lookup table that no one column tells apart is keyed
+  by an identity column and read by its columns together; the lines are still tried in order, the builder edits such a
+  line as one, and a row that comes to meet the values tags the records built without it
+  ([a line of several comparisons](osdu/docs/reference/flow/mapping-lookups-composite.md)).
+- **A mapping states rules on the rows it renders from beside its dataset, under `dataset.assert`, rather than on a
+  property they are not about.** A rule judges a column of each row, how many child rows a record has, or that no two
+  rows share some values, over the record's row, its rows of a child dataset (`rows: curves`) or every row of the run's
+  scope (`per: run`, judged once by the database), and holds or reports the record as a property's `$assert` does
+  ([rules on the incoming rows](osdu/docs/reference/flow/mapping-dataset-assertions.md)).
 - **A mapping writes a property whose name holds a dot, such as the tag `lra.securityClassification`, as a key of its own.**
   A key of the record tree is one name, a dot, a bracket or a space in it included, so such a tag is written beside the
   record's other tags with its own `$from`, `$required` and `$assert`, rather than built as a whole `tags` object first.

@@ -111,8 +111,12 @@ public sealed record MappingOutlineSource(string Id, string Kind, string Name, s
 /// <param name="Role"><c>value</c> for what the value is made of, <c>match</c> for what a lookup compares, <c>condition</c> for what a <c>$when</c> or a <c>$where</c> tests.</param>
 public sealed record MappingOutlineRead(string Source, string Field, string Role);
 
-/// <summary>One line a lookup finds its record by: the field compared, and what it is compared with.</summary>
-public sealed record MappingOutlineMatch(string Field, string Value);
+/// <summary>
+/// One comparison a lookup finds its record by: the field compared, and what it is compared with. <paramref name="And"/> is
+/// true for a comparison after the first of a findBy line written with <c>and</c>, which joins the comparison before it:
+/// the record must meet both, where the lines themselves are tried in turn.
+/// </summary>
+public sealed record MappingOutlineMatch(string Field, string Value, bool And = false);
 
 /// <summary>A table a step of a flow reads: the field it takes, and the lines that find the record holding it.</summary>
 /// <param name="Source">The <see cref="MappingOutlineSource.Id"/> looked in.</param>
@@ -187,7 +191,24 @@ public sealed record MappingOutlineNode(
 /// <param name="Label">The display label's template.</param>
 /// <param name="Identity">The columns the ledger indexes for a person to find the record by.</param>
 /// <param name="IdFrom"><c>deliveryKey</c> or <c>key</c>.</param>
-public sealed record MappingOutlineDataset(string System, IReadOnlyList<string> Key, string? Label, IReadOnlyList<string> Identity, string IdFrom);
+/// <param name="Rules">The rules it states on the rows (<c>dataset.assert</c>), in the order the document writes them.</param>
+public sealed record MappingOutlineDataset(
+    string System, IReadOnlyList<string> Key, string? Label, IReadOnlyList<string> Identity, string IdFrom, IReadOnlyList<MappingOutlineRowRule> Rules);
+
+/// <summary>
+/// A rule a mapping states on the rows it renders from (<c>dataset.assert</c>, osdu/docs/reference/flow/mapping-dataset-assertions.md).
+/// </summary>
+/// <param name="Label">What it is called: its name, or a label read off what it asserts.</param>
+/// <param name="Expected">What it asserts, in words.</param>
+/// <param name="OnFail"><c>hold</c> or <c>report</c>.</param>
+/// <param name="Per"><c>record</c>: judged as each record renders; <c>run</c>: once a run, over the record table's rows in its scope.</param>
+/// <param name="Source">The <see cref="MappingOutlineSource.Id"/> of the table whose rows it reads: <c>dataset</c>, or <c>dataset.curves</c>.</param>
+/// <param name="Reads">The fields it reads, of that table or (for <c>$dataset.&lt;column&gt;</c> in a <c>where</c>) of the record table.</param>
+/// <param name="Description">What the document says of it.</param>
+/// <param name="Line">The line of the document it starts on, from 1; null where the document does not write it.</param>
+/// <param name="EndLine">The line it ends on.</param>
+public sealed record MappingOutlineRowRule(
+    string Label, string Expected, string OnFail, string Per, string Source, IReadOnlyList<MappingOutlineRead> Reads, string? Description, int? Line, int? EndLine);
 
 /// <summary>An enrichment the mapping declares (<c>enrich:</c>), which adds to every record it renders.</summary>
 /// <param name="Name">Its name.</param>
@@ -324,6 +345,7 @@ public sealed record MappingOutline(
         private const string MatchRole = "match";
         private const string ConditionRole = "condition";
         private const string RecordRoot = "record";
+        private const string DatasetRoot = "dataset";
         private const string ItemWord = MappingMapper.ItemKey;
 
         private readonly MappingDefinition _mapping;
@@ -369,12 +391,32 @@ public sealed record MappingOutline(
                 _mapping.Fragment,
                 new MappingOutlineDataset(
                     dataset.System, dataset.Key, dataset.Label, dataset.Identity,
-                    dataset.IdFrom == MappingIdSource.Key ? "key" : "deliveryKey"),
+                    dataset.IdFrom == MappingIdSource.Key ? "key" : "deliveryKey",
+                    dataset.Assertions.Select(RowRule).ToList()),
                 Ordered().Select(source => source.Freeze()).ToList(),
                 root.Select(branch => branch.Freeze()).ToList(),
                 _mapping.Enrich
                     .Select(e => new MappingOutlineEnrichment(e.Name, e.Mapping, e.Rows?.ToString().ToLowerInvariant(), e.Bulk, e.Description))
                     .ToList());
+        }
+
+        /// <summary>A rule on the rows, with the fields it reads marked on the tables that hold them.</summary>
+        private MappingOutlineRowRule RowRule(DatasetAssertion rule)
+        {
+            var source = rule.Rows is null ? DatasetSource : ChildTable(rule.Rows).Id;
+            var judged = rule.Kind switch
+            {
+                DatasetAssertionKind.Value => [new DatasetColumn(rule.Rows, rule.Column!)],
+                DatasetAssertionKind.Unique => rule.Columns.Select(c => new DatasetColumn(rule.Rows, c)).ToList(),
+                _ => new List<DatasetColumn>(),
+            };
+            var reads = judged.Select(c => Read(c, ValueRole))
+                .Concat(rule.Where.Select(f => f.Column).OfType<DatasetColumn>().Select(c => Read(c, ConditionRole)))
+                .ToList();
+            var lines = LinesAt(rule.Location);
+            return new MappingOutlineRowRule(
+                rule.Label, rule.Expected, AssertionWords.Of(rule.OnFail), rule.Per == DatasetAssertionPer.Run ? MappingMapper.PerRun : MappingMapper.PerRecord,
+                source, reads, rule.Description, lines?.Line, lines?.EndLine);
         }
 
         /// <summary>The dataset's tables first, then the parameters, then what is looked in, each as the document first reads it.</summary>
@@ -802,11 +844,17 @@ public sealed record MappingOutline(
             {
                 foreach (var line in node.FindBy)
                 {
-                    draft.Field(line.Field).Match = true;
-                    matches.Add(new MappingOutlineMatch(line.Field, line.Column?.ToString() ?? $"'{line.Literal}'"));
-                    if (line.Column is { } column)
+                    var first = true;
+                    foreach (var comparison in line.Comparisons)
                     {
-                        reads.Add(Read(column, MatchRole));
+                        draft.Field(comparison.Field).Match = true;
+                        matches.Add(new MappingOutlineMatch(comparison.Field, comparison.Column?.ToString() ?? $"'{comparison.Literal}'", !first));
+                        if (comparison.Column is { } column)
+                        {
+                            reads.Add(Read(column, MatchRole));
+                        }
+
+                        first = false;
                     }
                 }
 
@@ -814,6 +862,10 @@ public sealed record MappingOutline(
                 var order = node.FindBy.Count > 1
                     ? "Each line is tried in turn, and the first to find exactly one record gives it."
                     : "The line has to find exactly one record.";
+                if (node.FindBy.Any(line => line.IsComposite))
+                {
+                    order += " A line of several comparisons finds the record that meets them all, and is skipped when any of its values is empty.";
+                }
                 var loose = searched
                     ? ", then ignoring case where the platform's index allows"
                     : node.IgnoreSeparators ? ", then ignoring case, then ignoring punctuation and spacing" : ", then ignoring case";
@@ -960,9 +1012,9 @@ public sealed record MappingOutline(
             var text = new DimensionYamlSource.Text(yaml.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'));
             foreach (var (key, value) in root.Children)
             {
-                if (key is YamlScalarNode { Value: RecordRoot })
+                if (key is YamlScalarNode { Value: RecordRoot or DatasetRoot } named)
                 {
-                    Walk(text, RecordRoot, key, value);
+                    Walk(text, named.Value!, key, value);
                 }
             }
         }

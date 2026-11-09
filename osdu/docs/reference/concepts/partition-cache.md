@@ -323,7 +323,8 @@ the next version bringing in what they missed, or an operator's release.
 ## From a cache change to OSDU
 
 Every delivered record points at the set of cached values its render read: the record a value was found by, each value
-written into the document, each path read that held nothing, each key a lookup table did not list, and each id written as
+written into the document, each path read that held nothing, each key a lookup table did not list, the values a
+[line of several comparisons](../flow/mapping-lookups-composite.md) found no record meeting together, and each id written as
 an unverified reference. A refresh compares
 the new version with the one it replaces over those sets (thousands of them, never the records themselves) and writes
 one tag per change: the partition, the type, the cached record, the path, the value before and after, the versions it
@@ -334,7 +335,7 @@ moved between, and how many delivered records it reaches.
 | `changed` | A value records read now reads differently. |
 | `removed` | A cached record records used is no longer in the cache. |
 | `unmatched` | A record no longer matches by the value records found it by. |
-| `listed` | A lookup table now lists a key records looked up and found no row under, or an OSDU type now holds a record by a value records found none by. |
+| `listed` | A lookup table now lists a key records looked up and found no row under, an OSDU type now holds a record by a value records found none by, or a type now holds a record meeting values a line compared together and found none meeting. |
 | `relisted` | The rows a key finds are no longer the ones records read every one of. |
 | `found` | The cache now holds a record that records reference as an unverified id, or that a held record's reference named and the cache did not hold. |
 

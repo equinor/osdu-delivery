@@ -1163,6 +1163,8 @@ public sealed record UpdateTag
         "removed" => $"{TypeName} '{ItemId}' is no longer in the cache (it held {Path} = '{OldValue}')",
         "unmatched" => $"{TypeName} '{ItemId}' no longer matches by {Path} = '{OldValue}'",
         "found" => $"{TypeName} now holds '{ItemId}', which delivered records reference as an unverified id",
+        "listed" when Snapshots.CacheUsage.CompositeText(Path, OldValue) is { } together
+            => $"{TypeName} now holds '{ItemId}', where {together}, which delivered records found no row meeting together",
         "listed" => NewValue is null
             ? $"{TypeName} now lists '{OldValue}' as '{ItemId}', which gives no {Path}"
             : $"{TypeName} now lists '{OldValue}' as '{ItemId}', giving {Path} = '{NewValue}'",
@@ -3338,6 +3340,14 @@ public interface ILedger
     /// impact query: it runs over the sets, never over the records, so it stays the same size as the cache.
     /// </summary>
     Task<IReadOnlyList<CacheSetUse>> FindCacheSetsAsync(string scope, string typeName, IReadOnlyList<string> itemIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Every set of one cache that noted values a findBy line of several comparisons found no row meeting together
+    /// (<see cref="Snapshots.CacheUsage.CompositeMiss"/>), with the values it noted. They are read by the prefix their items
+    /// share (<see cref="Snapshots.CacheUsage.CompositeMarker"/>), so the impact query reads them alone, whatever else the
+    /// type's sets hold.
+    /// </summary>
+    Task<IReadOnlyList<CacheSetUse>> FindCompositeMissesAsync(string scope, string typeName, CancellationToken ct = default);
 
     /// <summary>How many delivered records were built from these sets.</summary>
     Task<long> CountRecordsInSetsAsync(IReadOnlyList<long> setIds, CancellationToken ct = default);

@@ -1910,6 +1910,8 @@ export interface DeliveryValueCheckCause {
   /** The fields the value was compared with, in the order tried. */
   fields: string[];
   ignoreSeparators: boolean;
+  /** Whether values were compared together, on a findBy line written with `and`: a record had to hold every one. */
+  together?: boolean;
   /** For several records answering to a value, or a record found holding nothing at the field read, their ids. */
   candidates: string[];
   /** For a rule, the rule of the template; for an assertion, the assertion. */
@@ -2789,11 +2791,16 @@ export interface MappingDraftParameter {
   description: string | null;
 }
 
-/** One findBy line: the cached field, and the dataset column (without `dataset.`) or the fixed text it must equal. */
+/**
+ * One findBy line: the cached field, and the dataset column (without `dataset.`) or the fixed text it must equal. A line of
+ * a cache entry or a lookup may compare more fields in `and`, which a record must meet together with this one.
+ */
 export interface MappingDraftFind {
   field: string;
   column: string | null;
   literal: string | null;
+  /** The comparisons after the first on the line, each of one field; null or absent for a line of one. */
+  and?: MappingDraftFind[] | null;
 }
 
 /** One pair of a replace: the incoming value, and what it becomes; null is no value, so the entry's required flag decides. */
@@ -2920,6 +2927,27 @@ export interface MappingDraftAssertion {
  * One condition an assertion is judged under: what it reads (`field`, a path into the record, for the record stage;
  * `column`, a column as the draft names one, for the incoming stage), its operator and its operand.
  */
+/** One rule on the rows a mapping renders from (`dataset.assert`), as the draft holds it. */
+export interface MappingDraftRowRule {
+  kind: "value" | "count" | "unique";
+  per: "record" | "run";
+  /** The child dataset whose rows it reads; null for the record's own row. */
+  rows: string | null;
+  column: string | null;
+  operator: string;
+  operand: string;
+  /** For a count rule: the comparison as `count:` writes it (`{ atLeast: 2 }`, or a number). */
+  count: string | null;
+  unique: string[];
+  anyRow: boolean;
+  ignoreCase: boolean;
+  tolerance: number | null;
+  onFail: string;
+  where: MappingDraftAssertionFilter[];
+  name: string | null;
+  description: string | null;
+}
+
 export interface MappingDraftAssertionFilter {
   reads: "field" | "column";
   path: string;
@@ -2987,6 +3015,8 @@ export interface MappingDraft {
   identity: string[];
   /** What the OSDU id is made from, as `dataset.idFrom` writes it: `key` for the key's own values; `deliveryKey` or absent for the delivery key. */
   idFrom?: MappingIdFrom | null;
+  /** The rules on the rows the mapping renders from (`dataset.assert`), in the order the document writes them. */
+  rules?: MappingDraftRowRule[];
   parameters: MappingDraftParameter[];
   /** The record sets the mapping's search entries look in. */
   searches: MappingDraftSearch[];

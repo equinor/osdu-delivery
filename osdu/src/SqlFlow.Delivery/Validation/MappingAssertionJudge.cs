@@ -101,6 +101,13 @@ public static partial class MappingAssertionJudge
                 $"{incoming} assertion(s) of {mapping.Reference} judge the value a row gives before the mapping's modifiers, which OSDU does not hold, so they were not judged"));
         }
 
+        if (mapping.Dataset.Assertions.Count > 0)
+        {
+            said.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{mapping.Dataset.Assertions.Count} rule(s) of {mapping.Reference} on the rows it renders from (dataset.assert) judge the ingestion tables, which OSDU does not hold, so they were not judged"));
+        }
+
         var log = new AssertionLog(mapping.Reference);
         _ = JudgeRecord(record, assertions, log);
         return log.Findings();
@@ -348,19 +355,45 @@ public static partial class MappingAssertionJudge
     /// Whether one value meets an assertion: null when it does, or when there is nothing to judge (no value, for any
     /// condition but <c>exists</c> and <c>empty</c>); otherwise why it does not. A judgement made is counted.
     /// </summary>
-    private static string? Judge(NodeAssertion assertion, JsonNode? value, AssertionLog log)
+    private static string? Judge(NodeAssertion assertion, JsonNode? value, AssertionLog log) => Judge(assertion.Condition, value, log);
+
+    /// <summary>
+    /// Whether <paramref name="value"/> meets <paramref name="condition"/>, as <see cref="Meets"/> says, the judgement made
+    /// counted on <paramref name="log"/>: null when it meets it or is not judged, otherwise why it does not.
+    /// </summary>
+    internal static string? Judge(ValueCondition condition, JsonNode? value, AssertionLog log)
     {
-        var condition = assertion.Condition;
+        if (Meets(condition, value, out var reason) is not { } met)
+        {
+            return null;
+        }
+
+        log.Judged();
+        return met ? null : reason;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="value"/> meets <paramref name="condition"/>: no value is judged only by <c>exists</c> (it fails
+    /// <c>exists: true</c>) and <c>empty</c> (it meets <c>empty: true</c>), and passed over (null) by every other condition;
+    /// a value is compared as the assertion flows compare it. <paramref name="reason"/> says why it does not meet it.
+    /// </summary>
+    internal static bool? Meets(ValueCondition condition, JsonNode? value, out string? reason)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+        reason = null;
         switch (condition.Operator)
         {
             case ValueOperator.Exists:
-                log.Judged();
-                return (value is not null) == condition.Flag
-                    ? null
-                    : value is null ? "has no value" : "has a value, and is expected to have none";
+                if ((value is not null) == condition.Flag)
+                {
+                    return true;
+                }
+
+                reason = value is null ? "has no value" : "has a value, and is expected to have none";
+                return false;
             case ValueOperator.Empty when value is null:
-                log.Judged();
-                return condition.Flag ? null : "has no value, and is expected to hold one";
+                reason = condition.Flag ? null : "has no value, and is expected to hold one";
+                return condition.Flag;
         }
 
         if (value is null)
@@ -368,8 +401,7 @@ public static partial class MappingAssertionJudge
             return null;
         }
 
-        log.Judged();
-        return ValueComparer.Holds(condition, value, out var reason) ? null : reason;
+        return ValueComparer.Holds(condition, value, out reason);
     }
 
     /// <summary>
@@ -475,9 +507,9 @@ public static partial class MappingAssertionJudge
         }
     }
 
-    private static IReadOnlyList<JsonNode> Present(JsonNode? value) => value is null ? [] : [value];
+    internal static IReadOnlyList<JsonNode> Present(JsonNode? value) => value is null ? [] : [value];
 
-    private static string Shown(JsonNode? value) => value is null ? "(no value)" : RecordValues.Text(value);
+    internal static string Shown(JsonNode? value) => value is null ? "(no value)" : RecordValues.Text(value);
 
     private static string Join(string path, string name) => RecordPathNotation.Append(path, name);
 

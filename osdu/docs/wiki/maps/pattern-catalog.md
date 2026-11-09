@@ -56,6 +56,7 @@ referenceRefs:
   - delivery-flow-overview
   - delivery-flow-removal
   - delivery-flow-mapping-lookups
+  - delivery-flow-mapping-lookups-composite
   - delivery-flow-cache
   - delivery-flow-interfaces
   - delivery-flow-routes
@@ -75,7 +76,8 @@ related:
   - delivery-wiki-0028-renamed-pipelines-move-their-ledger
   - delivery-wiki-0036-enrich-in-the-mapping
   - delivery-wiki-0037-request-correlation
-updated: 2026-10-30
+  - delivery-wiki-0051-lookups-match-several-fields-on-one-line
+updated: 2026-11-09
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -119,6 +121,7 @@ it is.
 | Problem | Shape | Page |
 | --- | --- | --- |
 | A lookup table holds a key and one value | `replace: $cache.<Type>` matches the key and takes the one field beside it; with more fields, name one with `field:` | [modifiers](../../reference/flow/mapping-modifiers.md) |
+| No one column tells a table's rows apart (a curve type per well and mnemonic) | Key the table by an identity column and find the row by the columns together: `$findBy: well = wellbore_name and mnemonic = curve_mnemonic` | [a line of several comparisons](../../reference/flow/mapping-lookups-composite.md), [decision 0051](../decisions/0051-lookups-match-several-fields-on-one-line.md) |
 | A value may be spelled several ways, or be missing from the table | `$coalesce`: the first alternative that gives a value (the table, then the partition's records, then the value as it stands) | [mapping values](../../reference/flow/mapping-values.md) |
 | A reference should go out even before the partition holds its record | `$unverified: true` on the node building it: written, and recorded as unverified | [mapping values](../../reference/flow/mapping-values.md), [preflight](../../reference/concepts/preflight.md) |
 | Several properties need the same looked-up record (a log's wellbore and its access groups) | A `lookups` entry, matched once per row and read with `$lookup` | [lookups](../../reference/flow/mapping-lookups.md) |

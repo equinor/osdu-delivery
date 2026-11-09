@@ -1127,7 +1127,7 @@ export class OverviewCanvas {
     const lookup = row.row.lookups.find((candidate) => candidate.source === dot.source);
     const by = lookup === undefined || lookup.matches.length === 0
       ? "by the value"
-      : `where ${lookup.matches.map((match) => `${match.field} = ${operandOf(row.row.reads, match.value).text}`).join(", else ")}`;
+      : `where ${lookup.matches.map((match, index) => `${index === 0 ? "" : match.and === true ? " and " : ", else "}${match.field} = ${operandOf(row.row.reads, match.value).text}`).join("")}`;
     const read = lookup?.field ?? "what it holds for it";
     return { title: card.card.title, body: `Finds the row ${by}, and reads ${read}.` };
   }

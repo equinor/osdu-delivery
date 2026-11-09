@@ -611,7 +611,7 @@
       "path": "types[].key",
       "type": "string",
       "required": false,
-      "description": "The column each row of the table is keyed by, and the one a mapping finds the row by. A key is trimmed, and a key that is empty, longer than 256 characters, or held by two rows once trimmed refuses the capture, naming the rows.",
+      "description": "The column each row of the table is keyed by, one unique value per row: a replace finds the row by it, and a $findBy line by it or by any field the type keeps, several together on a line joined by and (a table no one column tells apart is keyed by an identity column). A key is trimmed, and a key that is empty, longer than 256 characters, or held by two rows once trimmed refuses the capture, naming the rows.",
       "appliesWhen": "Table origin only: a type with `table`, read from an ingestion table. Required there; refused on an OSDU type, whose records are kept under their id, and on a dictionary type, whose document names its own key."
     },
     {

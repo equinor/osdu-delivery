@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using SqlFlow.Core;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 
@@ -291,6 +292,17 @@ public interface IIngestionSource
     Task<SourceDescription> DescribeAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// What the mapping's rules judged once a run (<c>dataset.assert</c> with <c>per: run</c>,
+    /// osdu/docs/reference/flow/mapping-dataset-assertions.md) read of the record table: for a <c>count</c> rule how many rows
+    /// the run's scope holds, for a <c>unique</c> rule the rows that share the values of its columns with another, at most
+    /// <paramref name="maxListed"/> of them listed and every one counted. Every row of the scope not marked deleted is read,
+    /// whatever window a read fixed, since a rule on the table is about the whole of it; a row with no value in one of a
+    /// <c>unique</c> rule's columns is compared with none. One answer per rule, in order.
+    /// </summary>
+    /// <exception cref="FlowValidationException">A rule names a column the record table does not hold, or one whose values cannot be compared.</exception>
+    Task<IReadOnlyList<RunRowsAnswer>> JudgeRunAsync(IReadOnlyList<DatasetAssertion> rules, int maxListed, CancellationToken ct = default);
+
+    /// <summary>
     /// The record table's key columns, in the record key's order, with the SQL Server type each holds: what a removal converts
     /// the keys its source holds to, so a key read there derives the delivery key a row of the table does
     /// (osdu/docs/reference/flow/removal.md, How a key is read). Reads the table's shape and no row.
@@ -456,3 +468,26 @@ public sealed record ScopeValue(string Value, long Rows);
 /// <param name="Values">The values, the most rows first, then by value.</param>
 /// <param name="More">True when the column holds more distinct values than were listed.</param>
 public sealed record ScopeParameterValues(string Parameter, string Column, IReadOnlyList<ScopeValue> Values, bool More);
+
+/// <summary>
+/// What a source read of the record table for one rule judged once a run (<see cref="IIngestionSource.JudgeRunAsync"/>).
+/// </summary>
+public sealed record RunRowsAnswer
+{
+    public required DatasetAssertion Rule { get; init; }
+
+    /// <summary>For a <c>count</c> rule: how many rows of the record table the run's scope holds, not marked deleted.</summary>
+    public long Rows { get; init; }
+
+    /// <summary>For a <c>unique</c> rule: the rows sharing the values of its columns with another, at most the bound asked, ordered by the values.</summary>
+    public IReadOnlyList<RunSharedRow> Shared { get; init; } = [];
+
+    /// <summary>For a <c>unique</c> rule: how many rows share values with another, listed or not.</summary>
+    public long SharedRows { get; init; }
+}
+
+/// <summary>One row of the record table sharing the values of a <c>unique</c> rule's columns with another row of the run's scope.</summary>
+/// <param name="Key">The row's record key, as a read gives it.</param>
+/// <param name="Values">The row's values in the rule's columns, in order, as text.</param>
+/// <param name="Sharing">How many rows of the scope hold the same values, this one included.</param>
+public sealed record RunSharedRow(KeyTuple Key, IReadOnlyList<string> Values, long Sharing);

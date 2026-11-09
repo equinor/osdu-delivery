@@ -376,6 +376,12 @@ public sealed record ValueCheckCause
     /// <summary>Whether punctuation and spacing were also folded away when comparing.</summary>
     public bool IgnoreSeparators { get; init; }
 
+    /// <summary>
+    /// Whether values were compared together, on a findBy line written with <c>and</c>: a record had to hold every one of them,
+    /// so the finding is about the values together, never about one of them alone.
+    /// </summary>
+    public bool Together { get; init; }
+
     /// <summary>For several records answering to a value, or a record found that holds nothing at the field read, their ids.</summary>
     public IReadOnlyList<string> Candidates { get; init; } = [];
 

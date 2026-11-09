@@ -168,6 +168,14 @@ public sealed class CacheImpactAnalyzer
                 .Where(use => use.Kind is CacheUsageKind.Unlisted or CacheUsageKind.Listed));
         }
 
+        if (moved.Count > 0 || added.Count > 0)
+        {
+            // The values a findBy line of several comparisons found no row meeting together. Any item that arrived, moved or
+            // left may be the one that meets them now, and which one cannot be told from one of its values alone, so every
+            // such miss of the type is judged by asking both versions for its values together (Moved, Describe).
+            holders.AddRange(await _ledger.FindCompositeMissesAsync(scope, current.Name, ct).ConfigureAwait(false));
+        }
+
         var changedItems = moved.Count + listed.Count + found.Count;
         if (holders.Count == 0)
         {
@@ -242,6 +250,24 @@ public sealed class CacheImpactAnalyzer
             // was built from, a row listed or unlisted under it (the access group a data office adds for a field).
             var ids = CacheUsage.ListedIds(current.FindAll(use.Path, use.ItemId).Select(row => row.Id));
             return string.Equals(Hashing.ContentHash.Of(ids), use.ValueHash, StringComparison.Ordinal) ? null : ("relisted", ids, use.ItemId);
+        }
+
+        if (use.Kind == CacheUsageKind.Unlisted && CacheUsage.IsComposite(use.ItemId))
+        {
+            // Values no row met together: a row does now when they find exactly one, or several, which holds the record and so
+            // changes it as surely. A row that shares only some of them is no answer.
+            if (CacheUsage.Composite(use.ItemId, use.Path, use.ValueText) is not { } composite)
+            {
+                return null;
+            }
+
+            var met = current.Find(composite.Comparisons, composite.IgnoreSeparators);
+            if (met.Item is { } row)
+            {
+                return ("listed", null, row.Id);
+            }
+
+            return met.IsCaseAmbiguous ? ("listed", null, met.CaseVariants[0].Id) : null;
         }
 
         if (use.Kind == CacheUsageKind.Unlisted && !current.IsLookup)
@@ -368,6 +394,11 @@ public sealed class CacheImpactAnalyzer
             case CacheUsageKind.Listed:
                 return new Answer(true, null, CacheUsage.ListedIds(type.FindAll(use.Path, use.ItemId).Select(row => row.Id)));
 
+            case CacheUsageKind.Unlisted when CacheUsage.IsComposite(use.ItemId):
+                return CacheUsage.Composite(use.ItemId, use.Path, use.ValueText) is { } composite
+                    ? Met(type.Find(composite.Comparisons, composite.IgnoreSeparators))
+                    : default;
+
             case CacheUsageKind.Unlisted when !type.IsLookup:
                 return Found(type, type.Find(use.Path, use.ValueText), use.Path);
 
@@ -391,6 +422,12 @@ public sealed class CacheImpactAnalyzer
             // Several records answering is an answer too: the render is held on it, and which ones answer can move.
             return match.IsCaseAmbiguous ? new Answer(true, null, string.Join('\n', match.CaseVariants.Select(v => v.Id))) : default;
         }
+
+        // The row values met together, or the rows when several did. A composite miss read no field of a row, so what the row
+        // holds is no part of the answer; which row meets the values is.
+        static Answer Met(ReferenceMatch match) => match.Item is { } item
+            ? new Answer(true, item.Id, null)
+            : match.IsCaseAmbiguous ? new Answer(true, null, string.Join('\n', match.CaseVariants.Select(v => v.Id))) : default;
     }
 
     /// <summary>What a use reads from one version: whether anything answers it, which record, and the text it gives.</summary>

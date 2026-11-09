@@ -31,7 +31,11 @@ public enum RenderMissKind
 /// <param name="Field">The field of the cached type, or of the searched kind, the value was compared with.</param>
 /// <param name="Column">The source column the value was read from; null for a literal or a value the node computed.</param>
 /// <param name="Value">The value as it was compared, after the node's modifiers.</param>
-public sealed record RenderMissTry(string Field, DatasetColumn? Column, string Value);
+/// <param name="And">
+/// True when the value was compared together with the one before it, on one findBy line written with <c>and</c>: a record had
+/// to hold both, where the lines themselves are tried one after another.
+/// </param>
+public sealed record RenderMissTry(string Field, DatasetColumn? Column, string Value, bool And = false);
 
 /// <summary>
 /// Why one node of a mapping gave no value for a row, as the render met it: what it looked for, where, and with what. The render

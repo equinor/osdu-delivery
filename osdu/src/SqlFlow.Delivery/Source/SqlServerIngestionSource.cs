@@ -671,6 +671,68 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         return new ScopeParameterValues(parameter, declared.Name, values.Take(max).ToList(), values.Count > max);
     }
 
+    public async Task<IReadOnlyList<RunRowsAnswer>> JudgeRunAsync(IReadOnlyList<DatasetAssertion> rules, int maxListed, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxListed, 1);
+        if (rules.Count == 0)
+        {
+            return [];
+        }
+
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct, guardScope: false).ConfigureAwait(false);
+        var record = _tables[SourceDatasets.Record];
+        var where = KeyPaths.Where(_flow);
+        var answers = new List<RunRowsAnswer>(rules.Count);
+        foreach (var rule in rules)
+        {
+            if (rule.Per != DatasetAssertionPer.Run || rule.Kind == DatasetAssertionKind.Value)
+            {
+                throw new ArgumentException($"{rule.Location} is judged as each record renders, not once a run.", nameof(rules));
+            }
+
+            if (rule.Kind == DatasetAssertionKind.Count)
+            {
+                await using var count = Command(connection, IngestionSql.RunCount(layout));
+                BindScope(count, layout);
+                var rows = await ExecuteScalarAsync(count, $"count the rows of {layout.Record} for {rule.Location}", ct).ConfigureAwait(false);
+                answers.Add(new RunRowsAnswer { Rule = rule, Rows = Convert.ToInt64(rows, CultureInfo.InvariantCulture) });
+                continue;
+            }
+
+            var columns = rule.Columns.Select(name =>
+            {
+                var column = Column(record, layout.Record, name, $"{where}: the mapping's {rule.Location} compares column '{name}'");
+                return column.Comparable
+                    ? (column.Name, column.IsText)
+                    : throw new FlowValidationException(
+                        $"{where}: the mapping's {rule.Location} compares column '{column.Name}' of {layout.Record}, which holds {column.SqlType}, whose values the database does not compare; "
+                        + "compare a column of a type that holds one value of bounded size.");
+            }).ToList();
+            await using var command = Command(connection, IngestionSql.RunShared(layout, columns));
+            BindScope(command, layout);
+            command.Parameters.Add(new SqlParameter(IngestionSql.TopParameter, SqlDbType.Int) { Value = maxListed });
+            var shared = new List<RunSharedRow>();
+            long sharedRows = 0;
+            await using (var reader = await ExecuteReaderAsync(command, $"compare the rows of {layout.Record} for {rule.Location}", ct).ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var key = ReadKey(reader, layout);
+                    var values = columns.Select((_, i) => SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(layout.Key.Count + i))) ?? string.Empty).ToList();
+                    var sharing = reader.GetInt64(layout.Key.Count + columns.Count);
+                    sharedRows = reader.GetInt64(layout.Key.Count + columns.Count + 1);
+                    shared.Add(new RunSharedRow(key, values, sharing));
+                }
+            }
+
+            answers.Add(new RunRowsAnswer { Rule = rule, Shared = shared, SharedRows = sharedRows });
+        }
+
+        return answers;
+    }
+
     private async Task<DateTime> NowAsync(SqlConnection connection, CancellationToken ct)
     {
         await using var command = Command(connection, IngestionSql.UpperBound());

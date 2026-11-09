@@ -327,9 +327,24 @@ internal sealed partial class ValueTally
         return stated.Count > 0 ? stated : outcome.Reasons.Count == 1 ? outcome.Misses : [];
     }
 
-    /// <summary>The value the first miss looked for, as it was compared; null when it looked for none (an empty value, a missing type).</summary>
+    /// <summary>
+    /// The value the first miss looked for, as it was compared; for values it compared together, each of them joined by
+    /// <see cref="TogetherSeparator"/>. Null when it looked for none (an empty value, a missing type).
+    /// </summary>
     private string? Looked(IReadOnlyList<RenderMiss> misses)
-        => misses.Count > 0 && misses[0].Tries.FirstOrDefault(t => t.Value.Length > 0) is { } tried ? Clip(tried.Value, _limits.MaxValueChars) : null;
+    {
+        if (misses.Count == 0 || misses[0].Tries.Select((t, i) => (t, i)).FirstOrDefault(p => p.t.Value.Length > 0) is not { t: not null } first)
+        {
+            return null;
+        }
+
+        var tries = misses[0].Tries;
+        var line = tries.Skip(first.i + 1).TakeWhile(t => t.And).Select(t => t.Value).Prepend(first.t.Value).ToList();
+        return Clip(string.Join(TogetherSeparator, line), _limits.MaxValueChars);
+    }
+
+    /// <summary>What joins the values a findBy line compared together, as a finding names them: <c>A-12 / GR</c>.</summary>
+    internal const string TogetherSeparator = " / ";
 
     /// <summary>
     /// What a finding comes from: each miss the render met, else the template's rule or the mapping's assertion, else the reason
@@ -368,6 +383,7 @@ internal sealed partial class ValueTally
         EntityType = miss.EntityType,
         Fields = miss.Tries.Select(t => t.Field).Distinct(StringComparer.Ordinal).ToList(),
         IgnoreSeparators = miss.IgnoreSeparators,
+        Together = miss.Tries.Any(t => t.And),
         Candidates = miss.Candidates,
     };
 

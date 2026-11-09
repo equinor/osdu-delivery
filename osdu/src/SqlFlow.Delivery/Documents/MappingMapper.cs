@@ -184,6 +184,7 @@ internal static partial class MappingMapper
             Label = label,
             Identity = identity,
             IdFrom = IdFrom(dataset.IdFrom, source),
+            Assertions = DatasetAssertions(dataset.Assert, source),
         };
     }
 
@@ -941,6 +942,10 @@ internal static partial class MappingMapper
 
     [GeneratedRegex(@"^\s*(?<field>[^=\s]+)\s*=\s*(?<operand>.+?)\s*$")]
     private static partial Regex FindByPattern();
+
+    /// <summary>A findBy comparison that starts or ends with the word and: a line joined by and with one side left out.</summary>
+    [GeneratedRegex(@"^\s*and\s|\sand\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex DanglingAndPattern();
 
     [GeneratedRegex(@"^(?<column>\S+)\s+is\s+(?<not>not\s+)?(?<rest>.+)$")]
     private static partial Regex ConditionPattern();

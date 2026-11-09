@@ -306,6 +306,50 @@ public class MappingOutlineTests
     }
 
     [Fact]
+    public void A_rule_on_the_rows_is_listed_with_the_dataset_reading_the_fields_of_its_table_at_its_lines()
+    {
+        var yaml = DatasetAssertionLoaderTests.Document("""
+            - name: acl-read-whole
+              description: The ACL column reads as a whole.
+              column: AclUnreadable
+              empty: true
+            - rows: curves
+              unique: [curve_id]
+              onFail: report
+              where:
+                - column: $dataset.kind
+                  equals: LOG
+            - per: run
+              count: { atLeast: 1 }
+            """);
+        var outline = MappingOutline.Of(new DeliveryDocumentLoader().ParseMapping(yaml, "thing.yaml"), yaml: yaml);
+        var lines = yaml.Split('\n');
+
+        var rules = outline.Dataset.Rules;
+        Assert.Equal(3, rules.Count);
+        var acl = rules[0];
+        Assert.Equal(("acl-read-whole", "hold", "record", MappingOutline.DatasetSource, "The ACL column reads as a whole."), (acl.Label, acl.OnFail, acl.Per, acl.Source, acl.Description));
+        Assert.Equal(new MappingOutlineRead(MappingOutline.DatasetSource, "AclUnreadable", "value"), Assert.Single(acl.Reads));
+        Assert.Equal("    - name: acl-read-whole", lines[acl.Line!.Value - 1]);
+        Assert.Equal("      empty: true", lines[acl.EndLine!.Value - 1]);
+
+        var unique = rules[1];
+        Assert.Equal(("report", "dataset.curves"), (unique.OnFail, unique.Source));
+        Assert.Equal(
+            [new MappingOutlineRead("dataset.curves", "curve_id", "value"), new MappingOutlineRead(MappingOutline.DatasetSource, "kind", "condition")],
+            unique.Reads);
+        Assert.Contains(outline.Sources, source => source.Id == "dataset.curves");
+
+        var run = rules[2];
+        Assert.Equal(("run", MappingOutline.DatasetSource), (run.Per, run.Source));
+        Assert.Empty(run.Reads);
+        Assert.Equal("    - per: run", lines[run.Line!.Value - 1]);
+
+        // A mapping stating no rule lists none.
+        Assert.Empty(MappingOutline.Of(TestSchema.Mapping()).Dataset.Rules);
+    }
+
+    [Fact]
     public void The_sample_well_log_is_laid_out_whole_with_each_node_at_its_lines()
     {
         var path = RepositoryRoot.Combine("osdu", "samples", "welldb", "mappings", "WellLog@1.4.0.yaml");

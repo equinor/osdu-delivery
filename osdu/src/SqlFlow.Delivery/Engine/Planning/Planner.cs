@@ -122,6 +122,12 @@ public sealed record PlanHeader
     /// decide: what a plan that says what bringing records up to date would send asks for.
     /// </summary>
     public bool RenderEvery { get; init; }
+
+    /// <summary>
+    /// What the mapping's rules judged once a run (<c>dataset.assert</c> with <c>per: run</c>) found of the run's rows, which
+    /// every record the plan renders carries among its assertion findings.
+    /// </summary>
+    public RunRowsFindings RunRows { get; init; } = RunRowsFindings.None;
 }
 
 /// <summary>Running totals of a plan, safe to add to from the parallel renderers.</summary>
@@ -312,6 +318,9 @@ public sealed class Planner
     /// <summary>Set once the mapping's preflight warnings are on the trace, so a run that opens its read twice says them once.</summary>
     private int _warned;
 
+    /// <summary>Set once what the rules judged once a run found is on the trace, so a run that opens its read twice says it once.</summary>
+    private int _runRowsSaid;
+
     public Planner(IIngestionSource source, IPayloadFiles payloads, ILedger? ledger, ILogger<Planner> logger)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -416,7 +425,40 @@ public sealed class Planner
             _logger.LogInformation("Tier 0: no row changed in the window, but records wait to be planned again; planning those.");
         }
 
-        return header;
+        return await JudgeRunRowsAsync(header, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Judges the mapping's rules over every row of the run's scope (<c>dataset.assert</c> with <c>per: run</c>,
+    /// osdu/docs/reference/flow/mapping-dataset-assertions.md) before any record renders: the source counts and compares the
+    /// record table's rows, and what a rule that fails reaches is carried to each record the plan renders. What failed is
+    /// said on the run's trace, naming the rule, whether or not a record of this run is among those it reaches.
+    /// </summary>
+    private async Task<PlanHeader> JudgeRunRowsAsync(PlanHeader header, CancellationToken ct)
+    {
+        var mapping = header.Mapping.Mapping;
+        var rules = mapping.Dataset.Assertions.Where(r => r.Per == DatasetAssertionPer.Run).ToList();
+        if (rules.Count == 0)
+        {
+            return header;
+        }
+
+        var answers = await _source.JudgeRunAsync(rules, RunRowsFindings.MaxListed, ct).ConfigureAwait(false);
+        var found = RunRowsFindings.Judge(mapping.Reference, answers);
+        if (Interlocked.Exchange(ref _runRowsSaid, 1) == 0)
+        {
+            if (found.Failures.Count == 0)
+            {
+                _logger.LogInformation("Mapping {Mapping}: the {Rules} rule(s) judged over the run's rows hold.", mapping.Reference, rules.Count);
+            }
+
+            foreach (var failure in found.Failures)
+            {
+                _logger.LogWarning("Mapping {Mapping}: {Failure}", mapping.Reference, failure);
+            }
+        }
+
+        return header with { RunRows = found };
     }
 
     /// <summary>The key bounds that cut this read into <paramref name="slices"/> contiguous ranges.</summary>
@@ -984,6 +1026,13 @@ public sealed class Planner
         while (true)
         {
             render = header.Mapping.Render(record, inputs);
+
+            // What the rules judged once a run found reaches the records it names, among their own findings.
+            if (!header.RunRows.IsEmpty)
+            {
+                render = render with { Assertions = header.RunRows.Apply(record, render.Assertions) };
+            }
+
             if (render.IsIncomplete)
             {
                 if (!final)

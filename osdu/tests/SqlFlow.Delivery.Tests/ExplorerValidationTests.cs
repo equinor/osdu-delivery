@@ -470,7 +470,7 @@ public sealed class ExplorerValidationTests : IDisposable
         Assert.Equal((1L, 1L), (list.Valid, list.Invalid));
     }
 
-    /// <summary>A mapping over the fixture's kind asserting on two properties of the record and one of the row.</summary>
+    /// <summary>A mapping over the fixture's kind asserting on two properties of the record, one of the row and, under dataset.assert, the rows.</summary>
     private static MappingDefinition Asserting(string kind = Kind) => new DeliveryDocumentLoader().ParseMapping($$"""
         documentType: mapping
         name: Thing
@@ -481,6 +481,9 @@ public sealed class ExplorerValidationTests : IDisposable
         dataset:
           system: test
           key: [code]
+          assert:
+            - column: code
+              exists: true
         parameters:
           dataPartition: { required: true }
         record:
@@ -523,6 +526,7 @@ public sealed class ExplorerValidationTests : IDisposable
         Assert.Equal(["data.Name", "data.Depth"], findings.Failures.Select(f => f.At));
         Assert.Equal("Alpha", findings.Failures[0].Value);
         Assert.Contains("1 assertion(s) of Thing@2.0.0 judge the value a row gives before the mapping's modifiers, which OSDU does not hold, so they were not judged", verdict.Notes);
+        Assert.Contains("1 rule(s) of Thing@2.0.0 on the rows it renders from (dataset.assert) judge the ingestion tables, which OSDU does not hold, so they were not judged", verdict.Notes);
     }
 
     [Fact]

@@ -27,6 +27,7 @@ related:
   - delivery-flow-mapping-child
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
+  - delivery-flow-mapping-dataset-assertions
   - delivery-flow-mapping-property-names
   - delivery-concept-templates
   - delivery-concept-preflight
@@ -236,6 +237,7 @@ written twice in one map (`Encountered duplicate key Name`).
 | `dataset.label` | string | no | Display text for the ledger and the GUI, with `{column}` tokens. Never in the record. |
 | `dataset.identity` | list | no | Columns whose values identify the record to a person; the ledger indexes them. Never in the record. |
 | `dataset.idFrom` | `deliveryKey` or `key` | no | What the last part of the OSDU id is made from. Default `deliveryKey`. See [The OSDU id](#the-osdu-id). |
+| `dataset.assert` | list | no | Rules on the rows the mapping renders from: a column of each row, how many child rows a record has, values no two rows share, per record or over the run's rows. See [rules on the incoming rows](mapping-dataset-assertions.md). |
 | `parameters` | map | yes (`dataPartition`, except in an enrichment mapping) | The values the flow supplies, each `required`, `default` and `description`. See [parameters](#parameters). |
 | `searches` | map | no | The record sets `$search` nodes look in on the platform: a `kind`, the template (`schema.kind`, and `schema.version` when it means one exactly) that says how it is indexed, read from the template folders on the mapping's path, and a `description`. One search per kind, each read by a node. See [mapping lookups](mapping-lookups.md). |
 | `lookups` | map | no | Records found once in the partition's cache and read by name with `$lookup`: `$cache`, `$findBy`, `$modifiers`, `$ignoreSeparators`, `$description`. Each is read by a node. See [mapping lookups](mapping-lookups.md). |
@@ -267,6 +269,10 @@ the child row ([mapping values](mapping-values.md#foreach-repeated-arrays-from-a
 - **`dataset.identity`** lists columns whose values a person holds when they come looking for a record (a wellbore UWI, a
   log id). The ledger indexes each non-empty value, so the Records page finds the record by any of them across every
   flow. Like the label, it never enters the record or its hash.
+- **`dataset.assert`** lists the rules the rows must meet, beside the dataset that names them rather than on a property
+  they are not about: `{ column: AclUnreadable, empty: true }`, `{ rows: curves, count: { atLeast: 2 } }`,
+  `{ per: run, unique: [log_name] }`. A record whose rows break one is held or reported as a property's assertion is
+  ([rules on the incoming rows](mapping-dataset-assertions.md)).
 
 ### parameters
 
@@ -476,7 +482,9 @@ A record whose elevation lies outside the range is held at the check before send
 sends it; an assertion can instead send the record and record the failure (`onFail: report`), or leave the value out
 (`onFail: omit`). What each record's assertions found joins its verdict on every attempt, and the record keeps how many
 failed. [Mapping assertions](mapping-assertions.md) has every word, where an assertion may be written, how each value is
-judged, and where the findings are shown.
+judged, and where the findings are shown. A rule about the rows rather than a property's value (a column no property
+reads, how many curve rows a log has, logs sharing a name) is written under `dataset.assert`
+([rules on the incoming rows](mapping-dataset-assertions.md)).
 
 ## The record shape
 
@@ -591,6 +599,7 @@ The node, condition and expression messages are on [mapping values](mapping-valu
 - [Mapping expressions](mapping-expressions.md): `$expr`, `$when` and `$where`.
 - [Mapping lookups](mapping-lookups.md) and [mapping modifiers](mapping-modifiers.md).
 - [Mapping assertions](mapping-assertions.md): `$assert`, the rules a property's value must meet.
+- [Rules on the incoming rows](mapping-dataset-assertions.md): `dataset.assert`, the rules the rows a mapping renders from must meet.
 - [Property names holding a dot](mapping-property-names.md): a tag such as `lra.securityClassification`, and `tags['...']` in a path.
 - [Mapping $parent](mapping-parent.md): a custom template's records reading sections of their canonical parent.
 - [Mapping $child](mapping-child.md): a canonical record linking the custom records that stand beside it.

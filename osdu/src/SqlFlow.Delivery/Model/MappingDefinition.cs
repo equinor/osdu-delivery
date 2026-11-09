@@ -350,6 +350,13 @@ public sealed record MappingDataset
     public MappingIdSource IdFrom { get; init; } = MappingIdSource.DeliveryKey;
 
     /// <summary>
+    /// The rules the mapping states on the rows it renders from (<c>dataset.assert</c>,
+    /// osdu/docs/reference/flow/mapping-dataset-assertions.md), in document order: those judged as each record renders, over its
+    /// own row or its rows of a child dataset, and those judged once a run over the record table's rows.
+    /// </summary>
+    public IReadOnlyList<DatasetAssertion> Assertions { get; init; } = [];
+
+    /// <summary>
     /// The dataset of a fragment (<see cref="MappingDefinition.Fragment"/>), which keys no record of its own: no system and no
     /// key columns. Nothing derives a key, a label or an id from it, since a fragment only ever renders into a record the flow's
     /// own mapping keyed.
@@ -534,15 +541,29 @@ public sealed record MappingSource
 
 /// <summary>
 /// One line of a cache or a search source's <c>findBy</c>: the field compared, and the dataset value or literal it must
-/// equal. <see cref="Type"/> is the cached type, or the search, the line compares a record of.
+/// equal. <see cref="Type"/> is the cached type, or the search, the line compares a record of. A line of a cache source may
+/// compare several fields at once (<c>Well = well_name and Mnemonic = curve_mnemonic</c>): this line holds the first
+/// comparison and <see cref="And"/> the rest, and a record is found by the line only when it meets all of them.
 /// </summary>
 public sealed record FindBy(string Type, string Field, DatasetColumn? Column, string? Literal)
 {
     /// <summary>The prefix the line is written with: <c>cache</c>, or <c>search</c> for a line of a search source.</summary>
     public string Prefix { get; init; } = MappingSource.CachePrefix;
 
+    /// <summary>
+    /// The comparisons after the first on a line written with <c>and</c>, in the order written, each of one field and with
+    /// none of its own. Empty for a line of one comparison, which every search line is.
+    /// </summary>
+    public IReadOnlyList<FindBy> And { get; init; } = [];
+
+    /// <summary>Every comparison the line makes, the first one first: this line alone, or this line and its <see cref="And"/>.</summary>
+    public IReadOnlyList<FindBy> Comparisons => And.Count == 0 ? [this] : [this, .. And];
+
+    /// <summary>True when the line compares several fields, each of which a record must meet.</summary>
+    public bool IsComposite => And.Count > 0;
+
     public override string ToString()
-        => $"{Prefix}.{Type}.{Field} = {(Column is not null ? Column.ToString() : "'" + Literal + "'")}";
+        => string.Join(" and ", Comparisons.Select(c => $"{c.Prefix}.{c.Type}.{c.Field} = {(c.Column is not null ? c.Column.ToString() : "'" + c.Literal + "'")}"));
 }
 
 /// <summary>
@@ -575,7 +596,7 @@ public sealed record MappingLookup
 
     /// <summary>Every dataset column the lookup's lines and modifiers read.</summary>
     public IEnumerable<DatasetColumn> Columns
-        => FindBy.Where(f => f.Column is not null).Select(f => f.Column!)
+        => FindBy.SelectMany(f => f.Comparisons).Where(f => f.Column is not null).Select(f => f.Column!)
             .Concat(Modifiers.Where(m => m.Id is not null).SelectMany(m => m.Id!.Columns));
 }
 
@@ -948,7 +969,7 @@ public sealed partial record MappingEntry
                     yield return assertionColumn;
                 }
 
-                foreach (var find in node.FindBy)
+                foreach (var find in node.FindBy.SelectMany(line => line.Comparisons))
                 {
                     if (find.Column is { } findColumn)
                     {

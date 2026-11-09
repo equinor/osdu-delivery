@@ -714,3 +714,13 @@ counters in `osdu.DimensionRun`), the dimension executor, and the delivery's spl
 
 Added decision 0050, which extends 0025; added `delivery-flow-dimension-nodes`; updated `delivery-flow-dimension`,
 `delivery-flow-dimension-build` and `delivery-cli-run`.
+
+## [2026-11-09] ingest | Lookups on several fields
+
+Source: the human's question whether a lookup joins on one column only and their wish to look a value up by several
+columns while a table keeps one unique key; the mapping loader, the cache's matching, the render, the cache impact
+analysis and the ledger's cache sets.
+
+Added decision 0051; added `delivery-flow-mapping-lookups-composite`; updated `delivery-flow-mapping-lookups`,
+`delivery-guide-lookup-table-cache`, `delivery-flow-cache`, `delivery-concept-partition-cache`,
+`delivery-concept-search-terms`, `delivery-table-cache-set-entry` and the pattern catalog.

@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 import type { DeliveryCachedType, MappingDraftModifier, MappingDraftModifierKind, MappingDraftOtherwiseKind } from "../../api/delivery";
 import { isLookupEntityType } from "./cacheFormat";
 import {
-  cachedReplaceFields, DECIMAL_SEPARATORS, GROUP_SEPARATORS, ID_TEMPLATE_EXAMPLE, isCachedReplace, moveItem, newModifier, NO_GROUP,
-  type FindLine,
+  cachedReplaceFields, DECIMAL_SEPARATORS, GROUP_SEPARATORS, ID_TEMPLATE_EXAMPLE, isCachedReplace, moveItem, newFindLine, newModifier, NO_GROUP,
+  type FindLine, type FindPart,
 } from "./mappingDraft";
 
 export function IconAction({
@@ -391,12 +391,59 @@ function ReplaceEditor({
   );
 }
 
+/** One comparison of a findBy line: the field compared, `=`, and a dataset column or a fixed text it must equal. */
+function FindPartControls({
+  part, onChange, fieldOptions, fieldPlaceholder, columnsList, columnPlaceholder, testId,
+}: {
+  part: FindPart;
+  onChange: (patch: Partial<FindPart>) => void;
+  fieldOptions: ChoiceOption[];
+  fieldPlaceholder: string;
+  columnsList: string;
+  columnPlaceholder: string;
+  /** Prefixes each control: `<testId>-field`, `-mode` and `-value` with the place of the comparison appended. */
+  testId: { prefix: string; at: string };
+}) {
+  return (
+    <>
+      <ChoiceOrText
+        value={part.field}
+        options={fieldOptions}
+        onChange={(field) => onChange({ field })}
+        placeholder={fieldPlaceholder}
+        testId={`${testId.prefix}-field-${testId.at}`}
+      />
+      <span className="font-mono text-[12px] text-muted-foreground">=</span>
+      <Select value={part.mode} onValueChange={(next) => onChange({ mode: next === "text" ? "text" : "column" })}>
+        <SelectTrigger size="sm" className="h-8 w-40" data-testid={`${testId.prefix}-mode-${testId.at}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="column">dataset column</SelectItem>
+          <SelectItem value="text">fixed text</SelectItem>
+        </SelectContent>
+      </Select>
+      <Input
+        list={part.mode === "column" ? columnsList : undefined}
+        className="h-8 min-w-40 flex-1 font-mono text-[12px]"
+        placeholder={part.mode === "column" ? columnPlaceholder : "KellyBushing"}
+        value={part.value}
+        onChange={(event) => onChange({ value: event.target.value })}
+        data-testid={`${testId.prefix}-value-${testId.at}`}
+      />
+    </>
+  );
+}
+
 /**
  * The findBy lines a record is found by, tried in order: each the field compared and a dataset column or a fixed text it
- * must equal. `testId` prefixes every control, so the entry editor and the lookup editor keep their own.
+ * must equal, and, where `allowAnd` says a line may, further comparisons joined by "and" that a record must meet together
+ * with the first. A line written with "and" elsewhere is shown whole wherever it is edited, so nothing of it is lost; the
+ * server says why a search line may not keep it. `testId` prefixes every control, so the entry editor and the lookup
+ * editor keep their own; a line's further comparisons are numbered `<line>-and-<n>`.
  */
 export function FindByLinesEditor({
-  lines, onChange, title, hint, fieldOptions, fieldPlaceholder, newField, columnsList, columnPlaceholder, emptyText, testId, children,
+  lines, onChange, title, hint, fieldOptions, fieldPlaceholder, newField, columnsList, columnPlaceholder, emptyText, allowAnd, testId, children,
 }: {
   lines: FindLine[];
   onChange: (lines: FindLine[]) => void;
@@ -411,16 +458,20 @@ export function FindByLinesEditor({
   columnPlaceholder: string;
   /** What is said while there is no line. */
   emptyText: string;
+  /** Whether a line may compare several fields: a cache lookup's may, a search's may not. */
+  allowAnd: boolean;
   testId: string;
   children?: ReactNode;
 }) {
   const update = (index: number, patch: Partial<FindLine>) => onChange(lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  const updateAnd = (index: number, at: number, patch: Partial<FindPart>) =>
+    update(index, { and: lines[index].and.map((part, i) => (i === at ? { ...part, ...patch } : part)) });
   return (
     <Section
       title={title}
       hint={hint}
       action={(
-        <Button variant="outline" size="xs" onClick={() => onChange([...lines, { field: newField, mode: "column", value: "" }])} data-testid={`${testId}-add`}>
+        <Button variant="outline" size="xs" onClick={() => onChange([...lines, newFindLine(newField)])} data-testid={`${testId}-add`}>
           <Plus />
           Add a line
         </Button>
@@ -429,41 +480,57 @@ export function FindByLinesEditor({
     >
       {lines.length === 0 && <p className="text-xs text-destructive">{emptyText}</p>}
       {lines.map((line, index) => (
-        <div key={index} className="flex flex-wrap items-center gap-1.5 rounded-md border border-border p-2" data-testid={`${testId}-${index}`}>
-          <ChoiceOrText
-            value={line.field}
-            options={fieldOptions}
-            onChange={(field) => update(index, { field })}
-            placeholder={fieldPlaceholder}
-            testId={`${testId}-field-${index}`}
-          />
-          <span className="font-mono text-[12px] text-muted-foreground">=</span>
-          <Select value={line.mode} onValueChange={(next) => update(index, { mode: next === "text" ? "text" : "column" })}>
-            <SelectTrigger size="sm" className="h-8 w-40" data-testid={`${testId}-mode-${index}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="column">dataset column</SelectItem>
-              <SelectItem value="text">fixed text</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input
-            list={line.mode === "column" ? columnsList : undefined}
-            className="h-8 min-w-40 flex-1 font-mono text-[12px]"
-            placeholder={line.mode === "column" ? columnPlaceholder : "KellyBushing"}
-            value={line.value}
-            onChange={(event) => update(index, { value: event.target.value })}
-            data-testid={`${testId}-value-${index}`}
-          />
-          <IconAction label="Move up" onClick={() => onChange(moveItem(lines, index, -1))} disabled={index === 0} testId={`${testId}-up-${index}`}>
-            <ArrowUp />
-          </IconAction>
-          <IconAction label="Move down" onClick={() => onChange(moveItem(lines, index, 1))} disabled={index === lines.length - 1} testId={`${testId}-down-${index}`}>
-            <ArrowDown />
-          </IconAction>
-          <IconAction label="Remove this line" onClick={() => onChange(lines.filter((_, i) => i !== index))} testId={`${testId}-remove-${index}`}>
-            <X />
-          </IconAction>
+        <div key={index} className="flex flex-col gap-1.5 rounded-md border border-border p-2" data-testid={`${testId}-${index}`}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <FindPartControls
+              part={line}
+              onChange={(patch) => update(index, patch)}
+              fieldOptions={fieldOptions}
+              fieldPlaceholder={fieldPlaceholder}
+              columnsList={columnsList}
+              columnPlaceholder={columnPlaceholder}
+              testId={{ prefix: testId, at: String(index) }}
+            />
+            {allowAnd && (
+              <IconAction
+                label="Compare another field on this line: a record must meet both"
+                onClick={() => update(index, { and: [...line.and, { field: "", mode: "column", value: "" }] })}
+                testId={`${testId}-and-add-${index}`}
+              >
+                <Plus />
+              </IconAction>
+            )}
+            <IconAction label="Move up" onClick={() => onChange(moveItem(lines, index, -1))} disabled={index === 0} testId={`${testId}-up-${index}`}>
+              <ArrowUp />
+            </IconAction>
+            <IconAction label="Move down" onClick={() => onChange(moveItem(lines, index, 1))} disabled={index === lines.length - 1} testId={`${testId}-down-${index}`}>
+              <ArrowDown />
+            </IconAction>
+            <IconAction label="Remove this line" onClick={() => onChange(lines.filter((_, i) => i !== index))} testId={`${testId}-remove-${index}`}>
+              <X />
+            </IconAction>
+          </div>
+          {line.and.map((part, at) => (
+            <div key={at} className="flex flex-wrap items-center gap-1.5 pl-3" data-testid={`${testId}-${index}-and-${at}`}>
+              <span className="w-7 font-mono text-[12px] text-muted-foreground">and</span>
+              <FindPartControls
+                part={part}
+                onChange={(patch) => updateAnd(index, at, patch)}
+                fieldOptions={fieldOptions}
+                fieldPlaceholder={fieldPlaceholder}
+                columnsList={columnsList}
+                columnPlaceholder={columnPlaceholder}
+                testId={{ prefix: testId, at: `${index}-and-${at}` }}
+              />
+              <IconAction
+                label="Remove this comparison"
+                onClick={() => update(index, { and: line.and.filter((_, i) => i !== at) })}
+                testId={`${testId}-remove-${index}-and-${at}`}
+              >
+                <X />
+              </IconAction>
+            </div>
+          ))}
         </div>
       ))}
       {children}

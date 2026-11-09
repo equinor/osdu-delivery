@@ -11,6 +11,8 @@ keywords:
   - ingestion table
   - cache
   - mapping
+  - identity key
+  - several key columns
   - json
   - csv
   - "types[].table"
@@ -20,6 +22,7 @@ keywords:
   - cache import
 related:
   - delivery-flow-cache
+  - delivery-flow-mapping-lookups-composite
   - delivery-concept-partition-cache
   - delivery-flow-dictionary
   - delivery-flow-mapping-modifiers
@@ -167,7 +170,9 @@ The keys are SQLFlow's [ingestion flow](../../../../sqlflow/docs/reference/flow/
 Two choices matter for the cache:
 
 - **Key the table by the lookup key.** `keyColumns: [source_unit]` keeps one row per spelling, and a newer file
-  replaces a spelling's row. The cache refuses a table where two rows share a key.
+  replaces a spelling's row. The cache refuses a table where two rows share a key. When no one column tells the rows
+  apart (a curve type per well and mnemonic), key the table by an identity column and read it by those columns together
+  on [a findBy line of several comparisons](../flow/mapping-lookups-composite.md).
 - **Mark removed rows deleted, if rows can disappear.** The cache leaves out every row whose `DeletedDate_DW` is set,
   which the ing flow's deleted-row detection (`load.matchKeysInSourceAndTarget` with `matchKeys.action: tag`,
   [ing-load](../../../../sqlflow/docs/reference/flow/ing-load.md)) stamps on rows whose keys left the source.
@@ -206,7 +211,7 @@ schedule: welldb-lookups
 | --- | --- |
 | `source.connection` | The ingestion database, as a `${env:...}` or `${keyvault:...}` reference, resolved on the node that runs the refresh. A literal password is refused. |
 | `table` | The silver table, as a three-part name. |
-| `key` | The column a row is found by. The mapping matches incoming values against it. |
+| `key` | The column a row is kept under, one unique value per row. A replace matches incoming values against it; a `$findBy` line matches it or any field, several at once on [a line joined by `and`](../flow/mapping-lookups-composite.md). |
 | `fields` | The columns kept beside the key: here the one value a replace gives. Write `{ column: osdu_unit, as: unit }` to keep a column under another name. |
 | `name` (not written) | The name a mapping reads the type by; it defaults to the table's name, `UnitAlias`. |
 

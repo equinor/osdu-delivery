@@ -2984,8 +2984,8 @@ public sealed partial class OsduLedger : ILedger
                     SetId = set.SetId,
                     Scope = scope,
                     TypeName = usage.TypeName,
-                    ItemId = Truncate(usage.ItemId, 512)!,
-                    Path = Truncate(usage.Path, 400)!,
+                    ItemId = Truncate(usage.ItemId, Snapshots.CacheUsage.MaxItemIdLength)!,
+                    Path = Truncate(usage.Path, Snapshots.CacheUsage.MaxPathLength)!,
                     Kind = KindText(usage.Kind),
                     ValueHash = usage.ValueHash,
                     ValueText = usage.Display,
@@ -3032,6 +3032,21 @@ public sealed partial class OsduLedger : ILedger
         }
 
         return found;
+    }
+
+    public async Task<IReadOnlyList<CacheSetUse>> FindCompositeMissesAsync(string scope, string typeName, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(typeName);
+        var unlisted = KindText(Snapshots.CacheUsageKind.Unlisted);
+        // A constant prefix is a range of the binary-collated item id, so the type's composite misses are read by a seek of
+        // IX_CacheSetEntry_Scope_TypeName_ItemId, never by a pass over every value its sets hold.
+        var rows = await ReadAsync(
+            db => db.DeliveryCacheSetEntries
+                .Where(e => e.Scope == scope && e.TypeName == typeName && e.ItemId.StartsWith(Snapshots.CacheUsage.CompositeMarker) && e.Kind == unlisted)
+                .ToListAsync(ct),
+            ct).ConfigureAwait(false);
+        return rows.Select(e => new CacheSetUse(e.SetId, e.Scope, e.TypeName, e.ItemId, e.Path, ToKind(e.Kind), e.ValueHash, e.ValueText)).ToList();
     }
 
     public async Task<long> CountRecordsInSetsAsync(IReadOnlyList<long> setIds, CancellationToken ct = default)
@@ -3137,6 +3152,8 @@ public sealed partial class OsduLedger : ILedger
                     else if (tag.Change == "listed" && tag.OldValue is { Length: > 0 } looked)
                     {
                         keys.AddRange(looked.Split(", ").Append(looked).Select(Snapshots.CacheUsage.ListingKey));
+                        // Values a line of several comparisons looked up together are kept under one key of them all.
+                        keys.AddRange(Snapshots.CacheUsage.CompositeKeys(tag.Path, looked));
                     }
 
                     foreach (var set in ParseSets(tag.SetIds))

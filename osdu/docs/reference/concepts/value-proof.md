@@ -91,6 +91,10 @@ dataset filters, a value compared as its column's own type. The cache step reads
 version that is gone, or whose records the cache's [retention](partition-cache.md#retention) pruned, stops it with an error, so
 an empty answer is never one about records that cannot be read.
 
+Values a [line of several comparisons](../flow/mapping-lookups-composite.md) looked up together are named together
+(`Z-9 / NPHI`), and the headline says no record holds them together. Such a finding has no cache step: a count of the
+records holding each value would not show that none holds them all, and the proof says so in its notes.
+
 A request carries as many of the finding's values as fit a task's argument, the most frequent first, and the page says when
 it carries fewer than the check listed. A check lists up to 25 values a finding; a check of fewer rows lists the rest.
 

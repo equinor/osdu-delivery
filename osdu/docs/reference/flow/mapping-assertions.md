@@ -20,6 +20,7 @@ keywords:
   - held for an assertion
 related:
   - delivery-flow-mapping-values
+  - delivery-flow-mapping-dataset-assertions
   - delivery-flow-mapping
   - delivery-flow-assertion
   - delivery-concept-preflight
@@ -72,6 +73,10 @@ value is **left out** and the record sent without it.
 What a record's assertions found is part of the verdict of the check before sending, recorded on every attempt, and the
 record keeps how many failed. Whether a record met its mapping's rules, which ones it broke and with what value is
 therefore answered from its history alone ([ledger](../concepts/ledger.md)).
+
+A rule about the rows rather than about a property's value (a column no property reads, how many curve rows a log
+has, logs of the run sharing a name) is written beside the dataset, under `dataset.assert`
+([rules on the incoming rows](mapping-dataset-assertions.md)), so each rule sits where it is about.
 
 The conditions are the assertion flows' own ([conditions](assertion.md#conditions)): one reader and one comparer serve
 both, so a rule a mapping states and a test an assertion flow states mean the same thing. The same rules can be judged on
@@ -222,6 +227,10 @@ counting from zero (`dataset.curves[3].curve_id`), or the row and the expression
 
 A value that fails an incoming assertion with `onFail: omit` is left out before the modifiers run, so the node gives no
 value; a record-stage assertion of the same property then finds none.
+
+An incoming assertion belongs on a property when it is about the value that property reads. A check of a column no
+property reads, of a record's child rows as a set, or of the run's rows, is a rule on the rows, written under
+`dataset.assert` ([rules on the incoming rows](mapping-dataset-assertions.md)).
 
 ### Values
 
@@ -476,6 +485,7 @@ What does not fit the template is the [preflight's](#the-preflight) to refuse.
 ## Related
 
 - [Mapping values](mapping-values.md): the nodes an assertion is written beside, `$required` and `$when`.
+- [Rules on the incoming rows](mapping-dataset-assertions.md): `dataset.assert`, rules on the rows rather than a property.
 - [Assertion flow](assertion.md): the conditions, and tests of what OSDU holds.
 - [Preflight](../concepts/preflight.md): the check before sending and the verdict.
 - [Record lifecycle](../concepts/record-lifecycle.md): held records, issues and releases.
