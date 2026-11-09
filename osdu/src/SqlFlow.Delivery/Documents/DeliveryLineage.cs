@@ -173,7 +173,7 @@ public static class DeliveryLineage
                              h => h.Kind is { } pattern
                                  && (Engine.Dimensions.KindPatterns.Matches(pattern, mapping.Kind) || stepKinds.Any(k => Engine.Dimensions.KindPatterns.Matches(pattern, k)))))
                 {
-                    Add(datasets, OsduLineage.CacheType(LineageRelation.Writes, type.Partition, type.Name, who, warnings));
+                    Add(datasets, OsduLineage.CacheType(LineageRelation.Writes, StepPartition(type, partition), type.Name, who, warnings));
                 }
 
                 if (!flow.Cache.Before.IsEmpty)
@@ -192,7 +192,7 @@ public static class DeliveryLineage
                                  h => h.Kind is not null
                                      && (cacheReads.Types.Contains(h.Name, StringComparer.OrdinalIgnoreCase) || cacheReads.EntityTypes.Contains(h.EntityType, StringComparer.OrdinalIgnoreCase))))
                     {
-                        Add(datasets, OsduLineage.CacheType(LineageRelation.Writes, type.Partition, type.Name, who, warnings));
+                        Add(datasets, OsduLineage.CacheType(LineageRelation.Writes, StepPartition(type, partition), type.Name, who, warnings));
                         if (type.Kind is { } captured)
                         {
                             Add(datasets, OsduLineage.Type(
@@ -318,7 +318,7 @@ public static class DeliveryLineage
         {
             var checkedAgainst = cache.EntityTypes.ToHashSet(StringComparer.Ordinal);
             foreach (var held in scan.Held
-                         .Where(h => string.Equals(h.Partition, partition, StringComparison.OrdinalIgnoreCase) && checkedAgainst.Contains(h.EntityType))
+                         .Where(h => Scan.HeldFor(h.Partition, partition) && checkedAgainst.Contains(h.EntityType))
                          .OrderBy(h => h.Name, StringComparer.Ordinal))
             {
                 if (named.Add(held.Name) && !scan.OnlyHeldWith(partition, held.Name, written))
@@ -487,6 +487,15 @@ public static class DeliveryLineage
         }
     }
 
+    /// <summary>
+    /// The partition whose cache a pipeline's step brings <paramref name="type"/> up to date in: the pipeline's own, when the
+    /// type is held for every registered partition, since a run updates the cache of the partition it delivers to; else the
+    /// partition the type is held in. A type held for every partition is written there by a pipeline to every partition
+    /// alone, and lineage binds that write to each named partition (<see cref="OrderLineage.BindEveryPartition"/>).
+    /// </summary>
+    private static string StepPartition(CacheLineage.HeldType type, string partition)
+        => string.Equals(type.Partition, PartitionNames.Every, StringComparison.Ordinal) ? partition : type.Partition;
+
     private static void Add(List<DeclaredDataset> datasets, DeclaredDataset? dataset)
     {
         if (dataset is not null)
@@ -516,7 +525,8 @@ public static class DeliveryLineage
         /// <summary>
         /// Whether every cache flow of the estate holding <paramref name="type"/> in <paramref name="partition"/> also holds
         /// records of <paramref name="writtenEntity"/>, the entity type a delivery writes: false when no flow holds the type,
-        /// or when the delivery writes no entity type.
+        /// or when the delivery writes no entity type. A flow holding the type for every registered partition holds it in
+        /// each (<see cref="HeldFor"/>).
         /// </summary>
         public bool OnlyHeldWith(string partition, string type, string? writtenEntity)
         {
@@ -526,11 +536,21 @@ public static class DeliveryLineage
             }
 
             var holders = HeldByFlow
-                .Where(f => f.Held.Any(h => SamePartition(h.Partition, partition) && string.Equals(h.Name, type.Trim(), StringComparison.OrdinalIgnoreCase)))
+                .Where(f => f.Held.Any(h => HeldFor(h.Partition, partition) && string.Equals(h.Name, type.Trim(), StringComparison.OrdinalIgnoreCase)))
                 .ToList();
             return holders.Count > 0
-                && holders.All(f => f.Held.Any(h => SamePartition(h.Partition, partition) && string.Equals(h.EntityType, writtenEntity, StringComparison.OrdinalIgnoreCase)));
+                && holders.All(f => f.Held.Any(h => HeldFor(h.Partition, partition) && string.Equals(h.EntityType, writtenEntity, StringComparison.OrdinalIgnoreCase)));
         }
+
+        /// <summary>
+        /// Whether a type held in <paramref name="held"/> is in the cache a flow of <paramref name="partition"/> reads: held in
+        /// that partition, held for every registered partition, or read by a flow of every partition, which reads each
+        /// partition's cache.
+        /// </summary>
+        public static bool HeldFor(string held, string partition)
+            => SamePartition(held, partition)
+                || string.Equals(held, PartitionNames.Every, StringComparison.Ordinal)
+                || string.Equals(partition, PartitionNames.Every, StringComparison.Ordinal);
 
         /// <summary>
         /// The types the cache flows of the scanned estate hold, in <paramref name="partition"/> or for every partition, that a
@@ -544,7 +564,7 @@ public static class DeliveryLineage
                 return [];
             }
 
-            var held = Held.Where(h => SamePartition(h.Partition, partition) || h.Partition == PartitionNames.Every || partition == PartitionNames.Every);
+            var held = Held.Where(h => HeldFor(h.Partition, partition));
             return entries.Auto
                 ? [.. held.Where(auto)]
                 : [.. held.Where(h => entries.Named.Any(entry => Model.CacheStepEntries.IsEntityType(entry)

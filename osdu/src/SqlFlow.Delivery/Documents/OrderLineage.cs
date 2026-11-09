@@ -66,10 +66,12 @@ internal sealed class OrderLineage
 
     /// <summary>
     /// <paramref name="lineage"/> with every OSDU type a flow described under the partition standing for every registered one
-    /// reads also read in each partition the estate's deliveries name (osdu/docs/reference/concepts/lineage.md, The nodes
-    /// the module adds). Such a flow reads every registered partition, the named ones among them, so the flows
-    /// delivering those kinds to a named partition are ordered before it, as the flows delivering them to every partition
-    /// are. Reads of other systems, writes, and flows of a named partition are left as they are.
+    /// reads also read in each partition the estate's deliveries name, and every cache type it reads or writes there also
+    /// read or written in each of them (osdu/docs/reference/concepts/lineage.md, The nodes the module adds). Such a flow
+    /// reads and refreshes every registered partition, the named ones among them, so the flows delivering those kinds to a
+    /// named partition, and the cache flows filling those types there, are ordered before it, and the deliveries of a named
+    /// partition reading a cache type it fills after it. Its OSDU type writes, nodes of other systems, and flows of a named
+    /// partition are left as they are.
     /// </summary>
     public static RegisteredFlowLineage BindEveryPartition(RegisteredFlowLineage lineage, RegisteredLineageContext context)
     {
@@ -103,13 +105,11 @@ internal sealed class OrderLineage
     private static List<DeclaredDataset> Bind(IReadOnlyList<DeclaredDataset> datasets, IReadOnlyList<string> named)
     {
         var bound = datasets.ToList();
-        foreach (var read in datasets.Where(d => d.Relation == LineageRelation.Reads
-                     && string.Equals(d.System, OsduLineage.TypeSystem, StringComparison.Ordinal)
-                     && string.Equals(d.Namespace, PartitionNames.Every, StringComparison.Ordinal)))
+        foreach (var dataset in datasets.Where(BindsToNamedPartitions))
         {
             foreach (var partition in named)
             {
-                var copy = read with { Namespace = partition };
+                var copy = dataset with { Namespace = partition };
                 if (!bound.Contains(copy))
                 {
                     bound.Add(copy);
@@ -119,6 +119,16 @@ internal sealed class OrderLineage
 
         return bound;
     }
+
+    /// <summary>
+    /// Whether a node of the partition standing for every registered one is also the node of each named partition: an OSDU
+    /// type read, and a cache type read or written. An OSDU type write stays where it is, since the flows reading the kind
+    /// key their reads by the partition its writer serves (<see cref="ServesEveryPartition"/>).
+    /// </summary>
+    private static bool BindsToNamedPartitions(DeclaredDataset dataset)
+        => string.Equals(dataset.Namespace, PartitionNames.Every, StringComparison.Ordinal)
+            && (string.Equals(dataset.System, OsduLineage.CacheSystem, StringComparison.Ordinal)
+                || (dataset.Relation == LineageRelation.Reads && string.Equals(dataset.System, OsduLineage.TypeSystem, StringComparison.Ordinal)));
 
     private static OrderLineage Build(RegisteredLineageContext context, MappingTemplateSource? fallback, IOrderCatalog? catalog)
     {

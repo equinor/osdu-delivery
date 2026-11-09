@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using SqlFlow.Core.Lineage;
 using SqlFlow.Delivery.Documents;
+using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Order;
 using SqlFlow.Delivery.Ordering;
 using SqlFlow.Delivery.Snapshots;
@@ -215,6 +216,81 @@ public sealed class OrderLineageTests : IDisposable
 
         var report = Scan();
         Assert.True(WaveOf(report, "log-types") < WaveOf(report, "reference-cache"));
+    }
+
+    [Fact]
+    public void A_cache_flow_serving_every_partition_runs_before_a_named_partition_s_delivery_reading_what_it_holds()
+    {
+        // The cache flow leaves its partitions to the registry, so it refreshes the named partition's cache as well: a delivery
+        // reading a type it holds waits for it, whether its mapping names the type or checks a reference against what it holds.
+        Schema("reference-data--LogType");
+        Schema("work-product-component--WellLog", ("LogTypeID", "reference-data--LogType"));
+        CacheIn(null, "reference-cache", "reference-data--LogType");
+        Delivery("logs", "work-product-component--WellLog", literals: [("LogTypeID", "{ $cache: LogType.id, $findBy: [Name = logtypeid] }")]);
+
+        Assert.Equal(
+            [PartitionNames.Every, Partition],
+            CacheWrites("cache/reference-cache.yaml").Where(d => d.Name == "LogType").Select(d => d.Namespace).Order(StringComparer.Ordinal));
+        Assert.Contains($"{Partition}/LogType", Reads(Describe("flows/logs.yaml")));
+        var byName = Scan();
+        Assert.Empty(byName.ExecutionPlan.Unordered);
+        Assert.True(WaveOf(byName, "reference-cache") < WaveOf(byName, "logs"));
+
+        Delivery("logs", "work-product-component--WellLog", refChecked: ("LogTypeID", "reference-data--LogType"));
+        Assert.Contains($"{Partition}/LogType", Reads(Describe("flows/logs.yaml")));
+        var byEntityType = Scan();
+        Assert.Empty(byEntityType.ExecutionPlan.Unordered);
+        Assert.True(WaveOf(byEntityType, "reference-cache") < WaveOf(byEntityType, "logs"));
+    }
+
+    [Fact]
+    public void A_cache_flow_serving_every_partition_capturing_what_a_named_partition_s_delivery_writes_runs_after_it_and_before_its_readers()
+    {
+        // The units check their quantity against the cache that also captures the units: they do not read it, so the cache
+        // runs after them and captures what they wrote, and the wells reading the units run after the cache.
+        Schema("reference-data--UnitQuantity");
+        Schema("reference-data--UnitOfMeasure", ("UnitQuantityID", "reference-data--UnitQuantity"));
+        Schema("master-data--Well", ("ElevationUnitID", "reference-data--UnitOfMeasure"));
+        Delivery("quantities", "reference-data--UnitQuantity");
+        Delivery("units", "reference-data--UnitOfMeasure", refChecked: ("UnitQuantityID", "reference-data--UnitQuantity"));
+        CacheIn(null, "reference-cache", "reference-data--UnitQuantity", "reference-data--UnitOfMeasure");
+        Delivery("wells", "master-data--Well", refChecked: ("ElevationUnitID", "reference-data--UnitOfMeasure"));
+
+        Assert.DoesNotContain(Reads(Describe("flows/units.yaml")), r => r.EndsWith("/UnitQuantity", StringComparison.Ordinal));
+        var report = Scan();
+        Assert.Empty(report.ExecutionPlan.Unordered);
+        Assert.True(WaveOf(report, "quantities") < WaveOf(report, "units"));
+        Assert.True(WaveOf(report, "units") < WaveOf(report, "reference-cache"));
+        Assert.True(WaveOf(report, "reference-cache") < WaveOf(report, "wells"));
+    }
+
+    [Fact]
+    public void A_delivery_serving_every_partition_runs_after_a_named_partition_s_cache_flow_filling_what_it_reads()
+    {
+        Schema("reference-data--LogType");
+        Schema("work-product-component--WellLog", ("LogTypeID", "reference-data--LogType"));
+        Delivery("log-types", "reference-data--LogType");
+        Cache("reference-cache", "reference-data--LogType");
+        Delivery("logs", "work-product-component--WellLog", refChecked: ("LogTypeID", "reference-data--LogType"), partition: null);
+
+        Assert.Contains($"{Partition}/LogType", Reads(Describe("flows/logs.yaml")));
+        var report = Scan();
+        Assert.Empty(report.ExecutionPlan.Unordered);
+        Assert.True(WaveOf(report, "log-types") < WaveOf(report, "reference-cache"));
+        Assert.True(WaveOf(report, "reference-cache") < WaveOf(report, "logs"));
+    }
+
+    [Fact]
+    public void A_named_partition_s_pipeline_writes_a_type_held_for_every_partition_in_its_own_partition_alone()
+    {
+        Schema("reference-data--UnitOfMeasure");
+        Schema("master-data--Well");
+        Delivery("units", "reference-data--UnitOfMeasure", cache: "{ after: [UnitOfMeasure] }");
+        Delivery("wells", "master-data--Well", partition: "test");
+        CacheIn(null, "reference-cache", "reference-data--UnitOfMeasure");
+
+        Assert.Equal([Partition], CacheWrites("flows/units.yaml").Select(d => d.Namespace));
+        Assert.Empty(Scan().ExecutionPlan.Unordered);
     }
 
     [Fact]

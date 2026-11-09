@@ -97,8 +97,11 @@ A few rules follow from the identity:
 - **A flow's partitions multiply its nodes.** A flow that lists `partitions: [dev, test]` contributes its nodes in each
   partition, so the same mapping pinned for both is two mapping nodes, each reading its own partition's cache. A flow that
   leaves its partitions to the registry (no `partitions` and no `data-partition-id` header) is described once, under the
-  partition `*`; since it reads every registered partition, each OSDU type it reads is also read in every partition the
-  repository's delivery flows name, so it runs after the flows delivering that type there. A flow whose
+  partition `*`. Since it reads and refreshes every registered partition, each OSDU type it reads, and each cache type it
+  reads or writes, is also read or written in every partition the repository's delivery flows name. It runs after the
+  flows delivering that type there and after the cache flows filling that cache type there, and a delivery of a named
+  partition reading a cache type it fills runs after it. A delivery's `id` and `ref` checks read such a cache flow's
+  types in every partition, and a pipeline's cache step writes them in the pipeline's own partition. A flow whose
   `data-partition-id` header cannot name a partition gets a warning instead of OSDU nodes.
 
 ## What each kind reads and writes

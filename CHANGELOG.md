@@ -895,6 +895,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A cache flow that leaves its partitions to the registry runs before the deliveries of a named partition that read what it
+  holds, where lineage left the two unordered and a delivery could render against a cache its refresh had not yet
+  brought up to date; a delivery to every partition likewise waits for the cache flows of each named partition it reads
+  ([lineage](osdu/docs/reference/concepts/lineage.md#the-nodes-the-module-adds)).
 - A document whose `flowType` is unknown is refused with a menu that names all fourteen of SQLFlow's built-in kinds, where it
   left out `sftp`; SQLFlow's flow overview counts the fourteen, gives `api` its three transports and the copy page its S3
   endpoint. The module's flow overview lists the inventory's `restore`, and its examples, repository layout and `sqlflow
