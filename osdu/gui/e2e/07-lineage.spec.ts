@@ -114,11 +114,100 @@ test.describe.serial("lineage", () => {
     await expect(graph.getByText(`osdu type · ${PARTITION}.work-product-component`).first()).toBeVisible();
     await expect(graph.getByText(DELIVERY_FLOW, { exact: true }).first()).toBeVisible();
 
-    // The flow's mapping is drawn between what it reads and the flow, captioned by its system and where it is filed, with
-    // a cache type it only checks its ids against feeding it.
+    // The jump names the repository, so the graph opens on the type's trace through it, as flows alone: the flows that
+    // lead to the type, and nothing else of the repository.
+    await expect(graph.getByTestId("graph-status-trace")).toContainText("trace of osdu:wks:work-product-component--WellLog:1.4.0");
+    await expect(graph.getByTestId("graph-status-line")).toContainText("flows only");
+    await expect(graph.getByText(WELL_LOG_MAPPING, { exact: true })).toHaveCount(0);
+
+    // Everything draws the data between them. The flow's mapping is drawn between what it reads and the flow, captioned
+    // by its system and where it is filed, with a cache type it only checks its ids against feeding it. The cache types
+    // one mapping reads look alike (one kind, the same flow before them and the same mapping after), so they are one
+    // stack until stacks are turned off.
+    await graph.getByTestId("graph-level-all").click();
+    await graph.getByTestId("graph-stack-toggle").click();
     await expect(graph.getByText(WELL_LOG_MAPPING, { exact: true }).first()).toBeVisible();
     await expect(graph.getByText(`osdu mapping · ${PARTITION}.${SOURCE}/mappings`).first()).toBeVisible();
     await expect(graph.getByText("LogType", { exact: true }).first()).toBeVisible();
+  });
+
+  test("the graph opens a repository as its flows, and each control says what it changed", async ({ adminPage }) => {
+    await adminPage.goto("/lineage");
+    await adminPage.getByTestId("graph-project-select").click();
+    await adminPage.getByTestId("graph-scope-repo").first().click();
+
+    const graph = adminPage.getByTestId("page-lineage-graph");
+    const status = graph.getByTestId("graph-status-line");
+    const nodes = graph.getByTestId("graph-node");
+    const named = (name: string) => nodes.filter({ hasText: name });
+    const data = graph.locator('[data-testid="graph-node"][data-node-type="object"]');
+
+    // A repository opens as its flows alone: no table, file, mapping or OSDU type is drawn until it is asked for.
+    await expect(status).toContainText("flows only", { timeout: 30_000 });
+    await expect(nodes.first()).toBeVisible({ timeout: 30_000 });
+    await expect(data).toHaveCount(0);
+    const repoId = new URL(adminPage.url()).searchParams.get("repoId");
+    expect(repoId).not.toBeNull();
+
+    // Every flow one by one, whatever the estate's size would have folded or stacked.
+    await adminPage.goto(`/lineage?repoId=${repoId}&group=off&stacks=off`);
+    await expect(named(DELIVERY_FLOW)).toHaveCount(1, { timeout: 30_000 });
+    await expect(graph.getByTestId("graph-reset")).toBeVisible();
+
+    // Everything draws the data beside the flows, and the level is in the address.
+    await graph.getByTestId("graph-level-all").click();
+    await expect(status).toContainText("everything");
+    await expect(data.first()).toBeVisible();
+    expect(new URL(adminPage.url()).searchParams.get("show")).toBe("all");
+    await graph.getByTestId("graph-level-flows").click();
+    await expect(data).toHaveCount(0);
+
+    // A flow's card has no room for what it reads and writes; its panel lists both, whatever the level draws.
+    await named(DELIVERY_FLOW).click();
+    const panel = graph.getByTestId("graph-focus-panel");
+    await expect(panel).toContainText("upstream");
+    await expect(panel.getByTestId("graph-detail-reads")).toContainText(WELL_LOG_MAPPING);
+    await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
+
+    // Trace draws only what is upstream and downstream of it; the bar gains the trace's reach and side, and the line
+    // under it says what is traced.
+    await panel.getByTestId("graph-trace-selected").click();
+    await expect(graph.getByTestId("graph-status-trace")).toContainText(`trace of ${DELIVERY_FLOW}`);
+    await expect(named("welldb-welllog-02-header-ing")).toHaveCount(1);
+    await graph.getByTestId("graph-trace-hops-1").click();
+    await graph.getByTestId("graph-trace-upstream").click();
+    await expect(graph.getByTestId("graph-status-trace")).toContainText("1 hop, upstream only");
+    const traced = new URL(adminPage.url()).searchParams;
+    expect([traced.get("hops"), traced.get("dir")]).toEqual(["1", "up"]);
+
+    // An entry of the panel's lists draws its node, even one the level folds away: the mapping the flow reads.
+    await panel.getByTestId("graph-detail-reads").getByTestId("graph-detail-node").filter({ hasText: WELL_LOG_MAPPING }).first().click();
+    await expect(named(WELL_LOG_MAPPING)).toHaveCount(1);
+
+    // Taking the trace back from the line draws the repository again.
+    await graph.getByTestId("graph-status-remove-trace").click();
+    await expect(graph.getByTestId("graph-status-trace")).toHaveCount(0);
+    await expect(graph.getByTestId("graph-trace-control")).toHaveCount(0);
+
+    // A hidden kind leaves the drawing, and the line names it.
+    await graph.getByTestId("graph-clear-focus").click();
+    await graph.getByTestId("graph-kind-filter").click();
+    await adminPage.locator('[data-testid="graph-kind-option"][data-kind="flow:ing"]').click();
+    await adminPage.keyboard.press("Escape");
+    await expect(graph.getByTestId("graph-status-kinds")).toContainText("hidden: Ingestion");
+    await expect(named("welldb-welllog-02-header-ing")).toHaveCount(0);
+
+    // The wave range trims the drawing from either end, by the keyboard as by dragging.
+    await graph.getByRole("slider", { name: "First wave drawn" }).press("ArrowRight");
+    await expect(graph.getByTestId("graph-status-waves")).toContainText("wave");
+    expect(new URL(adminPage.url()).searchParams.get("waves")).not.toBeNull();
+
+    // Reset takes every choice back.
+    await graph.getByTestId("graph-reset").click();
+    await expect(graph.getByTestId("graph-status-kinds")).toHaveCount(0);
+    await expect(graph.getByTestId("graph-status-waves")).toHaveCount(0);
+    const reset = new URL(adminPage.url()).searchParams;
+    expect([reset.get("hide"), reset.get("waves"), reset.get("group"), reset.get("stacks")]).toEqual([null, null, null, null]);
   });
 
   test("a mapping's row jumps to its node in the graph", async ({ adminPage }) => {

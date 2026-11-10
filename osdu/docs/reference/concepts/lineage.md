@@ -22,6 +22,7 @@ related:
   - concept-lineage-graph-and-plan
   - concept-lineage-tiers
   - cli-lineage
+  - guide-lineage-graph
   - delivery-flow-overview
   - delivery-flow-mapping
   - delivery-flow-cache
@@ -343,8 +344,15 @@ never costs other flows their lineage. The common ones:
 
 ## Where you see it
 
-- The lineage graph in the GUI draws the OSDU nodes with their captions, and the catalog explorer lists them under
-  Datasets, grouped by system, partition and group; an object's Pipelines tab shows the flows that write and read it.
+- The lineage graph in the GUI draws the OSDU nodes with their captions
+  ([reading the lineage graph](../../../../sqlflow/docs/reference/guides/lineage-graph.md)). A repository opens as its
+  flows alone, a folder to a node, so a mapping, a cache type or an OSDU type is drawn at the **Handovers** or
+  **Everything** level, or when it is what a link landed on: a jump from the Mappings, Cache or Assertions page opens
+  the node's own neighbourhood with everything drawn. Nodes that look alike draw as one stack (the cache types one
+  cache flow writes and one mapping reads, the assertion flows reading one OSDU type) until the stack is opened, and
+  a delivery flow's panel lists every mapping, cache type and table it reads whatever the level draws.
+- The catalog explorer lists the OSDU nodes under Datasets, grouped by system, partition and group; an object's
+  Pipelines tab shows the flows that write and read it.
 - The Mappings, Cache and Assertions pages jump from a row to its node in the graph.
 - The OSDU cache page reads the same edges to show where each cached type's content comes from (the flows upstream of the
   cache flow, and where their stream starts) and which delivery flows read it.
