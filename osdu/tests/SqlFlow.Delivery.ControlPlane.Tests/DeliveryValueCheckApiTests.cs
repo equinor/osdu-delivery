@@ -70,7 +70,12 @@ public sealed class DeliveryValueCheckApiTests
                 record: { object: OsduData.silver.Wellbore{{suffix}}, key: [facility_name] }
                 mapping: Wellbore@1.0.0
               welllogs:
-                record: { object: OsduData.silver.WellLog, key: [source_project, log_id], scope: { log_source: logSource } }
+                record:
+                  object: OsduData.silver.WellLog
+                  key: [source_project, log_id]
+                  scope: { log_source: logSource }
+                  lookups:
+                    Origin: { object: OsduData.silver.Wellbore{{suffix}}, key: facility_name, on: log_id, columns: [spud_date] }
                 bulk: { root: ../data/curves, locationColumn: curve_folder, hashColumn: payload_hash }
                 mapping: WellLog@1.4.0
             """;
@@ -193,6 +198,20 @@ public sealed class DeliveryValueCheckApiTests
                 var record = JsonDocument.Parse(text).RootElement.EnumerateArray().First();
                 Assert.Equal("OsduData.silver.WellLog", record.GetProperty("table").GetString());
                 Assert.Equal("${env:osdu_data_db}|osdudata|silver|welllog", record.GetProperty("objectKey").GetString());
+
+                // Its lookup table, typed as the catalog describes it: the column the flow lists and the update column every row is
+                // given, under their prefixed names, which the record table's columns list after its own.
+                var lookup = Assert.Single(record.GetProperty("lookups").EnumerateArray().ToList());
+                Assert.Equal(
+                    ("Origin", "OsduData.silver.Wellbore" + suffix, catalogued, "facility_name", "log_id"),
+                    (lookup.GetProperty("name").GetString(), lookup.GetProperty("table").GetString(), lookup.GetProperty("objectKey").GetString(),
+                        lookup.GetProperty("key").GetString(), lookup.GetProperty("on").GetString()));
+                Assert.Equal(
+                    [("Origin_spud_date", "date"), ("Origin_UpdatedDate_DW", "datetime2")],
+                    lookup.GetProperty("columns").EnumerateArray().Select(c => (c.GetProperty("name").GetString()!, c.GetProperty("dataType").GetString()!)).ToList());
+                Assert.Equal(
+                    ["Origin_spud_date", "Origin_UpdatedDate_DW"],
+                    record.GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString()!).ToList());
             }
 
             // The flow's parameters say which column of the record table each scopes by, so a page offers that column's

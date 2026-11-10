@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 655,
+  "keyCount": 683,
   "keys": [
     {
       "path": "batch",
@@ -626,6 +626,48 @@
       "type": "string",
       "required": false,
       "description": "A predicate narrowing the child rows every read of the dataset takes, appended as written with its own leading AND (`AND [kept] = 1`); its columns are the child table's. A child row it leaves out is in no record's document. One predicate, as the interface's `record.filter` is."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups",
+      "type": "map",
+      "required": false,
+      "description": "Lookup tables joined into every read of the dataset's table (osdu/docs/reference/flow/delivery-lookups.md), by a name of letters, digits and `_` that prefixes the columns each gives a row: `<name>_<column>`. Each is a LEFT OUTER JOIN on the lookup table's key inside the statement that reads the rows, so SQL Server does the work and nothing of the lookup table is held elsewhere; a row whose value names no lookup row has its columns empty. At most 16."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.object",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.key",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.on",
+      "type": "string",
+      "required": true,
+      "description": "The column of the joining table whose value the key matches."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.columns",
+      "type": "list",
+      "required": true,
+      "description": "The lookup table's columns each row is given, as `<name>_<column>`: at least one, each once, none named as a column the row already has."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.columns[]",
+      "type": "string",
+      "required": false,
+      "description": "A column of the lookup table."
     },
     {
       "path": "interfaces.<name>.datasets.<name>.object",
@@ -1368,6 +1410,48 @@
       "type": "string",
       "required": false,
       "description": "A predicate narrowing the record table's rows every read of the interface takes, appended to the read's WHERE as written, so it carries its own leading AND (`AND DeletedDate_DW IS NULL`, `AND [status] <> 'draft'`); its columns are the record table's. A row it leaves out is read by no run, as a row of another scope is not, and a read by key finds it outside the run's scope. One predicate: a `;`, a comment, or a parenthesis, string or quoted name it does not close is refused. Leave it out to read every row of the scope."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups",
+      "type": "map",
+      "required": false,
+      "description": "Lookup tables joined into every read of the record table (osdu/docs/reference/flow/delivery-lookups.md), by a name of letters, digits and `_` that prefixes the columns each gives a row: `<name>_<column>`. Each is a LEFT OUTER JOIN on the lookup table's key inside the statement that reads the rows, so SQL Server does the work and nothing of the lookup table is held elsewhere; a row whose value names no lookup row has its columns empty. At most 16."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups.<name>.object",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups.<name>.key",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups.<name>.on",
+      "type": "string",
+      "required": true,
+      "description": "The column of the joining table whose value the key matches."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups.<name>.columns",
+      "type": "list",
+      "required": true,
+      "description": "The lookup table's columns each row is given, as `<name>_<column>`: at least one, each once, none named as a column the row already has."
+    },
+    {
+      "path": "interfaces.<name>.record.lookups.<name>.columns[]",
+      "type": "string",
+      "required": false,
+      "description": "A column of the lookup table."
     },
     {
       "path": "interfaces.<name>.record.object",
@@ -2804,6 +2888,48 @@
       "description": "A predicate narrowing the child rows every read of the dataset takes, appended as written with its own leading AND (`AND [kept] = 1`); its columns are the child table's. A child row it leaves out is in no record's document. One predicate, as `source.record.filter` is."
     },
     {
+      "path": "source.datasets.<name>.lookups",
+      "type": "map",
+      "required": false,
+      "description": "Lookup tables joined into every read of the dataset's table (osdu/docs/reference/flow/delivery-lookups.md), by a name of letters, digits and `_` that prefixes the columns each gives a row: `<name>_<column>`. Each is a LEFT OUTER JOIN on the lookup table's key inside the statement that reads the rows, so SQL Server does the work and nothing of the lookup table is held elsewhere; a row whose value names no lookup row has its columns empty. At most 16."
+    },
+    {
+      "path": "source.datasets.<name>.lookups.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+    },
+    {
+      "path": "source.datasets.<name>.lookups.<name>.object",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
+    },
+    {
+      "path": "source.datasets.<name>.lookups.<name>.key",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+    },
+    {
+      "path": "source.datasets.<name>.lookups.<name>.on",
+      "type": "string",
+      "required": true,
+      "description": "The column of the joining table whose value the key matches."
+    },
+    {
+      "path": "source.datasets.<name>.lookups.<name>.columns",
+      "type": "list",
+      "required": true,
+      "description": "The lookup table's columns each row is given, as `<name>_<column>`: at least one, each once, none named as a column the row already has."
+    },
+    {
+      "path": "source.datasets.<name>.lookups.<name>.columns[]",
+      "type": "string",
+      "required": false,
+      "description": "A column of the lookup table."
+    },
+    {
       "path": "source.datasets.<name>.object",
       "type": "string",
       "required": true,
@@ -2981,6 +3107,48 @@
       "type": "string",
       "required": false,
       "description": "A predicate narrowing the record table's rows every read of the flow takes, appended to the read's WHERE as written, so it carries its own leading AND (`AND DeletedDate_DW IS NULL`, `AND [status] <> 'draft'`); its columns are the record table's. A row it leaves out is read by no run, as a row of another scope is not, and a read by key finds it outside the run's scope. One predicate: a `;`, a comment, or a parenthesis, string or quoted name it does not close is refused. Leave it out to read every row of the scope."
+    },
+    {
+      "path": "source.record.lookups",
+      "type": "map",
+      "required": false,
+      "description": "Lookup tables joined into every read of the record table (osdu/docs/reference/flow/delivery-lookups.md), by a name of letters, digits and `_` that prefixes the columns each gives a row: `<name>_<column>`. Each is a LEFT OUTER JOIN on the lookup table's key inside the statement that reads the rows, so SQL Server does the work and nothing of the lookup table is held elsewhere; a row whose value names no lookup row has its columns empty. At most 16."
+    },
+    {
+      "path": "source.record.lookups.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+    },
+    {
+      "path": "source.record.lookups.<name>.object",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
+    },
+    {
+      "path": "source.record.lookups.<name>.key",
+      "type": "string",
+      "required": true,
+      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+    },
+    {
+      "path": "source.record.lookups.<name>.on",
+      "type": "string",
+      "required": true,
+      "description": "The column of the joining table whose value the key matches."
+    },
+    {
+      "path": "source.record.lookups.<name>.columns",
+      "type": "list",
+      "required": true,
+      "description": "The lookup table's columns each row is given, as `<name>_<column>`: at least one, each once, none named as a column the row already has."
+    },
+    {
+      "path": "source.record.lookups.<name>.columns[]",
+      "type": "string",
+      "required": false,
+      "description": "A column of the lookup table."
     },
     {
       "path": "source.record.object",

@@ -191,7 +191,7 @@ internal static class TableCapture
             : "its maxRows";
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"Cache flow '{flow.Name}': table {table} holds more than {type.RowLimit} rows for type {type.Name}, {said}: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most {LookupKeys.MaxTableRows}) if the table really holds that many, or join a table that large into the ingestion tables a delivery reads instead. Nothing was captured.");
+            $"Cache flow '{flow.Name}': table {table} holds more than {type.RowLimit} rows for type {type.Name}, {said}: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most {LookupKeys.MaxTableRows}) if the table really holds that many, or join it into the delivery flow's reads instead (source.datasets.<name>.lookups), where SQL Server joins it and nothing holds it in memory. Nothing was captured.");
     }
 
     private static Task<SqlConnection> OpenAsync(CacheDefinition flow, ISecretResolver secrets, CancellationToken ct)

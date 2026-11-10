@@ -109,7 +109,9 @@ In a window the candidates are:
 - record rows whose `systemColumns.updated` (`UpdatedDate_DW`) falls in it;
 - record rows the ingestion flow marked deleted in it (`DeletedDate_DW`), which it does without touching the update
   column;
-- records whose child rows were updated, or marked deleted, in it, since the document is built from them too.
+- records whose child rows were updated, or marked deleted, in it, since the document is built from them too;
+- for a flow that joins lookup tables, records joined to a lookup row its ingestion flow wrote or marked deleted in it,
+  through the record row or a child row ([lookups](../flow/delivery-lookups.md#when-a-lookup-row-changes)).
 
 Every read takes only the rows the flow's [filter](../flow/delivery-filter.md) keeps, when it declares one.
 
@@ -150,7 +152,7 @@ The plan takes each record read through these steps in order; the first that app
 
 | Value | What it is | Compared by |
 | --- | --- | --- |
-| Ingestion fingerprint | SHA-256 over the record row's `UpdatedDate_DW` and, for each child dataset in name order, its row count and newest `UpdatedDate_DW` | Tier 1, and whether a blocked record's source moved |
+| Ingestion fingerprint | SHA-256 over the record row's `UpdatedDate_DW` and, for each child dataset in name order, its row count and newest `UpdatedDate_DW`; for a flow that joins lookup tables, also the update moment of every lookup row joined to the record ([lookups](../flow/delivery-lookups.md)) | Tier 1, and whether a blocked record's source moved |
 | Business version | The record row's `source.lastModified` moment, when the flow declares one | Tier 1, the stale gate, and whether a blocked record's source moved |
 | Render context | The canonical JSON of the inputs in the table above | Tier 1 |
 | Document hash | SHA-256 of the rendered document's canonical JSON alone | Tier 2 and the final check |

@@ -43,7 +43,7 @@ public sealed class SqlServerIngestionSourceFactory : IIngestionSourceFactory
 /// by default so a record and its child rows always describe the same moment. A fan-out cuts the candidates into ranges
 /// of the primary key from a count per range of its values, so nothing ranks or sorts every candidate.
 /// </summary>
-public sealed class SqlServerIngestionSource : IIngestionSource
+public sealed partial class SqlServerIngestionSource : IIngestionSource
 {
     private const int DeadlockError = 1205;
     private const int SnapshotNotAllowed = 3952;
@@ -853,6 +853,14 @@ public sealed class SqlServerIngestionSource : IIngestionSource
 
         _insertedColumn = inserted?.Name;
 
+        // The record table's lookup tables give every record row columns of their own, which a mapping reads as the row's.
+        var (recordLookups, recordGiven) = await LookupsAsync(
+            connection, recordName, record, source.Record.Lookups, _keys.Name("source.record.lookups"), where, ct).ConfigureAwait(false);
+        if (recordGiven.Count > 0)
+        {
+            _tables[SourceDatasets.Record] = Joined(record, recordGiven);
+        }
+
         var datasets = new List<IngestionDataset>(source.Datasets.Count);
         foreach (var (name, dataset) in source.Datasets.OrderBy(d => d.Key, StringComparer.Ordinal))
         {
@@ -873,6 +881,13 @@ public sealed class SqlServerIngestionSource : IIngestionSource
                 Column(columns, objectName, order, $"{where}: {_keys.Name("source.datasets")}.{name}.orderBy names column '{order}'");
             }
 
+            var (lookups, given) = await LookupsAsync(
+                connection, objectName, columns, dataset.Lookups, $"{_keys.Name("source.datasets")}.{name}.lookups", where, ct).ConfigureAwait(false);
+            if (given.Count > 0)
+            {
+                _tables[name] = Joined(columns, given);
+            }
+
             datasets.Add(new IngestionDataset(
                 name,
                 objectName,
@@ -881,7 +896,8 @@ public sealed class SqlServerIngestionSource : IIngestionSource
                 Optional(columns, source.SystemColumns.Updated)?.Name,
                 Optional(columns, source.SystemColumns.Deleted)?.Name,
                 dataset.MaxRowsPerRecord,
-                dataset.Filter));
+                dataset.Filter,
+                lookups));
         }
 
         _layout = new IngestionLayout
@@ -896,6 +912,7 @@ public sealed class SqlServerIngestionSource : IIngestionSource
                 .Select(s => new IngestionScope(s.Key, s.Value, _values.TryGetValue(s.Value, out var given) ? RunValueList.Items(given).Count : 1))
                 .ToList(),
             Datasets = datasets,
+            Lookups = recordLookups,
         };
 
         if (primaryKey is not null)
@@ -1022,6 +1039,18 @@ public sealed class SqlServerIngestionSource : IIngestionSource
 
     private static SourceColumn? Optional(IReadOnlyDictionary<string, SourceColumn> columns, string? name)
         => name is not null && columns.TryGetValue(name, out var column) ? column : null;
+
+    /// <summary>A table's columns with the columns its lookup tables give each of its rows beside them.</summary>
+    private static Dictionary<string, SourceColumn> Joined(IReadOnlyDictionary<string, SourceColumn> columns, IReadOnlyDictionary<string, SourceColumn> given)
+    {
+        var joined = new Dictionary<string, SourceColumn>(columns, StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, column) in given)
+        {
+            joined[name] = column;
+        }
+
+        return joined;
+    }
 
     /// <summary>
     /// The refusal of a provenance column the flow named that the record table does not hold: every record read without it
@@ -1373,6 +1402,22 @@ public sealed class SqlServerIngestionSource : IIngestionSource
             versions[dataset.Name] = new DatasetVersion(rows.Count, newest);
         }
 
+        // What the record's lookup rows were when read: the record row's own lookup row's update moment, and for a child
+        // dataset every row's in order, so a lookup row that moved, arrived or left reads as a moved record.
+        var lookups = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var lookup in layout.Lookups)
+        {
+            lookups[$"{SourceDatasets.Record}.{lookup.Name}"] = IngestionFingerprint.Moments([Moment(builder.Row.Get(lookup.UpdatedAs))]);
+        }
+
+        foreach (var dataset in layout.Datasets)
+        {
+            foreach (var lookup in dataset.Lookups ?? [])
+            {
+                lookups[$"{dataset.Name}.{lookup.Name}"] = IngestionFingerprint.Moments(datasets[dataset.Name].Select(row => Moment(row.Get(lookup.UpdatedAs))));
+            }
+        }
+
         return new SourceRecord
         {
             Row = builder.Row,
@@ -1382,7 +1427,7 @@ public sealed class SqlServerIngestionSource : IIngestionSource
                 _rowNumberColumn is null ? null : RowNumber(builder.Row.Get(_rowNumberColumn)),
                 updated,
                 _insertedColumn is null ? null : Moment(builder.Row.Get(_insertedColumn))),
-            Version = SourceVersion.Of(IngestionFingerprint.Of(updated, versions)),
+            Version = SourceVersion.Of(IngestionFingerprint.Of(updated, versions, lookups)),
             SourceKeyJson = key.Json,
             DeletedUtc = layout.Deleted is { } deleted ? Moment(builder.Row.Get(deleted)) : null,
             Hold = builder.Hold,

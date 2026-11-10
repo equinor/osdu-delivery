@@ -8,7 +8,7 @@ import type { CardField, OutlineCard } from "../src/features/delivery/overview/o
 import { cardPreviewLabel, matchRuns, previewColumns, previewLabel, recordColumnsOf, rowsOfRecord, rowsSourceOf } from "../src/features/delivery/overview/tableRows.ts";
 
 function field(name: string, key = false): CardField {
-  return { id: `dataset\u0000${name}`, name, key, displayOnly: false, match: false, read: true, type: null };
+  return { id: `dataset\u0000${name}`, name, key, displayOnly: false, match: false, read: true, type: null, lookup: null };
 }
 
 function card(source: Partial<MappingOutlineSource> & Pick<MappingOutlineSource, "id" | "kind">, fields: CardField[] = []): OutlineCard {
@@ -23,11 +23,12 @@ function card(source: Partial<MappingOutlineSource> & Pick<MappingOutlineSource,
     unread: [],
     repeater: null,
     readers: 0,
+    lookups: [],
   };
 }
 
-const RECORD: DeliverySourceTable = { dataset: null, table: "[OsduData].[silver].[WellLog]", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id", "source"], join: null, columns: [] };
-const CURVES: DeliverySourceTable = { dataset: "curves", table: "[OsduData].[silver].[Curve]", objectKey: "${env:osdu_data_db}|osdudata|silver|curve", key: ["curve_log", "curve_source"], join: { curve_log: "log_id", curve_source: "source" }, columns: [] };
+const RECORD: DeliverySourceTable = { dataset: null, table: "[OsduData].[silver].[WellLog]", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id", "source"], join: null, columns: [], lookups: [] };
+const CURVES: DeliverySourceTable = { dataset: "curves", table: "[OsduData].[silver].[Curve]", objectKey: "${env:osdu_data_db}|osdudata|silver|curve", key: ["curve_log", "curve_source"], join: { curve_log: "log_id", curve_source: "source" }, columns: [], lookups: [] };
 
 describe("which tables hold rows to look at", () => {
   it("reads a flow's tables in its scope, the cache's types by name, and a search's kind in OSDU", () => {

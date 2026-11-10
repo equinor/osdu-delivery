@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A delivery flow joins a lookup table into its own reads, for a lookup table too large for the cache.**
+  `source.record.lookups` and `source.datasets.<name>.lookups` name a lookup table, its uniquely indexed key and the column
+  it matches, and every read becomes a LEFT OUTER JOIN in SQL Server, giving each row the lookup's columns as
+  `<name>_<column>` with nothing held in memory; a run also reads the records whose lookup row moved, and the mapping
+  overview marks the joined columns ([lookup tables joined into a delivery's reads](osdu/docs/reference/flow/delivery-lookups.md)).
 - **A `$findBy` line finds a cached record by several fields together, joined by `and`.** `well = wellbore_name and
   mnemonic = curve_mnemonic` finds the row holding both values, so a lookup table that no one column tells apart is keyed
   by an identity column and read by its columns together; the lines are still tried in order, the builder edits such a

@@ -3,7 +3,7 @@
 // and what lights up when something is pointed at. No drawing here: outlineLayout places these, and OverviewCanvas draws them.
 
 import type {
-  DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineHow, MappingOutlineLookup, MappingOutlineNode, MappingOutlineRead, MappingOutlineSource, MappingOutlineStep,
+  DeliverySourceLookup, DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineHow, MappingOutlineLookup, MappingOutlineNode, MappingOutlineRead, MappingOutlineSource, MappingOutlineStep,
 } from "../../../api/mappingOutline.ts";
 import { outlinePathOf, parsePath } from "../recordPath.ts";
 
@@ -256,6 +256,8 @@ export interface CardField {
   read: boolean;
   /** The catalog's type for it, when the catalog describes the table. */
   type: string | null;
+  /** The lookup table joined into the table's reads that gives the row this column, or null for a column of the table itself. */
+  lookup: DeliverySourceLookup | null;
 }
 
 /** A table on the canvas. */
@@ -277,6 +279,8 @@ export interface OutlineCard {
   repeater: string | null;
   /** How many properties it reaches. */
   readers: number;
+  /** The lookup tables joined into every read of it, whose columns its rows are given. */
+  lookups: DeliverySourceLookup[];
 }
 
 export function fieldId(source: string, field: string): string {
@@ -363,11 +367,18 @@ export function cardsOf(
     const table = tables?.find((candidate) => (child === null ? source.kind === "record" && candidate.dataset === null : candidate.dataset === child));
     const repeater = child === null ? undefined : repeaters.find((candidate) => candidate.dataset === child);
     const types = new Map((table?.columns ?? []).map((column) => [column.name.toLowerCase(), column.dataType]));
+    const lookups = table?.lookups ?? [];
+    const givenBy = new Map(lookups.flatMap((lookup) => lookup.columns.map((column) => [column.name.toLowerCase(), lookup] as const)));
     const named = table === undefined ? null : tableName(table.table);
-    // What is read comes in the order it is first read; what only names a record to a person comes after, as it is listed.
+    // What is read comes in the order it is first read; what only names a record to a person comes after, as it is listed. The
+    // columns a lookup gives sit after the table's own, each lookup's together, so its entry reads as one.
+    const lookupOrder = (name: string) => {
+      const lookup = givenBy.get(name.toLowerCase());
+      return lookup === undefined ? -1 : lookups.indexOf(lookup);
+    };
     const orderOf = (name: string, key: boolean) => (key ? -1 : uses.get(fieldId(source.id, name)) ?? Number.MAX_SAFE_INTEGER);
     const fields = [...source.fields]
-      .sort((a, b) => orderOf(a.name, a.key) - orderOf(b.name, b.key))
+      .sort((a, b) => lookupOrder(a.name) - lookupOrder(b.name) || orderOf(a.name, a.key) - orderOf(b.name, b.key))
       .map((field): CardField => ({
         id: fieldId(source.id, field.name),
         name: field.name,
@@ -376,6 +387,7 @@ export function cardsOf(
         match: field.match,
         read: field.reads > 0,
         type: types.get(field.name.toLowerCase()) ?? null,
+        lookup: givenBy.get(field.name.toLowerCase()) ?? null,
       }));
     if (source.kind === "cache" && fields.length === 0) {
       fields.push(...pairFields(source.id, cached?.find((type) => type.name === source.name) ?? null));
@@ -393,8 +405,14 @@ export function cardsOf(
       unread: (table?.columns ?? []).filter((column) => !known.has(column.name.toLowerCase())).map((column) => ({ name: column.name, dataType: column.dataType })),
       repeater: repeater?.path ?? null,
       readers: readersOf(outline, source.id, null).length,
+      lookups,
     };
   });
+}
+
+/** Where a column a lookup gives a row comes from, in a sentence: the lookup table and how a row finds its lookup row. */
+export function lookupOrigin(lookup: DeliverySourceLookup): string {
+  return `Joined from ${tableName(lookup.table).title} by lookup ${lookup.name}: the row whose ${lookup.key} is this row's ${lookup.on}, or nothing when none is.`;
 }
 
 /**
@@ -402,7 +420,7 @@ export function cardsOf(
  * its key and what stands beside it as the cache knows them, else the words for them.
  */
 function pairFields(source: string, type: CachedTypeFields | null): CardField[] {
-  const field = (name: string, match: boolean): CardField => ({ id: fieldId(source, name), name, key: false, displayOnly: false, match, read: !match, type: null });
+  const field = (name: string, match: boolean): CardField => ({ id: fieldId(source, name), name, key: false, displayOnly: false, match, read: !match, type: null, lookup: null });
   const key = type?.key ?? "key";
   const value = type?.fields.find((name) => name !== key) ?? "value";
   return [field(key, true), field(value, false)];

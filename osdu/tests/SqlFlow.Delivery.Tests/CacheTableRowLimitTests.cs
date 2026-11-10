@@ -116,7 +116,7 @@ public sealed class CacheTableRowLimitTests
     {
         var flow = Load(Tables);
         Assert.Equal(
-            "Cache flow 'lookups': table OsduData.silver.UnitAlias holds more than 1000000 rows for type UnitAlias, the 1000000 a table type holds when its maxRows says nothing: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most 5000000) if the table really holds that many, or join a table that large into the ingestion tables a delivery reads instead. Nothing was captured.",
+            "Cache flow 'lookups': table OsduData.silver.UnitAlias holds more than 1000000 rows for type UnitAlias, the 1000000 a table type holds when its maxRows says nothing: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most 5000000) if the table really holds that many, or join it into the delivery flow's reads instead (source.datasets.<name>.lookups), where SQL Server joins it and nothing holds it in memory. Nothing was captured.",
             TableCapture.TooManyRows(flow, Assert.Single(flow.Types)));
 
         var raised = Load(WithMaxRows("250000"));

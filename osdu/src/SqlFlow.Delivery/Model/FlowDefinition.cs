@@ -389,6 +389,40 @@ public sealed record FlowSourceTable
     /// never more. Null reads the scope whole.
     /// </summary>
     public int? MaxRecords { get; init; }
+
+    /// <summary>
+    /// The lookup tables joined into every read of the record table (<c>lookups</c>, osdu/docs/reference/flow/delivery-lookups.md),
+    /// by the name that prefixes the columns each adds to the row (<c>&lt;name&gt;_&lt;column&gt;</c>). Empty for a table that
+    /// joins none.
+    /// </summary>
+    public IReadOnlyDictionary<string, FlowSourceLookup> Lookups { get; init; } = new Dictionary<string, FlowSourceLookup>(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// A lookup table joined into every read of a source table (<c>lookups.&lt;name&gt;</c>, osdu/docs/reference/flow/delivery-lookups.md):
+/// a LEFT OUTER JOIN on the lookup table's key, inside the statement that reads the rows, so its columns arrive as columns of
+/// each row, named <c>&lt;name&gt;_&lt;column&gt;</c>, and a row whose value names no lookup row has them empty. SQL Server does
+/// the join, in the database the flow reads, and nothing of the lookup table is held anywhere else.
+/// </summary>
+public sealed record FlowSourceLookup
+{
+    /// <summary>The most lookup tables one source table joins.</summary>
+    public const int MaxPerTable = 16;
+
+    /// <summary>The lookup table's three-part name, in the database of the table that joins it.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Naming", "CA1720:Identifier contains type name",
+        Justification = "The flow document's key is 'object'; the model mirrors the document so a message about it names what the author wrote.")]
+    public required string Object { get; init; }
+
+    /// <summary>The lookup table's key column, which a unique index keeps to one row per value, so the join repeats no row.</summary>
+    public required string Key { get; init; }
+
+    /// <summary>The column of the joining table whose value the key matches.</summary>
+    public required string On { get; init; }
+
+    /// <summary>The lookup table's columns each row is given, in the order the flow lists them.</summary>
+    public required IReadOnlyList<string> Columns { get; init; }
 }
 
 /// <summary>A child dataset of a flow's source: a table of rows each belonging to one record.</summary>
@@ -425,6 +459,12 @@ public sealed record FlowSourceDataset
     /// with the dataset records it adds, or sends them as the record's DDMS bulk data; null for a dataset whose rows name none.
     /// </summary>
     public FlowPayload? Files { get; init; }
+
+    /// <summary>
+    /// The lookup tables joined into every read of the dataset's table (<c>lookups</c>, osdu/docs/reference/flow/delivery-lookups.md),
+    /// by the name that prefixes the columns each adds to a child row. Empty for a table that joins none.
+    /// </summary>
+    public IReadOnlyDictionary<string, FlowSourceLookup> Lookups { get; init; } = new Dictionary<string, FlowSourceLookup>(StringComparer.Ordinal);
 }
 
 /// <summary>

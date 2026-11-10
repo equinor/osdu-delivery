@@ -118,7 +118,7 @@ types:
 A table holding more rows than its type takes refuses the capture, naming the number and how far it may be raised:
 
 ```text
-Cache flow 'welldb-lookups-00-cache': table OsduData.silver.CurveAlias holds more than 1000000 rows for type CurveAlias, the 1000000 a table type holds when its maxRows says nothing: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most 5000000) if the table really holds that many, or join a table that large into the ingestion tables a delivery reads instead. Nothing was captured.
+Cache flow 'welldb-lookups-00-cache': table OsduData.silver.CurveAlias holds more than 1000000 rows for type CurveAlias, the 1000000 a table type holds when its maxRows says nothing: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most 5000000) if the table really holds that many, or join it into the delivery flow's reads instead (source.datasets.<name>.lookups), where SQL Server joins it and nothing holds it in memory. Nothing was captured.
 ```
 
 A plan (`operation: plan`) counts every row and logs the same reason as a warning when a refresh would refuse the table.
@@ -127,7 +127,8 @@ A pipeline's `cache.before` step reads the table with the same `maxRows`, as the
 The number is about memory: a render reads the whole cache version it renders against, and the control plane and every
 node keep the versions they read last in memory ([versions](../concepts/partition-cache.md#versions)), each holding every
 row of every lookup table. Raise `maxRows` for a table that really is that large; join a table larger still, or one a
-mapping reads only a few rows of per record, into the ingestion tables the delivery flow reads. A dictionary holds at most
+mapping reads only a few rows of per record, into the delivery flow's reads with
+[lookups](delivery-lookups.md), where SQL Server joins it and nothing holds it in memory. A dictionary holds at most
 100,000 entries, and a dimension type 100,000 values; neither takes `maxRows`.
 
 ### A column holding a JSON object

@@ -643,6 +643,8 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("build osdu lineage of a data definitions release", &["delivery-concept-osdu-order"]),
     ("update the cache during a schedule after a delivery", &["delivery-concept-partition-cache", "delivery-wiki-0017-pipelines-update-the-cache"]),
     ("update the cache before running a pipeline", &["delivery-concept-partition-cache", "delivery-flow-delivery"]),
+    ("join a large lookup table into the rows a delivery reads with a left outer join", &["delivery-flow-delivery-lookups"]),
+    ("lookup table too large for the cache, out of memory", &["delivery-flow-delivery-lookups", "delivery-flow-cache-origins"]),
     ("refresh only one type of a cache flow", &["delivery-flow-cache"]),
     ("cache extension properties the search does not return", &["delivery-flow-cache-records"]),
     ("read the full record into the cache, not only what search returns", &["delivery-flow-cache-records"]),

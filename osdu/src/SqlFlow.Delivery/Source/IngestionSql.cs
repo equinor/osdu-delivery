@@ -46,6 +46,7 @@ internal sealed record TableSearchTerm(string Pattern, double? Float, float? Rea
 /// <param name="Deleted">The dataset table's soft-delete column, when it carries one.</param>
 /// <param name="MaxRowsPerRecord">The most rows one record may carry.</param>
 /// <param name="Filter">The predicate narrowing the dataset's rows (<c>source.datasets.&lt;name&gt;.filter</c>), appended as written; null for none.</param>
+/// <param name="Lookups">The lookup tables joined into every read of the dataset's table; none when null.</param>
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Naming", "CA1720:Identifier contains type name",
     Justification = "The flow document's key is 'object'; the layout mirrors the document so a message about it names what the author wrote.")]
@@ -57,7 +58,33 @@ public sealed record IngestionDataset(
     string? Updated,
     string? Deleted,
     int MaxRowsPerRecord,
-    string? Filter = null);
+    string? Filter = null,
+    IReadOnlyList<IngestionLookup>? Lookups = null);
+
+/// <summary>
+/// A lookup table joined into every read of one source table (osdu/docs/reference/flow/delivery-lookups.md), as the SQL builders
+/// see it once the flow's declaration has been checked against the tables: a LEFT OUTER JOIN on the lookup table's uniquely
+/// indexed key, so each row gains the lookup row its value names, or nothing, and never a second row.
+/// </summary>
+/// <param name="Name">The lookup's name, which prefixes each column it gives a row.</param>
+/// <param name="Table">The lookup table, in the database of the table that joins it.</param>
+/// <param name="Key">The lookup table's key column.</param>
+/// <param name="On">The joining table's column whose value the key matches.</param>
+/// <param name="Collation">For a key of text, its collation, which the joining column is compared under; null for any other key.</param>
+/// <param name="Columns">Each column of the lookup table a row is given, with the name it is given under (<c>&lt;Name&gt;_&lt;column&gt;</c>).</param>
+/// <param name="Updated">The lookup table's update column: a window reads the records a moved lookup row was joined to.</param>
+/// <param name="UpdatedAs">The name the update column is given under, which a record's fingerprint reads.</param>
+/// <param name="Deleted">The lookup table's soft-delete column; a lookup row marked there joins nothing.</param>
+public sealed record IngestionLookup(
+    string Name,
+    SourceObjectName Table,
+    string Key,
+    string On,
+    string? Collation,
+    IReadOnlyList<KeyValuePair<string, string>> Columns,
+    string Updated,
+    string UpdatedAs,
+    string? Deleted);
 
 /// <summary>One column of the scope predicate as the SQL builders see it.</summary>
 /// <param name="Column">The record table's column.</param>
@@ -128,6 +155,9 @@ public sealed record IngestionLayout
 
     /// <summary>The child datasets, in name order.</summary>
     public IReadOnlyList<IngestionDataset> Datasets { get; init; } = [];
+
+    /// <summary>The lookup tables joined into every read of the record table, in the order the flow declares them.</summary>
+    public IReadOnlyList<IngestionLookup> Lookups { get; init; } = [];
 }
 
 /// <summary>
@@ -345,6 +375,31 @@ public static class IngestionSql
                           WHERE ic.[object_id] = i.[object_id] AND ic.index_id = i.index_id AND ic.key_ordinal > 0
                             AND c.[name] NOT IN (SELECT [value] FROM OPENJSON({KeyNamesParameter}))))
                     THEN 1 ELSE 0 END AS int) AS key_is_unique;
+            """;
+    }
+
+    /// <summary>
+    /// Whether a lookup table's key (<see cref="ColumnParameter"/>) is kept to one row per value by a unique index without a filter
+    /// whose only key column it is, a primary key or a unique constraint included, and the key's collation (null for a key that
+    /// holds no text): one row, of the unique flag and the collation.
+    /// </summary>
+    public static string LookupKeyProbe(SourceObjectName table)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        var database = SourceObjectName.Quote(table.Database);
+        return $"""
+            DECLARE @id int = OBJECT_ID({ObjectParameter});
+            SELECT
+                CAST(CASE WHEN EXISTS (
+                    SELECT 1 FROM {database}.sys.indexes i
+                    WHERE i.[object_id] = @id AND i.is_unique = 1 AND i.has_filter = 0 AND i.is_disabled = 0 AND i.is_hypothetical = 0
+                      AND (SELECT COUNT(*) FROM {database}.sys.index_columns k WHERE k.[object_id] = i.[object_id] AND k.index_id = i.index_id AND k.key_ordinal > 0) = 1
+                      AND EXISTS (
+                          SELECT 1 FROM {database}.sys.index_columns k
+                          INNER JOIN {database}.sys.columns c ON c.[object_id] = k.[object_id] AND c.column_id = k.column_id
+                          WHERE k.[object_id] = i.[object_id] AND k.index_id = i.index_id AND k.key_ordinal = 1 AND c.[name] = {ColumnParameter}))
+                THEN 1 ELSE 0 END AS int),
+                (SELECT c.collation_name FROM {database}.sys.columns c WHERE c.[object_id] = @id AND c.[name] = {ColumnParameter});
             """;
     }
 
@@ -829,11 +884,11 @@ public static class IngestionSql
             predicates.Add($"{record}.{SourceObjectName.Quote(deleted)} IS NULL");
         }
 
-        var from = $"{layout.Record.Quoted} t";
+        var from = $"{Rows(layout.Record, null, layout.Lookups)} t";
         var order = OrderList(layout, record);
         if (dataset is not null)
         {
-            from = $"{dataset.Object.Quoted} t INNER JOIN {layout.Record.Quoted} r ON "
+            from = $"{Rows(dataset.Object, null, dataset.Lookups ?? [])} t INNER JOIN {layout.Record.Quoted} r ON "
                 + string.Join(" AND ", dataset.Join.Select(j => $"t.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}"));
             if (dataset.Deleted is { } deletedChild)
             {
@@ -1038,6 +1093,33 @@ public static class IngestionSql
                 """);
         }
 
+        // A record whose own rows did not change in the window is a candidate when a lookup row joined to its row, or to one of its
+        // child rows, did, or was marked deleted: the values the row is given changed, so its document may have.
+        foreach (var lookup in layout.Lookups)
+        {
+            parts.Add($"""
+                SELECT DISTINCT {OrderList(layout, "r")}
+                FROM {RecordRows(layout)} r
+                INNER JOIN {lookup.Table.Quoted} l ON {LookupOn(lookup, "l", "r")}
+                {Where(layout, "r", LookupChanged(lookup, "l", hasLower), bounds)}
+                """);
+        }
+
+        foreach (var dataset in layout.Datasets)
+        {
+            var on = string.Join(" AND ", dataset.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}"));
+            foreach (var lookup in dataset.Lookups ?? [])
+            {
+                parts.Add($"""
+                    SELECT DISTINCT {OrderList(layout, "r")}
+                    FROM {RecordRows(layout)} r
+                    INNER JOIN {Rows(dataset.Object, dataset.Filter, [])} c ON {on}
+                    INNER JOIN {lookup.Table.Quoted} l ON {LookupOn(lookup, "l", "c")}
+                    {Where(layout, "r", LookupChanged(lookup, "l", hasLower), bounds)}
+                    """);
+            }
+        }
+
         return string.Join(Environment.NewLine + "UNION" + Environment.NewLine, parts);
     }
 
@@ -1130,15 +1212,66 @@ public static class IngestionSql
     /// <summary>
     /// The record table as a read's FROM names it: the table itself, or under <c>source.record.filter</c> the rows the filter
     /// keeps, as a derived table, so the filter's columns resolve against the record table alone whatever the read joins to
-    /// it. The optimizer folds it into the read, which still seeks the table's indexes.
+    /// it, with each of its lookup tables joined (<see cref="Rows"/>). The optimizer folds it into the read, which still seeks
+    /// the table's indexes.
     /// </summary>
-    private static string RecordRows(IngestionLayout layout) => Rows(layout.Record, layout.Filter);
+    private static string RecordRows(IngestionLayout layout) => Rows(layout.Record, layout.Filter, layout.Lookups);
 
-    /// <summary>A child dataset as a read's FROM names it, under its own filter as <see cref="RecordRows"/> does.</summary>
-    private static string DatasetRows(IngestionDataset dataset) => Rows(dataset.Object, dataset.Filter);
+    /// <summary>A child dataset as a read's FROM names it, under its own filter and with its own lookup tables, as <see cref="RecordRows"/> does.</summary>
+    private static string DatasetRows(IngestionDataset dataset) => Rows(dataset.Object, dataset.Filter, dataset.Lookups ?? []);
 
-    private static string Rows(SourceObjectName table, string? filter)
-        => filter is null ? table.Quoted : $"(SELECT * FROM {table.Quoted} WHERE 1 = 1 {filter})";
+    /// <summary>
+    /// A table's rows as a read takes them: under its filter, applied to the table alone so the filter's columns resolve against
+    /// it, and then, for a table that joins lookup tables (osdu/docs/reference/flow/delivery-lookups.md), every row with each
+    /// lookup's columns beside its own, under their prefixed names, by a LEFT OUTER JOIN on the lookup's key. The key's unique
+    /// index makes the join give a row one lookup row at most, and lets the optimizer leave out a join a read takes no column of
+    /// (a page of keys, a count).
+    /// </summary>
+    private static string Rows(SourceObjectName table, string? filter, IReadOnlyList<IngestionLookup> lookups)
+    {
+        var rows = filter is null ? table.Quoted : $"(SELECT * FROM {table.Quoted} WHERE 1 = 1 {filter})";
+        if (lookups.Count == 0)
+        {
+            return rows;
+        }
+
+        var select = new StringBuilder("t.*");
+        var joins = new StringBuilder();
+        for (var i = 0; i < lookups.Count; i++)
+        {
+            var lookup = lookups[i];
+            var alias = "j" + i.ToString(CultureInfo.InvariantCulture);
+            foreach (var (column, name) in lookup.Columns)
+            {
+                select.Append(", ").Append(alias).Append('.').Append(SourceObjectName.Quote(column)).Append(" AS ").Append(SourceObjectName.Quote(name));
+            }
+
+            joins.Append(" LEFT OUTER JOIN ").Append(lookup.Table.Quoted).Append(' ').Append(alias).Append(" ON ").Append(LookupOn(lookup, alias, "t"));
+            if (lookup.Deleted is { } deleted)
+            {
+                joins.Append(" AND ").Append(alias).Append('.').Append(SourceObjectName.Quote(deleted)).Append(" IS NULL");
+            }
+        }
+
+        return $"(SELECT {select} FROM {rows} t{joins})";
+    }
+
+    /// <summary>
+    /// The join of a lookup table, read as <paramref name="lookupAlias"/>, to the table that joins it, read as <paramref name="rowAlias"/>:
+    /// the lookup's key against the joining column, compared under the key's collation for a key of text so the key's index is
+    /// sought and the comparison is the one the index keeps unique.
+    /// </summary>
+    private static string LookupOn(IngestionLookup lookup, string lookupAlias, string rowAlias)
+    {
+        var on = $"{rowAlias}.{SourceObjectName.Quote(lookup.On)}";
+        return $"{lookupAlias}.{SourceObjectName.Quote(lookup.Key)} = {(lookup.Collation is { } collation ? $"{on} COLLATE {collation}" : on)}";
+    }
+
+    /// <summary>A lookup row, read as <paramref name="alias"/>, written or marked deleted in the window.</summary>
+    private static string LookupChanged(IngestionLookup lookup, string alias, bool hasLower)
+        => lookup.Deleted is { } deleted
+            ? $"(({WindowPredicate(alias, lookup.Updated, hasLower)}) OR ({WindowPredicate(alias, deleted, hasLower)}))"
+            : $"({WindowPredicate(alias, lookup.Updated, hasLower)})";
 
     private static string KeyList(IngestionLayout layout, string alias)
         => string.Join(", ", layout.Key.Select(k => $"{alias}.{SourceObjectName.Quote(k.Name)}"));

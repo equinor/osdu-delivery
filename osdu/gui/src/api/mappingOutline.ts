@@ -131,7 +131,27 @@ export interface DeliverySourceTable {
   key: string[];
   /** How a child row joins its record: child column to record column. */
   join: Record<string, string> | null;
-  /** Without SQLFlow's system columns; empty when the catalog has not described the table. */
+  /** Without SQLFlow's system columns; empty when the catalog has not described the table. The columns its lookups give each row come after its own. */
+  columns: { name: string; dataType: string | null; nullable: boolean }[];
+  /** The lookup tables joined into every read of it, in the order the flow declares them. */
+  lookups: DeliverySourceLookup[];
+}
+
+/**
+ * A lookup table joined into every read of a source table (osdu/docs/reference/flow/delivery-lookups.md): a LEFT OUTER JOIN on
+ * its key, so each row is given its columns, named `<name>_<column>`, or nothing when no lookup row matches.
+ */
+export interface DeliverySourceLookup {
+  /** What prefixes the columns it gives a row. */
+  name: string;
+  table: string;
+  /** Its node in lineage. */
+  objectKey: string;
+  /** The lookup table's key. */
+  key: string;
+  /** The column of the joining table the key matches. */
+  on: string;
+  /** The columns it gives each row, under their prefixed names, typed as the catalog describes the lookup table. */
   columns: { name: string; dataType: string | null; nullable: boolean }[];
 }
 

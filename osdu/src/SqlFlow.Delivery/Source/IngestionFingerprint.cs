@@ -19,7 +19,12 @@ public static class IngestionFingerprint
     /// <summary>The fingerprint of one record.</summary>
     /// <param name="recordUpdatedUtc">The record row's update time, or null when the row carries none.</param>
     /// <param name="datasets">Each child dataset by name, with its row count and newest update time.</param>
-    public static string Of(DateTime? recordUpdatedUtc, IReadOnlyDictionary<string, DatasetVersion> datasets)
+    /// <param name="lookups">
+    /// For a flow whose tables join lookup tables (osdu/docs/reference/flow/delivery-lookups.md), each lookup by
+    /// <c>&lt;table&gt;.&lt;lookup&gt;</c> with what its rows' update moments read (<see cref="Moments"/>); none for a flow that joins
+    /// none, whose records keep the fingerprint they always had.
+    /// </param>
+    public static string Of(DateTime? recordUpdatedUtc, IReadOnlyDictionary<string, DatasetVersion> datasets, IReadOnlyDictionary<string, string>? lookups = null)
     {
         ArgumentNullException.ThrowIfNull(datasets);
         var text = new StringBuilder();
@@ -32,7 +37,22 @@ public static class IngestionFingerprint
                 .Append(Ticks(dataset.MaxUpdatedUtc)).Append('\n');
         }
 
+        foreach (var name in (lookups?.Keys ?? []).OrderBy(n => n, StringComparer.Ordinal))
+        {
+            text.Append((char)0x1E).Append(name).Append((char)0x1F).Append(lookups![name]).Append('\n');
+        }
+
         return ContentHash.Of(text.ToString());
+    }
+
+    /// <summary>
+    /// What a lookup's rows read for a fingerprint: the update moment each joined lookup row had, in the order the rows were read,
+    /// none where a row joined nothing, as one hash, so a lookup row that moved, arrived or left moves it.
+    /// </summary>
+    public static string Moments(IEnumerable<DateTime?> moments)
+    {
+        ArgumentNullException.ThrowIfNull(moments);
+        return ContentHash.Of(string.Join((char)0x1F, moments.Select(Ticks)));
     }
 
     private static string Ticks(DateTime? value)

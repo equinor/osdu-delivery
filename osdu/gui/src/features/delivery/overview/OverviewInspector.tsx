@@ -8,7 +8,7 @@ import { lastStepStart, outlinePathOf } from "../recordPath";
 import type { OverviewPart } from "./OverviewCanvas";
 import { PartLineageButton, SourceGlyph } from "./OverviewLineage";
 import type { PartTarget } from "./partTargets";
-import { cardsOf, fieldId, nodeAt, readersOf, wayOf, type OutlineCard, type WayStage } from "./outlineModel.ts";
+import { cardsOf, fieldId, lookupOrigin, nodeAt, readersOf, wayOf, type OutlineCard, type WayStage } from "./outlineModel.ts";
 import { cardPreviewLabel } from "./tableRows.ts";
 
 /** A section of the panel: a quiet heading over what it holds. */
@@ -400,6 +400,21 @@ function CardPanel({ card, outline, onPick }: { card: OutlineCard; outline: Mapp
           ))}
         </ul>
       </Section>
+      {card.lookups.length > 0 && (
+        <Section title={`Lookups, ${card.lookups.length}`}>
+          <ul className="flex min-w-0 flex-col gap-2" data-testid="mapping-overview-lookups">
+            {card.lookups.map((lookup) => (
+              <li key={lookup.name} className="flex min-w-0 flex-col gap-0.5 px-1">
+                <span className="truncate font-mono text-[12px]" title={lookup.table}>{lookup.name}</span>
+                <span className="text-[12px] text-muted-foreground">{lookupOrigin(lookup)}</span>
+                <span className="truncate font-mono text-[11px] text-muted-foreground" title={lookup.columns.map((column) => column.name).join(", ")}>
+                  {lookup.columns.map((column) => column.name).join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
       {card.unread.length > 0 && (
         <Section title={`Not read, ${card.unread.length}`}>
           <ul className="flex min-w-0 flex-col" data-testid="mapping-overview-unread">

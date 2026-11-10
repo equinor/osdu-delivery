@@ -35,22 +35,32 @@ public static class DeliveryLineage
     /// <summary>How many template variables a warning names before it counts the rest.</summary>
     private const int MaxNamedVariables = 5;
 
-    /// <summary>The objects the flow reads, the record table first and the datasets in name order.</summary>
+    /// <summary>
+    /// The objects the flow reads: the record table first and the datasets in name order, each followed by the lookup tables
+    /// it joins in name order (osdu/docs/reference/flow/delivery-lookups.md), so an ingestion flow loading a lookup table is
+    /// ordered before the flow as one loading the record table is. A table read twice is declared once.
+    /// </summary>
     public static IReadOnlyList<DeclaredDataObject> DeclaredObjects(FlowDefinition flow)
     {
         ArgumentNullException.ThrowIfNull(flow);
         var source = flow.Source;
-        var objects = new List<DeclaredDataObject>(1 + source.Datasets.Count)
-        {
-            DeclaredDataObject.Reads(source.Connection, source.Record.Object),
-        };
-
+        var objects = new List<DeclaredDataObject>(1 + source.Datasets.Count);
+        Read(source.Record.Object, source.Record.Lookups);
         foreach (var (_, dataset) in source.Datasets.OrderBy(d => d.Key, StringComparer.Ordinal))
         {
-            objects.Add(DeclaredDataObject.Reads(source.Connection, dataset.Object));
+            Read(dataset.Object, dataset.Lookups);
         }
 
-        return objects;
+        return objects.Distinct().ToList();
+
+        void Read(string table, IReadOnlyDictionary<string, FlowSourceLookup> lookups)
+        {
+            objects.Add(DeclaredDataObject.Reads(source.Connection, table));
+            foreach (var (_, lookup) in lookups.OrderBy(l => l.Key, StringComparer.Ordinal))
+            {
+                objects.Add(DeclaredDataObject.Reads(source.Connection, lookup.Object));
+            }
+        }
     }
 
     /// <summary>

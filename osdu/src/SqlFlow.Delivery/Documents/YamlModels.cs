@@ -414,6 +414,9 @@ internal sealed class FlowSourceTableYaml
     public string? Filter { get; set; }
 
     public int? MaxRecords { get; set; }
+
+    /// <summary>The lookup tables joined into every read of the table, by the name that prefixes the columns each adds.</summary>
+    public Dictionary<string, FlowSourceLookupYaml>? Lookups { get; set; }
 }
 
 internal sealed class FlowSourceDatasetYaml
@@ -430,6 +433,21 @@ internal sealed class FlowSourceDatasetYaml
 
     /// <summary>The files each row names, which an enrichment of the flow's mapping reading these rows registers or sends.</summary>
     public DatasetFilesYaml? Files { get; set; }
+
+    /// <summary>The lookup tables joined into every read of the table, by the name that prefixes the columns each adds.</summary>
+    public Dictionary<string, FlowSourceLookupYaml>? Lookups { get; set; }
+}
+
+/// <summary>A lookup table joined into the reads of a source table: the table, its key, the column it matches and the columns it adds.</summary>
+internal sealed class FlowSourceLookupYaml
+{
+    public string? Object { get; set; }
+
+    public string? Key { get; set; }
+
+    public string? On { get; set; }
+
+    public List<string>? Columns { get; set; }
 }
 
 internal sealed class FlowPayloadYaml

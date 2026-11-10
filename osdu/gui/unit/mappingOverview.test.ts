@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../src/api/mappingOutline.ts";
 import {
-  cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, foundOf, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf,
+  cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, foundOf, lightOfCard, lightOfField, lightOfRows, lookupOrigin, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf,
   rowShowing, rowsOf, tableName, valueAt, wayOf,
 } from "../src/features/delivery/overview/outlineModel.ts";
 import { boundsOf, fitText, fitValue, framingOf, layoutOf, MEASURE, ZOOM } from "../src/features/delivery/overview/outlineLayout.ts";
@@ -61,8 +61,8 @@ const OUTLINE: MappingOutline = {
 };
 
 const TABLES: DeliverySourceTable[] = [
-  { dataset: null, table: "OsduData.silver.WellLog", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id"], join: null, columns: ["log_id", "elev", "log_name", "unused"].map((name) => ({ name, dataType: "nvarchar(50)", nullable: true })) },
-  { dataset: "curves", table: "OsduData.silver.WellLogCurve", objectKey: "${env:osdu_data_db}|osdudata|silver|welllogcurve", key: ["log_id"], join: { log_id: "log_id" }, columns: [] },
+  { dataset: null, table: "OsduData.silver.WellLog", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id"], join: null, columns: ["log_id", "elev", "log_name", "unused"].map((name) => ({ name, dataType: "nvarchar(50)", nullable: true })), lookups: [] },
+  { dataset: "curves", table: "OsduData.silver.WellLogCurve", objectKey: "${env:osdu_data_db}|osdudata|silver|welllogcurve", key: ["log_id"], join: { log_id: "log_id" }, columns: [], lookups: [] },
 ];
 
 describe("what opens", () => {
@@ -162,6 +162,38 @@ describe("the tables", () => {
   it("fold a child table with its repeater", () => {
     assert.equal(cards(new Set())[1].folded, true);
     assert.equal(cards(new Set(["data", "data.Curves"]))[1].folded, false);
+  });
+
+  it("give a row the columns its lookups join in, after its own, each saying where it comes from", () => {
+    const lookup = {
+      name: "WellCode",
+      table: "OsduData.silver.WellCode",
+      objectKey: "${env:osdu_data_db}|osdudata|silver|wellcode",
+      key: "code",
+      on: "elev",
+      columns: [
+        { name: "WellCode_region", dataType: "nvarchar(50)", nullable: true },
+        { name: "WellCode_UpdatedDate_DW", dataType: "datetime2", nullable: true },
+      ],
+    };
+    const joined: DeliverySourceTable[] = [{ ...TABLES[0], columns: [...TABLES[0].columns, ...lookup.columns], lookups: [lookup] }, TABLES[1]];
+    const outline: MappingOutline = {
+      ...OUTLINE,
+      sources: OUTLINE.sources.map((source) => (source.id === "dataset"
+        ? { ...source, fields: [{ name: "WellCode_region", key: false, display: false, match: false, reads: 1 }, ...source.fields] }
+        : source)),
+    };
+    const [record] = cardsOf(outline, new Set(), joined);
+    assert.deepEqual(record.fields.map((field) => [field.name, field.lookup?.name ?? null]), [
+      ["log_id", null], ["log_name", null], ["elev", null], ["label_only", null], ["WellCode_region", "WellCode"],
+    ]);
+    assert.equal(record.fields.at(-1)!.type, "nvarchar(50)");
+    assert.deepEqual(record.lookups.map((given) => given.name), ["WellCode"]);
+    assert.deepEqual(record.unread.map((column) => column.name), ["unused", "WellCode_UpdatedDate_DW"]);
+    assert.equal(
+      lookupOrigin(lookup),
+      "Joined from silver.WellCode by lookup WellCode: the row whose code is this row's elev, or nothing when none is.",
+    );
   });
 
   it("give a table of pairs, which the document names no field of, what the cache knows of it", () => {

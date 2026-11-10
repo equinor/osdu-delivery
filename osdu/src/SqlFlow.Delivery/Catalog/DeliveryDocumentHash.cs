@@ -31,7 +31,7 @@ public static class DeliveryDocumentHash
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter() },
-        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows, LeaveOutTheKindsOperation, LeaveOutDefaultUploads } },
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows, LeaveOutTheKindsOperation, LeaveOutDefaultUploads, LeaveOutNoLookups } },
     };
 
     /// <summary>
@@ -67,6 +67,24 @@ public static class DeliveryDocumentHash
         foreach (var property in info.Properties.Where(p => p.Name == "enrichWorkflows"))
         {
             property.ShouldSerialize = (_, value) => value is IReadOnlyDictionary<string, WorkflowRoute> { Count: > 0 };
+        }
+    }
+
+    /// <summary>
+    /// A source table that joins no lookup table (<see cref="FlowSourceTable.Lookups"/>, <see cref="FlowSourceDataset.Lookups"/>
+    /// empty) hashes as one written before <c>lookups:</c> existed, so the hash every such flow was synced with, which the sync
+    /// tells a renamed flow by, stays what it was; a table that joins one is another document.
+    /// </summary>
+    private static void LeaveOutNoLookups(JsonTypeInfo info)
+    {
+        if (info.Type != typeof(FlowSourceTable) && info.Type != typeof(FlowSourceDataset))
+        {
+            return;
+        }
+
+        foreach (var property in info.Properties.Where(p => p.Name == "lookups"))
+        {
+            property.ShouldSerialize = (_, value) => value is System.Collections.ICollection { Count: > 0 };
         }
     }
 

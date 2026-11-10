@@ -1754,6 +1754,7 @@ internal static partial class FlowMapper
                 MaxRowsPerRecord = declared.MaxRowsPerRecord ?? FlowSourceDataset.DefaultMaxRowsPerRecord,
                 Filter = Optional(declared.Filter),
                 Files = declared.Files is { } files ? MapDatasetFiles(files, at + ".files", source) : null,
+                Lookups = MapLookups(declared.Lookups, at + ".lookups", source),
             };
         }
 
@@ -1783,6 +1784,7 @@ internal static partial class FlowMapper
                 Scope = Trimmed(record.Scope),
                 Filter = Optional(record.Filter),
                 MaxRecords = record.MaxRecords,
+                Lookups = MapLookups(record.Lookups, $"{paths.Record}.lookups", source),
             },
             Datasets = datasets,
             Payloads = payloads,
@@ -1866,6 +1868,7 @@ internal static partial class FlowMapper
         }
 
         CheckFilter(src.Record.Filter, $"{paths.Record}.filter", source);
+        CheckLookups(src.Record.Lookups, $"{paths.Record}.lookups", source);
         foreach (var (column, parameter) in src.Record.Scope)
         {
             CheckColumn(column, $"{paths.Record}.scope", source);
@@ -1921,6 +1924,7 @@ internal static partial class FlowMapper
             }
 
             CheckFilter(dataset.Filter, at + ".filter", source);
+            CheckLookups(dataset.Lookups, at + ".lookups", source);
 
             if (dataset.Files is { } files)
             {
@@ -3473,4 +3477,87 @@ internal static partial class FlowMapper
 
     private static IReadOnlyDictionary<string, string> Trimmed(Dictionary<string, string>? declared)
         => (declared ?? []).ToDictionary(kv => kv.Key.Trim(), kv => kv.Value?.Trim() ?? string.Empty, StringComparer.Ordinal);
+
+    /// <summary>A table's <c>lookups</c> as the flow writes them, each name and column trimmed.</summary>
+    private static IReadOnlyDictionary<string, FlowSourceLookup> MapLookups(Dictionary<string, FlowSourceLookupYaml>? declared, string at, string source)
+    {
+        var lookups = new Dictionary<string, FlowSourceLookup>(StringComparer.Ordinal);
+        foreach (var (name, lookup) in declared ?? [])
+        {
+            var where = $"{at}.{name.Trim()}";
+            var written = lookup ?? throw new FlowValidationException($"{source}: {where} declares nothing; give its object, key, on and columns.");
+            lookups[name.Trim()] = new FlowSourceLookup
+            {
+                Object = Require(written.Object, where + ".object", source),
+                Key = Require(written.Key, where + ".key", source),
+                On = Require(written.On, where + ".on", source),
+                Columns = (written.Columns ?? []).Select(c => c?.Trim() ?? string.Empty).ToList(),
+            };
+        }
+
+        return lookups;
+    }
+
+    /// <summary>
+    /// A table's <c>lookups</c> (osdu/docs/reference/flow/delivery-lookups.md): each named by letters, digits and '_' (the prefix of
+    /// the columns it adds), at most once whatever its case, with a three-part object, a key and an on column, and at least one
+    /// column, each once. Whether the lookup table is in the joining table's database, keyed uniquely and holds the columns is
+    /// settled when a run opens the source, against the tables themselves.
+    /// </summary>
+    private static void CheckLookups(IReadOnlyDictionary<string, FlowSourceLookup> lookups, string at, string source)
+    {
+        if (lookups.Count > FlowSourceLookup.MaxPerTable)
+        {
+            throw new FlowValidationException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{source}: {at} joins {lookups.Count} lookup tables; a table joins at most {FlowSourceLookup.MaxPerTable}, each a join every read of it makes."));
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, lookup) in lookups)
+        {
+            var where = $"{at}.{name}";
+            if (!LookupName().IsMatch(name))
+            {
+                throw new FlowValidationException(
+                    $"{source}: {at} names a lookup '{name}'; a lookup's name is letters, digits and '_', starting with a letter, since it prefixes the columns it adds ({name}_<column>).");
+            }
+
+            if (!seen.Add(name))
+            {
+                throw new FlowValidationException($"{source}: {at} names lookup {name} twice once case is ignored; the columns each adds would share their names.");
+            }
+
+            CheckObject(lookup.Object, where + ".object", source);
+            CheckColumn(lookup.Key, where + ".key", source);
+            CheckColumn(lookup.On, where + ".on", source);
+            if (lookup.Columns.Count == 0)
+            {
+                throw new FlowValidationException(
+                    $"{source}: {where}.columns lists no column; list the columns of {lookup.Object} each row is given, such as columns: [curve_type, unit].");
+            }
+
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var column in lookup.Columns)
+            {
+                CheckColumn(column, where + ".columns", source);
+                if (!columns.Add(column))
+                {
+                    throw new FlowValidationException($"{source}: {where}.columns lists '{column}' twice.");
+                }
+
+                if (!LookupColumnName().IsMatch($"{name}_{column}"))
+                {
+                    throw new FlowValidationException(
+                        $"{source}: {where}.columns lists '{column}', and a row gives it as {name}_{column}, which a mapping cannot name: a column a mapping reads is letters, digits, '_' and '-'.");
+                }
+            }
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z][A-Za-z0-9_]{0,99}$")]
+    private static partial System.Text.RegularExpressions.Regex LookupName();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9_\-]+$")]
+    private static partial System.Text.RegularExpressions.Regex LookupColumnName();
 }

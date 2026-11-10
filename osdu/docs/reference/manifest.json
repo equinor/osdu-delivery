@@ -4287,6 +4287,56 @@
       ]
     },
     {
+      "id": "delivery-flow-delivery-lookups",
+      "corpus": "reference",
+      "path": "flow/delivery-lookups.md",
+      "title": "Lookup tables joined into a delivery's reads (source.record.lookups, source.datasets.<name>.lookups): a large lookup table without the cache",
+      "type": "flow-reference",
+      "summary": "Join a lookup table into a delivery's reads: a LEFT OUTER JOIN on its key gives each row its columns as <name>_<column>, with nothing held in memory.",
+      "keywords": [
+        "lookups",
+        "source.record.lookups",
+        "source.datasets.lookups",
+        "record.lookups",
+        "left outer join",
+        "join a lookup table",
+        "large lookup table",
+        "lookup table too large for the cache",
+        "out of memory cache",
+        "lookup columns as row columns",
+        "<name>_<column>",
+        "unique index on the lookup key",
+        "cross-database join",
+        "azure sql database cross database",
+        "lookup row changed redeliver",
+        "mapping overview lookup"
+      ],
+      "yamlPath": "source.record.lookups, source.datasets.<name>.lookups (flowType: delivery)",
+      "related": [
+        "delivery-flow-delivery",
+        "delivery-flow-delivery-filter",
+        "delivery-flow-delivery-record-table",
+        "delivery-flow-cache-origins",
+        "delivery-guide-lookup-table-cache",
+        "delivery-concept-change-detection",
+        "delivery-concept-mapping-overview",
+        "delivery-concept-lineage"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.Lookups.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionFingerprint.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs",
+        "osdu/gui/src/features/delivery/overview/outlineModel.ts",
+        "osdu/docs/census/keys.delivery.json"
+      ]
+    },
+    {
       "id": "delivery-flow-delivery-record-table",
       "corpus": "reference",
       "path": "flow/delivery-record-table.md",

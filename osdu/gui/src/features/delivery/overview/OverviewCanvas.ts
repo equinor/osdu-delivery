@@ -5,7 +5,7 @@
 import { select, type BaseType, type Selection } from "d3-selection";
 import "d3-transition";
 import { zoom, zoomIdentity, zoomTransform, type D3ZoomEvent, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
-import { operandOf, type CardField, type OutlineFound, type OutlineLight } from "./outlineModel";
+import { lookupOrigin, operandOf, type CardField, type OutlineFound, type OutlineLight } from "./outlineModel";
 import {
   boundsOf, fitText, fitValue, framingOf, MEASURE, pillText, textWidth, ZOOM, type OutlineLayout, type PlacedCard, type PlacedDot, type PlacedDrop, type PlacedField,
   type PlacedPill, type PlacedRow, type PlacedWire,
@@ -808,15 +808,18 @@ export class OverviewCanvas {
     const all = entered.merge(fields);
     all.attr("transform", (field) => `translate(0,${card.shelf ? field.y : field.y - card.y})`);
     all.attr("data-testid", (field) => `mapping-overview-field-${field.field.id.replace("\u0000", "-")}`);
-    all.attr("aria-label", (field) => `${field.field.name}${field.field.key ? ", key" : ""}`);
+    all.attr("aria-label", (field) => `${field.field.name}${field.field.key ? ", key" : ""}${field.field.lookup === null ? "" : `, from lookup ${field.field.lookup.name}`}`);
     all.select("rect.shade").attr("width", card.width - 2);
     entered.each(function drawMark(field) {
       if (field.field.key) {
         drawGlyph(select<SVGGElement, unknown>(this).select<SVGGElement>("g.mark"), "key", 13, "text-muted-foreground");
+      } else if (field.field.lookup !== null) {
+        // A column a lookup table gives the row, joined into the read rather than held by the table itself.
+        drawGlyph(select<SVGGElement, unknown>(this).select<SVGGElement>("g.mark"), "link", 13, "text-muted-foreground");
       }
     });
     all.select("text.name")
-      .attr("x", (field) => (field.field.key ? 31 : 12))
+      .attr("x", (field) => (field.field.key || field.field.lookup !== null ? 31 : 12))
       .attr("class", (field) => `name font-mono text-[12px] ${field.field.displayOnly ? "fill-muted-foreground" : "fill-foreground"}`)
       .text((field) => fitText(shownName(card, field.field), this.nameRoom(card, field.field, dress), 12));
     all.select("text.end")
@@ -828,6 +831,10 @@ export class OverviewCanvas {
     this.tipped(all, (field) => {
       const value = dress.values.get(field.field.id);
       const shown = fitText(shownName(card, field.field), this.nameRoom(card, field.field, dress), 12);
+      if (field.field.lookup !== null) {
+        return { title: field.field.name, body: value === undefined ? lookupOrigin(field.field.lookup) : `${value}\n${lookupOrigin(field.field.lookup)}` };
+      }
+
       return value === undefined && shown === field.field.name ? null : { title: field.field.name, body: value ?? "" };
     });
   }
@@ -849,7 +856,7 @@ export class OverviewCanvas {
 
   private nameRoom(card: PlacedCard, field: CardField, dress: OverviewDress): number {
     const end = textWidth(this.endOf(card, field, dress), 11);
-    return card.width - (field.key ? 31 : 12) - end - 18;
+    return card.width - (field.key || field.lookup !== null ? 31 : 12) - end - 18;
   }
 
   private drawRows(layout: OutlineLayout, dress: OverviewDress, moves: number): void {

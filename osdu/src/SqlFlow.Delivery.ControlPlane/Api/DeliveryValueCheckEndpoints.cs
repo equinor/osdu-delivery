@@ -45,11 +45,19 @@ public sealed record DeliverySourceColumnDto(string Name, string? DataType, bool
 /// A table a flow reads: the record table, or the child dataset <c>Dataset</c> names, its name, its node in lineage
 /// (<c>ObjectKey</c>, where the flow's read of it lands and the ingestion flow writing it writes), how a child row joins its
 /// record (child column to record column), and the columns the catalog holds of it, without SQLFlow's system columns; none
-/// when the catalog has not described it.
+/// when the catalog has not described it. The columns its <c>Lookups</c> give each row are listed after its own.
 /// </summary>
 public sealed record DeliverySourceTableDto(
     string? Dataset, string Table, string ObjectKey, IReadOnlyList<string> Key, IReadOnlyDictionary<string, string>? Join,
-    IReadOnlyList<DeliverySourceColumnDto> Columns);
+    IReadOnlyList<DeliverySourceColumnDto> Columns, IReadOnlyList<DeliverySourceLookupDto> Lookups);
+
+/// <summary>
+/// A lookup table joined into every read of a source table (osdu/docs/reference/flow/delivery-lookups.md): its name, which
+/// prefixes the columns it gives a row, the lookup table, its node in lineage, its key, the column of the joining table the key
+/// matches, and the columns it gives each row under their prefixed names, with the catalog's type for each.
+/// </summary>
+public sealed record DeliverySourceLookupDto(
+    string Name, string Table, string ObjectKey, string Key, string On, IReadOnlyList<DeliverySourceColumnDto> Columns);
 
 /// <summary>
 /// A value check of a flow's rows: the variables to check (template paths; none for every entry of the mapping), the flow
@@ -214,20 +222,48 @@ public static class DeliveryValueCheckEndpoints
 
         var source = flow.Flow.Source;
         var recordKey = DeliveryLineage.ObjectKey(source.Connection, source.Record.Object);
+        var recordLookups = await LookupsAsync(db, source, source.Record.Lookups, ct).ConfigureAwait(false);
         var tables = new List<DeliverySourceTableDto>
         {
             new(null, source.Record.Object, recordKey, source.Record.Key, null,
-                await CatalogColumnsAsync(db, source.Record.Object, recordKey, source.SystemColumns, ct).ConfigureAwait(false)),
+                [.. await CatalogColumnsAsync(db, source.Record.Object, recordKey, source.SystemColumns, ct).ConfigureAwait(false), .. recordLookups.SelectMany(l => l.Columns)],
+                recordLookups),
         };
 
         foreach (var (name, dataset) in source.Datasets)
         {
             var key = DeliveryLineage.ObjectKey(source.Connection, dataset.Object);
             var columns = await CatalogColumnsAsync(db, dataset.Object, key, source.SystemColumns, ct).ConfigureAwait(false);
-            tables.Add(new DeliverySourceTableDto(name, dataset.Object, key, [.. dataset.Join.Keys], dataset.Join, columns));
+            var lookups = await LookupsAsync(db, source, dataset.Lookups, ct).ConfigureAwait(false);
+            tables.Add(new DeliverySourceTableDto(name, dataset.Object, key, [.. dataset.Join.Keys], dataset.Join, [.. columns, .. lookups.SelectMany(l => l.Columns)], lookups));
         }
 
         return TypedResults.Ok<IReadOnlyList<DeliverySourceTableDto>>(tables);
+    }
+
+    /// <summary>
+    /// A table's lookups as the flow declares them, each with the columns it gives a row under their prefixed names, typed as the
+    /// catalog describes the lookup table: the columns the flow lists, then the lookup table's update column, which every row is
+    /// given too. A lookup table the catalog has not described gives its columns untyped.
+    /// </summary>
+    private static async Task<IReadOnlyList<DeliverySourceLookupDto>> LookupsAsync(
+        CatalogDbContext db, FlowSource source, IReadOnlyDictionary<string, FlowSourceLookup> lookups, CancellationToken ct)
+    {
+        var listed = new List<DeliverySourceLookupDto>(lookups.Count);
+        foreach (var (name, lookup) in lookups)
+        {
+            var key = DeliveryLineage.ObjectKey(source.Connection, lookup.Object);
+            var described = (await CatalogColumnsAsync(db, lookup.Object, key, null, ct).ConfigureAwait(false))
+                .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var given = lookup.Columns
+                .Concat(lookup.Columns.Contains(source.SystemColumns.Updated, StringComparer.OrdinalIgnoreCase) ? [] : [source.SystemColumns.Updated])
+                .Select(column => new DeliverySourceColumnDto($"{name}_{column}", described.GetValueOrDefault(column)?.DataType, Nullable: true))
+                .ToList();
+            listed.Add(new DeliverySourceLookupDto(name, lookup.Object, key, lookup.Key, lookup.On, given));
+        }
+
+        return listed;
     }
 
     /// <summary>
@@ -236,7 +272,7 @@ public static class DeliveryValueCheckEndpoints
     /// those of the first such object the catalog describes.
     /// </summary>
     private static async Task<IReadOnlyList<DeliverySourceColumnDto>> CatalogColumnsAsync(
-        CatalogDbContext db, string table, string objectKey, FlowSystemColumns system, CancellationToken ct)
+        CatalogDbContext db, string table, string objectKey, FlowSystemColumns? system, CancellationToken ct)
     {
         var name = SourceObjectName.Parse(table);
         var keys = await db.Objects.AsNoTracking()
@@ -265,7 +301,7 @@ public static class DeliveryValueCheckEndpoints
             .Take(MaxSourceColumns)
             .Select(c => new { c.Name, c.DataType, c.Nullable })
             .ToListAsync(ct).ConfigureAwait(false);
-        var hidden = system.Names();
+        var hidden = system?.Names() ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return rows
             .Where(c => !hidden.Contains(c.Name))
             .Select(c => new DeliverySourceColumnDto(c.Name, c.DataType, c.Nullable))

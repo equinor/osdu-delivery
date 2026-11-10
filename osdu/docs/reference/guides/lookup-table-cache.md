@@ -344,7 +344,7 @@ finds the same rows writes nothing and redelivers nothing.
 | A short, static list people edit by hand and review in a pull request | A [dictionary document](../flow/dictionary.md) in `dictionaries/` and a `dictionary` type: no pre or ing flow at all. |
 | The distinct values of a property OSDU already holds, cleaned into labels | A [dimension](../flow/dimension.md) and a `dimension` type. |
 | Reference data OSDU holds (units, curve types) | A `kind` type ([reference data guide](reference-data-cache.md)). |
-| More than 1,000,000 rows | This guide, with `maxRows` on the type naming how many rows it holds, up to 5,000,000. Past that, or for a table a mapping reads only a few rows of per record, not the cache: join it into the ingestion tables the delivery flow reads. |
+| More than 1,000,000 rows | This guide, with `maxRows` on the type naming how many rows it holds, up to 5,000,000. Past that, or for a table a mapping reads only a few rows of per record, not the cache: join it into the delivery flow's reads with [lookups](../flow/delivery-lookups.md). |
 
 ## What goes wrong
 
@@ -353,7 +353,7 @@ finds the same rows writes nothing and redelivers nothing.
 | `Cache flow '<flow>': the table OsduData.silver.UnitAlias, which type UnitAlias reads, was not found on the source database, or the identity this node connects with cannot see it. ...` | The ing flow has not run yet, or the node's login has no SELECT on the table. |
 | `... is keyed by column '<key>', which table <table> does not hold. Columns: ...`, or `... keeps column '<column>', which table <table> does not hold. Columns: ...` | `key` or a `fields` column is misspelled; the message lists the table's columns. |
 | `... table <table> has rows type UnitAlias could not be keyed by source_unit, so nothing was captured: ...` | Empty keys, keys over 256 characters or holding a control character, or two rows whose keys are the same once trimmed (spaces around a key are trimmed, not refused). Fix the source or the ing flow's key. |
-| `... holds more than 1000000 rows for type UnitAlias, the 1000000 a table type holds when its maxRows says nothing ...` | The table holds more rows than the type takes. Raise the type's `maxRows` (at most 5,000,000) if it really holds that many, or join it into the ingestion tables the delivery flow reads. |
+| `... holds more than 1000000 rows for type UnitAlias, the 1000000 a table type holds when its maxRows says nothing ...` | The table holds more rows than the type takes. Raise the type's `maxRows` (at most 5,000,000) if it really holds that many, or join it into the delivery flow's reads with [lookups](../flow/delivery-lookups.md). |
 | `source.endpoint and source.auth reach the OSDU platform, and the flow declares no type searched there; ...` | A lookup-only cache flow copied from a reference data flow; remove the endpoint and auth. |
 | `... a lookup table from a table or a dictionary is declared by one cache flow of a partition only` | Two cache flows declare `UnitAlias` for one partition; keep one. |
 | A record held with `replace reads $cache.UnitAlias, and version <v> of the cache of partition 'dev' holds no type 'UnitAlias'` | The cache flow has not refreshed that partition yet. |

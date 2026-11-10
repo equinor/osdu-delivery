@@ -59,8 +59,8 @@ const OUTLINE: MappingOutline = {
 };
 
 const TABLES: DeliverySourceTable[] = [
-  { dataset: null, table: "OsduData.silver.WellLog", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id"], join: null, columns: [] },
-  { dataset: "curves", table: "OsduData.silver.WellLogCurve", objectKey: "${env:osdu_data_db}|osdudata|silver|welllogcurve", key: ["log_id"], join: { log_id: "log_id" }, columns: [] },
+  { dataset: null, table: "OsduData.silver.WellLog", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id"], join: null, columns: [], lookups: [] },
+  { dataset: "curves", table: "OsduData.silver.WellLogCurve", objectKey: "${env:osdu_data_db}|osdudata|silver|welllogcurve", key: ["log_id"], join: { log_id: "log_id" }, columns: [], lookups: [] },
 ];
 
 const PICKED: LineageScope = { tables: TABLES, flow: true };
