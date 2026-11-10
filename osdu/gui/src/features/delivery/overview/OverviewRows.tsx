@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Database, KeyRound, Loader2, Search, Table2, X } from "lucide-react";
+import { Code, Database, KeyRound, Loader2, Search, Table2, X } from "lucide-react";
+import { CodeView } from "@/components/CodeView";
 import { SearchInput } from "@/components/SearchInput";
 import { Button } from "@/components/ui/button";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -38,6 +39,8 @@ interface Read {
   search: string;
   /** OSDU's own words when it refused the search; null when it did not. */
   refusal: string | null;
+  /** The T-SQL that reads the same rows in SSMS, when the read gives it: a flow's table does. */
+  sql: string | null;
 }
 
 /** What the search box offers to find, where the rows are read. */
@@ -99,6 +102,7 @@ function useRows(source: RowsSource, card: OutlineCard, session: ValueCheckSessi
         maxCharacters,
         search: table.data.search,
         refusal: null,
+        sql: table.data.answer.sql ?? null,
       };
     }
 
@@ -115,6 +119,7 @@ function useRows(source: RowsSource, card: OutlineCard, session: ValueCheckSessi
         maxCharacters: null,
         search: cache.data.search,
         refusal: null,
+        sql: null,
       };
     }
 
@@ -129,6 +134,7 @@ function useRows(source: RowsSource, card: OutlineCard, session: ValueCheckSessi
         maxCharacters: null,
         search: searched.data.search,
         refusal: page.refusal ?? null,
+        sql: null,
       };
     }
 
@@ -183,6 +189,63 @@ function Unfound({ source, card, read }: { source: RowsSource; card: OutlineCard
   }
 }
 
+/**
+ * The T-SQL that reads in SSMS what the grid shows, to cross-check a lookup a flow joins into its rows against what the
+ * partition's cache holds: a flow's table as a delivery reads it, its lookup tables joined, on the flow's source database; a
+ * cached type's records at the version shown, a column per field, on the catalog database. Written by the control plane for the
+ * search the grid shows, and never run here.
+ */
+function RowsSql({ source, card, read, partition, search }: {
+  source: RowsSource;
+  card: OutlineCard;
+  read: Read | null;
+  partition: string | null;
+  search: string;
+}) {
+  const type = source.from === "cache" ? source.type : null;
+  const cached = useQuery({
+    queryKey: ["delivery", "overview-cache-sql", partition, type, search],
+    queryFn: () => deliveryApi.cachedItemsSql({ scope: partition!, type: type!, search: search === "" ? undefined : search, pageSize: PREVIEW_ROWS }),
+    enabled: type !== null && partition !== null,
+    staleTime: 30000,
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
+
+  if (source.from === "table") {
+    if (read === null) {
+      return null;
+    }
+
+    return read.sql === null
+      ? <p className="px-3 py-2 text-[12.5px] text-muted-foreground" data-testid="mapping-overview-rows-sql-none">This flow's source is not read with SQL, so there is no script to run.</p>
+      : (
+        <SqlPane
+          about={`Run it in SSMS on the flow's source database: it reads the rows above, each value whole${card.lookups.length > 0 ? `, with ${card.lookups.map((lookup) => lookup.name).join(", ")} joined as a delivery joins ${card.lookups.length === 1 ? "it" : "them"}` : ""}.`}
+          sql={read.sql}
+        />
+      );
+  }
+
+  if (cached.error !== null) {
+    return <div className="p-3"><ProblemView error={cached.error} testId="mapping-overview-rows-sql-error" /></div>;
+  }
+
+  return cached.data === undefined
+    ? null
+    : <SqlPane about={`Run it in SSMS on the catalog database: it reads these records of version ${cached.data.version} of the ${cached.data.scope} cache, a column per field.`} sql={cached.data.sql} />;
+}
+
+/** A script to copy, under what it reads and where it runs. */
+function SqlPane({ about, sql }: { about: string; sql: string }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-3 py-2" data-testid="mapping-overview-rows-sql-pane">
+      <p className="text-[12.5px] text-muted-foreground" data-testid="mapping-overview-rows-sql-about">{about}</p>
+      <CodeView value={sql} language="sql" fill data-testid="mapping-overview-rows-sql-code" />
+    </div>
+  );
+}
+
 /** A value of the grid, the stretches the search matched marked. */
 function Marked({ text, search }: { text: string; search: string }) {
   return (
@@ -200,10 +263,13 @@ function Marked({ text, search }: { text: string; search: string }) {
  * what it matched. Pointing at a column's heading lights its lines on the canvas, a click keeps them lit, a double click opens the
  * field's details, and the rows of the record shown, when one is, are marked. Nothing is sent or stored.
  */
-export function OverviewRows({ card, focus, session, partition, tables, shownKey, lineage, onPoint, onPick, onOpen, onClose }: {
+export function OverviewRows({ card, focus, sql, onSql, session, partition, tables, shownKey, lineage, onPoint, onPick, onOpen, onClose }: {
   card: OutlineCard;
   /** The field the preview was asked for from, whose column is brought into view and marked. */
   focus: string | null;
+  /** Whether the T-SQL that reads the rows stands in place of the grid. */
+  sql: boolean;
+  onSql: (sql: boolean) => void;
   session: ValueCheckSession;
   partition: string | null;
   tables: readonly DeliverySourceTable[] | null;
@@ -275,6 +341,19 @@ export function OverviewRows({ card, focus, session, partition, tables, shownKey
             />
           </span>
           {source.from === "table" && <ValueCheckScope session={session} />}
+          {(source.from === "table" || source.from === "cache") && (
+            <Button
+              variant={sql ? "secondary" : "ghost"}
+              size="xs"
+              aria-pressed={sql}
+              title={sql ? "Show the rows" : "Show the T-SQL that reads these rows, to run in SSMS"}
+              onClick={() => onSql(!sql)}
+              data-testid="mapping-overview-rows-sql"
+            >
+              <Code />
+              SQL
+            </Button>
+          )}
           <PartLineageButton targets={lineage} named={card.title} />
           <Button variant="ghost" size="icon-xs" aria-label="Close the rows" title="Close" onClick={onClose} data-testid="mapping-overview-rows-close"><X /></Button>
         </span>
@@ -284,12 +363,13 @@ export function OverviewRows({ card, focus, session, partition, tables, shownKey
       {read?.refusal !== null && read?.refusal !== undefined && (
         <p className="px-3 py-2 text-[12.5px] text-destructive" data-testid="mapping-overview-rows-refused">OSDU refused the search: {read.refusal}</p>
       )}
-      {read !== null && read.rows.length === 0 && read.refusal === null && (
+      {sql && error === null && <RowsSql source={source} card={card} read={read} partition={partition} search={search} />}
+      {!sql && read !== null && read.rows.length === 0 && read.refusal === null && (
         <p className="px-3 py-2 text-[12.5px] text-muted-foreground" data-testid="mapping-overview-rows-empty">
           <Unfound source={source} card={card} read={read} />
         </p>
       )}
-      {read !== null && read.rows.length > 0 && (
+      {!sql && read !== null && read.rows.length > 0 && (
         <div ref={scroller} className={cn("min-h-0 flex-1 overflow-auto transition-opacity", stale && "opacity-60")} aria-busy={stale} data-testid="mapping-overview-rows-grid">
           <table className="border-separate border-spacing-0 font-mono text-[12px]">
             <thead>

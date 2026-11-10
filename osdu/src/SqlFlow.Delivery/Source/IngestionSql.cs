@@ -873,11 +873,13 @@ public static class IngestionSql
     /// The first rows of the record table, or of the child dataset <paramref name="dataset"/>, that a delivery reads
     /// (<see cref="IIngestionSource.ReadTableAsync"/>): <paramref name="select"/>, written over the table read as <c>t</c>, of at
     /// most <see cref="PageParameter"/> rows of the scope's records not marked deleted, in the order a read pages in; then how
-    /// many such rows there are, counted up to <see cref="TopParameter"/>. A child row is read when its own row is not marked
-    /// deleted either, as a delivery reads it. A <paramref name="search"/> (<see cref="TableSearch"/>) narrows the rows read and
-    /// the rows counted alike.
+    /// many such rows there are, counted up to <see cref="TopParameter"/>. The table's filter and lookups apply as they do to a
+    /// delivery's read, and a child row is read when its own row is not marked deleted either and its record passes the
+    /// record table's filter. A <paramref name="search"/> (<see cref="TableSearch"/>) narrows the rows read and
+    /// the rows counted alike. Without <paramref name="count"/> the statement reads the rows alone, as the script a person runs
+    /// of them does (<see cref="SourceQuery.TableRows"/>).
     /// </summary>
-    internal static string TableRows(IngestionLayout layout, IngestionDataset? dataset, IReadOnlyList<string> select, string? search = null)
+    internal static string TableRows(IngestionLayout layout, IngestionDataset? dataset, IReadOnlyList<string> select, string? search = null, bool count = true)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(select);
@@ -893,11 +895,12 @@ public static class IngestionSql
             predicates.Add($"{record}.{SourceObjectName.Quote(deleted)} IS NULL");
         }
 
-        var from = $"{Rows(layout.Record, null, layout.Lookups)} t";
+        // Under the filters a delivery reads them by: a child row's own, and its record's.
+        var from = $"{RecordRows(layout)} t";
         var order = OrderList(layout, record);
         if (dataset is not null)
         {
-            from = $"{Rows(dataset.Object, null, dataset.Lookups ?? [])} t INNER JOIN {layout.Record.Quoted} r ON "
+            from = $"{DatasetRows(dataset)} t INNER JOIN {Rows(layout.Record, layout.Filter, [])} r ON "
                 + string.Join(" AND ", dataset.Join.Select(j => $"t.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}"));
             if (dataset.Deleted is { } deletedChild)
             {
@@ -913,13 +916,15 @@ public static class IngestionSql
         }
 
         var where = predicates.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", predicates);
-        return $"""
+        var rows = $"""
             SELECT TOP ({PageParameter}) {string.Join(", ", select)}
             FROM {from}
             {where}
             ORDER BY {order};
-            SELECT COUNT_BIG(*) FROM (SELECT TOP ({TopParameter}) 1 AS one FROM {from} {where}) q;
             """;
+        return count
+            ? rows + Environment.NewLine + $"SELECT COUNT_BIG(*) FROM (SELECT TOP ({TopParameter}) 1 AS one FROM {from} {where}) q;"
+            : rows;
     }
 
     private static string StagedWhere(IngestionLayout layout, IReadOnlyList<string> searched, bool search, bool after)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, FileCode, FileText, Loader2, Maximize, OctagonAlert, PanelRight, SlidersHorizontal, Table2, TriangleAlert,
+  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Code, Copy, FileCode, FileText, Loader2, Maximize, OctagonAlert, PanelRight, SlidersHorizontal, Table2, TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,8 @@ import { OverviewRail } from "./OverviewRail";
 import { OverviewDocument, OverviewParameters } from "./OverviewRendered";
 import { OverviewRows } from "./OverviewRows";
 import { OverviewYaml } from "./OverviewYaml";
-import type { ExplainedYaml } from "./yamlExplain.ts";
+import { linesOfPart, type LineRun, type LinesPart } from "./partLines.ts";
+import { yamlLines, type ExplainedYaml } from "./yamlExplain.ts";
 import { layoutOf } from "./outlineLayout.ts";
 import { lineageOfPart, type LineageScope } from "./outlineLineage.ts";
 import {
@@ -54,11 +55,12 @@ const ABOUT = "Each line is one property of the record, read left to right: the 
 const SEARCH_SETTLE_MS = 300;
 
 /**
- * What the panel under the canvas shows: a table's rows, the values the parameters render with, the rendered record, or the
- * assistant explaining lines of the YAML (each question its own conversation, numbered so asking again starts afresh).
+ * What the panel under the canvas shows: a table's rows (or, with `sql`, the T-SQL that reads them in SSMS), the values the
+ * parameters render with, the rendered record, or the assistant explaining lines of the YAML (each question its own
+ * conversation, numbered so asking again starts afresh).
  */
 type Looking =
-  | { what: "rows"; card: string; field: string | null }
+  | { what: "rows"; card: string; field: string | null; sql: boolean }
   | { what: "parameters"; field: string | null }
   | { what: "document" }
   | { what: "explain"; asked: number; subject: string; question: string };
@@ -131,6 +133,14 @@ function OverviewMenu({ menu, named, items, onClose }: {
 
 /** What a canvas showing no record is given, one map for every render so nothing is drawn again for a new empty one. */
 const NO_VALUES: ReadonlyMap<string, string> = new Map();
+
+/** What the YAML marks when nothing names a column, one map for every render. */
+const NO_MARKS: ReadonlyMap<number, readonly LineRun[]> = new Map();
+
+/** The column or table a part of the canvas is, as the document names it; null for a property, which has lines of its own. */
+function linesPartOf(part: OverviewPart | null): LinesPart | null {
+  return part === null || part.type === "row" ? null : { source: part.source, field: part.type === "field" ? part.field : null };
+}
 
 /** The name of a kind's entity: `WellLog` of `osdu:wks:work-product-component--WellLog:1.4.0`. */
 function entityOf(kind: string): { entity: string; version: string } {
@@ -514,15 +524,17 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const fitView = useCallback(() => canvas.current?.fit(true), []);
 
   // What a table holds is looked at from the table or one of its fields, whose column or line is then brought into view: a
-  // table's rows, or for the flow's parameters the values they render with.
-  const lookAt = useCallback((part: OverviewPart) => {
+  // table's rows, or for the flow's parameters the values they render with. `sql` opens the T-SQL that reads the rows instead.
+  const lookAt = useCallback((part: OverviewPart, sql = false) => {
     if (part.type === "row") {
       return;
     }
 
     const field = part.type === "field" ? part.field : null;
-    setLooking(part.source === cards.find((card) => card.source.kind === "parameters")?.id ? { what: "parameters", field } : { what: "rows", card: part.source, field });
+    setLooking(part.source === cards.find((card) => card.source.kind === "parameters")?.id ? { what: "parameters", field } : { what: "rows", card: part.source, field, sql });
   }, [cards]);
+
+  const showSql = useCallback((sql: boolean) => setLooking((current) => (current?.what === "rows" ? { ...current, sql } : current)), []);
 
   const onSearch = (next: string) => {
     setSearch(next);
@@ -543,7 +555,24 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
 
   const found = search.trim() === "" ? null : filtered?.size ?? 0;
   const allOpen = rows.every((row) => !row.folding || row.open);
+
+  // A column or a table lights what reads it in the YAML and marks where it is named, whether it is folded on the canvas or
+  // not; the one picked is brought into view, the one pointed at only lit.
+  const documentLines = useMemo(() => yamlLines(yaml), [yaml]);
+  const lightLines = useMemo(() => {
+    const part = linesPartOf(pointed ?? (linePointed === null ? picked : null));
+    return part === null ? null : linesOfPart(outline, documentLines, part);
+  }, [outline, documentLines, pointed, linePointed, picked]);
+  const pickedLines = useMemo(() => {
+    const part = linesPartOf(picked);
+    return part === null ? null : linesOfPart(outline, documentLines, part);
+  }, [outline, documentLines, picked]);
+
   const litLines = useMemo(() => {
+    if (lightLines !== null) {
+      return lightLines.lit;
+    }
+
     const lit = new Set<number>();
     if (light === null) {
       return lit;
@@ -559,7 +588,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     }
 
     return lit;
-  }, [light, rows]);
+  }, [light, rows, lightLines]);
 
   const pickedNode = picked?.type === "row" ? nodeAt(outline, picked.path) : null;
   const main = cards.find((card) => card.source.kind === "record");
@@ -620,13 +649,18 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
 
     const card = cards.find((candidate) => candidate.id === target.source);
     const label = card === undefined ? null : cardPreviewLabel(card);
+    const read = card === undefined ? null : rowsSourceOf(card)?.from ?? null;
     const table = card === undefined ? undefined : tables.data?.find((candidate) => (card.source.kind === "record" ? candidate.dataset === null : `dataset.${candidate.dataset}` === card.id));
     const named = target.type === "field" ? target.field : card?.title ?? target.source;
+    const written = linesOfPart(outline, documentLines, linesPartOf(target)!).first !== null;
     return {
       named,
       items: [
         ...(label === null ? [] : [{ id: "preview", label, glyph: card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />, act: () => lookAt(target) }]),
+        // SQL reads a flow's table and the partition's cache; OSDU's search is asked, not queried.
+        ...(read === "table" || read === "cache" ? [{ id: "sql", label: "Show the SQL", glyph: <Code />, act: () => lookAt(target, true) }] : []),
         { id: "details", label: "Details", glyph: <PanelRight />, act: () => openShown(target) },
+        ...(written ? [{ id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } }] : []),
         lineage,
         target.type === "field"
           ? { id: "copy", label: "Copy the name", glyph: <Copy />, act: () => copyName(target.field, "the name") }
@@ -741,6 +775,8 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                         key={lookingCard.id}
                         card={lookingCard}
                         focus={looking?.what === "rows" ? looking.field : null}
+                        sql={looking?.what === "rows" && looking.sql}
+                        onSql={showSql}
                         session={session}
                         partition={partition}
                         tables={tables.data ?? null}
@@ -787,7 +823,9 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                   file={mapping.relativePath}
                   yaml={yaml}
                   lit={litLines}
-                  focus={pickedNode?.line ?? null}
+                  marks={lightLines?.marks ?? NO_MARKS}
+                  focus={picked?.type === "row" ? pickedNode?.line ?? null : pickedLines?.first ?? null}
+                  focusKey={picked === null ? "" : JSON.stringify(picked)}
                   onLine={(line) => setLinePointed(line === null ? null : nodeAtLine(outline, line)?.path ?? null)}
                   onPick={(line) => {
                     const node = nodeAtLine(outline, line);

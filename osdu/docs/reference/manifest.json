@@ -2416,7 +2416,10 @@
         "canvas toolbar",
         "explain the yaml",
         "explain this",
-        "ask the assistant about a mapping"
+        "ask the assistant about a mapping",
+        "show in the yaml",
+        "where a column is read in the yaml",
+        "show the sql"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2426,7 +2429,8 @@
         "delivery-concept-gui",
         "delivery-concept-api",
         "delivery-concept-dry-run",
-        "delivery-concept-lineage"
+        "delivery-concept-lineage",
+        "delivery-concept-mapping-overview-sql"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
@@ -2448,11 +2452,50 @@
         "osdu/gui/src/features/delivery/overview/outlineLayout.ts",
         "osdu/gui/src/features/delivery/overview/outlineLineage.ts",
         "osdu/gui/src/features/delivery/overview/outlineModel.ts",
+        "osdu/gui/src/features/delivery/overview/partLines.ts",
         "osdu/gui/src/features/delivery/overview/partTargets.ts",
         "osdu/gui/src/features/delivery/overview/recordMarkdown.ts",
         "osdu/gui/src/features/delivery/overview/tableRows.ts",
         "osdu/gui/src/features/delivery/overview/yamlExplain.ts",
         "osdu/gui/src/features/delivery/lineageTargets.ts"
+      ]
+    },
+    {
+      "id": "delivery-concept-mapping-overview-sql",
+      "corpus": "reference",
+      "path": "concepts/mapping-overview-sql.md",
+      "title": "The SQL of a table's rows: cross-checking a lookup join against the cache in SSMS",
+      "type": "concept",
+      "summary": "SQL in the overview's grid gives the T-SQL that reads the same rows in SSMS: a flow's table with its lookups joined, or a cached type's records.",
+      "keywords": [
+        "show the sql",
+        "sql of a table's rows",
+        "run it in ssms",
+        "copy into SSMS",
+        "cross-check a lookup",
+        "cross-check the join against the cache",
+        "query the cache tables",
+        "osdu.CacheItem",
+        "cache/items/sql",
+        "table-rows sql",
+        "lookup join query"
+      ],
+      "related": [
+        "delivery-concept-mapping-overview",
+        "delivery-flow-delivery-lookups",
+        "delivery-concept-partition-cache",
+        "delivery-concept-value-proof",
+        "delivery-concept-api"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Source/SourceQuery.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/TableRowsOperation.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/CacheProofSql.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
+        "osdu/gui/src/features/delivery/overview/OverviewRows.tsx",
+        "osdu/gui/src/features/delivery/overview/MappingOverview.tsx"
       ]
     },
     {

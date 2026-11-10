@@ -406,7 +406,11 @@ public sealed record TableColumn(string Name, string SqlType, bool Cut);
 /// <param name="Rows">Each row's values, in the order of <paramref name="Columns"/>, as invariant text.</param>
 /// <param name="Counted">How many rows the table holds there, counted up to the query's <see cref="TableRowsQuery.CountUpTo"/>.</param>
 /// <param name="CountCapped">True when it holds more than that.</param>
-public sealed record TableRows(string Table, IReadOnlyList<TableColumn> Columns, IReadOnlyList<IReadOnlyList<string?>> Rows, long Counted, bool CountCapped);
+/// <param name="Sql">
+/// The T-SQL a person runs in SSMS to read the same rows, each value whole, its values declared (<see cref="SourceQuery.TableRows"/>);
+/// null from a source no SQL reads.
+/// </param>
+public sealed record TableRows(string Table, IReadOnlyList<TableColumn> Columns, IReadOnlyList<IReadOnlyList<string?>> Rows, long Counted, bool CountCapped, string? Sql = null);
 
 /// <summary>Which rows of a scope a page of staged rows asks for.</summary>
 public sealed record StagedRowsQuery

@@ -50,6 +50,8 @@
     "src/features/delivery/overview/tableRows.ts",
     "src/features/delivery/overview/recordMarkdown.ts",
     "src/features/delivery/overview/yamlExplain.ts",
+    "src/features/delivery/overview/partLines.ts",
+    "src/features/delivery/dimensions/yamlTokens.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

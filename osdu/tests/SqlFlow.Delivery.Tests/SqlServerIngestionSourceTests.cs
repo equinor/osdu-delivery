@@ -682,6 +682,122 @@ public sealed class SqlServerIngestionSourceTests
     }
 
     [Fact]
+    public async Task The_script_of_a_look_at_a_table_reads_in_ssms_the_rows_the_look_read_under_its_filters_lookups_scope_and_search()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Scripted",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Scripted] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [item_name] nvarchar(100) NULL, "
+                + "[depth] float NULL, [hidden] bit NULL, [region] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var parts = await CreateTableAsync(
+            estate,
+            "ScriptedPart",
+            "[item_key] nvarchar(50) NOT NULL, [part_no] int NOT NULL, [part_name] nvarchar(50) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            string.Empty);
+        var regions = await CreateTableAsync(
+            estate,
+            "ScriptedRegion",
+            "[code] nvarchar(20) NOT NULL, [name] nvarchar(50) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [UX_ScriptedRegion_code] ON {0} ([code]);");
+
+        // Five records: one marked deleted and one the record filter leaves out, each with parts; a part the child filter leaves
+        // out; and a region whose lookup row is marked deleted, so its records join no name.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [item_name], [depth], [hidden], [region], [UpdatedDate_DW])
+            VALUES (N'item-1', N'Wellbore A', 0.3, 0, N'north', @loaded), (N'item-2', N'Wellbore B', 2, NULL, N'south', @loaded),
+                (N'item-3', N'Thing 3', 1e30, 0, N'north', @loaded), (N'item-4', N'Wellbore gone', NULL, 0, N'north', @loaded),
+                (N'item-5', N'Wellbore hidden', NULL, 1, N'north', @loaded);
+            UPDATE {table} SET [DeletedDate_DW] = @changed WHERE [item_key] = N'item-4';
+            INSERT INTO {parts} ([item_key], [part_no], [part_name])
+            VALUES (N'item-1', 1, N'bolt'), (N'item-1', 2, N'nut'), (N'item-2', 1, N'Bolt'), (N'item-4', 1, N'bolt'), (N'item-5', 1, N'bolt');
+            INSERT INTO {regions} ([code], [name], [UpdatedDate_DW]) VALUES (N'north', N'The North', @loaded), (N'south', N'The South', @loaded);
+            UPDATE {regions} SET [DeletedDate_DW] = @changed WHERE [code] = N'south';
+            """);
+        var sample = ItemFlow(estate, "Scripted");
+        var flow = sample with
+        {
+            Source = sample.Source with
+            {
+                Record = sample.Source.Record with
+                {
+                    Filter = "AND ([hidden] IS NULL OR [hidden] = 0)",
+                    Lookups = new Dictionary<string, FlowSourceLookup>(StringComparer.Ordinal)
+                    {
+                        ["Region"] = new FlowSourceLookup
+                        {
+                            Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[ScriptedRegion]",
+                            Join = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["code"] = "region" },
+                            Columns = ["name"],
+                        },
+                    },
+                },
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["parts"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[ScriptedPart]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                        OrderBy = ["part_no"],
+                        Filter = "AND [part_name] <> N'nut'",
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+
+        // The look and its script, run as a person runs it, give the same rows in the same order; the script keeps each value whole.
+        async Task<List<string?>> BothAsync(IIngestionSource from, string? search = null, string? dataset = null)
+        {
+            var read = await from.ReadTableAsync(new TableRowsQuery { Dataset = dataset, Limit = 100, Search = search });
+            Assert.NotNull(read.Sql);
+            var ran = await RunAsync(estate, read.Sql);
+            Assert.Equal(read.Rows.Count, ran.Count);
+            Assert.All(ran, row => Assert.Equal(read.Columns.Count, row.Count));
+            var key = read.Columns.Select(c => c.Name).ToList().IndexOf("item_key");
+            Assert.Equal(read.Rows.Select(row => row[key]), ran.Select(row => row[key]));
+            return read.Rows.Select(row => row[key]).ToList();
+        }
+
+        // The record table under its filter and its lookup: the hidden record is not a row a delivery reads, and a region whose
+        // lookup row is marked deleted joins no name, in the look and in the script alike.
+        var record = await source.ReadTableAsync(new TableRowsQuery { Limit = 100 });
+        Assert.Equal(["RecId", "item_key", "item_name", "depth", "hidden", "region", "Region_name", "Region_UpdatedDate_DW"], record.Columns.Select(c => c.Name));
+        Assert.Equal(["item-1", "item-2", "item-3"], await BothAsync(source));
+        Assert.Equal(["The North", null, "The North"], (await RunAsync(estate, record.Sql!)).Select(row => row[6]));
+        Assert.Contains("LEFT OUTER JOIN", record.Sql, StringComparison.Ordinal);
+        Assert.Contains("-- Joined as a delivery joins them", record.Sql, StringComparison.Ordinal);
+        Assert.Contains("DECLARE @page int = 100;", record.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("@top", record.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("COUNT_BIG", record.Sql, StringComparison.Ordinal);
+
+        // A child dataset under its own filter and its record's: the nut is filtered out, and the parts of the hidden and the
+        // deleted records are not read.
+        Assert.Equal(["item-1", "item-2"], await BothAsync(source, dataset: "parts"));
+
+        // A search, declared as the look bound it: text in any case, and a number by its value.
+        Assert.Equal(["item-1", "item-2"], await BothAsync(source, "WELLBORE"));
+        var number = await source.ReadTableAsync(new TableRowsQuery { Limit = 100, Search = "0.3" });
+        Assert.Contains("DECLARE @search_float float = 0.3;", number.Sql, StringComparison.Ordinal);
+        Assert.Equal(["item-1"], await BothAsync(source, "0.3"));
+        Assert.Equal(["item-1", "item-2"], await BothAsync(source, "bolt", "parts"));
+
+        // A scope's value is declared as the read binds it.
+        var scoped = flow with
+        {
+            Parameters = new Dictionary<string, FlowParameter>(StringComparer.Ordinal) { ["area"] = new FlowParameter { Required = true } },
+            Source = flow.Source with { Record = flow.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "area" } } },
+        };
+        var north = estate.Engine.Sources.Open(scoped, new Dictionary<string, string>(StringComparer.Ordinal) { ["area"] = "north" }, NullLoggerFactory.Instance);
+        var northern = await north.ReadTableAsync(new TableRowsQuery { Limit = 100 });
+        Assert.Contains("-- The scope: area", northern.Sql, StringComparison.Ordinal);
+        Assert.Contains("= N'north';", northern.Sql, StringComparison.Ordinal);
+        Assert.Equal(["item-1", "item-3"], await BothAsync(north));
+        Assert.Equal(["item-1"], await BothAsync(north, dataset: "parts"));
+    }
+
+    [Fact]
     public async Task A_search_of_a_tables_rows_finds_every_value_as_the_look_shows_it_and_counts_the_rows_found()
     {
         await using var estate = await SqlServerIngestionFixture.StartAsync();

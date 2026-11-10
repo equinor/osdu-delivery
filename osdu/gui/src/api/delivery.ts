@@ -762,6 +762,14 @@ export interface DeliveryCachedItem {
   fields: Record<string, unknown>;
 }
 
+/** The T-SQL a person runs in SSMS on the catalog database to read what the overview lists of one cached type, at one version. */
+export interface DeliveryCachedItemsSql {
+  scope: string;
+  version: string;
+  typeName: string;
+  sql: string;
+}
+
 /** How one type a cache version holds compares with the version before it, by the type's own content hash. */
 export type DeliveryCacheTypeChange = "added" | "changed" | "unchanged";
 
@@ -4599,6 +4607,9 @@ export const deliveryApi = {
   /** The records of one partition's cache at one version (the current one when none is named). */
   cachedItems: (query: PageQuery & { scope: string; type?: string; search?: string; version?: string }) =>
     get<PagedResult<DeliveryCachedItem>>("/api/v1/delivery/cache/items", query as unknown as QueryParams),
+  /** The T-SQL that reads in SSMS the first page `cachedItems` lists of one type, with the same search and page size. Nothing is run. */
+  cachedItemsSql: (query: { scope: string; type: string; search?: string; version?: string; pageSize?: number }) =>
+    get<DeliveryCachedItemsSql>("/api/v1/delivery/cache/items/sql", query as unknown as QueryParams),
   /** What changed in one partition's cache between two versions (`to` defaults to the current one), a page of records at a time. */
   cacheDiff: (query: DeliveryCacheDiffQuery) =>
     get<DeliveryCacheDiff>("/api/v1/delivery/cache/diff", query),

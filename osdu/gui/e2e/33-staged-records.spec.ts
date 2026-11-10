@@ -92,6 +92,16 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await rowSearch.press("Escape");
     await expect(rowSearch).toHaveValue("");
     await expect(looked.getByTestId("mapping-overview-rows-row").first()).toBeVisible({ timeout: 60_000 });
+
+    // SQL in the grid's heading gives, in the grid's place, the T-SQL that reads the same rows in SSMS, the scope's values and the
+    // rows to list declared; SQL again goes back to the rows.
+    await looked.getByTestId("mapping-overview-rows-sql").click();
+    await expect(looked.getByTestId("mapping-overview-rows-sql")).toHaveAttribute("aria-pressed", "true");
+    await expect(looked.getByTestId("mapping-overview-rows-sql-about")).toContainText("on the flow's source database");
+    await expect(looked.getByTestId("mapping-overview-rows-sql-code")).toContainText("DECLARE @page int = 100;", { timeout: 30_000 });
+    await expect(looked.getByTestId("mapping-overview-rows-grid")).toHaveCount(0);
+    await looked.getByTestId("mapping-overview-rows-sql").click();
+    await expect(looked.getByTestId("mapping-overview-rows-row").first()).toBeVisible({ timeout: 60_000 });
     await looked.getByTestId("mapping-overview-rows-close").click();
     await expect(looked).toHaveCount(0);
 

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
@@ -73,6 +74,95 @@ public sealed class DeliveryCacheItemsApiTests
             await db.DeliveryCacheMembers.Where(m => m.Scope == scope).ExecuteDeleteAsync();
             await db.DeliveryCacheVersions.Where(v => v.Scope == scope).ExecuteDeleteAsync();
         }
+    }
+
+    [Fact]
+    public async Task The_script_of_a_types_listing_reads_in_ssms_the_records_listed_at_the_version_listed_with_a_column_per_field()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+        var scope = "cp-items-sql-" + Guid.NewGuid().ToString("N")[..8];
+        var store = new OsduCacheStore(() => SampleEstate.Context(cs));
+        var start = new DateTimeOffset(2026, 11, 9, 6, 0, 0, TimeSpan.Zero);
+
+        try
+        {
+            await store.MergeAsync(scope, Flow, [Wellbores(scope, 1, 7, "well"), Units(scope)], new CacheCapture(null, "tests", "seeded"), start);
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client, ["read"]);
+
+            // The script lists what the listing's first page lists, in its order: the id, a column per field, the whole record.
+            var listed = await PagesAsync(client, token, $"/api/v1/delivery/cache/items?scope={scope}&type=Wellbore", 4);
+            var script = await ScriptAsync(client, token, $"/api/v1/delivery/cache/items/sql?scope={scope}&type=Wellbore&pageSize=4");
+            Assert.Contains("-- Runs on the catalog database.", script, StringComparison.Ordinal);
+            var ran = await RunAsync(cs, script);
+            Assert.Equal(listed.Ids.Take(4), ran.Select(row => row[0]));
+            Assert.Equal(listed.Names.Take(4), ran.Select(row => row[1]));
+            Assert.All(ran, row => Assert.Equal(3, row.Count));
+
+            // A search narrows the script as it narrows the listing, and a table of pairs gives each of its fields a column.
+            Assert.Equal([$"{scope}:master-data--Wellbore:3"], (await RunAsync(cs, await ScriptAsync(client, token, $"/api/v1/delivery/cache/items/sql?scope={scope}&type=Wellbore&search=well%203"))).Select(row => row[0]));
+            var units = await RunAsync(cs, await ScriptAsync(client, token, $"/api/v1/delivery/cache/items/sql?scope={scope}&type=Units"));
+            Assert.Equal([["ft", "ft", scope], ["m", "m", scope], ["s", "s", scope]], units.Select(row => row.Take(3).ToList()));
+
+            // The script reads the version it was written for: a refresh after it does not change what it lists.
+            await store.MergeAsync(scope, Flow, [Wellbores(scope, 1, 7, "moved"), Units(scope)], new CacheCapture(null, "tests", "seeded"), start.AddDays(1));
+            Assert.Equal(listed.Names.Take(4), (await RunAsync(cs, script)).Select(row => row[1]));
+
+            // A script needs the type it reads, and a version the cache holds.
+            using (var untyped = await SendAsync(client, token, $"/api/v1/delivery/cache/items/sql?scope={scope}"))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, untyped.StatusCode);
+            }
+
+            using var unknown = await SendAsync(client, token, $"/api/v1/delivery/cache/items/sql?scope={scope}&type=Wellbore&version=no-such-version");
+            Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        }
+        finally
+        {
+            await using var db = SampleEstate.Context(cs);
+            await db.DeliveryCacheItems.Where(i => i.Scope == scope).ExecuteDeleteAsync();
+            await db.DeliveryCacheMembers.Where(m => m.Scope == scope).ExecuteDeleteAsync();
+            await db.DeliveryCacheVersions.Where(v => v.Scope == scope).ExecuteDeleteAsync();
+        }
+    }
+
+    /// <summary>The script a route writes.</summary>
+    private static async Task<string> ScriptAsync(HttpClient client, string token, string path)
+    {
+        using var response = await SendAsync(client, token, path);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"GET {path} answered {(int)response.StatusCode}: {body}");
+        return JsonDocument.Parse(body).RootElement.GetProperty("sql").GetString()!;
+    }
+
+    /// <summary>Runs a script as a person does in SSMS, its values declared in it, and answers its rows as text.</summary>
+    private static async Task<List<List<string?>>> RunAsync(string cs, string script)
+    {
+        await using var connection = new SqlConnection(cs);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = script;
+        await using var reader = await command.ExecuteReaderAsync();
+        var rows = new List<List<string?>>();
+        while (await reader.ReadAsync())
+        {
+            var row = new List<string?>(reader.FieldCount);
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                row.Add(reader.IsDBNull(i) ? null : Convert.ToString(reader.GetValue(i), System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
     }
 
     private static ReferenceType Wellbores(string scope, int from, int to, string name)

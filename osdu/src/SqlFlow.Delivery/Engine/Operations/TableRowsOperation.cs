@@ -71,7 +71,8 @@ public sealed class TableRowsOperation : DeliveryOperation
             read.Counted,
             read.CountCapped,
             MaxCharacters,
-            context.Time.GetUtcNow().UtcDateTime);
+            context.Time.GetUtcNow().UtcDateTime,
+            read.Sql);
     }
 
     private static int Limit(ComputeTaskPayload payload)
@@ -98,6 +99,7 @@ public sealed class TableRowsOperation : DeliveryOperation
 /// <param name="CountCapped">True when there are more than that.</param>
 /// <param name="MaxCharacters">The most characters a value keeps; a column whose values were cut says so.</param>
 /// <param name="ReadUtc">When it was read.</param>
+/// <param name="Sql">The T-SQL a person runs in SSMS on the flow's source database to read the same rows, each value whole; null from a source no SQL reads.</param>
 public sealed record TableRowsView(
     string Flow, string? Interface, string? Dataset, string Table, IReadOnlyList<TableColumn> Columns, IReadOnlyList<IReadOnlyList<string?>> Rows,
-    long Counted, bool CountCapped, int MaxCharacters, DateTime ReadUtc);
+    long Counted, bool CountCapped, int MaxCharacters, DateTime ReadUtc, string? Sql);

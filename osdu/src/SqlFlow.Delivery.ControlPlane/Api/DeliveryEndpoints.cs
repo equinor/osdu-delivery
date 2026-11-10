@@ -316,6 +316,13 @@ public sealed record DeliveryCachedItemDto(
     long ItemId, string Scope, string Version, string TypeName, string EntityType, string RecordId, JsonElement Fields);
 
 /// <summary>
+/// The T-SQL a person runs in SSMS on the catalog database to read what the overview lists of one cached type: the records of
+/// <paramref name="Version"/>, narrowed by the same search, a column per field the records listed hold
+/// (<see cref="CacheProofSql.ItemsScript"/>).
+/// </summary>
+public sealed record DeliveryCachedItemsSqlDto(string Scope, string Version, string TypeName, string Sql);
+
+/// <summary>
 /// One type a cache version holds, how many records of it, and for a lookup table the name its key is kept under; with the
 /// type's own content hash, how it compares with the version before (<c>added</c>, <c>changed</c> or <c>unchanged</c>), and
 /// the version its content dates from. The version moves when anything in the partition's cache does; these move only when
@@ -657,6 +664,7 @@ public static class DeliveryEndpoints
         DeliveryOrphanedLedgerEndpoints.MapReads(delivery);
         delivery.MapGet("/caches", ListCachesAsync).WithName("ListDeliveryCaches");
         delivery.MapGet("/cache/items", ListCachedItemsAsync).WithName("ListDeliveryCachedItems");
+        delivery.MapGet("/cache/items/sql", WriteCachedItemsSqlAsync).WithName("WriteDeliveryCachedItemsSql");
         delivery.MapGet("/cache/versions", ListCacheVersionsAsync).WithName("ListDeliveryCacheVersions");
         delivery.MapGet("/cache/diff", CompareCacheVersionsAsync).WithName("CompareDeliveryCacheVersions");
         delivery.MapGet("/cache/history", ListCacheHistoryAsync).WithName("ListDeliveryCacheHistory");
@@ -1799,6 +1807,85 @@ public static class DeliveryEndpoints
             return PrunedCacheVersion(pruned);
         }
 
+        var (total, items) = await CachedItemsPageAsync(osdu, partition, resolved, type, search, p, size, ct).ConfigureAwait(false);
+        return TypedResults.Ok(new PagedResult<DeliveryCachedItemDto>(
+            items.Select(i => new DeliveryCachedItemDto(i.ItemId, partition, resolved.Version, i.TypeName, i.EntityType, i.RecordId, ParseJson(i.FieldsJson))).ToList(),
+            p, size, total));
+    }
+
+    /// <summary>
+    /// The T-SQL that reads in SSMS what the listing above lists of one type, for the same partition, version, search and page
+    /// size: its first page, a column per field those records hold, so the script's grid and the overview's line up. The
+    /// script names the version it was written for, which it stops on once that version is pruned.
+    /// </summary>
+    private static async Task<Results<Ok<DeliveryCachedItemsSqlDto>, ProblemHttpResult>> WriteCachedItemsSqlAsync(
+        string? scope, string? type, string? search, string? version, int? pageSize, OsduDbContext osdu, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            return NoCacheNamed();
+        }
+
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return TypedResults.Problem(
+                title: "No type", detail: "Name the cached type whose records the script reads with 'type'.", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var (_, size) = PageRequest.Normalize(1, pageSize);
+        var partition = scope.Trim();
+        var resolved = await CacheVersions.ResolveAsync(osdu, partition, version, ct).ConfigureAwait(false);
+        if (resolved is null)
+        {
+            return string.IsNullOrWhiteSpace(version)
+                ? TypedResults.Problem(title: "No cache", detail: $"Partition '{partition}' has no cache yet, so there are no records to read.", statusCode: StatusCodes.Status404NotFound)
+                : UnknownCacheVersion(partition, version.Trim());
+        }
+
+        try
+        {
+            CacheVersions.ThrowIfPruned(resolved);
+        }
+        catch (CacheVersionPrunedException pruned)
+        {
+            return PrunedCacheVersion(pruned);
+        }
+
+        // The fields in the order the records listed first hold them, as the overview's grid lists its columns.
+        var (_, items) = await CachedItemsPageAsync(osdu, partition, resolved, type, search, 1, size, ct).ConfigureAwait(false);
+        var fields = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            using var held = JsonDocument.Parse(item.FieldsJson);
+            if (held.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            foreach (var field in held.RootElement.EnumerateObject())
+            {
+                if (seen.Add(field.Name))
+                {
+                    fields.Add(field.Name);
+                }
+            }
+        }
+
+        var named = type.Trim();
+        return TypedResults.Ok(new DeliveryCachedItemsSqlDto(
+            partition, resolved.Version, named, CacheProofSql.ItemsScript(partition, resolved.Version, named, fields, search, size)));
+    }
+
+    /// <summary>
+    /// One page of a version's cached records, narrowed to a type and to a search inside a record's id or values, in type and
+    /// record order, and how many there are. The page's rows are picked by id from the index that lists a type in record
+    /// order, which holds every column the listing filters and orders by, and only those rows are then read whole: a deep page
+    /// of a large type skips its rows in the index instead of reading each skipped row's values.
+    /// </summary>
+    private static async Task<(int Total, IReadOnlyList<CachedItemRow> Items)> CachedItemsPageAsync(
+        OsduDbContext osdu, string partition, DeliveryCacheVersion resolved, string? type, string? search, int page, int size, CancellationToken ct)
+    {
         var query = CacheVersions.ItemsAt(osdu, partition, resolved.Sequence);
         if (!string.IsNullOrWhiteSpace(type))
         {
@@ -1812,23 +1899,21 @@ public static class DeliveryEndpoints
             query = query.Where(i => i.RecordId.Contains(term) || i.Terms.Contains(term));
         }
 
-        // The page's rows are picked by id from the index that lists a type in record order, which holds every column the
-        // listing filters and orders by, and only those rows are then read whole: a deep page of a large type skips its
-        // rows in the index instead of reading each skipped row's values.
         var total = await query.CountAsync(ct).ConfigureAwait(false);
         var pageIds = query
             .OrderBy(i => i.TypeName).ThenBy(i => i.RecordId)
-            .Skip((p - 1) * size).Take(size)
+            .Skip((page - 1) * size).Take(size)
             .Select(i => i.ItemId);
         var items = await osdu.DeliveryCacheItems.AsNoTracking()
             .Where(i => i.Scope == partition && pageIds.Contains(i.ItemId))
             .OrderBy(i => i.TypeName).ThenBy(i => i.RecordId)
-            .Select(i => new { i.ItemId, i.TypeName, i.EntityType, i.RecordId, i.FieldsJson })
+            .Select(i => new CachedItemRow(i.ItemId, i.TypeName, i.EntityType, i.RecordId, i.FieldsJson))
             .ToListAsync(ct).ConfigureAwait(false);
-        return TypedResults.Ok(new PagedResult<DeliveryCachedItemDto>(
-            items.Select(i => new DeliveryCachedItemDto(i.ItemId, partition, resolved.Version, i.TypeName, i.EntityType, i.RecordId, ParseJson(i.FieldsJson))).ToList(),
-            p, size, total));
+        return (total, items);
     }
+
+    /// <summary>What a listing reads of a cached record: what it shows, and not the search terms it is found by.</summary>
+    private sealed record CachedItemRow(long ItemId, string TypeName, string EntityType, string RecordId, string FieldsJson);
 
     /// <summary>The versions of one partition's cache, newest first, each with the flow and run that wrote it: what the version picker offers.</summary>
     private static async Task<Results<Ok<IReadOnlyList<DeliveryCacheVersionDto>>, ProblemHttpResult>> ListCacheVersionsAsync(

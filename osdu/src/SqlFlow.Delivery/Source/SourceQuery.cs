@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Templates;
@@ -195,14 +197,94 @@ public static class SourceQuery
         return script.ToString();
     }
 
+    /// <summary>
+    /// The script a person runs in SSMS to read what a look at a table read (<see cref="IIngestionSource.ReadTableAsync"/>): the
+    /// same rows, in the same order, each value whole where the look cuts a long one. Each lookup table is joined as a delivery
+    /// joins it, so a run of this beside the cache's script (<see cref="Catalog.CacheProofSql.ItemsScript"/>) cross-checks what
+    /// the join gives a row against what the cache holds. The values the read was given are declared as the parameters it
+    /// bound them to: the scope's, the rows to list and, for a search, what the search reads as.
+    /// </summary>
+    /// <param name="flow">The flow's label.</param>
+    /// <param name="table">The table read, as the flow names it.</param>
+    /// <param name="child">True when the table is a child dataset's, read for the records in scope.</param>
+    /// <param name="lookups">The lookup tables joined into the read.</param>
+    /// <param name="scope">The scope's values, in the order of <see cref="IngestionLayout.Scope"/>.</param>
+    /// <param name="rows">The most rows the script lists.</param>
+    /// <param name="search">The search the rows were narrowed by, with its text; null for none.</param>
+    /// <param name="statement">The statement (<see cref="IngestionSql.TableRows"/>, without its count).</param>
+    internal static string TableRows(
+        string flow, string table, bool child, IReadOnlyList<IngestionLookup> lookups, IReadOnlyList<SourceScopeValues> scope, int rows,
+        (string Text, TableSearchTerm Term)? search, string statement)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(flow);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(lookups);
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentOutOfRangeException.ThrowIfLessThan(rows, 1);
+        ArgumentException.ThrowIfNullOrWhiteSpace(statement);
+
+        var script = new StringBuilder();
+        Comment(script, child
+            ? $"The first {rows.ToString(CultureInfo.InvariantCulture)} rows of {table} that {flow} reads for the records in this scope, as the overview lists them, each value whole."
+            : $"The first {rows.ToString(CultureInfo.InvariantCulture)} rows of {table} that {flow} reads in this scope, as the overview lists them, each value whole.");
+        Comment(script, "Runs on the flow's source database, as the tables hold them now.");
+        if (lookups.Count > 0)
+        {
+            Comment(script, $"Joined as a delivery joins them, by a LEFT OUTER JOIN on each key, a row marked deleted left out: {string.Join(", ", lookups.Select(l => $"{l.Name} ({l.Table})"))}.");
+        }
+
+        DeclareScope(script, scope);
+        Comment(script, "The most rows to list.");
+        script.Append("DECLARE ").Append(IngestionSql.PageParameter).Append(" int = ").Append(rows.ToString(CultureInfo.InvariantCulture)).AppendLine(";");
+        if (search is { } searched)
+        {
+            var term = searched.Term;
+            Comment(script, $"The search: {searched.Text}, found inside any column's text, ignoring case, and as a number or a moment it reads as.");
+            Declare(script, statement, IngestionSql.SearchParameter, "nvarchar(4000)", Text(term.Pattern));
+            if (term.Float is { } wide)
+            {
+                Declare(script, statement, IngestionSql.SearchFloatParameter, "float", wide.ToString("R", CultureInfo.InvariantCulture));
+            }
+
+            if (term.Real is { } narrow)
+            {
+                Declare(script, statement, IngestionSql.SearchRealParameter, "real", narrow.ToString("R", CultureInfo.InvariantCulture));
+            }
+
+            if (term.Moment is { } moment)
+            {
+                Declare(script, statement, IngestionSql.SearchMomentParameter, "datetimeoffset(7)", Text(moment.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffffzzz", CultureInfo.InvariantCulture)));
+            }
+        }
+
+        script.AppendLine();
+        script.AppendLine(statement);
+        return script.ToString();
+    }
+
+    /// <summary>Declares <paramref name="name"/> when <paramref name="statement"/> reads it: a search binds a form no column compares with, which the statement leaves out.</summary>
+    private static void Declare(StringBuilder script, string statement, string name, string type, string literal)
+    {
+        if (Regex.IsMatch(statement, Regex.Escape(name) + "(?![A-Za-z0-9_])", RegexOptions.CultureInvariant))
+        {
+            script.Append("DECLARE ").Append(name).Append(' ').Append(type).Append(" = ").Append(literal).AppendLine(";");
+        }
+    }
+
     /// <summary>Declares the scope's values as the parameters a read binds them to, each under a comment naming its parameter.</summary>
     internal static void DeclareScope(StringBuilder script, SourceDescription source)
     {
         ArgumentNullException.ThrowIfNull(script);
         ArgumentNullException.ThrowIfNull(source);
-        for (var i = 0; i < source.Scope.Count; i++)
+        DeclareScope(script, source.Scope);
+    }
+
+    /// <summary>Declares <paramref name="scopes"/> as the parameters a read binds them to, each under a comment naming its parameter.</summary>
+    private static void DeclareScope(StringBuilder script, IReadOnlyList<SourceScopeValues> scopes)
+    {
+        for (var i = 0; i < scopes.Count; i++)
         {
-            var scope = source.Scope[i];
+            var scope = scopes[i];
 
             // Over its statement, as formatting the script would leave a comment beside it over the next one.
             Comment(script, $"The scope: {scope.Parameter}");

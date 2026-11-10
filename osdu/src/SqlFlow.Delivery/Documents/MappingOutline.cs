@@ -103,7 +103,13 @@ public sealed record MappingOutlineField(string Name, bool Key, bool Display, bo
 /// template), or what the document says of it.
 /// </param>
 /// <param name="Fields">What the mapping reads of it, in the order the document first does.</param>
-public sealed record MappingOutlineSource(string Id, string Kind, string Name, string? Detail, IReadOnlyList<MappingOutlineField> Fields);
+/// <param name="Line">
+/// The first line of the block of the document that declares it, from 1: the <c>dataset</c> block for the record table, the
+/// <c>parameters</c> block for the parameters, a search's block under <c>searches</c>. Null for a source the document declares
+/// nowhere (a child dataset, a cached type, another record), and when the document's text was not given.
+/// </param>
+/// <param name="EndLine">The block's last line.</param>
+public sealed record MappingOutlineSource(string Id, string Kind, string Name, string? Detail, IReadOnlyList<MappingOutlineField> Fields, int? Line = null, int? EndLine = null);
 
 /// <summary>A field a flow's value enters at, and what it does there.</summary>
 /// <param name="Source">The <see cref="MappingOutlineSource.Id"/> it is read from.</param>
@@ -320,8 +326,10 @@ public sealed record MappingOutline(
             return field;
         }
 
-        public MappingOutlineSource Freeze()
-            => new(Id, Kind, Name, Detail, Fields.Select(f => new MappingOutlineField(f.Name, f.Key, f.Display, f.Match, f.Reads, f.Description)).ToList());
+        public MappingOutlineSource Freeze((int Line, int EndLine)? declared)
+            => new(
+                Id, Kind, Name, Detail, Fields.Select(f => new MappingOutlineField(f.Name, f.Key, f.Display, f.Match, f.Reads, f.Description)).ToList(),
+                declared?.Line, declared?.EndLine);
     }
 
     private sealed class FieldDraft(string name)
@@ -346,6 +354,8 @@ public sealed record MappingOutline(
         private const string ConditionRole = "condition";
         private const string RecordRoot = "record";
         private const string DatasetRoot = "dataset";
+        private const string ParametersRoot = "parameters";
+        private const string SearchesRoot = "searches";
         private const string ItemWord = MappingMapper.ItemKey;
 
         private readonly MappingDefinition _mapping;
@@ -393,7 +403,7 @@ public sealed record MappingOutline(
                     dataset.System, dataset.Key, dataset.Label, dataset.Identity,
                     dataset.IdFrom == MappingIdSource.Key ? "key" : "deliveryKey",
                     dataset.Assertions.Select(RowRule).ToList()),
-                Ordered().Select(source => source.Freeze()).ToList(),
+                Ordered().Select(source => source.Freeze(DeclaredAt(source))).ToList(),
                 root.Select(branch => branch.Freeze()).ToList(),
                 _mapping.Enrich
                     .Select(e => new MappingOutlineEnrichment(e.Name, e.Mapping, e.Rows?.ToString().ToLowerInvariant(), e.Bulk, e.Description))
@@ -418,6 +428,19 @@ public sealed record MappingOutline(
                 rule.Label, rule.Expected, AssertionWords.Of(rule.OnFail), rule.Per == DatasetAssertionPer.Run ? MappingMapper.PerRun : MappingMapper.PerRecord,
                 source, reads, rule.Description, lines?.Line, lines?.EndLine);
         }
+
+        /// <summary>
+        /// The lines of the block declaring <paramref name="source"/>: the record table's key, label, identity and rules are the
+        /// <c>dataset</c> block, the parameters the <c>parameters</c> block, a search its own block under <c>searches</c>.
+        /// Null for what the document declares nowhere.
+        /// </summary>
+        private (int Line, int EndLine)? DeclaredAt(SourceDraft source) => source.Kind switch
+        {
+            MappingOutlineSourceKind.Record => LinesAt(DatasetRoot),
+            MappingOutlineSourceKind.Parameters => LinesAt(ParametersRoot),
+            MappingOutlineSourceKind.Search => LinesAt(RecordPathNotation.Append(SearchesRoot, source.Name)),
+            _ => null,
+        };
 
         /// <summary>The dataset's tables first, then the parameters, then what is looked in, each as the document first reads it.</summary>
         private IEnumerable<SourceDraft> Ordered()
@@ -983,7 +1006,8 @@ public sealed record MappingOutline(
 
         /// <summary>
         /// Where each node of the document's <c>record</c> block is written, by the location the mapper names it with: a key by
-        /// its dotted path, an item of a list by its place. A document that does not parse here gives no lines; it was read
+        /// its dotted path, an item of a list by its place; and the blocks declaring what it reads (<c>dataset</c>,
+        /// <c>parameters</c>, <c>searches</c>) the same way. A document that does not parse here gives no lines; it was read
         /// before it got this far, and the lines are only a convenience.
         /// </summary>
         private void ReadLines(string? yaml)
@@ -1012,7 +1036,7 @@ public sealed record MappingOutline(
             var text = new DimensionYamlSource.Text(yaml.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'));
             foreach (var (key, value) in root.Children)
             {
-                if (key is YamlScalarNode { Value: RecordRoot or DatasetRoot } named)
+                if (key is YamlScalarNode { Value: RecordRoot or DatasetRoot or ParametersRoot or SearchesRoot } named)
                 {
                     Walk(text, named.Value!, key, value);
                 }

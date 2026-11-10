@@ -26,6 +26,12 @@ export interface MappingOutlineSource {
   name: string;
   detail?: string | null;
   fields: MappingOutlineField[];
+  /**
+   * The block of the document declaring it, from 1: the `dataset` block for the record table, the `parameters` block, a search's
+   * block under `searches`. Absent for what the document declares nowhere.
+   */
+  line?: number | null;
+  endLine?: number | null;
 }
 
 /** A field a value enters a flow from: what it is made of, what a lookup compares, or what a condition tests. */
@@ -174,4 +180,6 @@ export interface DeliveryTableRows {
   countCapped: boolean;
   maxCharacters: number;
   readUtc: string;
+  /** The T-SQL a person runs in SSMS on the flow's source database to read the same rows, each value whole; absent from a source no SQL reads. */
+  sql?: string | null;
 }

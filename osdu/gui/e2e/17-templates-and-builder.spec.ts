@@ -430,6 +430,35 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(adminPage.getByTestId("mapping-builder-key-chip-log_id")).toBeVisible();
   });
 
+  test("a column picked on a mapping's overview brings the YAML to the lines that read it, marked where they name it", async ({ adminPage }) => {
+    await adminPage.getByTestId("nav-delivery-documents").click();
+    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: "WellLog@1.4.0" }).first();
+    await expect(row).toContainText(WELLLOG_VERSION, { timeout: 30_000 });
+    await row.click();
+
+    const detail = adminPage.getByTestId("delivery-mapping-detail");
+    const overview = detail.getByTestId("mapping-overview");
+    await expect(detail.getByTestId("mapping-overview-lead")).toContainText("becomes one WellLog record", { timeout: 30_000 });
+    await detail.getByTestId("mapping-overview-toggle-yaml").click();
+    const yamlPane = overview.getByTestId("mapping-overview-yaml");
+    await expect(yamlPane).toContainText("documentType: mapping");
+
+    // A key column brings the YAML to the dataset's key, the column marked there; a column of a cache table, far down the
+    // document, to the first findBy line comparing it. Escape puts the light out and the marks with it.
+    await overview.getByTestId("mapping-overview-field-dataset-log_id").click();
+    const keyLine = yamlPane.getByTestId("mapping-overview-yaml-line").filter({ hasText: "key: [source_project, log_id]" });
+    await expect(keyLine.getByTestId("mapping-overview-yaml-mark")).toHaveText("log_id");
+    await expect(keyLine).toBeInViewport();
+    await overview.getByTestId("mapping-overview-field-cache.UnitOfMeasure-Code").click();
+    const compared = yamlPane.getByTestId("mapping-overview-yaml-mark").filter({ hasText: /^Code$/ }).first();
+    await expect(compared).toBeInViewport();
+    await expect(keyLine).not.toBeInViewport();
+    await adminPage.mouse.move(0, 0);
+    await adminPage.keyboard.press("Escape");
+    await expect(yamlPane.getByTestId("mapping-overview-yaml-mark")).toHaveCount(0);
+  });
+
   test("a synced mapping opens in the builder and passes the check against the cache its flow reads", async ({ adminPage }) => {
     await adminPage.getByTestId("nav-delivery-documents").click();
     await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: FIRST_VISIT_MS });

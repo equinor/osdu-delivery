@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A column or a table picked on a mapping's overview brings its YAML into view, as a property does.** The lines of each
+  property, alternative and rule on the rows that read it light up, with those of the `dataset` or `parameters` block
+  naming it, the column is marked where the lines name it, and the first is scrolled to; **Show in the YAML** on its menu
+  opens the document there ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md#working-with-it)).
+- **The grid of a table's rows on a mapping's overview gives the T-SQL that reads the same rows in SSMS.** **SQL** in its
+  heading, or **Show the SQL** on a table's menu, shows the script of a flow's table with its lookup tables joined as a
+  delivery joins them, or of a cached type's records at the version shown, a column per field, so a lookup join is
+  cross-checked against the cache; `GET /api/v1/delivery/cache/items/sql` writes the cache's
+  ([the SQL of a table's rows](osdu/docs/reference/concepts/mapping-overview-sql.md)).
 - **A delivery flow joins a lookup table into its own reads, for a lookup table too large for the cache.**
   `source.record.lookups` and `source.datasets.<name>.lookups` name a lookup table and its `join`, each column of its
   uniquely indexed key (one or several) to the column it matches, and every read becomes a LEFT OUTER JOIN in SQL Server, giving each row the lookup's columns as
@@ -924,6 +933,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A look at a flow's table on a mapping's overview reads the rows under the table's `filter`, as a delivery does. The
+  record table's and a child dataset's filters were left out, so the grid listed and counted rows a delivery never reads
+  ([looking at a table's rows](osdu/docs/reference/concepts/mapping-overview.md#looking-at-a-tables-rows)).
 - A schedule's fire keeps a disabled or manual member's place in the order: the flows after it in its chain wait for the
   flows before it, where they ran in the fire's first wave. A cache flow capturing what a disabled delivery delivers now
   runs at the end of its section, after the `ing` flow that delivery reads; a flow run with its descendants orders a

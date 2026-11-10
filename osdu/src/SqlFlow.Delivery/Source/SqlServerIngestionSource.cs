@@ -249,6 +249,20 @@ public sealed partial class SqlServerIngestionSource : IIngestionSource
     {
         await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
         var layout = await BuildLayoutAsync(connection, ct, guardScope: false).ConfigureAwait(false);
+        return new SourceDescription(
+            layout,
+            _tables.ToDictionary(t => t.Key, t => (IReadOnlyList<string>)t.Value.Values.Select(c => c.Name).ToList(), StringComparer.OrdinalIgnoreCase),
+            ScopeValues(layout),
+            new[] { _fileNameColumn, _rowNumberColumn }.OfType<string>().ToList(),
+            _tables.ToDictionary(
+                t => t.Key,
+                t => (IReadOnlyDictionary<string, string>)t.Value.Values.ToDictionary(c => c.Name, c => c.SqlType, StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The values this read gives the scope's columns, as a script declares them: each column's type, and its value or values.</summary>
+    private List<SourceScopeValues> ScopeValues(IngestionLayout layout)
+    {
         var record = _tables[SourceDatasets.Record];
         var scope = new List<SourceScopeValues>(layout.Scope.Count);
         foreach (var (column, parameter, _) in layout.Scope)
@@ -262,15 +276,7 @@ public sealed partial class SqlServerIngestionSource : IIngestionSource
             scope.Add(new SourceScopeValues(column, parameter, record[column].SqlType, RunValueList.Items(value)));
         }
 
-        return new SourceDescription(
-            layout,
-            _tables.ToDictionary(t => t.Key, t => (IReadOnlyList<string>)t.Value.Values.Select(c => c.Name).ToList(), StringComparer.OrdinalIgnoreCase),
-            scope,
-            new[] { _fileNameColumn, _rowNumberColumn }.OfType<string>().ToList(),
-            _tables.ToDictionary(
-                t => t.Key,
-                t => (IReadOnlyDictionary<string, string>)t.Value.Values.ToDictionary(c => c.Name, c => c.SqlType, StringComparer.OrdinalIgnoreCase),
-                StringComparer.OrdinalIgnoreCase));
+        return scope;
     }
 
     public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, SourceKeyRead read, [EnumeratorCancellation] CancellationToken ct = default)
@@ -452,7 +458,19 @@ public sealed partial class SqlServerIngestionSource : IIngestionSource
         // A number or a moment searched for is bound in the forms it reads as, which the statement compares its columns with; one
         // no column compares with is bound and left unread.
         var search = string.IsNullOrWhiteSpace(query.Search) ? null : TableSearchTerm.Read(query.Search);
-        await using var command = Command(connection, IngestionSql.TableRows(layout, dataset, select, search is null ? null : IngestionSql.TableSearch(columns, search)));
+        var searched = search is null ? null : IngestionSql.TableSearch(columns, search);
+
+        // The script reads the same rows by the same statement, without its count, each column whole rather than cut.
+        var script = SourceQuery.TableRows(
+            _flow.Label,
+            table.ToString(),
+            dataset is not null,
+            dataset is null ? layout.Lookups : dataset.Lookups ?? [],
+            ScopeValues(layout),
+            query.Limit,
+            search is null ? null : (query.Search!.Trim(), search),
+            IngestionSql.TableRows(layout, dataset, columns.Count == 0 ? ["t.*"] : columns.Select(c => $"t.{SourceObjectName.Quote(c.Name)}").ToList(), searched, count: false));
+        await using var command = Command(connection, IngestionSql.TableRows(layout, dataset, select, searched));
         BindScope(command, layout);
         command.Parameters.Add(new SqlParameter(IngestionSql.PageParameter, SqlDbType.Int) { Value = query.Limit });
         command.Parameters.Add(new SqlParameter(IngestionSql.TopParameter, SqlDbType.BigInt) { Value = query.CountUpTo + 1 });
@@ -503,7 +521,8 @@ public sealed partial class SqlServerIngestionSource : IIngestionSource
             columns.Select((c, i) => new TableColumn(c.Name, c.SqlType, cut[i])).ToList(),
             rows,
             Math.Min(counted, query.CountUpTo),
-            counted > query.CountUpTo);
+            counted > query.CountUpTo,
+            script);
     }
 
     public async Task<ProofRows> ReadProofAsync(SourceProofQuery query, CancellationToken ct = default)

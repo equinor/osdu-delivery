@@ -8,6 +8,7 @@ import { ExplainIcon } from "@/features/chat/ExplainIcon";
 import { cn } from "@/lib/utils";
 import { TOKEN_CLASS, tokensOf, type Token } from "../dimensions/yamlTokens";
 import { YamlHeading } from "../dimensions/BlueprintYaml";
+import { markRuns, type LineRun } from "./partLines.ts";
 import { explainedYaml, linesLabel, yamlLines, type ExplainedYaml, type LineRange } from "./yamlExplain.ts";
 
 /** The lines drawn, each split into runs of one token. */
@@ -68,17 +69,22 @@ interface MenuTarget {
 
 /**
  * The mapping as written, comments and all, each line tied to the canvas: pointing at a line lights the property it writes,
- * clicking picks that property, and whatever is lit on the canvas lights the lines that write it. The lines of the property
- * picked are brought into view. Explain asks the assistant about the lines selected, or the whole mapping; a right click
- * offers it over the lines selected, or else over the property the line clicked writes, and copies the same lines.
+ * clicking picks that property, and whatever is lit on the canvas lights the lines that write it, a column or a table marked
+ * where the lines name it. The first line of what is picked is brought into view. Explain asks the assistant about the lines
+ * selected, or the whole mapping; a right click offers it over the lines selected, or else over the property the line
+ * clicked writes, and copies the same lines.
  */
-export function OverviewYaml({ file, yaml, lit, focus, onLine, onPick, onExplain, blockOf }: {
+export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, onPick, onExplain, blockOf }: {
   file: string;
   yaml: string;
   /** The lines lit, from 1. */
   lit: ReadonlySet<number>;
+  /** Where on a line the column or table lit is named, by line from 1. */
+  marks: ReadonlyMap<number, readonly LineRun[]>;
   /** The line to bring into view, when something is picked. */
   focus: number | null;
+  /** What was picked, so picking another thing on the same line brings it into view again. */
+  focusKey: string;
   onLine: (line: number | null) => void;
   onPick: (line: number) => void;
   /** Asks the assistant about lines of the mapping, or all of it; null while the assistant is not configured. */
@@ -97,7 +103,7 @@ export function OverviewYaml({ file, yaml, lit, focus, onLine, onPick, onExplain
     if (pane !== null && pane !== undefined && line !== null && line !== undefined) {
       pane.scrollTo({ top: line.offsetTop - pane.offsetTop - pane.clientHeight / 3, behavior: "smooth" });
     }
-  }, [focus]);
+  }, [focus, focusKey]);
 
   const aimMenu = (target: EventTarget) => {
     const selected = selectedLines(box.current);
@@ -155,6 +161,7 @@ export function OverviewYaml({ file, yaml, lit, focus, onLine, onPick, onExplain
             <pre className="min-w-max font-mono text-[12px] leading-5">
               {lines.map((runs, index) => {
                 const number = index + 1;
+                const named = marks.get(number);
                 return (
                   <div
                     key={number}
@@ -165,7 +172,14 @@ export function OverviewYaml({ file, yaml, lit, focus, onLine, onPick, onExplain
                     data-testid="mapping-overview-yaml-line"
                   >
                     <span className="w-10 shrink-0 select-none pr-3 text-right tabular-nums text-muted-foreground/60">{number}</span>
-                    <code>{runs.map((run, at) => <span key={at} className={TOKEN_CLASS[run.token]}>{run.text}</span>)}</code>
+                    <code>
+                      {named === undefined
+                        ? runs.map((run, at) => <span key={at} className={TOKEN_CLASS[run.token]}>{run.text}</span>)
+                        : markRuns(runs, named).map((run, at) => (run.marked
+                          // A mark takes the colour of what it covers; the browser's own black would vanish on the dark theme.
+                          ? <mark key={at} className={cn("rounded-[2px] bg-primary/20 ring-1 ring-primary/40", TOKEN_CLASS[run.token] === "" ? "text-foreground" : TOKEN_CLASS[run.token])} data-testid="mapping-overview-yaml-mark">{run.text}</mark>
+                          : <span key={at} className={TOKEN_CLASS[run.token]}>{run.text}</span>))}
+                    </code>
                   </div>
                 );
               })}

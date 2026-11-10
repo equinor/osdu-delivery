@@ -43,14 +43,14 @@ public static class CacheProofSql
     /// <summary>The collation that compares ignoring case.</summary>
     private const string Caseless = "Latin1_General_100_CI_AS";
 
+    /// <summary>What a listing of a type's records is narrowed to: text inside a record's id or any of its values.</summary>
+    public const string SearchParameter = "@search";
+
     /// <summary>The statement for <paramref name="kind"/>, written over the parameters above.</summary>
     public static string Statement(CacheProofKind kind)
     {
         var sql = new StringBuilder();
-        sql.AppendLine("SET NOCOUNT ON;");
-        sql.AppendLine(CultureInfo.InvariantCulture, $"DECLARE @sequence int = (SELECT v.[Sequence] FROM [osdu].[CacheVersion] v WHERE v.[Scope] = {ScopeParameter} AND v.[Version] = {VersionParameter} AND v.[PrunedUtc] IS NULL);");
-        sql.AppendLine("IF @sequence IS NULL");
-        sql.AppendLine(CultureInfo.InvariantCulture, $"    THROW {GoneError}, N'The partition''s cache holds no such version, or its retention pruned its records, so nothing can be shown of it. Check the attribute again to read the current version.', 1;");
+        Sequence(sql, "Check the attribute again to read the current version.");
         sql.Append(kind switch
         {
             CacheProofKind.Ids => Ids(),
@@ -99,6 +99,72 @@ public static class CacheProofSql
         script.Append(Statement(query.Kind));
         return script.ToString();
     }
+
+    /// <summary>
+    /// The script a person runs in SSMS on the catalog database to read what the overview lists of a cached type
+    /// (<c>GET /api/v1/delivery/cache/items</c>): the same records of the version, in the same order, narrowed by the same
+    /// search, each with its id, a column per field, and the whole record. Run beside the flow's script of a table it joins a
+    /// lookup into (<see cref="SourceQuery.TableRows"/>), it cross-checks what the join gives a row against what the cache holds.
+    /// The version is read only while its records are kept, as a proof's is.
+    /// </summary>
+    /// <param name="scope">The partition.</param>
+    /// <param name="version">The version's label.</param>
+    /// <param name="type">The cached type.</param>
+    /// <param name="fields">The fields to give a column each, in order: those the records listed hold.</param>
+    /// <param name="search">The text the records are narrowed to; null for every record.</param>
+    /// <param name="rows">The most records listed.</param>
+    public static string ItemsScript(string scope, string version, string type, IReadOnlyList<string> fields, string? search, int rows)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(version);
+        ArgumentException.ThrowIfNullOrWhiteSpace(type);
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentOutOfRangeException.ThrowIfLessThan(rows, 1);
+
+        var script = new StringBuilder();
+        Comment(script, $"The first {rows.ToString(CultureInfo.InvariantCulture)} records of {type} in version {version} of the cache of partition {scope}, as the overview lists them: each record's id, the fields it holds, and the whole record.");
+        Comment(script, "Runs on the catalog database.");
+        script.Append("DECLARE ").Append(ScopeParameter).Append(" nvarchar(200) = ").Append(IngestionSql.Literal(scope)).AppendLine(";");
+        script.Append("DECLARE ").Append(VersionParameter).Append(" nvarchar(64) = ").Append(IngestionSql.Literal(version)).AppendLine(";");
+        script.Append("DECLARE ").Append(TypesParameter).Append(" nvarchar(max) = ").Append(IngestionSql.Literal(JsonSerializer.Serialize(new[] { type }))).AppendLine(";");
+        var searched = !string.IsNullOrWhiteSpace(search);
+        if (searched)
+        {
+            Comment(script, "The search: found inside a record's id or any of its values.");
+            script.Append("DECLARE ").Append(SearchParameter).Append(" nvarchar(max) = ").Append(IngestionSql.Literal(search!.Trim())).AppendLine(";");
+        }
+
+        Comment(script, "The most records to list.");
+        script.Append("DECLARE ").Append(RowsParameter).Append(" bigint = ").Append(rows.ToString(CultureInfo.InvariantCulture)).AppendLine(";");
+        script.AppendLine();
+        Sequence(script, "Read the type's records again in the overview to name the current version.");
+
+        // A field's value as the record holds it: text as itself, a number or a flag as written, a list or an object as JSON.
+        var columns = new List<string> { "i.[RecordId] AS [id]" };
+        columns.AddRange(fields.Select(field =>
+            $"(SELECT j.[value] FROM OPENJSON(i.[FieldsJson]) j WHERE j.[key] = {IngestionSql.Literal(field)}) AS {SourceObjectName.Quote(field)}"));
+        columns.Add("i.[FieldsJson] AS [fields]");
+        var narrow = searched ? $"(CHARINDEX({SearchParameter}, i.[RecordId]) > 0 OR CHARINDEX({SearchParameter}, i.[Terms]) > 0)" : null;
+        script.Append("WITH ").AppendLine(Items("i.[RecordId], i.[FieldsJson]", narrow));
+        script.Append("SELECT TOP (").Append(RowsParameter).Append(") ").AppendLine(string.Join("," + Environment.NewLine + "    ", columns));
+        script.AppendLine("FROM [items] i");
+        script.AppendLine("ORDER BY i.[RecordId];");
+        return script.ToString();
+    }
+
+    /// <summary>
+    /// The version's sequence, read into <c>@sequence</c>, or the statement stopped with <see cref="GoneError"/> when the version
+    /// is gone or pruned, so an empty answer is never one about records nobody can read; <paramref name="then"/> says what to do.
+    /// </summary>
+    private static void Sequence(StringBuilder sql, string then)
+    {
+        sql.AppendLine("SET NOCOUNT ON;");
+        sql.AppendLine(CultureInfo.InvariantCulture, $"DECLARE @sequence int = (SELECT v.[Sequence] FROM [osdu].[CacheVersion] v WHERE v.[Scope] = {ScopeParameter} AND v.[Version] = {VersionParameter} AND v.[PrunedUtc] IS NULL);");
+        sql.AppendLine("IF @sequence IS NULL");
+        sql.AppendLine(CultureInfo.InvariantCulture, $"    THROW {GoneError}, N'The partition''s cache holds no such version, or its retention pruned its records, so nothing can be shown of it. {then.Replace("'", "''", StringComparison.Ordinal)}', 1;");
+    }
+
+    private static void Comment(StringBuilder script, string text) => script.Append("-- ").AppendLine(text.ReplaceLineEndings(" "));
 
     /// <summary>An id as a record is kept under: without the colon, and the version, it may end in.</summary>
     internal static string Record(string id)

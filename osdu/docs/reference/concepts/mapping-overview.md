@@ -31,6 +31,9 @@ keywords:
   - explain the yaml
   - explain this
   - ask the assistant about a mapping
+  - show in the yaml
+  - where a column is read in the yaml
+  - show the sql
 related:
   - delivery-flow-mapping
   - delivery-flow-mapping-lookups
@@ -40,6 +43,7 @@ related:
   - delivery-concept-api
   - delivery-concept-dry-run
   - delivery-concept-lineage
+  - delivery-concept-mapping-overview-sql
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
@@ -60,6 +64,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/overview/outlineLayout.ts
   - osdu/gui/src/features/delivery/overview/outlineLineage.ts
   - osdu/gui/src/features/delivery/overview/outlineModel.ts
+  - osdu/gui/src/features/delivery/overview/partLines.ts
   - osdu/gui/src/features/delivery/overview/partTargets.ts
   - osdu/gui/src/features/delivery/overview/recordMarkdown.ts
   - osdu/gui/src/features/delivery/overview/tableRows.ts
@@ -135,7 +140,7 @@ on stays lit while it is on.
 | Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
 | Find a property or a column | Type in **Property or column**, which opens what holds the matches, lights them and counts them beside the field (`14 of 40 found`). Once the typing stops, the canvas zooms to them, close enough to read: the properties found with the columns they read, up to 140% and never under 100%, each property found and each column named by the search shaded. Where the columns are too far from their properties to fit at 100%, the properties alone are framed, from the first. Clearing the search takes the view back to where it was, unless you moved it since. |
 | See every property filled one way | Click its glyph on [the toolbar](#the-toolbar). |
-| Read the document beside the canvas | **YAML** on the toolbar opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click keeps it lit. |
+| Read the document beside the canvas | **YAML** on the toolbar opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click keeps it lit. A property, a column or a table lit anywhere lights the lines that write or read it (for a column, those of the `dataset` or `parameters` block naming it too), marks a column where they name it, comments aside, and a click brings the first into view. |
 | Have lines of the document explained | **Explain** in the YAML's heading asks the assistant about the lines selected, or the whole mapping, and the answer opens under the canvas ([below](#explaining-the-yaml)). |
 | Follow a real row through the mapping | **Show a record** on the toolbar previews a staged row of the flow rendering with the mapping (picked beside the record when several do) and shows each column's value and each property's, a repeated property's from its first item. The sentence beside the search gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
 | Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. The foot of the toolbar holds **Open all**, zoom and fit. |
@@ -165,7 +170,7 @@ when no step changed it first.
 
 | Right-click | The menu offers |
 | --- | --- |
-| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), its **Details**, **Open in lineage**, and a copy of its name: a flow's table by the name the flow gives it. |
+| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), **Show the SQL** for a flow's table or a cache table ([the SQL of a table's rows](mapping-overview-sql.md)), its **Details**, **Show in the YAML** where the document names it, **Open in lineage**, and a copy of its name: a flow's table by the name the flow gives it. |
 | Another record a mapping reads (a parent, a child) | Its **Details**, **Open in lineage** when its kind is known, and a copy of its name. |
 | A property, or a dot on its line | Its **Details**, **Show in the YAML**, which opens the document at the lines that write it, **Open in lineage** for what its value comes from, and a copy of its path. |
 | The record's heading | **Preview the rendered record**, the YAML, **Open in lineage** for the kind, and a copy of the kind. |
@@ -232,12 +237,14 @@ open and nothing is lit.
 
 | Table | What the grid holds |
 | --- | --- |
-| The record table, or a child table | The first 100 rows a delivery reads in the flow's scope, read with the flow's own connection: the scope's rows, those marked deleted left out, and for a child table the rows of those records. The order is the one a read pages in. The line over the grid counts the rows, up to 100,000. A value longer than 1,000 characters is cut by the database, and its column's heading says so. SQLFlow's system columns are left out. The flow's scope stands beside the line, and with **Show a record** on, the record's rows are marked. |
+| The record table, or a child table | The first 100 rows a delivery reads in the flow's scope, read with the flow's own connection: the scope's rows under the table's `filter`, those marked deleted left out, each lookup table joined, and for a child table the rows of those records under its own `filter`. The order is the one a read pages in. The line over the grid counts the rows, up to 100,000. A value longer than 1,000 characters is cut by the database, and its column's heading says so. SQLFlow's system columns are left out. The flow's scope stands beside the line, and with **Show a record** on, the record's rows are marked. |
 | A cache table | 100 records of the type, as the partition's current cache version holds them: the OSDU id (or a lookup row's key) and each name the type keeps. |
 | A search | 100 records of the search's kind in OSDU, read through the [explorer](explorer.md): each id and the values of the paths the mapping reads, at most 8 of them. |
 
 The record table's and a child table's rows come from `POST /api/v1/delivery/flows/{pipelineId}/table-rows` ([API](api.md)),
-read in the control plane, at once. Nothing is written.
+read in the control plane, at once. Nothing is written. **SQL** in the grid's heading shows instead the T-SQL that reads the
+same rows in SSMS, a flow's table's or a cache table's, to cross-check a lookup join against the cache
+([the SQL of a table's rows](mapping-overview-sql.md)).
 
 ### Searching the rows
 

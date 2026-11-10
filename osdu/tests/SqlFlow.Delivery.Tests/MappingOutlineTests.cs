@@ -368,6 +368,21 @@ public class MappingOutlineTests
 
         // A $coalesce of the document, with the three alternatives its comment describes, in the lines it is written on.
         var lines = yaml.ReplaceLineEndings("\n").Split('\n');
+
+        // What declares a source is where a reader finds it written: the record table's key, label and identity in the dataset
+        // block, a parameter in the parameters block, a search in its own block. A child dataset and a cached type are declared
+        // by the flow and the cache, not here.
+        var record = Source(outline, MappingOutline.DatasetSource);
+        Assert.Equal("dataset:", lines[record.Line!.Value - 1]);
+        Assert.Contains("identity: [wellbore_uwi, log_id]", lines[record.EndLine!.Value - 1], StringComparison.Ordinal);
+        var parameters = Source(outline, MappingOutline.ParametersSource);
+        Assert.Equal("parameters:", lines[parameters.Line!.Value - 1]);
+        Assert.Contains("description:", lines[parameters.EndLine!.Value - 1], StringComparison.Ordinal);
+        var search = Source(outline, "search.Wellbore");
+        Assert.Equal("  Wellbore:", lines[search.Line!.Value - 1]);
+        Assert.True(search.EndLine > search.Line);
+        Assert.Null(Source(outline, "dataset.curves").Line);
+        Assert.Null(Source(outline, "cache.UnitOfMeasure").Line);
         var unit = At(outline, "data.Curves[].CurveUnit");
         Assert.Equal(MappingOutlineShape.Choice, unit.Shape);
         Assert.Equal(3, unit.Children.Count);
