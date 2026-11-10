@@ -169,8 +169,7 @@ describe("the tables", () => {
       name: "WellCode",
       table: "OsduData.silver.WellCode",
       objectKey: "${env:osdu_data_db}|osdudata|silver|wellcode",
-      key: "code",
-      on: "elev",
+      join: { code: "elev" },
       columns: [
         { name: "WellCode_region", dataType: "nvarchar(50)", nullable: true },
         { name: "WellCode_UpdatedDate_DW", dataType: "datetime2", nullable: true },
@@ -193,6 +192,10 @@ describe("the tables", () => {
     assert.equal(
       lookupOrigin(lookup),
       "Joined from silver.WellCode by lookup WellCode: the row whose code is this row's elev, or nothing when none is.",
+    );
+    assert.equal(
+      lookupOrigin({ ...lookup, join: { region: "region_code", code: "elev" } }),
+      "Joined from silver.WellCode by lookup WellCode: the row whose region is this row's region_code and whose code is this row's elev, or nothing when none is.",
     );
   });
 

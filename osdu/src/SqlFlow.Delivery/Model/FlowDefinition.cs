@@ -400,14 +400,17 @@ public sealed record FlowSourceTable
 
 /// <summary>
 /// A lookup table joined into every read of a source table (<c>lookups.&lt;name&gt;</c>, osdu/docs/reference/flow/delivery-lookups.md):
-/// a LEFT OUTER JOIN on the lookup table's key, inside the statement that reads the rows, so its columns arrive as columns of
-/// each row, named <c>&lt;name&gt;_&lt;column&gt;</c>, and a row whose value names no lookup row has them empty. SQL Server does
-/// the join, in the database the flow reads, and nothing of the lookup table is held anywhere else.
+/// a LEFT OUTER JOIN on the lookup table's key, one column or several, inside the statement that reads the rows, so its columns
+/// arrive as columns of each row, named <c>&lt;name&gt;_&lt;column&gt;</c>, and a row whose values name no lookup row has them
+/// empty. SQL Server does the join, in the database the flow reads, and nothing of the lookup table is held anywhere else.
 /// </summary>
 public sealed record FlowSourceLookup
 {
     /// <summary>The most lookup tables one source table joins.</summary>
     public const int MaxPerTable = 16;
+
+    /// <summary>The most columns one lookup's join matches: the most key columns a SQL Server index holds.</summary>
+    public const int MaxJoinColumns = 32;
 
     /// <summary>The lookup table's three-part name, in the database of the table that joins it.</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -415,11 +418,12 @@ public sealed record FlowSourceLookup
         Justification = "The flow document's key is 'object'; the model mirrors the document so a message about it names what the author wrote.")]
     public required string Object { get; init; }
 
-    /// <summary>The lookup table's key column, which a unique index keeps to one row per value, so the join repeats no row.</summary>
-    public required string Key { get; init; }
-
-    /// <summary>The column of the joining table whose value the key matches.</summary>
-    public required string On { get; init; }
+    /// <summary>
+    /// The columns the join matches, each a column of the lookup table to the column of the joining table whose value it
+    /// matches, in the order the flow writes them: the lookup table's key, which a unique index keeps to one row per
+    /// combination of values, so the join repeats no row.
+    /// </summary>
+    public required IReadOnlyDictionary<string, string> Join { get; init; }
 
     /// <summary>The lookup table's columns each row is given, in the order the flow lists them.</summary>
     public required IReadOnlyList<string> Columns { get; init; }

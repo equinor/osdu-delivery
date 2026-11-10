@@ -64,13 +64,11 @@ public sealed record IngestionDataset(
 /// <summary>
 /// A lookup table joined into every read of one source table (osdu/docs/reference/flow/delivery-lookups.md), as the SQL builders
 /// see it once the flow's declaration has been checked against the tables: a LEFT OUTER JOIN on the lookup table's uniquely
-/// indexed key, so each row gains the lookup row its value names, or nothing, and never a second row.
+/// indexed key, one column or several, so each row gains the lookup row its values name, or nothing, and never a second row.
 /// </summary>
 /// <param name="Name">The lookup's name, which prefixes each column it gives a row.</param>
 /// <param name="Table">The lookup table, in the database of the table that joins it.</param>
-/// <param name="Key">The lookup table's key column.</param>
-/// <param name="On">The joining table's column whose value the key matches.</param>
-/// <param name="Collation">For a key of text, its collation, which the joining column is compared under; null for any other key.</param>
+/// <param name="Match">The columns the join matches, in the order the flow writes them; every one has to match.</param>
 /// <param name="Columns">Each column of the lookup table a row is given, with the name it is given under (<c>&lt;Name&gt;_&lt;column&gt;</c>).</param>
 /// <param name="Updated">The lookup table's update column: a window reads the records a moved lookup row was joined to.</param>
 /// <param name="UpdatedAs">The name the update column is given under, which a record's fingerprint reads.</param>
@@ -78,13 +76,17 @@ public sealed record IngestionDataset(
 public sealed record IngestionLookup(
     string Name,
     SourceObjectName Table,
-    string Key,
-    string On,
-    string? Collation,
+    IReadOnlyList<IngestionLookupMatch> Match,
     IReadOnlyList<KeyValuePair<string, string>> Columns,
     string Updated,
     string UpdatedAs,
     string? Deleted);
+
+/// <summary>One column a lookup's join matches: a column of the lookup table's key and the joining table's column it is found by.</summary>
+/// <param name="Key">The lookup table's column.</param>
+/// <param name="On">The joining table's column whose value it matches.</param>
+/// <param name="Collation">For a key column of text, its collation, which the joining column is compared under; null for any other.</param>
+public sealed record IngestionLookupMatch(string Key, string On, string? Collation);
 
 /// <summary>One column of the scope predicate as the SQL builders see it.</summary>
 /// <param name="Column">The record table's column.</param>
@@ -379,9 +381,11 @@ public static class IngestionSql
     }
 
     /// <summary>
-    /// Whether a lookup table's key (<see cref="ColumnParameter"/>) is kept to one row per value by a unique index without a filter
-    /// whose only key column it is, a primary key or a unique constraint included, and the key's collation (null for a key that
-    /// holds no text): one row, of the unique flag and the collation.
+    /// Whether the columns a lookup's join matches (<see cref="KeyNamesParameter"/>, a JSON array of names) keep the lookup table
+    /// to one row per combination of values: a unique index without a filter, a primary key or a unique constraint included,
+    /// whose key columns are all among them. An index on some of them is enough, since rows apart on those are apart on all.
+    /// Then each of those columns' collation (null for one that holds no text). Two result sets: one row of the unique flag,
+    /// then a row of name and collation per column.
     /// </summary>
     public static string LookupKeyProbe(SourceObjectName table)
     {
@@ -393,13 +397,18 @@ public static class IngestionSql
                 CAST(CASE WHEN EXISTS (
                     SELECT 1 FROM {database}.sys.indexes i
                     WHERE i.[object_id] = @id AND i.is_unique = 1 AND i.has_filter = 0 AND i.is_disabled = 0 AND i.is_hypothetical = 0
-                      AND (SELECT COUNT(*) FROM {database}.sys.index_columns k WHERE k.[object_id] = i.[object_id] AND k.index_id = i.index_id AND k.key_ordinal > 0) = 1
                       AND EXISTS (
                           SELECT 1 FROM {database}.sys.index_columns k
+                          WHERE k.[object_id] = i.[object_id] AND k.index_id = i.index_id AND k.key_ordinal > 0)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM {database}.sys.index_columns k
                           INNER JOIN {database}.sys.columns c ON c.[object_id] = k.[object_id] AND c.column_id = k.column_id
-                          WHERE k.[object_id] = i.[object_id] AND k.index_id = i.index_id AND k.key_ordinal = 1 AND c.[name] = {ColumnParameter}))
-                THEN 1 ELSE 0 END AS int),
-                (SELECT c.collation_name FROM {database}.sys.columns c WHERE c.[object_id] = @id AND c.[name] = {ColumnParameter});
+                          WHERE k.[object_id] = i.[object_id] AND k.index_id = i.index_id AND k.key_ordinal > 0
+                            AND c.[name] NOT IN (SELECT [value] FROM OPENJSON({KeyNamesParameter}))))
+                THEN 1 ELSE 0 END AS int);
+            SELECT c.[name], c.collation_name
+            FROM {database}.sys.columns c
+            WHERE c.[object_id] = @id AND c.[name] IN (SELECT [value] FROM OPENJSON({KeyNamesParameter}));
             """;
     }
 
@@ -1258,14 +1267,15 @@ public static class IngestionSql
 
     /// <summary>
     /// The join of a lookup table, read as <paramref name="lookupAlias"/>, to the table that joins it, read as <paramref name="rowAlias"/>:
-    /// the lookup's key against the joining column, compared under the key's collation for a key of text so the key's index is
-    /// sought and the comparison is the one the index keeps unique.
+    /// each column of the lookup's key against its joining column, all of them, each of text compared under the key column's
+    /// collation so the key's index is sought and the comparison is the one the index keeps unique.
     /// </summary>
     private static string LookupOn(IngestionLookup lookup, string lookupAlias, string rowAlias)
-    {
-        var on = $"{rowAlias}.{SourceObjectName.Quote(lookup.On)}";
-        return $"{lookupAlias}.{SourceObjectName.Quote(lookup.Key)} = {(lookup.Collation is { } collation ? $"{on} COLLATE {collation}" : on)}";
-    }
+        => string.Join(" AND ", lookup.Match.Select(match =>
+        {
+            var on = $"{rowAlias}.{SourceObjectName.Quote(match.On)}";
+            return $"{lookupAlias}.{SourceObjectName.Quote(match.Key)} = {(match.Collation is { } collation ? $"{on} COLLATE {collation}" : on)}";
+        }));
 
     /// <summary>A lookup row, read as <paramref name="alias"/>, written or marked deleted in the window.</summary>
     private static string LookupChanged(IngestionLookup lookup, string alias, bool hasLower)

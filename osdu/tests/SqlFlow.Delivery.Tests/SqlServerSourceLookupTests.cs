@@ -11,9 +11,9 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// Lookup tables joined into a delivery's reads (osdu/docs/reference/flow/delivery-lookups.md) on a real SQL Server, in the
-/// chain fixture's database and ingestion schema: every row given the columns of the lookup row its value names, matched under
-/// the key's collation, or nothing; a record whose lookup row moved or was marked deleted read by a window and read as moved;
-/// and a lookup the join cannot rely on refused before a row is read. Runs on the suites' test database (<see cref="OsduTestServer"/>).
+/// chain fixture's database and ingestion schema: every row given the columns of the lookup row its values name, each key column
+/// matched under its own collation, or nothing; a record whose lookup row moved or was marked deleted read by a window and read
+/// as moved; and a lookup the join cannot rely on refused before a row is read. Runs on the suites' test database (<see cref="OsduTestServer"/>).
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -130,8 +130,7 @@ public sealed class SqlServerSourceLookupTests
                             ["CurveAlias"] = new FlowSourceLookup
                             {
                                 Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[CurveAlias]",
-                                Key = "source_mnemonic",
-                                On = "mnemonic",
+                                Join = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["source_mnemonic"] = "mnemonic" },
                                 Columns = ["curve_type"],
                             },
                         },
@@ -174,22 +173,110 @@ public sealed class SqlServerSourceLookupTests
         }
 
         FlowSourceLookup Region(string table = "Region", string key = "code", string on = "region_code", string column = "name")
-            => new() { Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[{table}]", Key = key, On = on, Columns = [column] };
+            => new()
+            {
+                Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[{table}]",
+                Join = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [key] = on },
+                Columns = [column],
+            };
 
         Assert.Contains(
             "no statement reads across two databases (Azure SQL Database runs none)",
             await RefusedAsync(Region() with { Object = $"[master].[{estate.SilverSchema}].[Region]" }),
             StringComparison.Ordinal);
+        Assert.Contains(".join matches column 'code' of", await RefusedAsync(Region("Unkeyed")), StringComparison.Ordinal);
         Assert.Contains("which no unique index without a filter keeps to one row per value", await RefusedAsync(Region("Unkeyed")), StringComparison.Ordinal);
         Assert.Contains("CREATE UNIQUE INDEX [UX_Unkeyed_code]", await RefusedAsync(Region("Unkeyed")), StringComparison.Ordinal);
         Assert.Contains("which holds no UpdatedDate_DW date and time column", await RefusedAsync(Region("Undated")), StringComparison.Ordinal);
         Assert.Contains("they have to be two text columns, two whole numbers, or of one type", await RefusedAsync(Region("Numbered")), StringComparison.Ordinal);
-        Assert.Contains("names column 'nowhere', which the table", await RefusedAsync(Region(on: "nowhere")), StringComparison.Ordinal);
+        Assert.Contains(".join.code names column 'nowhere', which the table", await RefusedAsync(Region(on: "nowhere")), StringComparison.Ordinal);
+        Assert.Contains(".join names column 'nowhere', which the table", await RefusedAsync(Region(key: "nowhere")), StringComparison.Ordinal);
         Assert.Contains("names column 'colour', which the table", await RefusedAsync(Region(column: "colour")), StringComparison.Ordinal);
 
         // A column a lookup gives that the row already has: the record table holds a column named as the lookup's would be.
         await ExecuteAsync(estate, $"ALTER TABLE [{estate.SilverSchema}].[Well] ADD [Region_name] nvarchar(50) NULL;");
         Assert.Contains("gives each row column 'Region_name', which the row already has", await RefusedAsync(Region()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_lookup_keyed_by_several_columns_joins_on_all_of_them_each_under_its_own_collation_and_any_unique_index_among_them_keys_it()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var wells = await WellsAsync(estate);
+        await ExecuteAsync(estate, $"ALTER TABLE {wells} ADD [country_code] nvarchar(10) NULL, [region_version] int NULL;");
+        var areas = await CreateTableAsync(
+            estate,
+            "Area",
+            $"[country] nvarchar(10) COLLATE Latin1_General_100_CS_AS NOT NULL, [code] nvarchar(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL, [name] nvarchar(50) NULL, {SystemColumns}",
+            "CREATE UNIQUE NONCLUSTERED INDEX [UX_Area] ON {0} ([country], [code]);");
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {areas} ([country], [code], [name], [UpdatedDate_DW]) VALUES
+                (N'NO', N'NS', N'Norwegian North Sea', @loaded), (N'UK', N'NS', N'UK North Sea', @loaded);
+            INSERT INTO {wells} ([item_key], [country_code], [region_code], [region_version], [UpdatedDate_DW]) VALUES
+                (N'w1', N'NO', N'NS', 1, @loaded), (N'w2', N'UK', N'ns', 1, @loaded), (N'w3', N'no', N'NS', 1, @loaded), (N'w4', N'NO', N'XX', 1, @loaded);
+            """);
+
+        FlowSourceLookup Area(string table, params (string Key, string On)[] join)
+            => new()
+            {
+                Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[{table}]",
+                Join = join.ToDictionary(j => j.Key, j => j.On, StringComparer.OrdinalIgnoreCase),
+                Columns = ["name"],
+            };
+
+        IIngestionSource Open(FlowSourceLookup lookup) => estate.Engine.Sources.Open(WellFlow(estate, lookup: lookup), NoValues, NullLoggerFactory.Instance);
+
+        async Task<string> RefusedAsync(FlowSourceLookup lookup)
+            => (await Assert.ThrowsAsync<FlowValidationException>(() => Open(lookup).OpenAsync(SourceSelection.Full(), null))).Message;
+
+        // A row is given the lookup row both of its values name. Each column is compared under its own collation: the region
+        // code ignores case and the country code does not, so 'ns' finds the UK row and 'no' finds nothing.
+        var source = Open(Area("Area", ("country", "country_code"), ("code", "region_code")));
+        var read = await ReadAsync(source, await source.OpenAsync(SourceSelection.Full(), null));
+        Assert.Equal("Norwegian North Sea", read["w1"].Row.GetString("Region_name"));
+        Assert.Equal("UK North Sea", read["w2"].Row.GetString("Region_name"));
+        Assert.Null(read["w3"].Row.Get("Region_name"));
+        Assert.Null(read["w4"].Row.Get("Region_name"));
+
+        // A corrected lookup row reaches the one well joined to it through both columns, read again by the window.
+        await ExecuteAsync(estate, $"UPDATE {areas} SET [name] = N'UK Central North Sea', [UpdatedDate_DW] = @changed WHERE [country] = N'UK';");
+        var window = await ReadAsync(source, await source.OpenAsync(SourceSelection.Incremental(Loaded), null));
+        Assert.Equal(["w2"], window.Keys);
+        Assert.Equal("UK Central North Sea", window["w2"].Row.GetString("Region_name"));
+        Assert.NotEqual(read["w2"].Version, window["w2"].Version);
+
+        // A unique index on some of the join's columns keys it too: rows apart on the code are apart on code and country.
+        await CreateTableAsync(
+            estate,
+            "Coded",
+            $"[country] nvarchar(10) NOT NULL, [code] nvarchar(20) NOT NULL, [name] nvarchar(50) NULL, {SystemColumns}",
+            "CREATE UNIQUE NONCLUSTERED INDEX [UX_Coded] ON {0} ([code]);");
+        var coded = await Open(Area("Coded", ("country", "country_code"), ("code", "region_code"))).OpenAsync(SourceSelection.Full(), null);
+        Assert.Contains("Region_name", coded.Columns[SourceDatasets.Record]);
+
+        // An index on a column the join does not match keeps nothing unique for it, and the refusal gives the index that would.
+        await CreateTableAsync(
+            estate,
+            "Versioned",
+            $"[country] nvarchar(10) NOT NULL, [code] nvarchar(20) NOT NULL, [version] int NOT NULL, [name] nvarchar(50) NULL, {SystemColumns}",
+            "CREATE UNIQUE NONCLUSTERED INDEX [UX_Versioned] ON {0} ([country], [code], [version]);");
+        var unkeyed = await RefusedAsync(Area("Versioned", ("country", "country_code"), ("code", "region_code")));
+        Assert.Contains(".join matches columns 'country', 'code' of", unkeyed, StringComparison.Ordinal);
+        Assert.Contains("which no unique index without a filter, on all of them or on some, keeps to one row per combination of values", unkeyed, StringComparison.Ordinal);
+        Assert.Contains("load.keyColumns: [country, code]", unkeyed, StringComparison.Ordinal);
+        Assert.Contains(
+            $"CREATE UNIQUE INDEX [UX_Versioned_country_code] ON [{estate.DatabaseName}].[{estate.SilverSchema}].[Versioned] ([country], [code]);",
+            unkeyed,
+            StringComparison.Ordinal);
+
+        // Matched on the version as well, the same index keys it.
+        var versioned = await Open(Area("Versioned", ("country", "country_code"), ("code", "region_code"), ("version", "region_version"))).OpenAsync(SourceSelection.Full(), null);
+        Assert.Contains("Region_name", versioned.Columns[SourceDatasets.Record]);
+
+        // Each pair is compared as it is, so a whole number matched with text is refused, naming the pair.
+        var mismatched = await RefusedAsync(Area("Versioned", ("country", "country_code"), ("code", "region_code"), ("version", "item_key")));
+        Assert.Contains("column 'item_key' (nvarchar(50)) with column 'version' of", mismatched, StringComparison.Ordinal);
+        Assert.Contains("they have to be two text columns, two whole numbers, or of one type", mismatched, StringComparison.Ordinal);
     }
 
     private static FlowDefinition WellFlow(SqlServerIngestionFixture estate, string? filter = null, bool regions = true, FlowSourceLookup? lookup = null)
@@ -205,8 +292,7 @@ public sealed class SqlServerSourceLookupTests
             lookups["Region"] = new FlowSourceLookup
             {
                 Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[Region]",
-                Key = "code",
-                On = "region_code",
+                Join = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["code"] = "region_code" },
                 Columns = ["name"],
             };
         }

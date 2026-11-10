@@ -438,14 +438,15 @@ internal sealed class FlowSourceDatasetYaml
     public Dictionary<string, FlowSourceLookupYaml>? Lookups { get; set; }
 }
 
-/// <summary>A lookup table joined into the reads of a source table: the table, its key, the column it matches and the columns it adds.</summary>
+/// <summary>
+/// A lookup table joined into the reads of a source table: the table, the columns of its key each matched with a column of the
+/// joining table (lookup column to joining column), and the columns it adds.
+/// </summary>
 internal sealed class FlowSourceLookupYaml
 {
     public string? Object { get; set; }
 
-    public string? Key { get; set; }
-
-    public string? On { get; set; }
+    public Dictionary<string, string>? Join { get; set; }
 
     public List<string>? Columns { get; set; }
 }

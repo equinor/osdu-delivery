@@ -637,7 +637,7 @@
       "path": "interfaces.<name>.datasets.<name>.lookups.<name>",
       "type": "object",
       "required": false,
-      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+      "description": "One lookup table: its `object`, its `join` (each column of its key to the column of the joining table it matches), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
     },
     {
       "path": "interfaces.<name>.datasets.<name>.lookups.<name>.object",
@@ -646,16 +646,16 @@
       "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
     },
     {
-      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.key",
-      "type": "string",
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.join",
+      "type": "map",
       "required": true,
-      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+      "description": "How a row finds its lookup row: each column of the lookup table's key to the column of the joining table whose value it matches, one or several (at most 32), all of which must match. A unique index without a filter, on all of these lookup columns or on some of them, must keep the lookup table to one row per combination (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows."
     },
     {
-      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.on",
+      "path": "interfaces.<name>.datasets.<name>.lookups.<name>.join.<name>",
       "type": "string",
-      "required": true,
-      "description": "The column of the joining table whose value the key matches."
+      "required": false,
+      "description": "The key is a column of the lookup table; the value is the joining table's column it matches. Text is compared under the lookup column's collation; otherwise the two are whole numbers or of one type."
     },
     {
       "path": "interfaces.<name>.datasets.<name>.lookups.<name>.columns",
@@ -1421,7 +1421,7 @@
       "path": "interfaces.<name>.record.lookups.<name>",
       "type": "object",
       "required": false,
-      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+      "description": "One lookup table: its `object`, its `join` (each column of its key to the column of the joining table it matches), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
     },
     {
       "path": "interfaces.<name>.record.lookups.<name>.object",
@@ -1430,16 +1430,16 @@
       "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
     },
     {
-      "path": "interfaces.<name>.record.lookups.<name>.key",
-      "type": "string",
+      "path": "interfaces.<name>.record.lookups.<name>.join",
+      "type": "map",
       "required": true,
-      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+      "description": "How a row finds its lookup row: each column of the lookup table's key to the column of the joining table whose value it matches, one or several (at most 32), all of which must match. A unique index without a filter, on all of these lookup columns or on some of them, must keep the lookup table to one row per combination (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows."
     },
     {
-      "path": "interfaces.<name>.record.lookups.<name>.on",
+      "path": "interfaces.<name>.record.lookups.<name>.join.<name>",
       "type": "string",
-      "required": true,
-      "description": "The column of the joining table whose value the key matches."
+      "required": false,
+      "description": "The key is a column of the lookup table; the value is the joining table's column it matches. Text is compared under the lookup column's collation; otherwise the two are whole numbers or of one type."
     },
     {
       "path": "interfaces.<name>.record.lookups.<name>.columns",
@@ -2897,7 +2897,7 @@
       "path": "source.datasets.<name>.lookups.<name>",
       "type": "object",
       "required": false,
-      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+      "description": "One lookup table: its `object`, its `join` (each column of its key to the column of the joining table it matches), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
     },
     {
       "path": "source.datasets.<name>.lookups.<name>.object",
@@ -2906,16 +2906,16 @@
       "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
     },
     {
-      "path": "source.datasets.<name>.lookups.<name>.key",
-      "type": "string",
+      "path": "source.datasets.<name>.lookups.<name>.join",
+      "type": "map",
       "required": true,
-      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+      "description": "How a row finds its lookup row: each column of the lookup table's key to the column of the joining table whose value it matches, one or several (at most 32), all of which must match. A unique index without a filter, on all of these lookup columns or on some of them, must keep the lookup table to one row per combination (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows."
     },
     {
-      "path": "source.datasets.<name>.lookups.<name>.on",
+      "path": "source.datasets.<name>.lookups.<name>.join.<name>",
       "type": "string",
-      "required": true,
-      "description": "The column of the joining table whose value the key matches."
+      "required": false,
+      "description": "The key is a column of the lookup table; the value is the joining table's column it matches. Text is compared under the lookup column's collation; otherwise the two are whole numbers or of one type."
     },
     {
       "path": "source.datasets.<name>.lookups.<name>.columns",
@@ -3118,7 +3118,7 @@
       "path": "source.record.lookups.<name>",
       "type": "object",
       "required": false,
-      "description": "One lookup table: its `object`, its `key`, the column of the joining table the key matches (`on`), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
+      "description": "One lookup table: its `object`, its `join` (each column of its key to the column of the joining table it matches), and the `columns` it gives each row. A run also gives each row the lookup table's update column (`<name>_UpdatedDate_DW`), and reads the records whose lookup row moved, or was marked deleted, in its window."
     },
     {
       "path": "source.record.lookups.<name>.object",
@@ -3127,16 +3127,16 @@
       "description": "The lookup table's three-part name, `[database].[schema].[table]`, in the database of the joining table: no statement reads across two databases (Azure SQL Database runs none). It needs SQLFlow's update column (`UpdatedDate_DW`); a row marked in its delete column joins nothing."
     },
     {
-      "path": "source.record.lookups.<name>.key",
-      "type": "string",
+      "path": "source.record.lookups.<name>.join",
+      "type": "map",
       "required": true,
-      "description": "The lookup table's key column, which a unique index without a filter keeps to one row per value (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows. Text is compared under the key's collation; otherwise the key and `on` are two whole numbers or of one type."
+      "description": "How a row finds its lookup row: each column of the lookup table's key to the column of the joining table whose value it matches, one or several (at most 32), all of which must match. A unique index without a filter, on all of these lookup columns or on some of them, must keep the lookup table to one row per combination (the ingestion flow's `load.keyColumns` creates one), so the join never gives a row two lookup rows."
     },
     {
-      "path": "source.record.lookups.<name>.on",
+      "path": "source.record.lookups.<name>.join.<name>",
       "type": "string",
-      "required": true,
-      "description": "The column of the joining table whose value the key matches."
+      "required": false,
+      "description": "The key is a column of the lookup table; the value is the joining table's column it matches. Text is compared under the lookup column's collation; otherwise the two are whole numbers or of one type."
     },
     {
       "path": "source.record.lookups.<name>.columns",

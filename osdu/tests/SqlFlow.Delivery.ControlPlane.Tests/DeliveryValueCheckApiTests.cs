@@ -75,7 +75,7 @@ public sealed class DeliveryValueCheckApiTests
                   key: [source_project, log_id]
                   scope: { log_source: logSource }
                   lookups:
-                    Origin: { object: OsduData.silver.Wellbore{{suffix}}, key: facility_name, on: log_id, columns: [spud_date] }
+                    Origin: { object: OsduData.silver.Wellbore{{suffix}}, join: { facility_name: log_id, uwi: source_project }, columns: [spud_date] }
                 bulk: { root: ../data/curves, locationColumn: curve_folder, hashColumn: payload_hash }
                 mapping: WellLog@1.4.0
             """;
@@ -203,9 +203,13 @@ public sealed class DeliveryValueCheckApiTests
                 // given, under their prefixed names, which the record table's columns list after its own.
                 var lookup = Assert.Single(record.GetProperty("lookups").EnumerateArray().ToList());
                 Assert.Equal(
-                    ("Origin", "OsduData.silver.Wellbore" + suffix, catalogued, "facility_name", "log_id"),
-                    (lookup.GetProperty("name").GetString(), lookup.GetProperty("table").GetString(), lookup.GetProperty("objectKey").GetString(),
-                        lookup.GetProperty("key").GetString(), lookup.GetProperty("on").GetString()));
+                    ("Origin", "OsduData.silver.Wellbore" + suffix, catalogued),
+                    (lookup.GetProperty("name").GetString(), lookup.GetProperty("table").GetString(), lookup.GetProperty("objectKey").GetString()));
+
+                // Its join, each lookup column to the record table's column it matches, in the order the flow writes them.
+                Assert.Equal(
+                    [("facility_name", "log_id"), ("uwi", "source_project")],
+                    lookup.GetProperty("join").EnumerateObject().Select(j => (j.Name, j.Value.GetString())).ToList());
                 Assert.Equal(
                     [("Origin_spud_date", "date"), ("Origin_UpdatedDate_DW", "datetime2")],
                     lookup.GetProperty("columns").EnumerateArray().Select(c => (c.GetProperty("name").GetString()!, c.GetProperty("dataType").GetString()!)).ToList());

@@ -412,7 +412,8 @@ export function cardsOf(
 
 /** Where a column a lookup gives a row comes from, in a sentence: the lookup table and how a row finds its lookup row. */
 export function lookupOrigin(lookup: DeliverySourceLookup): string {
-  return `Joined from ${tableName(lookup.table).title} by lookup ${lookup.name}: the row whose ${lookup.key} is this row's ${lookup.on}, or nothing when none is.`;
+  const matched = Object.entries(lookup.join).map(([key, on]) => `whose ${key} is this row's ${on}`).join(" and ");
+  return `Joined from ${tableName(lookup.table).title} by lookup ${lookup.name}: the row ${matched}, or nothing when none is.`;
 }
 
 /**

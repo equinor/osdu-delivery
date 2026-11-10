@@ -25,8 +25,7 @@ public sealed class SourceLookupTests
             lookups:
               Region:
                 object: OsduData.silver.Region
-                key: code
-                on: region_code
+                join: { code: region_code }
                 columns: [name, country]
           datasets:
             curves:
@@ -35,8 +34,7 @@ public sealed class SourceLookupTests
               lookups:
                 CurveAlias:
                   object: OsduData.silver.CurveAlias
-                  key: source_mnemonic
-                  on: curve_mnemonic
+                  join: { source_mnemonic: curve_mnemonic }
                   columns: [curve_type]
           work: work
         render:
@@ -66,10 +64,21 @@ public sealed class SourceLookupTests
         var flow = Parse(Flow);
         var region = Assert.Single(flow.Source.Record.Lookups);
         Assert.Equal("Region", region.Key);
-        Assert.Equal(("OsduData.silver.Region", "code", "region_code"), (region.Value.Object, region.Value.Key, region.Value.On));
+        Assert.Equal("OsduData.silver.Region", region.Value.Object);
+        Assert.Equal([new("code", "region_code")], region.Value.Join);
         Assert.Equal(["name", "country"], region.Value.Columns);
         var alias = Assert.Single(flow.Source.Datasets["curves"].Lookups);
-        Assert.Equal(("CurveAlias", "source_mnemonic", "curve_mnemonic"), (alias.Key, alias.Value.Key, alias.Value.On));
+        Assert.Equal("CurveAlias", alias.Key);
+        Assert.Equal([new("source_mnemonic", "curve_mnemonic")], alias.Value.Join);
+    }
+
+    [Fact]
+    public void A_lookup_keyed_by_several_columns_matches_each_with_a_column_of_the_joining_table_in_the_order_written()
+    {
+        var flow = Parse(With("join: { code: region_code }", "join: { country: country_code, code: region_code }"));
+        Assert.Equal(
+            [new("country", "country_code"), new("code", "region_code")],
+            Assert.Single(flow.Source.Record.Lookups).Value.Join);
     }
 
     [Fact]
@@ -78,15 +87,34 @@ public sealed class SourceLookupTests
         Assert.Contains("flow.yaml: source.record.lookups names a lookup 'Region 1'", Refused(With("      Region:\n", "      Region 1:\n")), StringComparison.Ordinal);
         Assert.Contains("'source.record.lookups.Region.object' is required", Refused(With("        object: OsduData.silver.Region\n", string.Empty)), StringComparison.Ordinal);
         Assert.Contains("must be a three-part name", Refused(With("object: OsduData.silver.Region", "object: silver.Region")), StringComparison.Ordinal);
-        Assert.Contains("'source.record.lookups.Region.key' is required", Refused(With("        key: code\n", string.Empty)), StringComparison.Ordinal);
-        Assert.Contains("'source.record.lookups.Region.on' is required", Refused(With("        on: region_code\n", string.Empty)), StringComparison.Ordinal);
+        Assert.Contains("'source.record.lookups.Region.join' is required", Refused(With("        join: { code: region_code }\n", string.Empty)), StringComparison.Ordinal);
+        Assert.Contains(
+            "source.record.lookups.Region.join matches no column; match each column of OsduData.silver.Region's key with the column of the joining table it is found by",
+            Refused(With("join: { code: region_code }", "join: {}")),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "source.record.lookups.Region.join matches lookup column 'Code' twice once case is ignored",
+            Refused(With("join: { code: region_code }", "join: { code: region_code, Code: country_code }")),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "source.record.lookups.Region.join names a column '[code]'",
+            Refused(With("join: { code: region_code }", "join: { '[code]': region_code }")),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "source.record.lookups.Region.join.code names a column ''",
+            Refused(With("join: { code: region_code }", "join: { code: '' }")),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "source.record.lookups.Region.join matches 33 columns; a lookup matches at most 32",
+            Refused(With("join: { code: region_code }", "join: { " + string.Join(", ", Enumerable.Range(1, 33).Select(i => $"c{i}: r{i}")) + " }")),
+            StringComparison.Ordinal);
         Assert.Contains("source.record.lookups.Region.columns lists no column", Refused(With("columns: [name, country]", "columns: []")), StringComparison.Ordinal);
         Assert.Contains("source.record.lookups.Region.columns lists 'Name' twice", Refused(With("columns: [name, country]", "columns: [name, Name]")), StringComparison.Ordinal);
         Assert.Contains(
             "source.datasets.curves.lookups names lookup CurveAlias twice once case is ignored",
             Refused(With(
                 "        CurveAlias:\n",
-                "        curvealias:\n          object: OsduData.silver.CurveAlias\n          key: source_mnemonic\n          on: curve_mnemonic\n          columns: [curve_type]\n        CurveAlias:\n")),
+                "        curvealias:\n          object: OsduData.silver.CurveAlias\n          join: { source_mnemonic: curve_mnemonic }\n          columns: [curve_type]\n        CurveAlias:\n")),
             StringComparison.Ordinal);
     }
 
@@ -113,13 +141,12 @@ public sealed class SourceLookupTests
         Assert.NotEqual(DeliveryDocumentHash.Of(source, none), DeliveryDocumentHash.Of(withLookups, none));
     }
 
-    private static IngestionLookup Lookup(string name, string on, string? collation = "SQL_Latin1_General_CP1_CI_AS", string? deleted = "DeletedDate_DW")
+    private static IngestionLookup Lookup(
+        string name, string on, string? collation = "SQL_Latin1_General_CP1_CI_AS", string? deleted = "DeletedDate_DW", IReadOnlyList<IngestionLookupMatch>? match = null)
         => new(
             name,
             SourceObjectName.Parse($"OsduData.silver.{name}"),
-            "code",
-            on,
-            collation,
+            match ?? [new IngestionLookupMatch("code", on, collation)],
             [new("name", $"{name}_name"), new("UpdatedDate_DW", $"{name}_UpdatedDate_DW")],
             "UpdatedDate_DW",
             $"{name}_UpdatedDate_DW",
@@ -190,6 +217,36 @@ public sealed class SourceLookupTests
     }
 
     [Fact]
+    public void A_lookup_keyed_by_several_columns_joins_on_all_of_them_each_text_column_under_its_own_collation()
+    {
+        var layout = Layout() with
+        {
+            Lookups =
+            [
+                Lookup("Region", "region_code", match:
+                [
+                    new IngestionLookupMatch("country", "country_code", "Latin1_General_100_CI_AS"),
+                    new IngestionLookupMatch("code", "region_code", "SQL_Latin1_General_CP1_CI_AS"),
+                    new IngestionLookupMatch("version", "region_version", null),
+                ]),
+            ],
+        };
+
+        Assert.Contains(
+            "LEFT OUTER JOIN [OsduData].[silver].[Region] j0 ON j0.[country] = t.[country_code] COLLATE Latin1_General_100_CI_AS "
+            + "AND j0.[code] = t.[region_code] COLLATE SQL_Latin1_General_CP1_CI_AS AND j0.[version] = t.[region_version] AND j0.[DeletedDate_DW] IS NULL)",
+            IngestionSql.PageRows(layout),
+            StringComparison.Ordinal);
+
+        var bounds = new IngestionSql.KeyBounds(After: false, From: false, To: false);
+        Assert.Contains(
+            "INNER JOIN [OsduData].[silver].[Region] l ON l.[country] = r.[country_code] COLLATE Latin1_General_100_CI_AS "
+            + "AND l.[code] = r.[region_code] COLLATE SQL_Latin1_General_CP1_CI_AS AND l.[version] = r.[region_version]\n",
+            IngestionSql.CandidateSet(layout, SourceSelectionKind.Incremental, hasLower: true, bounds).ReplaceLineEndings("\n"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_look_at_a_table_shows_the_columns_its_lookups_give_beside_its_own()
     {
         var layout = Layout();
@@ -233,7 +290,7 @@ public sealed class SourceLookupTests
             ["OsduData.silver.WellLog", "OsduData.silver.Region", "OsduData.silver.WellLogCurve"],
             DeliveryLineage.DeclaredObjects(twice).Select(o => $"{o.Database}.{o.Schema}.{o.Name}").ToList());
 
-        var none = Parse(With("    lookups:\n      Region:\n        object: OsduData.silver.Region\n        key: code\n        on: region_code\n        columns: [name, country]\n", string.Empty));
+        var none = Parse(With("    lookups:\n      Region:\n        object: OsduData.silver.Region\n        join: { code: region_code }\n        columns: [name, country]\n", string.Empty));
         Assert.Equal(
             ["OsduData.silver.WellLog", "OsduData.silver.WellLogCurve", "OsduData.silver.CurveAlias"],
             DeliveryLineage.DeclaredObjects(none).Select(o => $"{o.Database}.{o.Schema}.{o.Name}").ToList());

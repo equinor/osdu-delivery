@@ -139,7 +139,8 @@ export interface DeliverySourceTable {
 
 /**
  * A lookup table joined into every read of a source table (osdu/docs/reference/flow/delivery-lookups.md): a LEFT OUTER JOIN on
- * its key, so each row is given its columns, named `<name>_<column>`, or nothing when no lookup row matches.
+ * its key, one column or several, so each row is given its columns, named `<name>_<column>`, or nothing when no lookup row
+ * matches.
  */
 export interface DeliverySourceLookup {
   /** What prefixes the columns it gives a row. */
@@ -147,10 +148,8 @@ export interface DeliverySourceLookup {
   table: string;
   /** Its node in lineage. */
   objectKey: string;
-  /** The lookup table's key. */
-  key: string;
-  /** The column of the joining table the key matches. */
-  on: string;
+  /** Each column of the lookup table's key to the column of the joining table it matches, in the order the flow writes them. */
+  join: Record<string, string>;
   /** The columns it gives each row, under their prefixed names, typed as the catalog describes the lookup table. */
   columns: { name: string; dataType: string | null; nullable: boolean }[];
 }

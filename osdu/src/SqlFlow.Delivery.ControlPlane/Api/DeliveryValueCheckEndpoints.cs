@@ -53,11 +53,12 @@ public sealed record DeliverySourceTableDto(
 
 /// <summary>
 /// A lookup table joined into every read of a source table (osdu/docs/reference/flow/delivery-lookups.md): its name, which
-/// prefixes the columns it gives a row, the lookup table, its node in lineage, its key, the column of the joining table the key
-/// matches, and the columns it gives each row under their prefixed names, with the catalog's type for each.
+/// prefixes the columns it gives a row, the lookup table, its node in lineage, its join (each column of the lookup table's key
+/// to the column of the joining table it matches, in the order the flow writes them), and the columns it gives each row under
+/// their prefixed names, with the catalog's type for each.
 /// </summary>
 public sealed record DeliverySourceLookupDto(
-    string Name, string Table, string ObjectKey, string Key, string On, IReadOnlyList<DeliverySourceColumnDto> Columns);
+    string Name, string Table, string ObjectKey, IReadOnlyDictionary<string, string> Join, IReadOnlyList<DeliverySourceColumnDto> Columns);
 
 /// <summary>
 /// A value check of a flow's rows: the variables to check (template paths; none for every entry of the mapping), the flow
@@ -260,7 +261,7 @@ public static class DeliveryValueCheckEndpoints
                 .Concat(lookup.Columns.Contains(source.SystemColumns.Updated, StringComparer.OrdinalIgnoreCase) ? [] : [source.SystemColumns.Updated])
                 .Select(column => new DeliverySourceColumnDto($"{name}_{column}", described.GetValueOrDefault(column)?.DataType, Nullable: true))
                 .ToList();
-            listed.Add(new DeliverySourceLookupDto(name, lookup.Object, key, lookup.Key, lookup.On, given));
+            listed.Add(new DeliverySourceLookupDto(name, lookup.Object, key, lookup.Join, given));
         }
 
         return listed;
