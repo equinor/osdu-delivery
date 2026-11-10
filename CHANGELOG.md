@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **The Pipelines page filters by schedule.** A Schedule filter beside the repo narrows the tree to the flows that joined
-  a schedule, the members one fire of it runs, and `GET /api/v1/pipelines` takes `scheduleId` for the same list
+- **The Pipelines page filters by schedule, and by a wave of its fire.** A Schedule filter beside the repo narrows the
+  tree to the flows that joined a schedule, the members one fire of it runs, and `GET /api/v1/pipelines` takes
+  `scheduleId` for the same list. With a schedule picked, each flow shows the wave of the fire it runs in, numbered as the
+  run board numbers them, and a Wave filter narrows the tree to one wave
   ([Reading a schedule's plan](sqlflow/docs/reference/flow/schedule.md#reading-a-schedules-plan)).
 - **A column or a table picked on a mapping's overview brings its YAML into view, as a property does.** The lines of each
   property, alternative and rule on the rows that read it light up, with those of the `dataset` or `parameters` block
