@@ -647,6 +647,8 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("cache extension properties the search does not return", &["delivery-flow-cache-records"]),
     ("read the full record into the cache, not only what search returns", &["delivery-flow-cache-records"]),
     ("attach properties of the parent record to each cached record", &["delivery-flow-cache-attributes"]),
+    ("lookup table with more than a million rows in the cache", &["delivery-flow-cache-origins", "delivery-guide-lookup-table-cache"]),
+    ("table holds more than 1000000 rows for type, raise maxRows", &["delivery-flow-cache-origins", "delivery-flow-cache"]),
     ("dimension attributes in a cache flow, read through a reference", &["delivery-flow-cache-attributes"]),
     ("which table holds what in the osdu schema", &["delivery-concept-database"]),
     ("which database table holds a record's attempts", &["delivery-concept-database", "delivery-concept-ledger"]),

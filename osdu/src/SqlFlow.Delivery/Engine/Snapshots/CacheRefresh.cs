@@ -282,6 +282,11 @@ public sealed class CacheRefresher
         {
             var total = await TableCapture.CountAsync(flow, type, _context.Secrets, ct).ConfigureAwait(false);
             _logger.LogInformation("plan {Type}: table {Table} holds {Total} row(s)", type.Name, type.Table, total);
+            if (total > type.RowLimit)
+            {
+                _logger.LogWarning(
+                    "plan {Type}: a refresh would capture nothing of it. {Reason}", type.Name, TableCapture.TooManyRows(flow, type));
+            }
             types.Add(new CachePlanType(
                 type.Name, CacheOrigins.Text(type.Origin), type.Describe(), null, "*", type.Fields.Select(f => f.Name).Prepend(type.Key!).ToList(), total));
         }

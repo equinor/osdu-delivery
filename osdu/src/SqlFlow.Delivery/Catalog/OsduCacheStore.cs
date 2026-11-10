@@ -225,7 +225,7 @@ public sealed class OsduCacheStore : ICacheStore
             .Select(d => new
             {
                 d.FlowName, d.Name, d.EntityType, d.Kind, d.Query, d.FieldsJson, d.OnChange, d.Origin, d.KeyField, d.RetentionDays, d.Connection, d.SourceObject,
-                d.FetchRecords,
+                d.FetchRecords, d.MaxRows,
             })
             .ToListAsync(ct).ConfigureAwait(false);
 
@@ -248,7 +248,8 @@ public sealed class OsduCacheStore : ICacheStore
                 row.RetentionDays,
                 row.Connection,
                 row.SourceObject,
-                row.FetchRecords));
+                row.FetchRecords,
+                row.MaxRows));
         }
 
         return new CacheDeclaration(scope, declarations);

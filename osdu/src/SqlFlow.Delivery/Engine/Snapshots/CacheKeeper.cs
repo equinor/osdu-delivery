@@ -194,6 +194,7 @@ public sealed class CacheKeeper
                 Key = declared.Key,
                 Fields = declared.Fields,
                 OnChange = declared.OnChange,
+                MaxRows = declared.MaxRows,
             };
             var flow = new CacheDefinition { Name = declared.FlowName, Source = new CacheSource { Connection = declared.Connection }, Types = [spec] };
             var table = await TableCapture.CaptureAsync(flow, spec, _context.Secrets, _logger, ct).ConfigureAwait(false);

@@ -599,6 +599,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<DateTime>("LastSeenUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("MaxRows")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)

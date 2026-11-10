@@ -18,8 +18,8 @@ namespace SqlFlow.ControlPlane.Tests;
 /// <summary>
 /// The partition cache's retention as the control plane serves it (osdu/docs/reference/concepts/partition-cache.md,
 /// Retention): a pruned version stays listed with when it was pruned and its counts, its records and a comparison with it
-/// answer 410 Gone, and the cache listing says the retention each cache flow declares and the one the partition keeps, and
-/// where each type's values are read from.
+/// answer 410 Gone, and the cache listing says the retention each cache flow declares and the one the partition keeps,
+/// where each type's values are read from, and how many rows a table type's capture takes.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -50,12 +50,37 @@ public sealed class DeliveryCacheRetentionApiTests
                 labels.Add(write.Snapshot.Version);
             }
 
+            var repoId = Guid.NewGuid();
             await using (var db = SampleEstate.Context(cs))
             {
+                // Two lookup tables beside it: one taking the rows a table type takes by default, one naming its own maxRows.
+                foreach (var (name, maxRows) in new[] { ("UnitAlias", (int?)null), ("CurveAlias", 250_000) })
+                {
+                    db.DeliveryCacheDefinitions.Add(new DeliveryCacheDefinition
+                    {
+                        Id = Guid.NewGuid(),
+                        RepoId = repoId,
+                        FlowName = Flow,
+                        Scope = scope,
+                        Origin = CacheOrigins.TableText,
+                        Connection = "${env:OSDU_DATA_DB}",
+                        SourceObject = "OsduData.silver." + name,
+                        KeyField = "source",
+                        RelativePath = "cache/" + Flow + ".yaml",
+                        Name = name,
+                        EntityType = ReferenceType.LookupEntityType(name),
+                        FieldsJson = "[{\"path\":\"target\",\"as\":\"target\"}]",
+                        MaxRows = maxRows,
+                        RetentionDays = 2,
+                        FirstSeenUtc = Start.UtcDateTime,
+                        LastSeenUtc = Start.UtcDateTime,
+                    });
+                }
+
                 db.DeliveryCacheDefinitions.Add(new DeliveryCacheDefinition
                 {
                     Id = Guid.NewGuid(),
-                    RepoId = Guid.NewGuid(),
+                    RepoId = repoId,
                     FlowName = Flow,
                     Scope = scope,
                     Endpoint = "https://osdu.example.test",
@@ -131,9 +156,17 @@ public sealed class DeliveryCacheRetentionApiTests
             var cache = Assert.Single((await JsonAsync(client, token, "/api/v1/delivery/caches")).EnumerateArray(), c => c.GetProperty("scope").GetString() == scope);
             Assert.Equal(2, cache.GetProperty("retentionDays").GetInt32());
             Assert.Equal(2, Assert.Single(cache.GetProperty("flows").EnumerateArray()).GetProperty("retentionDays").GetInt32());
-            var type = Assert.Single(cache.GetProperty("types").EnumerateArray());
+            var types = cache.GetProperty("types").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!, t => t);
+            Assert.Equal(["CurveAlias", "UnitAlias", "UnitOfMeasure"], types.Keys.Order(StringComparer.Ordinal));
+            var type = types["UnitOfMeasure"];
             Assert.True(type.GetProperty("fetchRecords").GetBoolean());
-            Assert.True(Assert.Single(type.GetProperty("sources").EnumerateArray()).GetProperty("fetchRecords").GetBoolean());
+            var units = Assert.Single(type.GetProperty("sources").EnumerateArray());
+            Assert.True(units.GetProperty("fetchRecords").GetBoolean());
+
+            // A table type's source says the most rows its capture takes: what its flow names, or the default; others say none.
+            Assert.False(units.TryGetProperty("maxRows", out var none) && none.ValueKind != JsonValueKind.Null);
+            Assert.Equal(1_000_000, Assert.Single(types["UnitAlias"].GetProperty("sources").EnumerateArray()).GetProperty("maxRows").GetInt32());
+            Assert.Equal(250_000, Assert.Single(types["CurveAlias"].GetProperty("sources").EnumerateArray()).GetProperty("maxRows").GetInt32());
         }
         finally
         {

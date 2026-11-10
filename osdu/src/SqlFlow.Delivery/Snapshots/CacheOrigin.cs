@@ -64,10 +64,24 @@ public static class LookupKeys
     public const int MaxLength = 256;
 
     /// <summary>
-    /// The most rows a lookup table may hold, from a table or a dictionary: every row is loaded with the cache version a
-    /// render reads, so a table beyond this belongs in the ingestion tables a delivery joins, not in the cache.
+    /// The most entries a dictionary holds, and the most values a dimension type holds: every row is loaded with the cache
+    /// version a render reads, so a set beyond this belongs in an ingestion table, which a table type reads
+    /// (<see cref="DefaultTableRows"/>) or a delivery joins.
     /// </summary>
-    public const int MaxRows = 100_000;
+    public const int MaxEntries = 100_000;
+
+    /// <summary>
+    /// The most rows a table type captures when its cache flow does not say otherwise (<c>types[].maxRows</c>,
+    /// osdu/docs/reference/flow/cache-origins.md, A table an ingestion flow loads). A table holding more refuses the capture.
+    /// </summary>
+    public const int DefaultTableRows = 1_000_000;
+
+    /// <summary>
+    /// The most a table type's <c>maxRows</c> may name. Every row is held in the memory of each process that renders against
+    /// the partition's cache, once for each version it keeps (osdu/docs/reference/concepts/partition-cache.md, Versions), so
+    /// a bound keeps a mistyped number from asking a node for more than it can hold.
+    /// </summary>
+    public const int MaxTableRows = 5_000_000;
 
     /// <summary>What is wrong with <paramref name="key"/> as a lookup key, or null when nothing is.</summary>
     public static string? Problem(string? key)

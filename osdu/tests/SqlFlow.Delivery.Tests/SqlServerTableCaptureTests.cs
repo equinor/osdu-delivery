@@ -1,9 +1,15 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
+using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
+using SqlFlow.Delivery.Snapshots;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -73,11 +79,12 @@ public sealed class SqlServerTableCaptureTests : IAsyncLifetime, IDisposable
         await command.ExecuteNonQueryAsync();
     }
 
-    /// <summary>The cache flow reading the test's table, written beside the test's files.</summary>
-    private CacheDefinition Flow(string key = "mnemonic", string fields = "[curve_family, { column: curve_version, as: version }, sampled]")
+    /// <summary>The cache flow reading the test's table, written beside the test's files; <paramref name="maxRows"/> is left out when null.</summary>
+    private CacheDefinition Flow(string key = "mnemonic", string fields = "[curve_family, { column: curve_version, as: version }, sampled]", int? maxRows = null)
     {
         var path = Path.Combine(_root, "cache", "lookups.yaml");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var limit = maxRows is { } rows ? $"\n    maxRows: {rows.ToString(CultureInfo.InvariantCulture)}" : string.Empty;
         File.WriteAllText(path, $$"""
             flowType: cache
             name: lookups-{{_suffix}}
@@ -88,10 +95,16 @@ public sealed class SqlServerTableCaptureTests : IAsyncLifetime, IDisposable
               - name: CurveClasses
                 table: {{Table}}
                 key: {{key}}
-                fields: {{fields}}
+                fields: {{fields}}{{limit}}
             """);
         return new DeliveryDocumentLoader().LoadCache(path);
     }
+
+    /// <summary>Four live rows, each a curve mnemonic with its family.</summary>
+    private static string FourRows(string schema) => $"""
+        INSERT INTO [{schema}].[CurveDictionary] (mnemonic, curve_family) VALUES
+            (N'GR', N'Gamma Ray'), (N'RHOB', N'Bulk Density'), (N'NPHI', N'Neutron'), (N'DT', N'Sonic');
+        """;
 
     private CacheRefresher Refresher()
         => new(Samples.Engine(ledger: null, cache: _db.Caches()), Samples.Logger<CacheRefresher>());
@@ -242,15 +255,66 @@ public sealed class SqlServerTableCaptureTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task A_table_over_the_limit_a_lookup_table_holds_captures_nothing()
+    public async Task A_table_over_the_rows_its_type_takes_captures_nothing_until_its_maxRows_takes_them()
     {
-        await ExecuteAsync($"""
-            WITH n AS (SELECT TOP ({Snapshots.LookupKeys.MaxRows + 1}) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS i FROM sys.all_objects a CROSS JOIN sys.all_objects b)
-            INSERT INTO [{Schema}].[CurveDictionary] (mnemonic, curve_family) SELECT CONCAT(N'k', i), N'family' FROM n;
-            """);
+        await ExecuteAsync(FourRows(Schema));
 
-        var ex = await Assert.ThrowsAsync<DeliveryException>(() => RefreshAsync(Flow()));
-        Assert.Contains($"holds more than {Snapshots.LookupKeys.MaxRows} rows for type CurveClasses", ex.Message, StringComparison.Ordinal);
+        // Three rows taken, four held: nothing is captured, and the message names the type's maxRows and how far it goes.
+        var three = Flow(maxRows: 3);
+        Assert.Equal(3, Assert.Single(three.Types).RowLimit);
+        var ex = await Assert.ThrowsAsync<DeliveryException>(() => RefreshAsync(three));
+        Assert.Contains($"table {Table} holds more than 3 rows for type CurveClasses, its maxRows: every row is held in memory", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Raise the type's maxRows (at most 5000000)", ex.Message, StringComparison.Ordinal);
         Assert.Empty(await _db.Caches().ListVersionsAsync("dev"));
+
+        // A plan counts every row whatever the type takes, and writes nothing.
+        Assert.Equal(4, Assert.Single((await Refresher().PlanAsync(three, new Dictionary<string, string>(), CancellationToken.None)).Types).Records);
+
+        // Taking exactly as many rows as the table holds captures them all.
+        var outcome = await RefreshAsync(Flow(maxRows: 4));
+        Assert.True(outcome.Written);
+        Assert.Equal(4, Assert.Single(outcome.Types).Items);
+    }
+
+    [Fact]
+    public async Task A_before_step_takes_the_rows_the_synced_declaration_of_the_table_says()
+    {
+        // The step reads a table as its cache flow does, with the maxRows the repository sync copied into the catalog.
+        await ExecuteAsync(FourRows(Schema));
+        var repoId = Guid.NewGuid();
+        var keeper = new CacheKeeper(Samples.Engine(ledger: null, cache: _db.Caches()), NullLogger.Instance);
+
+        async Task<CacheStepType> SyncedAsync(int maxRows)
+        {
+            Flow(maxRows: maxRows);
+            var warnings = new List<string>();
+            await using (var db = _db.CreateDbContext())
+            {
+                await new DeliveryCatalogSync(new DeliveryDocumentLoader()).ReconcileAsync(
+                    db, repoId, _root, new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc), warnings, CancellationToken.None);
+            }
+
+            Assert.Empty(warnings);
+            await using (var db = _db.CreateDbContext())
+            {
+                Assert.Equal(maxRows, (await db.DeliveryCacheDefinitions.SingleAsync(d => d.RepoId == repoId)).MaxRows);
+            }
+
+            var step = (await _db.Caches().DeclarationAsync("dev")).Step("CurveClasses")!;
+            Assert.True(step.IsTable);
+            Assert.Equal(maxRows, Assert.Single(step.Declarations).MaxRows);
+            return step;
+        }
+
+        Task<CacheStepOutcome> BeforeAsync(CacheStepType step) => keeper.BeforeAsync(
+            "dev", [step], "welldb-curves", _ => throw new InvalidOperationException("a table type reaches no OSDU platform"),
+            OsduRecordProtocol.DefaultVerifyBatchPath, Guid.NewGuid(), "tests", CancellationToken.None);
+
+        var refused = await Assert.ThrowsAsync<DeliveryException>(async () => await BeforeAsync(await SyncedAsync(3)));
+        Assert.Contains("holds more than 3 rows for type CurveClasses, its maxRows", refused.Message, StringComparison.Ordinal);
+        Assert.Empty(await _db.Caches().ListVersionsAsync("dev"));
+
+        var taken = await BeforeAsync(await SyncedAsync(4));
+        Assert.Equal((4, true), (taken.Records, taken.Written));
     }
 }

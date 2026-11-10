@@ -667,6 +667,11 @@ export interface DeliveryCacheTypeSource {
   dictionaryPath: string | null;
   /** For an OSDU type: this flow reads each record its search finds whole from storage (types[].fetchRecords). */
   fetchRecords: boolean;
+  /**
+   * For a table type: the most rows its capture takes (types[].maxRows, or the default when the flow says nothing); a table
+   * holding more refuses the capture. Null for every other origin.
+   */
+  maxRows: number | null;
 }
 
 /**

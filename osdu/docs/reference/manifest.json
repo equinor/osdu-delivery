@@ -3884,7 +3884,12 @@
         "dictionary type",
         "dimension type",
         "DeletedDate_DW",
-        "100000 rows",
+        "maxRows",
+        "types[].maxRows",
+        "1000000 rows",
+        "more rows than a million",
+        "lookup table too large",
+        "holds more than rows for type",
         "key column",
         "no item carried",
         "search matched no record",
@@ -3909,6 +3914,9 @@
         "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/TableCapture.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheRefresh.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheOrigin.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/JsonColumnValue.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/DimensionCapture.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs"
@@ -8166,7 +8174,8 @@
         "dictionary",
         "retentionDays",
         "onChange",
-        "fetchRecords"
+        "fetchRecords",
+        "maxRows"
       ],
       "related": [
         "delivery-concept-database",

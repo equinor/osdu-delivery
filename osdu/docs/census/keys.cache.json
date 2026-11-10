@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/cache.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 95,
+  "keyCount": 96,
   "keys": [
     {
       "path": "batch",
@@ -635,6 +635,15 @@
       "description": "One kind: authority:source:entityType:version, the entity type written out, any other segment a wildcard if need be."
     },
     {
+      "path": "types[].maxRows",
+      "type": "integer",
+      "required": false,
+      "description": "The most rows of the table the type captures, a whole number from 1 to 5000000. A table holding more (rows its ingestion flow has not marked deleted) refuses the whole capture and the cache keeps the version it had; a plan counts every row and warns. Every row is held in memory with each cache version a render reads, on every node rendering against the partition, so raise it for a table that really is that large and join a larger one into the ingestion tables the delivery reads. A pipeline's cache.before step reads the table with it too.",
+      "default": "1000000",
+      "appliesWhen": "Table origin only: a type with `table`, read from an ingestion table. Refused on an OSDU, dictionary or dimension type.",
+      "validation": "Load time: a value outside 1 to 5000000 is refused (\"<source>: types[<n>]: Cached type '<name>' says maxRows <n>, and it is the most rows of <table> the cache holds: a whole number from 1 to 5000000. Leave it out to hold up to 1000000.\"); a value that is not a whole number fails as invalid YAML."
+    },
+    {
       "path": "types[].name",
       "type": "string",
       "required": false,
@@ -676,7 +685,7 @@
       "path": "types[].table",
       "type": "string",
       "required": false,
-      "description": "The three-part name (`[database].[schema].[table]`) of an ingestion table an ingestion flow loads, read over `source.connection`. The type is named after the table unless `name` says otherwise, is kept as `lookup--<name>`, and holds every row its ingestion flow has not marked deleted (`DeletedDate_DW`, when the table has it); a table over 100,000 rows refuses the capture. Lineage orders the flow after the ingestion flow that loads the table.",
+      "description": "The three-part name (`[database].[schema].[table]`) of an ingestion table an ingestion flow loads, read over `source.connection`. The type is named after the table unless `name` says otherwise, is kept as `lookup--<name>`, and holds every row its ingestion flow has not marked deleted (`DeletedDate_DW`, when the table has it); a table over the rows the type takes (`maxRows`, 1,000,000 when left out) refuses the capture. Lineage orders the flow after the ingestion flow that loads the table.",
       "appliesWhen": "Table origin only: a type with `table`, read from an ingestion table. Not combined with `kind` or `dictionary`; needs `key` and `fields`, and makes `source.connection` required."
     },
     {

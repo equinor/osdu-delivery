@@ -261,7 +261,8 @@ one names nothing the cache holds or a type the step cannot work on.
 **The before step** runs first. For each OSDU type it names, every declaring cache flow's kind and query are searched
 through the pipeline's own connection to its partition, with every path the partition keeps for the type, and the capture
 is merged as that flow's own, exactly as a refresh of the flow narrowed to these types would merge it. A lookup table from
-an ingestion table is read over its cache flow's connection reference, as that flow reads it, and replaces the type whole.
+an ingestion table is read over its cache flow's connection reference, as that flow reads it (at most the rows its
+`maxRows` takes), and replaces the type whole.
 A dictionary or a dimension type is refused: only its cache flow reads it. A record a delivery
 holds that the search did not find stays while OSDU's storage service still holds it. A type whose every declaration
 searches with a query that takes the cache flow's parameters is refused: only that flow's run fills them. The step is the

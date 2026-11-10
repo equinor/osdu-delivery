@@ -45,13 +45,13 @@ internal static class DimensionCapture
                 $"Cached type '{type.Name}' carries {string.Join(", ", unread)}, which dimension {dimension.Name} of {dimension.FlowName} does not read as it was last built{(declared.Count == 0 ? " (it reads no attribute)" : $" (it reads {string.Join(", ", declared.Select(a => a.Name))})")}. Name an attribute the dimension declares, exactly, and build it.");
         }
 
-        if (dimension.Members > LookupKeys.MaxRows || dimension.Originals > MaxOriginals)
+        if (dimension.Members > LookupKeys.MaxEntries || dimension.Originals > MaxOriginals)
         {
             throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
-                $"Cached type '{type.Name}' holds dimension {dimension.Name} of {dimension.FlowName}, whose {dimension.Members} value(s) and {dimension.Originals} key(s) are more than a lookup table holds ({LookupKeys.MaxRows} rows, {MaxOriginals} keys): every row is loaded with each render. Narrow the dimension with its query, or filter by its values instead."));
+                $"Cached type '{type.Name}' holds dimension {dimension.Name} of {dimension.FlowName}, whose {dimension.Members} value(s) and {dimension.Originals} key(s) are more than a dimension type holds ({LookupKeys.MaxEntries} values, {MaxOriginals} keys): every row is loaded with each render. Narrow the dimension with its query, or filter by its values instead."));
         }
 
-        var members = new List<DimensionMemberState>((int)Math.Min(dimension.Members, LookupKeys.MaxRows));
+        var members = new List<DimensionMemberState>((int)Math.Min(dimension.Members, LookupKeys.MaxEntries));
         DimensionMemberCursor? after = null;
         while (true)
         {

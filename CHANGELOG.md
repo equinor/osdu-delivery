@@ -572,6 +572,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A cache flow's table type captures up to 1,000,000 rows, where it stopped at 100,000, and `types[].maxRows` sets
+  another number, up to 5,000,000.** A table holding more than its type takes still refuses the capture, now naming the
+  number and the key to raise; a plan warns first, and a pipeline's `cache.before` step reads the table with the same
+  number ([more rows than a million](osdu/docs/reference/flow/cache-origins.md#more-rows-than-a-million)).
 - A mapping key holding a dot under `data` (`GeoContexts.FieldID:`) is read as one property name and refused by the preflight,
   `sqlflow check` and the builder, which name the path it meant, rather than refused as the mapping is read, so
   `sqlflow validate`, which reads no template, no longer reports it; a key holding a dot directly under `record` is still

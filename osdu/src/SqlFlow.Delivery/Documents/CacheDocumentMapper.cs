@@ -166,21 +166,22 @@ internal static class CacheMapper
                 }
             }
 
+            // maxRows goes on every type as written, and only a table type takes it: the type's validation refuses it on the others.
             if (!string.IsNullOrWhiteSpace(type.Dimension) || !string.IsNullOrWhiteSpace(type.DimensionFlow))
             {
-                types.Add(Validated(DimensionType(type, defaultMode, where, source) with { Partitions = builtFor }, where, source));
+                types.Add(Validated(DimensionType(type, defaultMode, where, source) with { Partitions = builtFor, MaxRows = type.MaxRows }, where, source));
                 continue;
             }
 
             if (!string.IsNullOrWhiteSpace(type.Dictionary))
             {
-                types.Add(Validated(DictionaryType(type, defaultMode, where, source) with { Partitions = builtFor }, where, source));
+                types.Add(Validated(DictionaryType(type, defaultMode, where, source) with { Partitions = builtFor, MaxRows = type.MaxRows }, where, source));
                 continue;
             }
 
             if (!string.IsNullOrWhiteSpace(type.Table))
             {
-                types.Add(Validated(TableType(type, defaultMode, where, source) with { Partitions = builtFor }, where, source));
+                types.Add(Validated(TableType(type, defaultMode, where, source) with { Partitions = builtFor, MaxRows = type.MaxRows }, where, source));
                 continue;
             }
 
@@ -223,6 +224,7 @@ internal static class CacheMapper
                 OnChange = FlowMapper.ParseEnum(type.OnChange, defaultMode, $"{where}.onChange", source),
                 Fields = [.. paths, .. attributes],
                 FetchRecords = type.FetchRecords ?? false,
+                MaxRows = type.MaxRows,
                 Partitions = builtFor,
             };
 

@@ -2198,6 +2198,12 @@ public sealed class DeliveryCacheDefinition
     public bool FetchRecords { get; set; }
 
     /// <summary>
+    /// For a table type: the most rows its capture takes, as the flow declares it (<c>types[].maxRows</c>); null when it
+    /// declares none, which takes 1,000,000, and for every other origin. A table holding more refuses the capture.
+    /// </summary>
+    public int? MaxRows { get; set; }
+
+    /// <summary>
     /// What the cache keeps of each record as JSON: <c>[{ "path": "data.Code", "as": "Code" }]</c>, the path a column for a
     /// table type, and for a dictionary type the fields its document names.
     /// </summary>

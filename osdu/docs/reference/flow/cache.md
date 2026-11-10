@@ -211,6 +211,7 @@ fail with `types[<n>] names more than one origin; a type has one: ...`.
 | `lookupKinds` | OSDU | The one kind each entity type's records are looked up in when an attribute reads through a reference to one, as a dimension's `lookupKinds`. Only beside `attributes`. |
 | `table` | table | The ingestion table, as a three-part name `[database].[schema].[table]` (`OsduData.silver.UnitAlias`). |
 | `key` | table | The column each row is keyed by, one unique value per row, which a mapping matches on; a table no one column tells apart is keyed by an identity column and matched by several columns on [a line joined by `and`](mapping-lookups-composite.md). Required for a table, refused on any other origin. |
+| `maxRows` | table | The most rows of the table the type captures, 1 to 5,000,000; 1,000,000 when left out. A table holding more refuses the capture. Refused on any other origin. See [ingestion tables](cache-origins.md#ingestion-tables-table). |
 | `dictionary` | dictionary | The name of a dictionary document, `dictionaries/<name>.yaml` in the nearest `dictionaries/` folder above the flow. |
 | `dimension`, `dimensionFlow` | dimension | The dimension, and the dimension flow that declares it. Both are required. |
 | `onChange` | all | Overrides the flow's `onChange` for this type. |
@@ -339,6 +340,8 @@ serves the registry and a delivery flow that hard-codes `data-partition-id: dev`
 | `types[<n>] holds dictionary <name>, which takes no '<setting>': ...` | `fields`, `key`, `kind`, `entityType` or `query` on a dictionary type. |
 | `types[<n>] holds table <table>, which takes no 'fetchRecords': ...` | `fetchRecords` on a table, dictionary or dimension type, which holds no OSDU record to read whole. |
 | `types[<n>] holds table <table>, which takes no 'attributes': ...` | `attributes` or `lookupKinds` on a table, dictionary or dimension type. |
+| `types[<n>]: Cached type '<name>' says maxRows <n>, and it is the most rows of <table> the cache holds: a whole number from 1 to 5000000. ...` | A `maxRows` below 1 or above 5,000,000. |
+| `types[<n>]: Cached type '<name>' comes from <origin>, which takes no 'maxRows': ...` | `maxRows` on an OSDU, dictionary or dimension type. |
 | `types declares ... more than once ...; a mapping reads a type by its name, ...` | Two types with one name for the same partition. |
 | `types[<n>].query uses '{<token>}', which is not declared under parameters.` | A query token without a parameter. |
 | `source.connection is required: the flow declares a type read from an ingestion table.` | A table type without `source.connection`. |

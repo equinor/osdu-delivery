@@ -399,6 +399,7 @@ public sealed class OsduTestDatabase : IDisposable
                 Kind = type.Kind,
                 Query = type.Origin == CacheOrigin.Osdu ? type.Query : null,
                 FetchRecords = type.Origin == CacheOrigin.Osdu && type.FetchRecords,
+                MaxRows = type.Origin == CacheOrigin.Table ? type.MaxRows : null,
                 FieldsJson = new JsonArray(type.Fields.Select(f => (JsonNode)f.ToJson()).ToArray()).ToJsonString(),
                 OnChange = type.OnChange == CacheChangeMode.Approve ? "approve" : "auto",
                 FirstSeenUtc = now,

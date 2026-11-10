@@ -238,12 +238,12 @@ public sealed record DeliveryMappingDetailDto(DeliveryMappingDto Mapping, string
 /// <summary>
 /// One cache flow's declaration of a type: where it takes the records from (<c>Origin</c>: osdu, table or dictionary), for an
 /// OSDU type the kind and query it searches and whether it reads each record whole from storage (<c>FetchRecords</c>), for a
-/// table type the connection reference and table it reads and the key column, and for a dictionary type the document's file
-/// and the name of its key.
+/// table type the connection reference and table it reads, the key column and the most rows its capture takes
+/// (<c>MaxRows</c>: what the flow says, or the default), and for a dictionary type the document's file and the name of its key.
 /// </summary>
 public sealed record DeliveryCacheTypeSourceDto(
     string Flow, string Origin, string? Kind, string? Query, string OnChange, string? Connection = null, string? SourceObject = null, string? KeyField = null,
-    string? DictionaryPath = null, bool FetchRecords = false);
+    string? DictionaryPath = null, bool FetchRecords = false, int? MaxRows = null);
 
 /// <summary>One path the cache keeps for a type: the path, the name it is cached under, and the cache flows that declare it.</summary>
 public sealed record DeliveryCacheFieldDto(string Path, string As, IReadOnlyList<string> Flows);
@@ -1750,7 +1750,8 @@ public static class DeliveryEndpoints
                         return new DeliveryCacheTypeDto(
                             first.Name, first.EntityType,
                             ordered.Select(d => new DeliveryCacheTypeSourceDto(
-                                d.FlowName, d.Origin, d.Kind, d.Query, d.OnChange, d.Connection, d.SourceObject, d.KeyField, d.DictionaryPath, d.FetchRecords)).ToList(),
+                                d.FlowName, d.Origin, d.Kind, d.Query, d.OnChange, d.Connection, d.SourceObject, d.KeyField, d.DictionaryPath, d.FetchRecords,
+                                CacheOrigins.Parse(d.Origin) == CacheOrigin.Table ? d.MaxRows ?? LookupKeys.DefaultTableRows : null)).ToList(),
                             fields.Select(f => new DeliveryCacheFieldDto(f.Path, f.As, f.Flows)).ToList(),
                             onChange, held.GetValueOrDefault(first.Name), first.Origin, keys.GetValueOrDefault(first.Name) ?? first.KeyField,
                             ordered.Any(d => d.FetchRecords));

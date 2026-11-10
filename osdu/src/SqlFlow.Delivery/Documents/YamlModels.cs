@@ -1232,6 +1232,9 @@ internal sealed class CachedTypeYaml
     /// <summary>For a table type: the column each row is keyed by.</summary>
     public string? Key { get; set; }
 
+    /// <summary>For a table type: the most rows its capture takes, 1,000,000 when left out; a table holding more refuses the capture.</summary>
+    public int? MaxRows { get; set; }
+
     /// <summary>The dimension the type holds the members of, in place of a kind: a lookup table a dimension flow builds.</summary>
     public string? Dimension { get; set; }
 

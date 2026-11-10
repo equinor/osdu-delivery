@@ -105,6 +105,16 @@ public sealed record ReferenceTypeSpec
     public bool FetchRecords { get; init; }
 
     /// <summary>
+    /// For a table type: the most rows its capture takes (<c>types[].maxRows</c>, 1 to <see cref="LookupKeys.MaxTableRows"/>);
+    /// null when its flow does not say, which takes <see cref="LookupKeys.DefaultTableRows"/>. A table holding more refuses
+    /// the capture. No other origin takes it.
+    /// </summary>
+    public int? MaxRows { get; init; }
+
+    /// <summary>The most rows a capture of this table type takes: what its flow says, or <see cref="LookupKeys.DefaultTableRows"/>.</summary>
+    public int RowLimit => MaxRows ?? LookupKeys.DefaultTableRows;
+
+    /// <summary>
     /// What a change to this type's cached values does to the records built from them: update on the next run (the default)
     /// or, where a flow opts in, wait for an operator to approve the update.
     /// </summary>
@@ -147,6 +157,12 @@ public sealed record ReferenceTypeSpec
         if (string.IsNullOrWhiteSpace(EntityType))
         {
             throw new FlowValidationException($"Cached type '{Name}' needs an entityType.");
+        }
+
+        if (Origin != CacheOrigin.Table && MaxRows is not null)
+        {
+            throw new FlowValidationException(
+                $"Cached type '{Name}' comes from {Describe()}, which takes no 'maxRows': it names the most rows a type read from an ingestion table, by its table, captures.");
         }
 
         switch (Origin)
@@ -231,6 +247,13 @@ public sealed record ReferenceTypeSpec
         if (string.IsNullOrWhiteSpace(Key))
         {
             throw new FlowValidationException($"Cached type '{Name}' needs the key: the column each row of {Table} is keyed by.");
+        }
+
+        if (MaxRows is < 1 or > LookupKeys.MaxTableRows)
+        {
+            throw new FlowValidationException(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Cached type '{Name}' says maxRows {MaxRows}, and it is the most rows of {Table} the cache holds: a whole number from 1 to {LookupKeys.MaxTableRows}. Leave it out to hold up to {LookupKeys.DefaultTableRows}."));
         }
 
         Refuse(Kind, "kind");

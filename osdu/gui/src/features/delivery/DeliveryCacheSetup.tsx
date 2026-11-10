@@ -96,7 +96,8 @@ function NodeLinks({ items }: { items: { key: string; label: string; onClick: ()
 
 /**
  * Where one flow's declaration of a type takes its records from: the kind it searches on OSDU, the ingestion table it reads
- * and the column rows are keyed by, or the dictionary document it holds and the name of its key.
+ * with the column rows are keyed by and the most rows its capture takes, or the dictionary document it holds and the name
+ * of its key.
  */
 function SourceText({ source }: { source: DeliveryCacheTypeSource }) {
   switch (source.origin) {
@@ -104,7 +105,10 @@ function SourceText({ source }: { source: DeliveryCacheTypeSource }) {
       return (
         <span className="flex min-w-0 flex-col font-mono text-[12px]">
           <span className="truncate" title={source.sourceObject ?? undefined}>table {source.sourceObject}</span>
-          <span className="truncate text-[11px] text-muted-foreground">keyed by {source.keyField}</span>
+          <span className="truncate text-[11px] text-muted-foreground">
+            keyed by {source.keyField}
+            {source.maxRows !== null && <>, at most {source.maxRows.toLocaleString("en-US")} rows</>}
+          </span>
         </span>
       );
     case "dictionary":

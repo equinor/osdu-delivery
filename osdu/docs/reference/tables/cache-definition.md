@@ -13,6 +13,7 @@ keywords:
   - retentionDays
   - onChange
   - fetchRecords
+  - maxRows
 related:
   - delivery-concept-database
   - delivery-concept-partition-cache
@@ -57,6 +58,7 @@ the partition.
 | `Kind` | `nvarchar(400)` | yes | For an OSDU type: the search kind the capture sweeps. |
 | `Query` | `nvarchar(4000)` | yes | For an OSDU type: the search query narrowing the capture. |
 | `FetchRecords` | `bit` | no | Set when the flow reads each record its search finds whole from the storage service (`types[].fetchRecords`), so a path the search index does not hold is kept. Every capture of the type in the partition reads it so when any flow declaring it does. |
+| `MaxRows` | `int` | yes | For a table type: the most rows its capture takes, as the flow declares it (`types[].maxRows`); null when it declares none, which takes 1,000,000, and for every other origin. A pipeline's `cache.before` step reads the table with it, as the flow's refresh does ([more rows than a million](../flow/cache-origins.md#more-rows-than-a-million)). Added by migration `CacheTableMaxRows` (module version 1.67.0). |
 | `FieldsJson` | `nvarchar(max)` | no | What the cache keeps of each record, as JSON (`[{ "path": "data.Code", "as": "Code" }]`); the path a column for a table type, and for a dictionary type the fields its document names. An [attribute](../flow/cache-attributes.md) is an entry whose `path` is its definition, with its steps and settings under `attribute` and the kinds it looks records up in under `lookupKinds`. |
 | `OnChange` | `nvarchar(16)` | no | `approve` or `auto`: what a changed cached value of this type does to the records already built from it. |
 | `RetentionDays` | `int` | no | Default `7`. How many days the partition's cache keeps the records of a version after a newer one replaced it, as the flow declares it (`retentionDays`). The partition keeps the longest any of its cache flows asks for. |

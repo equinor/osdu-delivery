@@ -320,6 +320,48 @@ public sealed class CacheCatalogSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task A_table_type_s_maxRows_reaches_the_catalog_and_a_change_to_it_is_read_again()
+    {
+        const string Tables = """
+            flowType: cache
+            name: welldb-lookups-00-cache
+            source:
+              connection: ${env:OSDU_DATA_DB}
+              headers: { data-partition-id: dev }
+            types:
+              - table: OsduData.silver.UnitAlias
+                key: source_unit
+                fields: [osdu_unit]
+                maxRows: 250000
+            """;
+        Write("cache/welldb-lookups-00-cache.yaml", Tables);
+        var repoId = Guid.NewGuid();
+        Assert.Empty(await SyncAsync(repoId));
+
+        await using (var db = _catalog.CreateDbContext())
+        {
+            Assert.Equal(250_000, (await db.DeliveryCacheDefinitions.SingleAsync(c => c.RepoId == repoId)).MaxRows);
+
+            // A refresh and a cache step read it from the partition's declaration.
+            var declared = Assert.Single((await OsduCacheStore.DeclarationAsync(db, "dev")).Of("UnitAlias"));
+            Assert.Equal((CacheOrigin.Table, 250_000), (declared.Origin, declared.MaxRows));
+        }
+
+        // Raised, the next sync records the new number; taken out, the type takes the default again.
+        Write("cache/welldb-lookups-00-cache.yaml", Tables.Replace("maxRows: 250000", "maxRows: 2000000", StringComparison.Ordinal));
+        var (_, raised) = await SyncWithResultAsync(repoId);
+        Assert.Equal(1, raised.Updated);
+        Write("cache/welldb-lookups-00-cache.yaml", Tables.Replace("\n    maxRows: 250000", string.Empty, StringComparison.Ordinal));
+        var (_, plain) = await SyncWithResultAsync(repoId);
+        Assert.Equal(1, plain.Updated);
+        await using (var db = _catalog.CreateDbContext())
+        {
+            Assert.Null((await db.DeliveryCacheDefinitions.SingleAsync(c => c.RepoId == repoId)).MaxRows);
+            Assert.Null(Assert.Single((await OsduCacheStore.DeclarationAsync(db, "dev")).Of("UnitAlias")).MaxRows);
+        }
+    }
+
+    [Fact]
     public async Task A_type_s_attributes_reach_the_catalog_with_every_setting_and_a_refresh_reads_them_back()
     {
         Write("cache/attributes-cache.yaml", Flow("attributes-cache", """

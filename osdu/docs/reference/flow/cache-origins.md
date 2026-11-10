@@ -10,7 +10,12 @@ keywords:
   - dictionary type
   - dimension type
   - DeletedDate_DW
-  - 100000 rows
+  - maxRows
+  - "types[].maxRows"
+  - 1000000 rows
+  - more rows than a million
+  - lookup table too large
+  - holds more than rows for type
   - key column
   - no item carried
   - search matched no record
@@ -33,6 +38,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/TableCapture.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheRefresh.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs
+  - osdu/src/SqlFlow.Delivery/Snapshots/CacheOrigin.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/JsonColumnValue.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/DimensionCapture.cs
   - osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs
@@ -81,9 +89,8 @@ reads the table over `source.connection`:
   rule, or two rows whose keys are the same once trimmed, refuses the whole capture, naming the first five of each: `Cache flow
   '<flow>': table <table> has rows type <name> could not be keyed by <key>, so nothing was captured: ...`. Keys compare
   exactly, so `GAPI` and `gapi` are two rows.
-- **At most 100,000 rows.** A larger table fails (`... holds more than 100000 rows for type <name>, and a lookup table
-  holds at most that many: every row is loaded with the cache version a render reads. ...`): join a table that large into
-  the ingestion tables the delivery flow reads instead.
+- **At most 1,000,000 rows, or the number the type's `maxRows` names** ([more rows than a million](#more-rows-than-a-million)).
+  A larger table refuses the whole capture, and the cache keeps the version it had.
 - **Every value as text,** as the delivery reader gives it, so a value read from the cache and the same value read from a
   dataset are the same text. A NULL column is not kept, and reads as no value. A column read with `decode: json` is kept
   as the JSON object its text holds instead ([A column holding a JSON object](#a-column-holding-a-json-object)).
@@ -94,6 +101,34 @@ reads the table over `source.connection`:
 
 Neither the key nor a field may be called `id` in any casing, and the key is not listed among the fields. A table type
 takes no `entityType` or `query`. Only one cache flow of a partition may declare a given lookup table.
+
+### More rows than a million
+
+A table type captures at most 1,000,000 rows. A table that really holds more says how many it may hold with `maxRows`,
+a whole number from 1 to 5,000,000:
+
+```yaml
+types:
+  - table: OsduData.silver.CurveAlias
+    key: source_mnemonic
+    fields: [curve_type, unit]
+    maxRows: 2500000
+```
+
+A table holding more rows than its type takes refuses the capture, naming the number and how far it may be raised:
+
+```text
+Cache flow 'welldb-lookups-00-cache': table OsduData.silver.CurveAlias holds more than 1000000 rows for type CurveAlias, the 1000000 a table type holds when its maxRows says nothing: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most 5000000) if the table really holds that many, or join a table that large into the ingestion tables a delivery reads instead. Nothing was captured.
+```
+
+A plan (`operation: plan`) counts every row and logs the same reason as a warning when a refresh would refuse the table.
+A pipeline's `cache.before` step reads the table with the same `maxRows`, as the repository sync records it.
+
+The number is about memory: a render reads the whole cache version it renders against, and the control plane and every
+node keep the versions they read last in memory ([versions](../concepts/partition-cache.md#versions)), each holding every
+row of every lookup table. Raise `maxRows` for a table that really is that large; join a table larger still, or one a
+mapping reads only a few rows of per record, into the ingestion tables the delivery flow reads. A dictionary holds at most
+100,000 entries, and a dimension type 100,000 values; neither takes `maxRows`.
 
 ### A column holding a JSON object
 

@@ -21,7 +21,7 @@ public sealed record DictionaryDefinition
     public const string ValueField = "value";
 
     /// <summary>The most entries a dictionary may hold: every entry is loaded with the cache version a render reads.</summary>
-    public const int MaxEntries = LookupKeys.MaxRows;
+    public const int MaxEntries = LookupKeys.MaxEntries;
 
     /// <summary>The document's file, for messages; null for an inline document.</summary>
     public string? SourcePath { get; init; }

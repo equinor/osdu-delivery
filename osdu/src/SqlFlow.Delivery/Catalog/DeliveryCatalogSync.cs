@@ -663,7 +663,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
                 declared[scope].Add(new Snapshots.CacheTypeDeclaration(
                     cache.Name, type.Name, type.EntityType, type.Kind, type.Query, type.Fields, type.OnChange, type.Origin, RetentionDays: cache.RetentionDays,
-                    FetchRecords: type.FetchRecords));
+                    FetchRecords: type.FetchRecords, MaxRows: type.MaxRows));
                 // A flow that names no partitions keeps the identity its declarations always had; one that names them keeps
                 // one per partition.
                 var id = FlowIdentity.FromName(
@@ -1187,18 +1187,20 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         type.OnChange == Snapshots.CacheChangeMode.Auto ? "auto" : "approve",
         cache.Partitioned,
         cache.RetentionDays,
-        type.Origin == Snapshots.CacheOrigin.Osdu && type.FetchRecords);
+        type.Origin == Snapshots.CacheOrigin.Osdu && type.FetchRecords,
+        type.Origin == Snapshots.CacheOrigin.Table ? type.MaxRows : null);
 
     private sealed record CacheDefinitionRow(
         string Origin, string? Endpoint, string? Connection, string? SourceObject, string? KeyField, string? DictionaryPath, string RelativePath,
         string Name, string EntityType, string? Kind, string? Query, string FieldsJson, string OnChange, bool DeclaresPartitions, int RetentionDays,
-        bool FetchRecords)
+        bool FetchRecords, int? MaxRows)
     {
         public bool Matches(DeliveryCacheDefinition row)
             => row.Origin == Origin && row.Endpoint == Endpoint && row.Connection == Connection && row.SourceObject == SourceObject
                && row.KeyField == KeyField && row.DictionaryPath == DictionaryPath && row.RelativePath == RelativePath && row.Name == Name
                && row.EntityType == EntityType && row.Kind == Kind && row.Query == Query && row.FieldsJson == FieldsJson && row.OnChange == OnChange
-               && row.DeclaresPartitions == DeclaresPartitions && row.RetentionDays == RetentionDays && row.FetchRecords == FetchRecords;
+               && row.DeclaresPartitions == DeclaresPartitions && row.RetentionDays == RetentionDays && row.FetchRecords == FetchRecords
+               && row.MaxRows == MaxRows;
 
         public void WriteTo(DeliveryCacheDefinition row)
         {
@@ -1218,6 +1220,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             row.DeclaresPartitions = DeclaresPartitions;
             row.RetentionDays = RetentionDays;
             row.FetchRecords = FetchRecords;
+            row.MaxRows = MaxRows;
         }
     }
 }

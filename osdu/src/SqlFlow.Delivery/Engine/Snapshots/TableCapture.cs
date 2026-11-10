@@ -21,7 +21,10 @@ namespace SqlFlow.Delivery.Engine.Snapshots;
 /// </summary>
 internal static class TableCapture
 {
-    /// <summary>How long one statement of a capture may run; a lookup table is at most <see cref="LookupKeys.MaxRows"/> rows.</summary>
+    /// <summary>
+    /// How long one statement of a capture may wait on the database. The client applies it to each call that reads the result,
+    /// not to the whole read, so a table of millions of rows streams within it.
+    /// </summary>
     private const int CommandTimeoutSeconds = 120;
 
     /// <summary>How many of the keys that refuse a capture its message names.</summary>
@@ -41,7 +44,8 @@ internal static class TableCapture
         await using var command = connection.CreateCommand();
         command.CommandTimeout = CommandTimeoutSeconds;
         // One row past the limit says the table is over it without counting the whole table first.
-        command.CommandText = $"SELECT TOP ({(LookupKeys.MaxRows + 1).ToString(CultureInfo.InvariantCulture)}) {layout.Select} FROM {table.Quoted}{layout.Where};";
+        var limit = type.RowLimit;
+        command.CommandText = $"SELECT TOP ({((long)limit + 1).ToString(CultureInfo.InvariantCulture)}) {layout.Select} FROM {table.Quoted}{layout.Where};";
 
         var rows = new List<ReferenceItem>();
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -56,10 +60,9 @@ internal static class TableCapture
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
                 rowNumber++;
-                if (rowNumber > LookupKeys.MaxRows)
+                if (rowNumber > limit)
                 {
-                    throw new DeliveryException(
-                        $"Cache flow '{flow.Name}': table {table} holds more than {LookupKeys.MaxRows.ToString(CultureInfo.InvariantCulture)} rows for type {type.Name}, and a lookup table holds at most that many: every row is loaded with the cache version a render reads. Join a table that large into the ingestion tables a delivery reads instead. Nothing was captured.");
+                    throw new DeliveryException(TooManyRows(flow, type));
                 }
 
                 var raw = SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(0)));
@@ -172,6 +175,23 @@ internal static class TableCapture
         {
             throw Failure(flow, table, ex, "count the rows");
         }
+    }
+
+    /// <summary>
+    /// Why a table holding more rows than <paramref name="type"/> takes (<see cref="ReferenceTypeSpec.RowLimit"/>) is refused,
+    /// and what to change: the type's <c>maxRows</c> when the table really holds that many, or the delivery's joins.
+    /// </summary>
+    public static string TooManyRows(CacheDefinition flow, ReferenceTypeSpec type)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(type);
+        var table = SourceObjectName.Parse(type.Table!);
+        var said = type.MaxRows is null
+            ? string.Create(CultureInfo.InvariantCulture, $"the {LookupKeys.DefaultTableRows} a table type holds when its maxRows says nothing")
+            : "its maxRows";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"Cache flow '{flow.Name}': table {table} holds more than {type.RowLimit} rows for type {type.Name}, {said}: every row is held in memory with the cache version a render reads. Raise the type's maxRows (at most {LookupKeys.MaxTableRows}) if the table really holds that many, or join a table that large into the ingestion tables a delivery reads instead. Nothing was captured.");
     }
 
     private static Task<SqlConnection> OpenAsync(CacheDefinition flow, ISecretResolver secrets, CancellationToken ct)

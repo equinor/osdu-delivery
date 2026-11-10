@@ -5,7 +5,8 @@ namespace SqlFlow.Delivery.Snapshots;
 /// <summary>
 /// One cached type as one cache flow declares it, the way the catalog holds it after the repository sync: where its records
 /// come from, for an OSDU type the kind and query it is searched with and whether its records are read whole from storage,
-/// for a lookup table the name its key is kept under, and the retention the flow declares for the partition's cache.
+/// for a lookup table the name its key is kept under, for a table type the most rows its capture takes when the flow says
+/// (null takes <see cref="LookupKeys.DefaultTableRows"/>), and the retention the flow declares for the partition's cache.
 /// </summary>
 public sealed record CacheTypeDeclaration(
     string FlowName,
@@ -20,7 +21,8 @@ public sealed record CacheTypeDeclaration(
     int RetentionDays = CacheRetention.DefaultDays,
     string? Connection = null,
     string? SourceObject = null,
-    bool FetchRecords = false)
+    bool FetchRecords = false,
+    int? MaxRows = null)
 {
     /// <summary>True for a table or a dictionary, whose rows are not OSDU records.</summary>
     public bool IsLookup => Origin != CacheOrigin.Osdu;
