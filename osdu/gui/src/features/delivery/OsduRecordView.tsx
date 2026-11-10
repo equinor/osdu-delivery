@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { DeliveryOsduRead } from "../../api/delivery";
@@ -20,6 +20,12 @@ export interface RootRead {
   pending: boolean;
 }
 
+/** A record to open after the page's own, as a click on the value of it naming the record would: its id, and that value's path. */
+export interface RecordFollow {
+  id: string;
+  from: string;
+}
+
 /**
  * A record read from OSDU, and the records opened from links in it, read in turn the way the page reads records (a record
  * page through its flow's route and credentials, the explorer through its partition's connection), each answered by the
@@ -27,7 +33,7 @@ export interface RootRead {
  * inspector, the last one in view; stepping back along the trail closes what was opened after that point. A version of
  * any record on the trail is read into the inspector in place, without disturbing the trail.
  */
-export function OsduRecordPanel({ readLinked, root, targetId, readRootVersion, ledgerVersion, actions, extras, fill = false }: {
+export function OsduRecordPanel({ readLinked, root, targetId, readRootVersion, ledgerVersion, actions, extras, follow = null, onFollowed, fill = false }: {
   /** Reads a record opened from the page's, and a version of one; null where nothing more can be read. */
   readLinked: ReadRecord | null;
   /** The page's own read, as it stands. */
@@ -42,6 +48,13 @@ export function OsduRecordPanel({ readLinked, root, targetId, readRootVersion, l
   actions?: ReactNode;
   /** What the page adds to the inspector: the place in front of the record, its mentions, what to offer for an id not found. */
   extras?: InspectorExtras;
+  /**
+   * A record to open on the trail right after the page's own, closing whatever was open after it: asked once, as it is
+   * given, and `onFollowed` is told so the page can let it go. The explorer's dimension builder opens the record a key
+   * names so.
+   */
+  follow?: RecordFollow | null;
+  onFollowed?: () => void;
   /** Whether the inspector fills its flex column parent (a window of its own) rather than a share of the viewport. */
   fill?: boolean;
 }) {
@@ -58,6 +71,20 @@ export function OsduRecordPanel({ readLinked, root, targetId, readRootVersion, l
     onError: (error) => toast.error(failureText(error)),
     onSettled: () => setOpening(null),
   });
+
+  // A record the page asks to open is opened once: the request itself is remembered, so a render that still carries it
+  // (or React's second run of an effect in development) does not read it again.
+  const { mutate: openLink } = open;
+  const followed = useRef<RecordFollow | null>(null);
+  useEffect(() => {
+    if (follow === null || followed.current === follow || readLinked === null) {
+      return;
+    }
+
+    followed.current = follow;
+    openLink({ id: follow.id, level: 0, from: follow.from });
+    onFollowed?.();
+  }, [follow, readLinked, openLink, onFollowed]);
 
   const entries: InspectorEntry[] = [
     { id: targetId, read: root.read, error: root.error, pending: root.pending },

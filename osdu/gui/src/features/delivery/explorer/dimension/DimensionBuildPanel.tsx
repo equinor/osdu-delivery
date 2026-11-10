@@ -1,27 +1,28 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, KeyRound, RotateCcw, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { CircleCheck, CircleX, Loader2, RotateCcw, TableProperties, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { CopyButton } from "@/components/CopyButton";
 import { RichTooltip } from "@/components/RichTooltip";
 import { cn } from "@/lib/utils";
 import type { DeliveryDimensionKey } from "../../../../api/delivery";
-import type { DimensionCompose, DimensionExample, DimensionKeyCandidate } from "../../../../api/explorer";
+import type { DimensionCompose, DimensionDraftIssue, DimensionExample } from "../../../../api/explorer";
 import { failureText } from "../../answers";
 import { BlueprintDiagram } from "../../dimensions/BlueprintDiagram";
 import { examplesOf, layoutOf } from "../../dimensions/blueprintModel";
-import { kindParts } from "../explorerModel";
-import { BuilderColumns } from "./BuilderColumns";
-import { BuilderExpression } from "./BuilderExpression";
 import { BuilderFilterDialog } from "./BuilderFilterDialog";
-import { applyPlan, typeName, type PickPlan } from "./dimensionDraft";
+import { BuilderRow } from "./BuilderRow";
+import { BuilderSteps } from "./BuilderStory";
+import { BuilderYaml } from "./BuilderYaml";
+import { kindTypeName, nextStep, stepOfTarget, stepStates, type StoryStep } from "./dimensionStory";
+import { IssueLine, QuietInput } from "./StoryFrame";
 import type { DimensionBuild } from "./useDimensionBuild";
 
-/** The suggestions shown before the rest are asked for. */
-const SHOWN_SUGGESTIONS = 4;
+/** What the panel shows: the story the dimension is picked by, or the YAML it makes. */
+type BuilderView = "story" | "yaml";
 
 /** The example row a dimension's pages draw a key from, made of what the builder's example read. */
 function keyOf(example: DimensionExample): DeliveryDimensionKey {
@@ -46,18 +47,13 @@ function keyOf(example: DimensionExample): DeliveryDimensionKey {
   };
 }
 
-/** A suggestion as a chip names it: its last property, and the type of record it names. */
-function suggestionLabel(candidate: DimensionKeyCandidate): string {
-  const property = candidate.path.split(".").pop() ?? candidate.path;
-  const named = candidate.names.find((name) => name.includes("--"));
-  return named === undefined ? property : `${property} · ${typeName(named)}`;
-}
-
 /**
- * The dimension being built in the explorer (osdu/docs/reference/concepts/explorer.md, Building a dimension), docked
- * beside the records it is built from: its name and kind, the keys the kind's template suggests, the example key every
- * part is filled with (the record in view's own first), the table with its columns and settings, and the YAML with what
- * is wrong with it. Every pick is made in the records themselves; the panel says what to pick next.
+ * The dimension being built in the explorer (osdu/docs/reference/concepts/explorer-dimension-builder.md), docked
+ * beside the records it is built from and told as a story read top to bottom, one step per choice: from these records,
+ * one row per this key, shown as this, with these columns, cleaned so, it makes this table, whose example row ends it.
+ * Only the step asking for a pick says what to do, with the one action that does it; every step's settings open in
+ * place, and the picks themselves are made on the values of the records. Its name heads it, the YAML is a view of its
+ * own, and the foot says whether the YAML is ready and copies it.
  */
 export function DimensionBuildPanel({ build, startKind }: {
   build: DimensionBuild;
@@ -65,70 +61,75 @@ export function DimensionBuildPanel({ build, startKind }: {
   startKind: string;
 }) {
   const draft = build.draft;
-  const [pointed, setPointed] = useState<string | null>(null);
+  const [view, setView] = useState<BuilderView>("story");
+  const [open, setOpen] = useState<StoryStep | null>(null);
   const [showRow, setShowRow] = useState(false);
   const [closing, setClosing] = useState(false);
-  if (draft === null) {
+  const story = useRef<HTMLDivElement>(null);
+
+  const states = draft === null ? null : stepStates(draft, build.keyEntity !== null);
+  const next = states === null ? null : nextStep(states);
+  // The key, when it is what the story asks for, is picked among the template's suggestions: its step opens on them, and
+  // closes again once a key is picked (the template's likeliest, as a build starts), so the step asking next is in view.
+  const [seenNext, setSeenNext] = useState(next);
+  if (seenNext !== next) {
+    setSeenNext(next);
+    if (next === "rows") {
+      setOpen("rows");
+    } else if (seenNext === "rows" && open === "rows") {
+      setOpen(null);
+    }
+  }
+
+  if (draft === null || states === null) {
     return null;
   }
 
   const compose = build.compose;
-  const suggestions = build.candidates.data;
+  const issues = compose.data?.issues ?? [];
+  const named = issues.filter((issue) => stepOfTarget(issue.target) === "name");
   const keyed = draft.path !== null && draft.path !== "";
-  const parts = draft.kind === "" ? null : kindParts(draft.kind);
-  const exampleLabel = build.exampleKey === null
-    ? null
-    : compose.data?.example?.key === build.exampleKey ? compose.data.example.value ?? build.exampleKey : build.exampleKey;
-  const notes = [
-    ...(suggestions?.missing ? [suggestions.missing] : []),
-    ...(build.keys.data?.answer.notes ?? []),
-    ...(build.keys.data?.answer.refusal ? [`The search service refused the keys: ${build.keys.data.answer.refusal}`] : []),
-    ...(compose.data?.exampleProblem ? [`The example row could not be made: ${compose.data.exampleProblem}`] : []),
-    ...(compose.data?.example?.notes ?? []),
-    ...(build.keys.isError ? [`The keys could not be read: ${failureText(build.keys.error)}`] : []),
-    ...(build.candidates.isError ? [`The template's keys could not be read: ${failureText(build.candidates.error)}`] : []),
-  ];
-  const makeKey = (candidate: DimensionKeyCandidate) => {
-    const plan: PickPlan = { action: "key", kind: draft.kind, key: candidate.path, keyExample: null, path: candidate.path, steps: [], questions: [] };
-    build.update(applyPlan(draft, plan, [], [], candidate.names));
-  };
 
-  let next: ReactNode;
-  if (draft.kind === "") {
-    next = "Pick a type or a kind on the left, or open a record: a dimension reads the records of one kind, and its key is a value they hold.";
-  } else if (!keyed) {
-    next = (
-      <>
-        Pick the key: open a record of the kind, and on a value whose distinct values the dimension holds choose <span className="font-medium text-foreground">Make it the key</span>.
-        The values marked <KeyRound className="inline size-3.5 text-primary" aria-label="with a key" /> name other records, as a key most often does.
-      </>
-    );
-  } else if (draft.label.length === 0 && draft.attributes.length === 0) {
-    next = (
-      <>
-        Open the record the key names from its link in a record of the kind, and choose <span className="font-medium text-foreground">Read it as the value</span> on its name.
-        Follow its links further to read attributes from the records it names. Without a value, each key is its own value.
-      </>
-    );
-  } else {
-    next = null;
-  }
+  // A problem named in the foot is shown where it is: its step opened in the story, and brought into view.
+  const showProblem = (issue: DimensionDraftIssue) => {
+    const step = stepOfTarget(issue.target);
+    setView("story");
+    if (step !== null && step !== "name" && step !== "makes") {
+      setOpen(step);
+    }
+
+    window.requestAnimationFrame(() => {
+      const target = step === null || step === "name" ? null : story.current?.querySelector(`[data-testid="builder-step-${step}"]`);
+      (target ?? story.current)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="builder-panel">
-      <div className="flex flex-col gap-2 border-b px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="text-[14px] font-semibold">Build a dimension</h2>
-          {parts !== null && (
-            <RichTooltip title="Reads the records of" body={draft.kind} mono>
-              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px]" data-testid="builder-kind">
-                <span className="truncate">{typeName(parts.entityType)}</span>
-                <span className="font-mono text-muted-foreground">{parts.version}</span>
-              </span>
-            </RichTooltip>
-          )}
-          <span className="ml-auto flex items-center">
-            <RichTooltip body={startKind === "" ? "Start over: a new dimension." : `Start over: a new dimension of ${startKind}.`}>
+      <div className="flex flex-col border-b px-4 pb-2.5 pt-2">
+        <div className="flex h-8 min-w-0 items-center gap-2">
+          <TableProperties className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="truncate text-[12px] text-muted-foreground">
+            {draft.kind === "" ? "New dimension" : `New dimension of ${kindTypeName(draft.kind)} records`}
+          </span>
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={view}
+              onValueChange={(value) => {
+                if (value === "story" || value === "yaml") {
+                  setView(value);
+                }
+              }}
+              aria-label="What the builder shows"
+              data-testid="builder-view"
+            >
+              <ToggleGroupItem value="story" className="h-7 px-2.5 text-[12.5px]" data-testid="builder-view-story">Build</ToggleGroupItem>
+              <ToggleGroupItem value="yaml" className="h-7 px-2.5 text-[12.5px]" disabled={draft.kind === ""} data-testid="builder-view-yaml">YAML</ToggleGroupItem>
+            </ToggleGroup>
+            <RichTooltip body={startKind === "" ? "Start over: a new dimension." : `Start over: a new dimension of ${kindTypeName(startKind)} records.`}>
               <Button variant="ghost" size="icon-xs" onClick={() => build.start(startKind)} aria-label="Start over" data-testid="builder-restart">
                 <RotateCcw />
               </Button>
@@ -140,85 +141,48 @@ export function DimensionBuildPanel({ build, startKind }: {
             </RichTooltip>
           </span>
         </div>
-        <Input
+        <QuietInput
           value={draft.name}
           onChange={(event) => build.update({ ...draft, name: event.target.value })}
           placeholder="Name the dimension"
-          className="h-8 font-mono text-[13px]"
+          className="-mx-2 h-9 w-[calc(100%+1rem)] px-2 text-[17px] font-semibold md:text-[17px]"
           aria-label="The dimension's name"
+          aria-invalid={named.some((issue) => issue.severity === "error" && issue.target === "name")}
           data-testid="builder-name"
         />
-        {suggestions !== undefined && suggestions.keys.length > 0 && (
-          <div className="flex min-w-0 flex-wrap items-center gap-1" data-testid="builder-suggestions">
-            <RichTooltip body={`The values of ${suggestions.template?.kind ?? draft.kind} its template says name other records, the likeliest key first.`}>
-              <span className="mr-1 inline-flex items-center gap-1 text-[11.5px] text-muted-foreground">
-                <KeyRound className="size-3.5 text-primary" aria-hidden />
-                Keys
-              </span>
-            </RichTooltip>
-            {suggestions.keys.slice(0, SHOWN_SUGGESTIONS).map((candidate) => (
-              <SuggestionChip key={candidate.path} candidate={candidate} picked={draft.path === candidate.path} onPick={() => makeKey(candidate)} />
-            ))}
-            {suggestions.keys.length > SHOWN_SUGGESTIONS && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className="rounded border border-dashed px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:text-foreground" data-testid="builder-suggestions-more">
-                    {`+${suggestions.keys.length - SHOWN_SUGGESTIONS} more`}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-80 w-96 overflow-auto">
-                  {suggestions.keys.slice(SHOWN_SUGGESTIONS).map((candidate) => (
-                    <DropdownMenuItem key={candidate.path} onSelect={() => makeKey(candidate)} className="flex flex-col items-start gap-0" data-testid="builder-suggestion-more">
-                      <span className="font-mono text-[12px]">{candidate.path}</span>
-                      <span className="text-[11.5px] text-muted-foreground">
-                        {`names ${candidate.names.map((name) => (name.includes("--") ? typeName(name) : name)).join(" or ")}${candidate.repeated ? ", several to a record" : ""}`}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        )}
-        {keyed && (
-          <ExampleControl
-            label={exampleLabel}
-            title={build.exampleKey}
-            own={build.exampleKey !== null && build.exampleKey === build.recordKey}
-            at={build.exampleAt}
-            count={build.examples.length}
-            onStep={build.stepExample}
-          />
-        )}
-        {next !== null && <p className="text-[12px] leading-5 text-muted-foreground" data-testid="builder-next">{next}</p>}
+        <Textarea
+          value={draft.description ?? ""}
+          onChange={(event) => build.update({ ...draft, description: event.target.value === "" ? null : event.target.value })}
+          placeholder="Add a description: what the dimension is for"
+          rows={1}
+          className="-mx-2 min-h-0 w-[calc(100%+1rem)] resize-none border-transparent bg-transparent px-2 py-0.5 text-[12.5px] text-muted-foreground shadow-none placeholder:text-muted-foreground/70 hover:border-input focus-visible:border-ring focus-visible:text-foreground md:text-[12.5px] dark:bg-transparent"
+          aria-label="The dimension's description"
+          data-testid="builder-description"
+        />
+        {named.map((issue, index) => <IssueLine key={`${index}-${issue.message}`} issue={issue} />)}
       </div>
 
-      {draft.kind !== "" && (
-        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          <ResizablePanel defaultSize="52" minSize="20" className="flex min-h-0 flex-col">
-            <BuilderColumns
-              draft={draft}
-              compose={compose.data}
-              issues={compose.data?.issues ?? []}
-              recordKind={build.recordKind}
-              onChange={build.update}
-              onPoint={setPointed}
-            />
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize="48" minSize="20" className="flex min-h-0 flex-col">
-            <BuilderExpression
-              compose={compose.data}
-              composing={compose.isFetching}
-              failure={compose.isError ? failureText(compose.error) : null}
-              notes={notes}
-              pointed={pointed}
-              onPoint={setPointed}
-              onShowRow={() => setShowRow(true)}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      )}
+      {view === "story"
+        ? (
+          <div ref={story} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4" data-testid="builder-story">
+            <BuilderSteps build={build} draft={draft} states={states} open={open} onOpen={setOpen} issues={issues} startKind={startKind} />
+            <BuilderRow build={build} draft={draft} state={states.makes} issues={issues} onShowRow={() => setShowRow(true)} />
+          </div>
+        )
+        : <BuilderYaml compose={compose.data} failure={compose.isError ? failureText(compose.error) : null} />}
+
+      <div className="flex min-h-11 items-center gap-2 border-t px-3 py-1.5">
+        <Verdict
+          ready={draft.kind !== ""}
+          compose={compose.data}
+          composing={compose.isFetching}
+          failure={compose.isError ? failureText(compose.error) : null}
+          onShow={showProblem}
+        />
+        <span className="ml-auto shrink-0">
+          {compose.data !== undefined && <CopyButton label="Copy the YAML" text={compose.data.yaml} testId="builder-copy" />}
+        </span>
+      </div>
 
       <Dialog open={showRow} onOpenChange={setShowRow}>
         <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-[min(1400px,95vw)]" data-testid="builder-row-dialog">
@@ -226,7 +190,7 @@ export function DimensionBuildPanel({ build, startKind }: {
             <DialogTitle>How a row is built</DialogTitle>
             <DialogDescription>
               The records searched, each record found by id, and the table, as a build reads them
-              {exampleLabel === null ? "" : `, filled with what the example key ${exampleLabel} reads`}.
+              {compose.data?.example ? `, filled with what the key ${compose.data.example.value ?? compose.data.example.key} reads` : ""}.
             </DialogDescription>
           </DialogHeader>
           <RowPreview compose={compose.data} />
@@ -248,55 +212,71 @@ export function DimensionBuildPanel({ build, startKind }: {
   );
 }
 
-function SuggestionChip({ candidate, picked, onPick }: { candidate: DimensionKeyCandidate; picked: boolean; onPick: () => void }) {
-  return (
-    <RichTooltip
-      title={candidate.path}
-      body={`Names ${candidate.names.map((name) => (name.includes("--") ? typeName(name) : name)).join(" or ")} records${candidate.repeated ? ", several to a record" : ""}.${candidate.description ? ` ${candidate.description}` : ""}`}
-    >
+/**
+ * Whether the YAML is ready to paste, in one line: quiet when it is, and naming what to put right when it is not, a click
+ * away from where that is.
+ */
+function Verdict({ ready, compose, composing, failure, onShow }: {
+  ready: boolean;
+  compose: DimensionCompose | undefined;
+  composing: boolean;
+  failure: string | null;
+  onShow: (issue: DimensionDraftIssue) => void;
+}) {
+  if (!ready) {
+    return <span className="text-[12.5px] text-muted-foreground" data-testid="builder-status" data-valid="false">The YAML is written once a type is picked.</span>;
+  }
+
+  if (compose === undefined) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground" data-testid="builder-status" data-valid="false">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        {failure === null ? "Writing the YAML" : `The YAML could not be written: ${failure}`}
+      </span>
+    );
+  }
+
+  const errors = compose.issues.filter((issue) => issue.severity === "error");
+  const warnings = compose.issues.filter((issue) => issue.severity === "warning");
+  const glyph = composing
+    ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+    : errors.length > 0
+      ? <CircleX className="size-4 shrink-0 text-destructive" aria-hidden />
+      : warnings.length > 0
+        ? <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden />
+        : <CircleCheck className="size-4 shrink-0 text-success" aria-hidden />;
+
+  if (errors.length > 0) {
+    return (
       <button
         type="button"
-        onClick={onPick}
-        aria-pressed={picked}
-        className={cn(
-          "max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[11.5px]",
-          picked ? "border-primary/60 bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground",
-        )}
-        data-testid="builder-suggestion"
-        data-path={candidate.path}
+        onClick={() => onShow(errors[0])}
+        className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[12.5px] hover:bg-accent/60"
+        title={errors[0].message}
+        data-testid="builder-status"
+        data-valid={compose.valid}
       >
-        {suggestionLabel(candidate)}
+        {glyph}
+        <span className="truncate">
+          <span className="font-medium">{`${errors.length} ${errors.length === 1 ? "thing" : "things"} to put right`}</span>
+          <span className="text-muted-foreground">{` before the YAML loads: ${errors[0].message}`}</span>
+        </span>
       </button>
-    </RichTooltip>
-  );
-}
+    );
+  }
 
-/** The example every part is filled with: the record in view's own key, or one of the keys held by the most records. */
-function ExampleControl({ label, title, own, at, count, onStep }: {
-  label: string | null;
-  title: string | null;
-  own: boolean;
-  at: number;
-  count: number;
-  onStep: (step: number) => void;
-}) {
   return (
-    <div className="flex min-w-0 items-center gap-1 text-[12px]" data-testid="builder-example">
-      <RichTooltip body="Every part is filled with what one key reads: the key of the record in view, then the keys held by the most records.">
-        <span className="shrink-0 text-muted-foreground">Example key</span>
-      </RichTooltip>
-      <Button variant="ghost" size="icon-xs" aria-label="The previous example" onClick={() => onStep(-1)} disabled={count < 2} data-testid="builder-example-previous">
-        <ChevronLeft />
-      </Button>
-      <RichTooltip title="Key" body={title ?? ""} mono>
-        <span className="min-w-0 truncate font-mono" data-testid="builder-example-label">{label ?? "none"}</span>
-      </RichTooltip>
-      <Button variant="ghost" size="icon-xs" aria-label="The next example" onClick={() => onStep(1)} disabled={count < 2} data-testid="builder-example-next">
-        <ChevronRight />
-      </Button>
-      <span className="shrink-0 font-mono tabular-nums text-muted-foreground" data-testid="builder-example-count">{count === 0 ? "0/0" : `${at + 1}/${count}`}</span>
-      {own && <span className="shrink-0 text-[11.5px] text-muted-foreground">this record's</span>}
-    </div>
+    <span className={cn("inline-flex min-w-0 items-center gap-1.5 px-1 text-[12.5px]")} data-testid="builder-status" data-valid={compose.valid}>
+      {glyph}
+      <span className="truncate">
+        Ready to paste
+        {warnings.length > 0 && (
+          <button type="button" onClick={() => onShow(warnings[0])} className="text-muted-foreground hover:text-foreground hover:underline" title={warnings[0].message}>
+            {`, ${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}`}
+          </button>
+        )}
+      </span>
+    </span>
   );
 }
 

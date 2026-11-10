@@ -2054,6 +2054,55 @@
       ]
     },
     {
+      "id": "delivery-concept-explorer-dimension-builder",
+      "corpus": "reference",
+      "path": "concepts/explorer-dimension-builder.md",
+      "title": "Building a dimension in the explorer: picking it on the records, step by step",
+      "type": "concept",
+      "summary": "The explorer's dimension builder: its steps from the records to the table, picks made on the records' values, the example row, and the YAML.",
+      "keywords": [
+        "build a dimension",
+        "dimension builder",
+        "pick a key",
+        "one row per",
+        "show each row as this",
+        "add as a column",
+        "collect into a column",
+        "open the record a key names",
+        "example row",
+        "rename a column",
+        "copy the yaml",
+        "dimension yaml",
+        "key suggestions",
+        "clean steps",
+        "where a key's record holds nothing"
+      ],
+      "related": [
+        "delivery-concept-explorer",
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-attributes",
+        "delivery-flow-dimension-clean",
+        "delivery-concept-dimension-blueprint",
+        "delivery-guide-dimensions",
+        "delivery-concept-templates"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionKeyCandidates.cs",
+        "osdu/gui/src/features/delivery/explorer/dimension/DimensionBuildPanel.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderStory.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderRow.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderYaml.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/StoryFrame.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuildFieldActions.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFilterDialog.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/dimensionStory.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/dimensionDraft.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/useDimensionBuild.ts"
+      ]
+    },
+    {
       "id": "delivery-concept-gui",
       "corpus": "reference",
       "path": "concepts/gui.md",

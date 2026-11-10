@@ -469,14 +469,12 @@ to read 50 kinds, more than it read, stops, since the service is failing rather 
 ## Building a dimension
 
 **Build a dimension**, in the header, docks the dimension builder beside the records (the workbench's side bar folds
-meanwhile). The key, the value and the attributes of a [dimension](../flow/dimension.md) are picked on the values
-themselves as records are browsed and their links followed: beside each value a menu offers **Make it the key**,
-**Collect it**, **Read it as the value** or **Read it as an attribute**, depending on where the record sits on the trail.
-The builder suggests keys from the kind's template a synced repository holds (the values that name other records), fills an example row with
-what one key reads, and writes the `dimensions:` item a dimension flow lists, checked by the loader a flow is read by.
-**Copy the YAML** takes it. The builder saves nothing: no flow, no dimension, nothing in OSDU or the database. The draft
-lives in the page's address (`dim`), so a link or a refresh brings it back; closing the builder drops it. See
-[building and using a dimension](../guides/dimensions.md).
+meanwhile). It tells a [dimension](../flow/dimension.md) as a story of steps, from the records read to the table it makes,
+and its key, its value and its columns are picked on the values themselves as records are browsed and their links
+followed. It suggests keys from the kind's template a synced repository holds, fills an example row with what one key
+reads, and writes the `dimensions:` item a dimension flow lists, checked by the loader a flow is read by. It saves
+nothing; the draft lives in the page's address (`dim`). See [building a dimension in the
+explorer](explorer-dimension-builder.md), and [building and using a dimension](../guides/dimensions.md).
 
 ## Kept in the address
 

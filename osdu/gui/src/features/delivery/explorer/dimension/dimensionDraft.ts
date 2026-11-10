@@ -2,9 +2,10 @@ import type { DimensionDraft, DimensionDraftAttribute, DimensionDraftCleanStep, 
 import type { InspectorTrailRecord } from "../../OsduRecordInspector";
 import { isRecordReference, withoutVersion } from "../../osduDocument";
 import { locationOf, namesOf, type Location } from "../../recordPath";
+import { entityTypeOf, lastProperty, typeName } from "./dimensionStory";
 
 // What the explorer's dimension builder holds while a person builds a dimension from the records OSDU holds
-// (osdu/docs/reference/concepts/explorer.md, Building a dimension): the draft, kept in the explorer's address; what a
+// (osdu/docs/reference/concepts/explorer-dimension-builder.md): the draft, kept in the explorer's address; what a
 // pick in a record on the explorer's trail makes of it (the trail's first record is one of the dimension's kind, the
 // link it is left by is the key, and every link after it a step of a value's path); the filters suggested where a step
 // passes through one item of a list; and which values of a record the draft reads, to mark them. Every check of what a
@@ -21,9 +22,6 @@ export const EXAMPLES = 25;
 
 /** The longest attribute name: DimensionAttributeSpec.MaxNameLength. */
 export const MAX_NAME_LENGTH = 64;
-
-/** The clean steps written as their name alone, as the documentation names them. */
-export const PLAIN_STEPS = ["trim", "collapseSpaces", "upper", "lower", "nfc", "nfkc", "foldSeparators"] as const;
 
 /** The explorer's address part holding the draft while a dimension is built. */
 export const DRAFT_PARAM = "dim";
@@ -142,11 +140,6 @@ export function pathOf(location: Location, filters: ReadonlyMap<number, SegmentF
     .join(".");
 }
 
-/** A path without its filters: the property names it reads through. */
-export function plainPath(path: string): string {
-  return path.replace(/\[[^\]]*\]/g, "");
-}
-
 /** Why a filter cannot be written: a property that is no name, or a text that is empty or holds the `]` that would end it. */
 export function filterProblem(filter: SegmentFilter): string | null {
   if (!/^[A-Za-z0-9_]+$/.test(filter.property)) {
@@ -183,12 +176,6 @@ export function stepSegments(step: string): StepSegment[] | null {
   }
 
   return segments.length === 0 ? null : segments;
-}
-
-/** The property a path ends with, its filters set aside. */
-export function lastProperty(path: string): string {
-  const names = plainPath(path).split(".");
-  return names[names.length - 1] ?? path;
 }
 
 /** Whether two names are the same name, as the loader compares them: ignoring case. */
@@ -228,17 +215,6 @@ export function dimensionNameFor(path: string, example: string | null, names: re
   const base = named === null ? lastProperty(path) : typeName(named);
   const cleaned = base.replace(/[^A-Za-z0-9._-]/g, "").replace(/^[^A-Za-z0-9]+/, "");
   return cleaned.slice(0, 100);
-}
-
-/** The entity type a record id names: its second segment (`master-data--Wellbore`). */
-export function entityTypeOf(id: string): string {
-  return withoutVersion(id).split(":")[1] ?? id;
-}
-
-/** The type of an entity type, its group aside: `Wellbore` of `master-data--Wellbore`. */
-export function typeName(entityType: string): string {
-  const at = entityType.indexOf("--");
-  return at < 0 ? entityType : entityType.slice(at + 2);
 }
 
 /**

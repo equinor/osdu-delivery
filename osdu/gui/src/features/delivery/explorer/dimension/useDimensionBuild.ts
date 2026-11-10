@@ -1,20 +1,27 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  composeDimension, dimensionKeyCandidates, dimensionKeys, explorerApi, type DimensionDraft, type DimensionKeysRequest,
+  composeDimension, dimensionKeyCandidates, dimensionKeys, explorerApi, type DimensionDraft, type DimensionKeysRequest, type ExplorerIndex,
 } from "../../../../api/explorer";
+import { failureText } from "../../answers";
+import { withoutVersion } from "../../osduDocument";
+import type { RecordFollow } from "../../OsduRecordView";
 import {
   DRAFT_PARAM, EXAMPLES, applyPlan, chooseKey, draftFromParam, draftParam, emptyDraft, firstValueAt, kindMatches, planOf,
   type AmbiguousPick, type BuildPick, type PickPlan, type SegmentFilter,
 } from "./dimensionDraft";
+import { firstLocationAt, keyEntityType, kindTypeName, typeName } from "./dimensionStory";
 
 /** How long a draft rests before it is written and checked again: a person typing a name is not asked about every letter. */
 const SETTLE_MS = 350;
 
 /** How long the keys read stand before the same are read again. */
 const FRESH_MS = 60_000;
+
+/** The ways the search service indexes a property, which a search condition names. */
+const INDEXES: readonly string[] = ["text", "keyword", "number", "boolean", "date"] satisfies ExplorerIndex[];
 
 /** `value`, once it has stopped changing for `ms`. */
 function useSettled<T>(value: T, ms: number): T {
@@ -28,16 +35,22 @@ function useSettled<T>(value: T, ms: number): T {
 
 const isText = (value: unknown): value is string => typeof value === "string";
 
+/** The record a key names, to open on the explorer's trail after `root`, the record of the dimension's kind holding the key. */
+export interface KeyRecordFollow extends RecordFollow {
+  root: string;
+}
+
 /**
- * The dimension a person builds in the explorer (osdu/docs/reference/concepts/explorer.md, Building a dimension): the
+ * The dimension a person builds in the explorer (osdu/docs/reference/concepts/explorer-dimension-builder.md): the
  * draft, held here and changed at once as any input is, with the explorer's address following it (its `dim` part,
  * written over the address as it stands, so the explorer's own navigation and the build never undo each other); the
  * keys the kind's template suggests, the likeliest made the key as a build starts; the commonest keys and the record in
  * view, which the example steps through, that record's own key first; the YAML and its check, once the draft has
- * settled; and the picks made in the records on the explorer's trail, each asked about where it passes through one item
- * of a list.
+ * settled; the picks made in the records on the explorer's trail, each asked about where it passes through one item of a
+ * list; and the record the example key names, opened on the trail for its values to be picked (from the record in view
+ * when it holds the key, else from a record of the kind the search finds holding it, which `openRecord` opens first).
  */
-export function useDimensionBuild({ partition, reachable, scopeKind, recordId, recordVersion }: {
+export function useDimensionBuild({ partition, reachable, scopeKind, recordId, recordVersion, openRecord }: {
   partition: string | null;
   reachable: boolean;
   /** The kind the explorer's place reads (a type's every version), which a build that has no kind yet takes; null for none. */
@@ -45,7 +58,10 @@ export function useDimensionBuild({ partition, reachable, scopeKind, recordId, r
   /** The record the explorer has open, the first of its trail; null for none. */
   recordId: string | null;
   recordVersion: number | null;
+  /** Opens a record in the explorer, at its latest version, as the first of its trail. */
+  openRecord: (id: string) => void;
 }) {
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [draft, setDraft] = useState<DimensionDraft | null>(() => {
     const held = params.get(DRAFT_PARAM);
@@ -143,6 +159,9 @@ export function useDimensionBuild({ partition, reachable, scopeKind, recordId, r
   }
 
   const exampleKey = examples.length === 0 ? null : examples[Math.min(at, examples.length - 1)];
+  const keyPath = draft?.path ?? "";
+  // The type of record the key names (the template's word for it, else the example key's), null for a key naming none.
+  const keyEntity = keyPath === "" ? null : keyEntityType(namesOf(keyPath), exampleKey);
 
   const compose = useQuery({
     queryKey: ["explorer", "dimension", "compose", partition, settled, exampleKey],
@@ -159,6 +178,60 @@ export function useDimensionBuild({ partition, reachable, scopeKind, recordId, r
   const finish = (plan: PickPlan, answers: (SegmentFilter | null)[]) =>
     setDraft((current) => (current === null ? current : applyPlan(current, plan, answers, columns, namesOf(plan.key))));
 
+  // The record the example key names, opened on the trail after a record of the kind that holds the key: the one in view
+  // when it does, else the first the search finds holding it, read into the explorer's own read before it is opened, so the
+  // record view finds it read and the record the key names opens straight after it.
+  const [follow, setFollow] = useState<KeyRecordFollow | null>(null);
+  const opener = useMutation({
+    mutationFn: async (key: string): Promise<KeyRecordFollow> => {
+      const id = withoutVersion(key);
+      const here = root === null ? null : firstLocationAt(root, keyPath, key);
+      if (here !== null && recordId !== null) {
+        return { root: recordId, id, from: here };
+      }
+
+      const records = `${kindTypeName(kind)} record`;
+      const field = keys.data?.answer.keyField ?? null;
+      if (field === null || !INDEXES.includes(field.index)) {
+        throw new Error(`The search service reports no index of ${keyPath}, so no ${records} holding ${key} can be looked for. Open one on the left.`);
+      }
+
+      const found = await explorerApi.search(partition, {
+        kind,
+        filters: [{ path: field.path, index: field.index as ExplorerIndex, ...(field.nestedPath === null ? {} : { nested: field.nestedPath }), value: key }],
+        limit: 1,
+      });
+      if (found.answer.refusal) {
+        throw new Error(`The search service would not look for a ${records} holding ${key}: ${found.answer.refusal}`);
+      }
+
+      const hit = found.answer.hits[0];
+      if (hit === undefined) {
+        throw new Error(`The search service found no ${records} holding ${key} at ${keyPath}.`);
+      }
+
+      const held = await queryClient.fetchQuery({
+        queryKey: ["explorer", "read", partition, hit.id, null],
+        queryFn: () => explorerApi.read(partition, hit.id),
+        staleTime: Number.POSITIVE_INFINITY,
+      });
+      const from = held.found && held.record ? firstLocationAt(held.record, keyPath, key) : null;
+      if (from === null) {
+        throw new Error(`${hit.id} no longer holds ${key} at ${keyPath}: the search service has not caught up with its latest version.`);
+      }
+
+      return { root: hit.id, id, from };
+    },
+    onSuccess: (asked) => {
+      if (asked.root !== recordId) {
+        openRecord(asked.root);
+      }
+
+      setFollow(asked);
+    },
+    onError: (error) => toast.error(failureText(error)),
+  });
+
   return {
     /** The draft; null while no dimension is built. */
     draft,
@@ -166,12 +239,14 @@ export function useDimensionBuild({ partition, reachable, scopeKind, recordId, r
     start: (start: string) => {
       setAutoFor(null);
       setPending(null);
+      setFollow(null);
       setAt(0);
       setDraft(emptyDraft(start));
     },
     /** Ends the build, its draft with it. */
     stop: () => {
       setPending(null);
+      setFollow(null);
       setDraft(null);
     },
     /** Replaces the draft with what the table's settings make of it. */
@@ -214,12 +289,32 @@ export function useDimensionBuild({ partition, reachable, scopeKind, recordId, r
     compose,
     /** The kind of the record in view, whichever kind the build reads. */
     recordKind,
+    /** The record in view, when it is one of the kind the build reads; null otherwise. */
+    inView: root,
     /** The examples the build steps through, the record in view's key first, and the one shown. */
     examples,
     exampleAt: Math.min(at, Math.max(0, examples.length - 1)),
     exampleKey,
     recordKey,
     stepExample: (step: number) => setAt((current) => (examples.length === 0 ? 0 : (current + step + examples.length) % examples.length)),
+    /** Shows the example key at its place among the examples. */
+    showExample: (index: number) => setAt(Math.max(0, Math.min(index, examples.length - 1))),
+    /** The type of record the key names (`master-data--Wellbore`); null for a key naming none. */
+    keyEntity,
+    /** The key's records' type as a person reads it (`Wellbore`); null for a key naming none. */
+    keyType: keyEntity === null ? null : typeName(keyEntity),
+    /** Opens the record the example key names on the explorer's trail, for its values to be picked. */
+    openKeyRecord: () => {
+      if (exampleKey !== null && keyEntity !== null && !opener.isPending) {
+        opener.mutate(exampleKey);
+      }
+    },
+    /** Whether the record the example key names is being found. */
+    openingKeyRecord: opener.isPending,
+    /** The record to open on the trail after the record in view, until the record view has opened it. */
+    follow,
+    /** Lets the record to open go, once the record view has opened it. */
+    followed: () => setFollow(null),
   };
 }
 

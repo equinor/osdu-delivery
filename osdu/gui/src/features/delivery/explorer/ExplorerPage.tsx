@@ -121,8 +121,11 @@ export default function ExplorerPage() {
   const reachable = canOperate && connection.data?.available === true;
 
   // A dimension built from what the explorer shows: the records are browsed and drilled into as ever, and each value picked
-  // from where it is (osdu/docs/reference/concepts/explorer.md, Building a dimension).
-  const build = useDimensionBuild({ partition: active, reachable, scopeKind: buildKind(scope), recordId, recordVersion });
+  // from where it is (osdu/docs/reference/concepts/explorer-dimension-builder.md). The builder opens the record a key
+  // names itself, after the record of the kind holding the key, which it opens first when another is in view.
+  const build = useDimensionBuild({
+    partition: active, reachable, scopeKind: buildKind(scope), recordId, recordVersion, openRecord: (id) => navigate({ id, v: null }),
+  });
   const openKind = () => {
     const read = recordId === null ? undefined : queryClient.getQueryData<DeliveryOsduRead>(["explorer", "read", active, recordId, recordVersion]);
     return read?.found === true && typeof read.record?.kind === "string" ? read.record.kind : null;
@@ -363,6 +366,8 @@ export default function ExplorerPage() {
                   {build.draft !== null && <BuildFieldActions field={field} build={build} />}
                 </span>
               )}
+              follow={build.follow !== null && build.follow.root === recordId ? build.follow : null}
+              onFollowed={build.followed}
             />
           </WindowFrame>
         )}

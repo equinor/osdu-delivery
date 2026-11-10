@@ -502,7 +502,7 @@ export function elementQueries(request: ExplorerElementRequest) {
   return post<ExplorerElementAnswer>("/api/v1/delivery/explorer/element-queries", request);
 }
 
-// ---- The dimension builder (osdu/docs/reference/concepts/explorer.md, Building a dimension) ----
+// ---- The dimension builder (osdu/docs/reference/concepts/explorer-dimension-builder.md) ----
 
 /** An attribute of a drafted dimension: read through the record a key names (`steps`), or collected from its own records (`collect`). */
 export interface DimensionDraftAttribute {

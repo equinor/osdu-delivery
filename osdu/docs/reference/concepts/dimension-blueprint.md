@@ -39,7 +39,7 @@ records it reads, before any build and after one. The dimension's **Definition**
 [template folders](templates.md#template-folders) on its path held at the repository's last sync, and the ledger; nothing
 is sent to OSDU and no record is read. A dimension the explorer drafts, which no flow holds yet, is described by the
 templates every synced repository holds. The explorer's
-[dimension builder](explorer.md#building-a-dimension) describes the item it writes with the same blueprint.
+[dimension builder](explorer-dimension-builder.md) describes the item it writes with the same blueprint.
 
 | Field | Holds |
 | --- | --- |

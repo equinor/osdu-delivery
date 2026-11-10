@@ -6,7 +6,7 @@ import { IconAction } from "@/components/IconAction";
 import { explorerApi, type ExplorerHit, type ExplorerPage, type ExplorerRead, type ExplorerValidation } from "../../../api/explorer";
 import { idParts, recordNameOf } from "../osduRecordModel";
 import type { InspectorField } from "../OsduRecordInspector";
-import { OsduRecordPanel } from "../OsduRecordView";
+import { OsduRecordPanel, type RecordFollow } from "../OsduRecordView";
 import { ExplorerProblem, ExplorerErrorText } from "./ExplorerProblem";
 import { ExplorerValidationView, ValidationFieldMark } from "./ExplorerValidation";
 import { ScopeCrumbs } from "./ExplorerResults";
@@ -129,7 +129,7 @@ function NearIds({ partition, id, onOpen }: { partition: string | null; id: stri
  * Every record opened is remembered in this browser, so the reader finds it again. A page that shows it in a panel of its
  * own, which its own control closes, gives no way back.
  */
-export function ExplorerRecord({ partition, id, version, onBack, onScope, onOpenId, onBrowseQuery, onSwitchPartition, fieldActions }: {
+export function ExplorerRecord({ partition, id, version, onBack, onScope, onOpenId, onBrowseQuery, onSwitchPartition, fieldActions, follow = null, onFollowed }: {
   partition: string | null;
   id: string;
   /** The version the record is opened at; null for its latest. */
@@ -145,6 +145,9 @@ export function ExplorerRecord({ partition, id, version, onBack, onScope, onOpen
   onSwitchPartition: (partition: string) => void;
   /** What shows beside each value of the records on the trail: a dimension's picks, while one is built. */
   fieldActions?: (field: InspectorField) => ReactNode;
+  /** A record to open on the trail after this one, from the value of it naming the record: the dimension builder's ask. */
+  follow?: RecordFollow | null;
+  onFollowed?: () => void;
 }) {
   const answered = useQuery({
     queryKey: ["explorer", "read", partition, id, version],
@@ -239,6 +242,8 @@ export function ExplorerRecord({ partition, id, version, onBack, onScope, onOpen
               </span>
             ),
           }}
+          follow={follow}
+          onFollowed={onFollowed}
           fill
         />
       </div>

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { filterProblem, keeps, lastProperty, suggestFilter, type AmbiguousPick, type FilterCompare, type SegmentFilter } from "./dimensionDraft";
+import { filterProblem, keeps, suggestFilter, type AmbiguousPick, type FilterCompare, type SegmentFilter } from "./dimensionDraft";
+import { lastProperty } from "./dimensionStory";
 
 const COMPARES: { value: FilterCompare; label: string }[] = [
   { value: "=", label: "is" },

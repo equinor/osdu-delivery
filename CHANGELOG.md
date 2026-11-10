@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The Pipelines page filters by schedule.** A Schedule filter beside the repo narrows the tree to the flows that joined
+  a schedule, the members one fire of it runs, and `GET /api/v1/pipelines` takes `scheduleId` for the same list
+  ([Reading a schedule's plan](sqlflow/docs/reference/flow/schedule.md#reading-a-schedules-plan)).
 - **A column or a table picked on a mapping's overview brings its YAML into view, as a property does.** The lines of each
   property, alternative and rule on the rows that read it light up, with those of the `dataset` or `parameters` block
   naming it, the column is marked where the lines name it, and the first is scrolled to; **Show in the YAML** on its menu
@@ -586,6 +589,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A schedule's name opens its run board, and its flow count opens its flows.** On the Schedules page a click on a
+  schedule's name opens the board **Run now** opens, where Start fires it, in place of the Runs page on its runs (its last
+  fire is still a click on Last run, and its history the Runs page's Schedule filter). The flow count opens the Pipelines
+  page on the schedule's flows, a schedule of one flow included, which went to that flow's page
+  ([Reading a schedule's plan](sqlflow/docs/reference/flow/schedule.md#reading-a-schedules-plan)).
+- **The explorer's dimension builder tells the dimension as a story of steps, and opens the record a key names itself.**
+  From the records read, one row per key, shown as a value, with columns, cleaned, it makes a table whose example row
+  ends it; only the step asking for a pick says what to do, each step's settings open in place, a problem is said at its
+  step, and the YAML is a view of its own. The menu beside a value offers **One row for each value**, **Collect into a
+  column**, **Show each row as this** and **Add as a column**, and **Open the *type* record** opens the example key's
+  record on the trail, from a record of the kind found holding it when none is open
+  ([building a dimension in the explorer](osdu/docs/reference/concepts/explorer-dimension-builder.md)).
 - **A cache flow's table type captures up to 1,000,000 rows, where it stopped at 100,000, and `types[].maxRows` sets
   another number, up to 5,000,000.** A table holding more than its type takes still refuses the capture, now naming the
   number and the key to raise; a plan warns first, and a pipeline's `cache.before` step reads the table with the same
@@ -933,6 +948,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- The Runs page's Schedule filter offers every schedule. It read one page of them, so past the 200th a schedule could not
+  be picked and the runs of its flows were grouped under Unscheduled
+  ([Reading a schedule's plan](sqlflow/docs/reference/flow/schedule.md#reading-a-schedules-plan)).
 - A look at a flow's table on a mapping's overview reads the rows under the table's `filter`, as a delivery does. The
   record table's and a child dataset's filters were left out, so the grid listed and counted rows a delivery never reads
   ([looking at a table's rows](osdu/docs/reference/concepts/mapping-overview.md#looking-at-a-tables-rows)).

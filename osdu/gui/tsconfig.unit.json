@@ -52,6 +52,7 @@
     "src/features/delivery/overview/yamlExplain.ts",
     "src/features/delivery/overview/partLines.ts",
     "src/features/delivery/dimensions/yamlTokens.ts",
+    "src/features/delivery/explorer/dimension/dimensionStory.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

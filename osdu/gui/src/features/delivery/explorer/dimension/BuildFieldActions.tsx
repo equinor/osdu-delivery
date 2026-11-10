@@ -1,20 +1,22 @@
-import { KeyRound, ListPlus, Tags, TableProperties, Type, type LucideIcon } from "lucide-react";
+import { KeyRound, TableProperties, type LucideIcon } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { RichTooltip } from "@/components/RichTooltip";
 import { cn } from "@/lib/utils";
+import { ROLE_GLYPHS } from "../../dimensions/blueprintModel";
 import type { InspectorField } from "../../OsduRecordInspector";
-import { kindMatches, marksOf, planOf, typeName, type BuildAction, type BuildPick, type ValueMark } from "./dimensionDraft";
+import { kindMatches, marksOf, planOf, type BuildAction, type BuildPick, type ValueMark } from "./dimensionDraft";
+import { typeName } from "./dimensionStory";
 import { locationOf, namesOf } from "../../recordPath";
 import type { DimensionBuild } from "./useDimensionBuild";
 
-/** What each pick reads as, in the menu. */
+/** What each pick reads as, in the menu: the words and the glyphs of the builder's story and its example row. */
 const ACTIONS: Record<BuildAction, { label: string; help: string; icon: LucideIcon }> = {
-  key: { label: "Make it the key", help: "Each distinct value is a key of the dimension, a row of its table.", icon: KeyRound },
-  collect: { label: "Collect it", help: "An attribute holding every value the records of each key hold here, with how many hold each.", icon: ListPlus },
-  value: { label: "Read it as the value", help: "Each key's value: what the record the key names holds here.", icon: Type },
-  attribute: { label: "Read it as an attribute", help: "A column beside the value, read from the record the key names or one it names.", icon: Tags },
+  key: { label: "One row for each value", help: "Each distinct value here is a row of the dimension: its key.", icon: ROLE_GLYPHS.key.icon },
+  collect: { label: "Collect into a column", help: "A column holding every value a row's records hold here, with how many hold each.", icon: ROLE_GLYPHS.collect.icon },
+  value: { label: "Show each row as this", help: "What a row shows: the value the record its key names holds here.", icon: ROLE_GLYPHS.label.icon },
+  attribute: { label: "Add as a column", help: "A column beside what a row shows, read from the record its key names or one that record names.", icon: ROLE_GLYPHS.attribute.icon },
 };
 
 /** How a use the draft makes of a value reads. */
@@ -23,7 +25,7 @@ function markText(mark: ValueMark): string {
     case "key":
       return "key";
     case "value":
-      return "value";
+      return "shown";
     case "collect":
       return `${mark.name}, collected`;
     case "step":
@@ -35,7 +37,7 @@ function markText(mark: ValueMark): string {
 
 /**
  * Beside each value of a record on the explorer's trail while a dimension is built
- * (osdu/docs/reference/concepts/explorer.md, Building a dimension): what the draft reads there, a key's mark where the
+ * (osdu/docs/reference/concepts/explorer-dimension-builder.md): what the draft reads there, a key's mark where the
  * kind's template says the value names another record (what a dimension's key most often is), and the picks a value at
  * that depth can be made: the key or the collected attribute in the dimension's own record, the value or an attribute
  * in a record its key leads to. A pick that cannot be made says why, and where a record is reached through another link
@@ -126,8 +128,8 @@ export function BuildFieldActions({ field, build }: { field: InspectorField; bui
               >
                 <KeyRound className="mt-0.5 size-3.5 shrink-0" />
                 <span className="flex min-w-0 flex-col">
-                  <span>Make <span className="font-mono">{rekey}</span> the key</span>
-                  <span className="text-[11.5px] leading-4 text-muted-foreground">Then this record is the one the key names, and its values can be read.</span>
+                  <span>One row for each <span className="font-mono">{rekey}</span></span>
+                  <span className="text-[11.5px] leading-4 text-muted-foreground">Then a row's key names this record, and its values can be shown and added.</span>
                 </span>
               </DropdownMenuItem>
             </>

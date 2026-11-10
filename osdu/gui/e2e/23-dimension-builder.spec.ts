@@ -2,12 +2,14 @@ import type { Locator, Page } from "@playwright/test";
 import { E2E } from "../playwright.config";
 import { expect, test } from "./helpers";
 
-// Building a dimension in the explorer: a build mode of the explorer itself, with the builder docked beside the records.
-// The records are browsed and drilled into as ever, and each value is picked where it is: the key in a record of the
-// dimension's kind (the likeliest one the kind's template suggests is picked as the build starts), the value and the
-// attributes in the records reached from it, link after link. A step through one item of a list asks which items are
-// meant and suggests the filter keeping it. The YAML is checked as a flow's own dimension is, and an example row made by
-// the build's own labelling, cleaning and counting.
+// Building a dimension in the explorer: a build mode of the explorer itself, with the builder docked beside the records
+// and telling the dimension as a story, a step per choice: from these records, one row per this key, shown as this, with
+// these columns, cleaned so, it makes this table, whose example row ends it. The records are browsed and drilled into as
+// ever, and each value is picked where it is: the key in a record of the dimension's kind (the likeliest one the kind's
+// template suggests is picked as the build starts), the value and the attributes in the records reached from it, link
+// after link, or opened by the builder itself from the example key. A step through one item of a list asks which items
+// are meant and suggests the filter keeping it. The YAML is checked as a flow's own dimension is, and an example row made
+// by the build's own labelling, cleaning and counting.
 //
 // Nothing here reaches an OSDU: the flows reach the e2e stand-in, which holds, for as long as the spec runs, five well
 // logs, the two wellbores four of them name (the fifth names one OSDU holds nothing under), the political entities those
@@ -30,6 +32,8 @@ const NAME = "E2eBuilderWellbore";
 /** The issues the builder lists against the YAML, by how much they matter. */
 const ERRORS = '[data-testid="builder-issue"][data-severity="error"]';
 const WARNINGS = '[data-testid="builder-issue"][data-severity="warning"]';
+/** How long a test building a whole dimension may take: each pick is written and checked by the control plane in turn. */
+const BUILD_TIMEOUT = 240_000;
 
 /** A record as the stand-in holds it, readable by the e2e flows' ACL and legal tag. */
 function record(id: string, kind: string, data: Record<string, unknown>) {
@@ -86,6 +90,18 @@ async function follow(page: Page, id: string) {
   await page.locator(`[data-testid="osdu-record-link"][data-value^="${id}"]:visible`).first().getByTestId("osdu-link-read").click();
 }
 
+/** The YAML the builder writes, in its own view; the story is shown again with `story`. */
+async function yaml(page: Page): Promise<Locator> {
+  await page.getByTestId("builder-view-yaml").click();
+  return page.getByTestId("builder-expression");
+}
+
+/** The builder's story, shown again after its YAML. */
+async function story(page: Page) {
+  await page.getByTestId("builder-view-story").click();
+  await expect(page.getByTestId("builder-story")).toBeVisible();
+}
+
 /** The explorer on the well logs, the build started there: its kind is theirs, and its key the template's likeliest. */
 async function buildOnWellLogs(page: Page) {
   await page.goto("/delivery/explorer");
@@ -103,16 +119,8 @@ async function buildOnWellLogs(page: Page) {
   // The workbench's side bar folds while the builder is docked, so the records and the builder share the width.
   await expect(page.getByTestId("nav-delivery-explorer")).toBeHidden();
   await expect(page.getByTestId("builder-kind")).toContainText("WellLog");
-  await expect(page.locator('[data-testid="builder-suggestion"][data-path="data.WellboreID"]')).toHaveAttribute("aria-pressed", "true", { timeout: 60_000 });
-}
-
-/** The first log opened, its wellbore drilled into, and the wellbore's name read as the value. */
-async function readTheWellboresName(page: Page) {
-  await page.getByTestId("explorer-grid-row").filter({ hasText: "e2e builder log 1" }).click();
-  await expect(field(page, "data.WellboreID")).toBeVisible({ timeout: 60_000 });
-  await follow(page, WELLBORE_1);
-  await expect(field(page, "data.FacilityName")).toBeVisible({ timeout: 60_000 });
-  await pick(page, "data.FacilityName", "value");
+  await expect(page.getByTestId("builder-key-path")).toHaveText("data.WellboreID", { timeout: 60_000 });
+  await expect(page.getByTestId("builder-rows")).toHaveText("Wellbore");
 }
 
 test.describe.serial("dimension builder", () => {
@@ -139,9 +147,14 @@ test.describe.serial("dimension builder", () => {
   });
 
   test("builds a dimension while browsing: the key from the template, the value and a country drilled into, a value collected", async ({ adminPage }) => {
-    // The build starts on the well logs, its key the wellbore each names, which the template says names a wellbore.
+    // A whole build, record after record, each pick written and checked by the control plane: more than a page's minute.
+    test.setTimeout(BUILD_TIMEOUT);
+    // The build starts on the well logs, its key the wellbore each names, which the template says names a wellbore. The
+    // story asks what a row is shown as next, since the key names records.
     await buildOnWellLogs(adminPage);
     await expect(adminPage.getByTestId("builder-name")).toHaveValue("Wellbore");
+    await expect(adminPage.getByTestId("builder-step-shown")).toHaveAttribute("data-state", "next");
+    await expect(adminPage.getByTestId("builder-next")).toContainText("Show each row as this");
     await adminPage.getByTestId("builder-name").fill(NAME);
 
     // A log opened: its wellbore's id is marked as one a key can be, and as the key; the example is the log's own key.
@@ -150,15 +163,17 @@ test.describe.serial("dimension builder", () => {
     await expect(key.getByTestId("builder-keyable")).toBeVisible({ timeout: 60_000 });
     await expect(key.locator('[data-testid="builder-mark"][data-role="key"]')).toBeVisible();
     await expect(field(adminPage, "data.ServiceCompanyID").getByTestId("builder-keyable")).toBeVisible();
-    await expect(adminPage.getByTestId("builder-example")).toContainText("this record's", { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-example")).toContainText("the open record's key", { timeout: 60_000 });
 
-    // The wellbore drilled into from the log's link, and its name read as each key's value.
+    // The wellbore drilled into from the log's link, and its name read as each row's value: the story's step says so.
     await follow(adminPage, WELLBORE_1);
     await expect(field(adminPage, "data.FacilityName")).toBeVisible({ timeout: 60_000 });
     await pick(adminPage, "data.FacilityName", "value");
     await expect(field(adminPage, "data.FacilityName").locator('[data-testid="builder-mark"][data-role="value"]')).toBeVisible();
     await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("E2E Builder 1", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-example-label")).toHaveText("E2E Builder 1");
+    await expect(adminPage.getByTestId("builder-shown")).toHaveText("FacilityName");
+    await expect(adminPage.getByTestId("builder-step-shown")).toHaveAttribute("data-state", "done");
+    await expect(adminPage.getByTestId("builder-next")).toHaveCount(0);
 
     // Into the wellbore's GeoContexts, and from its first item to the country it names; its name read as an attribute.
     // The step passes through one item of two that name records, so the builder asks which, and suggests the country's.
@@ -186,11 +201,13 @@ test.describe.serial("dimension builder", () => {
     const source = adminPage.getByTestId("builder-column-attribute").nth(1);
     await expect(source.getByTestId("builder-column-attribute-name")).toHaveValue("Source");
     await expect(source.getByTestId("builder-column-attribute-example")).toHaveText("CPI (2), COMP (1)", { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-with")).toHaveText("Country, Source");
 
     // The YAML a dimension flow lists, checked as the flow's own would be: it loads, and the one thing it cannot check (no
     // synced repository holds a template of the political entities) is said, with where to download one.
-    const expression = adminPage.getByTestId("builder-expression");
     await expect(adminPage.getByTestId("builder-status")).toHaveAttribute("data-valid", "true", { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-table-name")).toHaveText(`osdu.dim_${NAME}`);
+    const expression = await yaml(adminPage);
     for (const line of [
       `- name: ${NAME}`,
       `kind: '*:*:work-product-component--WellLog:*'`,
@@ -205,9 +222,9 @@ test.describe.serial("dimension builder", () => {
 
     await expect(adminPage.locator(WARNINGS).filter({ hasText: "GeoPoliticalEntity" }).first().getByTestId("builder-issue-templates")).toBeVisible();
     await expect(adminPage.locator(ERRORS)).toHaveCount(0);
-    await expect(adminPage.getByTestId("builder-table-name")).toHaveText(`osdu.dim_${NAME}`);
 
     // How a row is built, drawn as a flow's own dimension is and filled with the example key's row.
+    await story(adminPage);
     await adminPage.getByTestId("builder-show-row").click();
     const row = adminPage.getByTestId("builder-row-dialog");
     await expect(row.getByTestId("builder-row-preview")).toBeVisible({ timeout: 30_000 });
@@ -218,33 +235,51 @@ test.describe.serial("dimension builder", () => {
     // The build lives in the explorer's address: a reload brings it back beside the records.
     await adminPage.reload();
     await expect(adminPage.getByTestId("builder-name")).toHaveValue(NAME, { timeout: 30_000 });
-    await expect(expression).toContainText("Source: { collect: data.Source }", { timeout: 60_000 });
+    await expect(await yaml(adminPage)).toContainText("Source: { collect: data.Source }", { timeout: 60_000 });
   });
 
-  test("steps through the example keys, the record in view's first, and values one naming no record as the dimension says", async ({ adminPage }) => {
+  test("opens the record a key names, steps through the example keys, and values one naming no record as the dimension says", async ({ adminPage }) => {
+    test.setTimeout(BUILD_TIMEOUT);
+    // With no record open, the builder finds a log holding the example key (the commonest), opens it, and the wellbore it
+    // names after it, ready for its name to be picked.
     await buildOnWellLogs(adminPage);
-    await readTheWellboresName(adminPage);
-    await expect(adminPage.getByTestId("builder-example-label")).toHaveText("E2E Builder 1", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1/3", { timeout: 60_000 });
+    await adminPage.getByTestId("builder-open-key-record").click();
+    await expect(field(adminPage, "data.FacilityName")).toBeVisible({ timeout: 60_000 });
+    await pick(adminPage, "data.FacilityName", "value");
+    await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("E2E Builder 1", { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1 of 3", { timeout: 60_000 });
+
+    // Back on the log, the record it names opens from the log itself: its name is marked as what a row shows.
+    while (await adminPage.locator('[data-testid="osdu-linked-close"]:visible').count() > 0) {
+      await adminPage.locator('[data-testid="osdu-linked-close"]:visible').first().click();
+    }
+
+    await expect(field(adminPage, "data.WellboreID")).toBeVisible({ timeout: 60_000 });
+    await adminPage.getByTestId("builder-step-shown-toggle").click();
+    await adminPage.getByTestId("builder-open-key-record").click();
+    await expect(field(adminPage, "data.FacilityName").locator('[data-testid="builder-mark"][data-role="value"]')).toBeVisible({ timeout: 60_000 });
 
     // The next commonest keys, one log each: the second wellbore, then the one OSDU holds nothing under, valued by the
     // code its id ends with; given a value for what is not read, it takes that.
     await adminPage.getByTestId("builder-example-next").click();
-    await expect(adminPage.getByTestId("builder-example-label")).toHaveText("E2E Builder 2", { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("E2E Builder 2", { timeout: 60_000 });
     await adminPage.getByTestId("builder-example-next").click();
-    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("3/3");
+    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("3 of 3");
     await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("e2e-builder-gone", { timeout: 60_000 });
     await adminPage.getByTestId("builder-unlabelled").fill("Unknown wellbore");
     await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("Unknown wellbore", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-expression")).toContainText("unlabelled: Unknown wellbore", { timeout: 60_000 });
+    await expect(await yaml(adminPage)).toContainText("unlabelled: Unknown wellbore", { timeout: 60_000 });
+    await story(adminPage);
 
     // Back round to the first key, cleaned: each value lower-cased, as a build would hold it.
     await adminPage.getByTestId("builder-example-next").click();
-    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1/3");
+    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1 of 3");
+    await adminPage.getByTestId("builder-step-cleaned-toggle").click();
     await adminPage.getByTestId("builder-clean-lower").click();
     await expect(adminPage.getByTestId("builder-clean-lower")).toHaveAttribute("aria-pressed", "true");
+    await expect(adminPage.getByTestId("builder-cleaned")).toHaveText("lower case");
     await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("e2e builder 1", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-expression")).toContainText("- lower", { timeout: 60_000 });
+    await expect(await yaml(adminPage)).toContainText("- lower", { timeout: 60_000 });
   });
 
   test("offers the link a record is reached through as the key, where it is not the key", async ({ adminPage }) => {
@@ -252,27 +287,32 @@ test.describe.serial("dimension builder", () => {
     await adminPage.getByTestId("explorer-grid-row").filter({ hasText: "e2e builder log 1" }).click();
     await expect(field(adminPage, "data.ServiceCompanyID")).toBeVisible({ timeout: 60_000 });
 
-    // The service company is reached through another link than the key's: its name cannot be the value, and its link is
-    // offered as the key instead.
+    // The service company is reached through another link than the key's: its name cannot be what a row shows, and its
+    // link is offered as the key instead.
     await follow(adminPage, COMPANY);
     await expect(field(adminPage, "data.OrganisationName")).toBeVisible({ timeout: 60_000 });
     await field(adminPage, "data.OrganisationName").getByTestId("builder-field-menu").click();
     await expect(adminPage.getByTestId("builder-pick-value")).toHaveAttribute("data-disabled", "");
     await expect(adminPage.getByTestId("builder-pick-value")).toContainText("reached through data.ServiceCompanyID");
     await adminPage.getByTestId("builder-pick-rekey").click();
-    await expect(adminPage.locator('[data-testid="builder-suggestion"][data-path="data.ServiceCompanyID"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(adminPage.getByTestId("builder-key-path")).toHaveText("data.ServiceCompanyID");
+    await expect(adminPage.getByTestId("builder-rows")).toHaveText("Organisation", { timeout: 60_000 });
 
     await pick(adminPage, "data.OrganisationName", "value");
-    await expect(adminPage.getByTestId("builder-expression")).toContainText("path: data.ServiceCompanyID", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-expression")).toContainText("label: data.OrganisationName");
+    const expression = await yaml(adminPage);
+    await expect(expression).toContainText("path: data.ServiceCompanyID", { timeout: 60_000 });
+    await expect(expression).toContainText("label: data.OrganisationName");
   });
 
   test("points a mistake at its column, narrows the keys by a query, starts from the welcome, and asks before closing", async ({ adminPage }) => {
+    test.setTimeout(BUILD_TIMEOUT);
     // Started where no type is picked, the build waits for one, and takes the kind of the type picked then.
     await adminPage.goto("/delivery/explorer");
     await expect(adminPage.getByTestId("explorer-live")).toContainText(PARTITION, { timeout: 30_000 });
     await adminPage.getByTestId("explorer-build-dimension").click();
     await expect(adminPage.getByTestId("builder-next")).toContainText("Pick a type");
+    await expect(adminPage.getByTestId("builder-step-from")).toHaveAttribute("data-state", "next");
+    await expect(adminPage.getByTestId("builder-step-rows")).toHaveAttribute("data-state", "waiting");
     await adminPage.getByTestId("explorer-browse-types").click();
     await adminPage.getByTestId("explorer-types").getByRole("button", { name: "Unfold work-product-component" }).click({ timeout: 60_000 });
     const logs = adminPage.getByTestId("explorer-types").getByTestId("explorer-type").filter({ hasText: "WellLog" });
@@ -281,20 +321,24 @@ test.describe.serial("dimension builder", () => {
     const status = adminPage.getByTestId("builder-status");
     await expect(status).toHaveAttribute("data-valid", "true", { timeout: 60_000 });
 
-    // A column name the table already holds is refused at the column, and the YAML is not ready until it is put right.
+    // A column name the table already holds is refused at the column, and the YAML is not ready until it is put right;
+    // the foot names it, and the story's last step is marked.
     await adminPage.getByTestId("builder-column-key-name").fill("id");
     await expect(status).toHaveAttribute("data-valid", "false", { timeout: 60_000 });
+    await expect(status).toContainText("1 thing to put right");
     await expect(adminPage.getByTestId("builder-column-key-problem")).toBeVisible();
     await expect(adminPage.locator(ERRORS).first()).toHaveAttribute("data-target", "columns.key");
     await adminPage.getByTestId("builder-column-key-name").fill("WellboreKey");
     await expect(status).toHaveAttribute("data-valid", "true", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-expression")).toContainText("key: WellboreKey");
+    await expect(await yaml(adminPage)).toContainText("key: WellboreKey");
+    await story(adminPage);
 
     // A query narrows the records the keys are read from: only the log whose source is COMP, so one key holds.
-    await adminPage.getByTestId("builder-more").click();
+    await adminPage.getByTestId("builder-step-from-toggle").click();
     await adminPage.getByTestId("builder-query").fill('data.Source:"COMP"');
-    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1/1", { timeout: 60_000 });
-    await expect(adminPage.getByTestId("builder-expression")).toContainText(`query: 'data.Source:"COMP"'`, { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1 of 1", { timeout: 60_000 });
+    await expect(adminPage.getByTestId("builder-step-from")).toContainText("narrowed by a query");
+    await expect(await yaml(adminPage)).toContainText(`query: 'data.Source:"COMP"'`, { timeout: 60_000 });
 
     // Closing a build with a key asks first, since nothing keeps the draft; the explorer is left as it was.
     await adminPage.getByTestId("builder-close").click();
