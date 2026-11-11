@@ -5,8 +5,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  axisValues, checksOf, defaultAxes, fromBoard, groupOf, inScope, readingLine, readingOf, setsOf, square, standingOf, tally, verdictOf,
-  type Board, type BoardLatest, type BoardTest,
+  axisValues, byMiss, checksOf, defaultAxes, fromBoard, groupOf, inScope, readingLine, readingOf, setsOf, square, standingOf, tally, verdictOf,
+  type Board, type BoardLatest, type BoardTest, type ResultFacts,
 } from "../src/features/delivery/assertions/dashboard/dashboardModel.ts";
 
 let nextResult = 100;
@@ -171,6 +171,21 @@ describe("the map", () => {
     assert.equal(verdict.text, "Needs attention: 2 assertions fail, all of them in North · Counts.");
   });
 
+  it("says where only when most of what fails is there", () => {
+    const spread = fromBoard(boardOf({
+      set: "logs",
+      tests: [
+        testOf("a", { latest: latest("failed"), dimensions: dims("logs", "Counts", "North") }),
+        testOf("b", { latest: latest("failed"), dimensions: dims("logs", "Values", "South") }),
+        testOf("c", { latest: latest("failed"), dimensions: dims("logs", "Counts", "West") }),
+        testOf("d", { latest: latest("passed"), dimensions: dims("logs", "Values", "West") }),
+      ],
+    }), "2026-11-04T08:00:00Z").tests;
+    assert.equal(verdictOf(spread, axisValues(spread, "Region", 12), "Region", axisValues(spread, "Check", 7), "Check").text, "Needs attention: 3 assertions fail.");
+    const one = spread.filter((t) => t.name === "a" || t.name === "d");
+    assert.equal(verdictOf(one, axisValues(one, "Region", 12), "Region", axisValues(one, "Check", 7), "Check").text, "Needs attention: 1 assertion fails, in North · Counts.");
+  });
+
   it("says a set holds when everything checked passes", () => {
     const passing = tests.filter((t) => t.standing === "passed");
     assert.equal(verdictOf(passing, [], null, [], null).text, "Holds: all 2 assertions checked pass.");
@@ -195,7 +210,7 @@ describe("the list", () => {
     ]);
   });
 
-  it("reads an assertion's first check that does not hold as its claim, what was found against it, and the measure of the two", () => {
+  it("reads the check with the most that does not hold as an assertion's claim, what does not hold of it first, and the measure of it", () => {
     const [test] = fromBoard(boardOf({ set: null, tests: [testOf("a", { latest: latest("failed") })] }), "2026-11-04T08:00:00Z").tests;
     const result = {
       test: "a",
@@ -207,10 +222,21 @@ describe("the list", () => {
     };
     const reading = readingOf(test!, result);
     assert.equal(reading.claim, "count at least 5");
-    assert.equal(reading.says, "3 found, at least 5 expected");
+    assert.equal(reading.says, "2 short of 5 (40%)");
     assert.equal(reading.measure?.form, "target");
     assert.equal(reading.more, 1);
-    assert.equal(readingLine(reading), "count at least 5: 3 found, at least 5 expected; 1 more check does not hold");
+    assert.equal(reading.miss, 0.4);
+    assert.equal(readingLine(reading), "count at least 5: 2 short of 5 (40%); 1 more check does not hold");
+
+    // Of two checks that fail, the row names the one with more that does not hold, whichever the document states first.
+    const two = readingOf(test!, {
+      test: "a",
+      assertions: [
+        { label: "names", type: "field", severity: "error", outcome: "failed", expected: "is not empty", actual: "4 of 5 record(s) meet it", checked: 5, failing: 1 },
+        { label: "curves", type: "columns", severity: "error", outcome: "failed", expected: "exactly MD, GR", actual: "0 of 5 record(s)' bulk data meet it", checked: 5, failing: 5 },
+      ],
+    });
+    assert.deepEqual([two.claim, two.says, two.more, two.miss], ["curves", "None of the 5 records pass", 1, 1]);
     assert.deepEqual(checksOf(result).map((c) => [c.label, c.result, c.found, c.examples.length]),
       [["names", "passed", "-", 0], ["a warning first", "warned", "4 of 5 records meet it", 0], ["count at least 5", "failed", "3", 1]]);
   });
@@ -232,6 +258,38 @@ describe("the list", () => {
       "OSDU did not answer.",
     ]);
     assert.equal(readingOf(tests[3]!, { test: "unread", error: "The search answered 503." }).says, "The search answered 503.");
+    // A service's answer is said in plain words on the row, and whole on a hover.
+    const answered = readingOf(tests[3]!, { test: "unread", error: "HTTP 503 ServiceUnavailable from POST https://osdu.example.com/api/search/v2/query (correlation-id IG-1)" });
+    assert.equal(answered.says, "The search service answered 503 Service Unavailable.");
+    assert.equal(readingLine(answered), "HTTP 503 ServiceUnavailable from POST https://osdu.example.com/api/search/v2/query (correlation-id IG-1)");
+  });
+
+  it("lists what needs attention by where it stands, then the most that does not hold first, and ranks nothing it has not read", () => {
+    const failing = (name: string, title: string) => testOf(name, { title, latest: latest("failed") });
+    const tests = fromBoard(boardOf({
+      set: null,
+      tests: [
+        failing("near", "A near miss"),
+        failing("unread", "B not read yet"),
+        failing("none", "C nothing found"),
+        failing("some", "D some of it"),
+        testOf("warns", { title: "E warns", latest: latest("warned") }),
+        testOf("down", { title: "F could not be checked", latest: latest("errored", { error: "OSDU did not answer." }) }),
+      ],
+    }), "2026-11-04T08:00:00Z").tests;
+    const count = (found: number, severity = "error"): ResultFacts => ({
+      test: "x",
+      assertions: [{ label: "count", type: "count", severity, outcome: "failed", expected: "equals 100", actual: `${found} record(s)`, value: found }],
+    });
+    const results: Record<string, ResultFacts> = {
+      [String(tests[0]!.resultId)]: count(99),
+      [String(tests[2]!.resultId)]: count(0),
+      [String(tests[3]!.resultId)]: count(60),
+      [String(tests[4]!.resultId)]: count(1, "warning"),
+    };
+    assert.deepEqual(byMiss(tests, results).map((test) => test.name), ["none", "some", "near", "unread", "down", "warns"]);
+    // With no result at hand they keep the order they stand in, by title.
+    assert.deepEqual(byMiss(tests, {}).map((test) => test.name), ["near", "unread", "none", "some", "down", "warns"]);
   });
 
   it("counts a passing assertion's check of info severity that does not hold as noted, beside the ones that hold", () => {

@@ -93,8 +93,9 @@ hash key when the source has none.</p>
 
 ## From row to record
 
-The flows OSDU Delivery adds and which to choose, then the mapping that renders an OSDU record from a row, the cache
-that answers its references, and when a change sends it again.
+The flows OSDU Delivery adds and which to choose, then the mapping that renders an OSDU record from a row, a kind of
+your own when OSDU's do not fit, the cache and the joined lookup tables that answer its references, and when a change
+sends it again.
 
 <table>
 <tr>
@@ -117,9 +118,19 @@ of them change OSDU, how to preview without changing it, and how lineage orders 
 </td>
 </tr>
 <tr>
+<td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=dJUD0bhTu6c"><img src="https://img.youtube.com/vi/dJUD0bhTu6c/maxresdefault.jpg" width="100%" alt="OSDU custom schemas: what happens when your data doesn't fit?"></a></td>
+<td width="62%" valign="top">
+<h3>10 <a href="https://www.youtube.com/watch?v=dJUD0bhTu6c">Custom schemas: when your data doesn't fit</a></h3>
+<p>7:53 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
+<p>When a record needs fields OSDU's kinds do not have: a kind of your own, registered in the partition before anything
+is delivered to it, kept in Git and in OSDU, with <code>sqlflow template register</code> finding what is missing or has
+drifted. A custom companion sits beside the standard WellLog and is linked to it, with no curve data copied.</p>
+</td>
+</tr>
+<tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=ar-cwYginZo"><img src="https://img.youtube.com/vi/ar-cwYginZo/maxresdefault.jpg" width="100%" alt="OSDU Delivery caching explained: ask once, render many"></a></td>
 <td width="62%" valign="top">
-<h3>10 <a href="https://www.youtube.com/watch?v=ar-cwYginZo">Ask once, render many</a></h3>
+<h3>11 <a href="https://www.youtube.com/watch?v=ar-cwYginZo">Ask once, render many</a></h3>
 <p>7:08 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>One well log can need more than 40 references, each answered by a versioned cache per partition rather than by
 OSDU: how the cache is filled and kept current with <code>cache.before</code> and <code>cache.after</code>, and how a
@@ -127,9 +138,19 @@ held record is released once its missing reference appears.</p>
 </td>
 </tr>
 <tr>
+<td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=_yBx6uFpErA"><img src="https://img.youtube.com/vi/_yBx6uFpErA/maxresdefault.jpg" width="100%" alt="OSDU Delivery: why we stopped caching huge lookup tables"></a></td>
+<td width="62%" valign="top">
+<h3>12 <a href="https://www.youtube.com/watch?v=_yBx6uFpErA">Why we stopped caching huge lookup tables</a></h3>
+<p>6:17 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
+<p>A lookup table too large for every worker's cache stays in SQL Server: joined into the delivery's read, its columns
+reach the mapping, and a changed lookup row sends the records it touched again. When the cache still fits, and when a
+join is the better choice.</p>
+</td>
+</tr>
+<tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=t5d1s_9fBGw"><img src="https://img.youtube.com/vi/t5d1s_9fBGw/maxresdefault.jpg" width="100%" alt="Change detection: will it send?"></a></td>
 <td width="62%" valign="top">
-<h3>11 <a href="https://www.youtube.com/watch?v=t5d1s_9fBGw">Will it send?</a></h3>
+<h3>13 <a href="https://www.youtube.com/watch?v=t5d1s_9fBGw">Will it send?</a></h3>
 <p>9:52 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>Change detection in eighteen cases: which source, mapping and cache changes deliver again, which never do, and what
 stops a duplicate when runs overlap.</p>
@@ -139,22 +160,43 @@ stops a duplicate when runs overlap.</p>
 
 ## Into OSDU
 
-The routes into OSDU, the ledger that accounts for every record sent, and the workers that share the load.
+The routes into OSDU and the files that travel them, however late or large, the ledger that accounts for every record
+sent, and the workers that share the load.
 
 <table>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=rDVmUhtHHVU"><img src="https://img.youtube.com/vi/rDVmUhtHHVU/maxresdefault.jpg" width="100%" alt="OSDU data ingestion: 5 doors, 10 routes and silent failures"></a></td>
 <td width="62%" valign="top">
-<h3>12 <a href="https://www.youtube.com/watch?v=rDVmUhtHHVU">5 doors, 10 routes and silent failures</a></h3>
+<h3>14 <a href="https://www.youtube.com/watch?v=rDVmUhtHHVU">5 doors, 10 routes and silent failures</a></h3>
 <p>16:15 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>One well log is a record, a file and curve data, and OSDU takes each through its own service: the routes in, and how
 a delivery fails while every call answers success.</p>
 </td>
 </tr>
 <tr>
+<td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=UweClTQ8tJA"><img src="https://img.youtube.com/vi/UweClTQ8tJA/maxresdefault.jpg" width="100%" alt="How to add a LAS file to an existing OSDU well log"></a></td>
+<td width="62%" valign="top">
+<h3>15 <a href="https://www.youtube.com/watch?v=UweClTQ8tJA">Add a LAS file to an existing well log</a></h3>
+<p>4:28 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
+<p>A well log can go in before its LAS file: enrichment adds the file to the delivered log through the Dataset service,
+under an id that stays the same, without sending the curves again. A corrected file updates the dataset under that
+id, so the log needs no new version.</p>
+</td>
+</tr>
+<tr>
+<td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=2sxnXJE8HCA"><img src="https://img.youtube.com/vi/2sxnXJE8HCA/maxresdefault.jpg" width="100%" alt="How do you get a 16 GB file into OSDU?"></a></td>
+<td width="62%" valign="top">
+<h3>16 <a href="https://www.youtube.com/watch?v=2sxnXJE8HCA">How do you get a 16 GB file into OSDU?</a></h3>
+<p>6:53 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
+<p>OSDU hands out a signed link and leaves the bytes to the sender: a large file goes to Azure in blocks and one commit,
+streamed rather than held, copied between storage accounts when the store may read it, and retried block by block.
+Only Azure takes blocks; other stores take a file in one request.</p>
+</td>
+</tr>
+<tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=qBJIg7qGZA8"><img src="https://img.youtube.com/vi/qBJIg7qGZA8/maxresdefault.jpg" width="100%" alt="8 ledger states explained"></a></td>
 <td width="62%" valign="top">
-<h3>13 <a href="https://www.youtube.com/watch?v=qBJIg7qGZA8">Eight ledger states</a></h3>
+<h3>17 <a href="https://www.youtube.com/watch?v=qBJIg7qGZA8">Eight ledger states</a></h3>
 <p>13:13 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>One well log through its first month: the states a record moves through, held records and their release, reversing
 a run, and removing records without a mass deletion.</p>
@@ -163,7 +205,7 @@ a run, and removing records without a mass deletion.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=06ZcsDXt2O0"><img src="https://img.youtube.com/vi/06ZcsDXt2O0/maxresdefault.jpg" width="100%" alt="Scaling: why 5,000 records ran on one worker"></a></td>
 <td width="62%" valign="top">
-<h3>14 <a href="https://www.youtube.com/watch?v=06ZcsDXt2O0">Why 5,000 records ran on one worker</a></h3>
+<h3>18 <a href="https://www.youtube.com/watch?v=06ZcsDXt2O0">Why 5,000 records ran on one worker</a></h3>
 <p>9:52 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>Autoscalers count work, not records: a delivery split into parts, the rate limit shared among them, recovery when a
 worker fails, and a scale-down that lets running work finish.</p>
@@ -179,7 +221,7 @@ What OSDU really holds beside the ledger, and proof that what it holds is right.
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=8a8YU9PFSwE"><img src="https://img.youtube.com/vi/8a8YU9PFSwE/maxresdefault.jpg" width="100%" alt="What's really in OSDU? Finding the hidden differences"></a></td>
 <td width="62%" valign="top">
-<h3>15 <a href="https://www.youtube.com/watch?v=8a8YU9PFSwE">What's really in OSDU?</a></h3>
+<h3>19 <a href="https://www.youtube.com/watch?v=8a8YU9PFSwE">What's really in OSDU?</a></h3>
 <p>3:36 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>The ledger knows what was sent, not what OSDU holds: an inventory of the partition finds orphans, missing records
 and duplicates, keeps the most complete copy, and removes the rest with a soft delete that can be restored.</p>
@@ -188,7 +230,7 @@ and duplicates, keeps the most complete copy, and removes the rest with a soft d
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=fKtOs3eIEyU"><img src="https://img.youtube.com/vi/fKtOs3eIEyU/maxresdefault.jpg" width="100%" alt="OSDU assertions: can you prove your data is right?"></a></td>
 <td width="62%" valign="top">
-<h3>16 <a href="https://www.youtube.com/watch?v=fKtOs3eIEyU">Can you prove your data is right?</a></h3>
+<h3>20 <a href="https://www.youtube.com/watch?v=fKtOs3eIEyU">Can you prove your data is right?</a></h3>
 <p>7:41 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>A successful delivery is not proof: assertion flows check what users see in OSDU against values known from the
 source, account for every source row, held and failed ones included, and turn the result into dashboards, reports and
@@ -206,7 +248,7 @@ it, run a merged change straight from GitHub, and find where a change to the fra
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=91fI1XZquGA"><img src="https://img.youtube.com/vi/91fI1XZquGA/maxresdefault.jpg" width="100%" alt="How to structure an OSDU Delivery estate repository: Git, flows and schedules"></a></td>
 <td width="62%" valign="top">
-<h3>17 <a href="https://www.youtube.com/watch?v=91fI1XZquGA">Structure an estate repository</a></h3>
+<h3>21 <a href="https://www.youtube.com/watch?v=91fI1XZquGA">Structure an estate repository</a></h3>
 <p>8:52 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>One Git repository holds an estate's instructions, never its data: a folder per record kind with its flows, mappings
 and templates, names that read in the order a record travels, two homes for the caches, one file of schedules, schema
@@ -217,7 +259,7 @@ and duplicate record ids.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=9jOs8EDwBk4"><img src="https://img.youtube.com/vi/9jOs8EDwBk4/maxresdefault.jpg" width="100%" alt="The code doesn't change: AI-driven data pipelines"></a></td>
 <td width="62%" valign="top">
-<h3>18 <a href="https://www.youtube.com/watch?v=9jOs8EDwBk4">The code doesn't change</a></h3>
+<h3>22 <a href="https://www.youtube.com/watch?v=9jOs8EDwBk4">The code doesn't change</a></h3>
 <p>8:09 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>Only the configuration does: an assistant reads the schema, drafts the mapping and opens a pull request, and a
 person reviews it.</p>
@@ -226,7 +268,7 @@ person reviews it.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=-JwDR8WOWoQ"><img src="https://img.youtube.com/vi/-JwDR8WOWoQ/maxresdefault.jpg" width="100%" alt="EU AI Act explained: is OSDU Delivery high-risk AI?"></a></td>
 <td width="62%" valign="top">
-<h3>19 <a href="https://www.youtube.com/watch?v=-JwDR8WOWoQ">Is OSDU Delivery high-risk AI?</a></h3>
+<h3>23 <a href="https://www.youtube.com/watch?v=-JwDR8WOWoQ">Is OSDU Delivery high-risk AI?</a></h3>
 <p>7:38 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>The EU AI Act read against OSDU Delivery: rules, not a model, move the data; the assistant reads but never changes
 records, mappings or runs; and disclosure and human oversight keep people in charge. An interpretation, not legal
@@ -236,7 +278,7 @@ advice.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=40okusVYQZA"><img src="https://img.youtube.com/vi/40okusVYQZA/maxresdefault.jpg" width="100%" alt="OSDU external triggers: merge, run, get the result"></a></td>
 <td width="62%" valign="top">
-<h3>20 <a href="https://www.youtube.com/watch?v=40okusVYQZA">Merge, run, get the result</a></h3>
+<h3>24 <a href="https://www.youtube.com/watch?v=40okusVYQZA">Merge, run, get the result</a></h3>
 <p>3:38 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>A merge in GitHub starts a delivery without waiting for its schedule: GitHub Actions signs in with OIDC and no stored
 secret, the control plane runs the commit just merged, a repeated request runs once, and the result comes back to the
@@ -246,7 +288,7 @@ workflow.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough: architecture and where to make changes"></a></td>
 <td width="62%" valign="top">
-<h3>21 <a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></h3>
+<h3>25 <a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></h3>
 <p>12:58 · <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p><code>osdu/</code> and <code>sqlflow/</code> and the line between them, one CSV row through the real classes, the
 ledger's rules, and where a change belongs.</p>

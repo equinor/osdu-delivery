@@ -4,7 +4,7 @@
 // carries are computed by the same code, and the unit tests run it as it is.
 
 import type { StagedFacts } from "../assertionReading.ts";
-import { briefOf, type BriefFacts, type CheckBrief, type Measure } from "./checkBrief.ts";
+import { briefOf, plainProblem, type BriefFacts, type CheckBrief, type Measure } from "./checkBrief.ts";
 
 // What the model reads of the control plane's answers, by shape: the board (DeliveryAssertionBoard) and a test's result
 // whole (DeliveryTestResult) fit these as they are.
@@ -408,8 +408,9 @@ export function verdictOf(tests: readonly DashTest[], rows: AxisValue[], rowDim:
 
   const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
   if (n.failed > 0) {
-    const share = hot !== null && hot.n.failed > 0 && (rows.length > 1 || cols.length > 1)
-      ? `, ${hot.n.failed === n.failed ? "all" : hot.n.failed} of them in ${hot.where}`
+    // Where is worth saying when most of what fails is there: a square holding one of seven says nothing of the seven.
+    const share = hot !== null && hot.n.failed * 2 >= n.failed && (rows.length > 1 || cols.length > 1)
+      ? `, ${hot.n.failed === n.failed ? (n.failed === 1 ? "" : "all of them ") : `${hot.n.failed} of them `}in ${hot.where}`
       : "";
     return { standing: "failed", text: `Needs attention: ${count(n.failed, "assertion fails", "assertions fail")}${share}.` };
   }
@@ -483,45 +484,68 @@ export function needsLook(check: DashCheck): boolean {
   return check.result === "failed" || check.result === "errored" || check.result === "warned";
 }
 
-/** What an assertion's row says it found: the claim that does not hold, what was found against it, and what measures the two. */
+/** What an assertion's row says it found: what does not hold, the check it is of, and what measures the two. */
 export interface RowReading {
   /** The check that does not hold, as its document names it (`812 wellbores`); null when the line speaks for the assertion. */
   claim: string | null;
-  /** What was found (`640 found, 812 expected`), why it has no result, or that its checks hold. */
+  /** What does not hold (`172 short of 812 (21.2%)`), why it has no result, or that its checks hold. */
   says: string;
+  /** What says was put in plain words from, when it was: a service's answer as written, for whoever looks into it. */
+  written: string | null;
   /** The measure of the check named; null when it makes none, or no check is named. */
   measure: Measure | null;
   /** How the measure reads, for the tone it is drawn in. */
   result: DashCheck["result"] | null;
   /** How many more of its checks do not hold. */
   more: number;
+  /**
+   * How much of the assertion does not hold, from 0 to 1: the miss of the check the row names, and all of it where it
+   * could not be checked. Below zero while its result is not at hand, so nothing is ranked on a guess.
+   */
+  miss: number;
 }
 
 /**
- * What an assertion found, for its row: its first check that does not hold (one that fails or could not be checked before
- * one that warns), with what it found against what it expected; why it could not be checked or has no result; or that its
+ * What an assertion found, for its row: the check with the most that does not hold (one that fails or could not be made
+ * before one that warns), with what does not hold of it; why it could not be checked or has no result; or that its
  * checks hold, with how many are only noted. Without its result at hand, how many checks do not hold.
  */
 export function readingOf(test: DashTest, result: ResultFacts | undefined): RowReading {
-  const line = (says: string): RowReading => ({ claim: null, says, measure: null, result: null, more: 0 });
+  const line = (says: string, miss = 0, written: string | null = null): RowReading => ({ claim: null, says, written, measure: null, result: null, more: 0, miss });
+  const problem = (text: string): RowReading => {
+    const { said, written } = plainProblem(text);
+    return line(said, 1, written);
+  };
   if (test.standing === "disabled" || test.standing === "notRun") {
     return line(test.reason ?? STANDING_WORDS[test.standing]);
   }
 
   if (result !== undefined) {
     const checks = checksOf(result);
-    const bad = checks.find((c) => c.result === "failed" || c.result === "errored") ?? checks.find((c) => c.result === "warned");
+    const looked = checks.filter(needsLook);
+    // The check the row names: the one with the most that does not hold, the first of them as the document states them;
+    // one that fails or could not be made before one that only warns.
+    const most = (among: DashCheck[]) => among.reduce<DashCheck | undefined>((worst, c) => (worst === undefined || c.miss > worst.miss ? c : worst), undefined);
+    const bad = most(looked.filter((c) => c.result !== "warned")) ?? most(looked);
     if (bad !== undefined) {
-      return { claim: bad.label, says: bad.gist, measure: bad.measure, result: bad.result, more: checks.filter(needsLook).length - 1 };
+      return {
+        claim: bad.label,
+        says: bad.headline,
+        written: bad.whyWritten,
+        measure: bad.measure,
+        result: bad.result,
+        more: looked.length - 1,
+        miss: bad.miss,
+      };
     }
 
     if (result.error) {
-      return line(result.error);
+      return problem(result.error);
     }
   }
 
   if (test.standing === "errored") {
-    return line(test.reason ?? "It could not be checked.");
+    return test.reason === null ? line("It could not be checked.", 1) : problem(test.reason);
   }
 
   if (test.standing === "passed") {
@@ -531,15 +555,28 @@ export function readingOf(test: DashTest, result: ResultFacts | undefined): RowR
       : test.checks === 1 ? "Its check holds" : `All ${test.checks} checks hold`);
   }
 
+  // What it found is in its result: until that is at hand, how many of its checks do not hold, and no rank.
   return line(test.failedChecks > 0
     ? `${test.failedChecks} of ${test.checks} ${test.checks === 1 ? "check does" : "checks do"} not hold`
-    : test.reason ?? STANDING_WORDS[test.standing]);
+    : test.reason ?? STANDING_WORDS[test.standing], result === undefined && test.resultId !== null ? -1 : 0);
+}
+
+/**
+ * Assertions in the order they need a look: by where they stand, then the ones with the most that does not hold first
+ * (none of what was expected found before a near miss), then by title. One whose result is not at hand keeps its place
+ * by title after the ones that are read, so nothing is ranked on a guess.
+ */
+export function byMiss(tests: readonly DashTest[], results: Readonly<Record<string, ResultFacts>>): DashTest[] {
+  const miss = new Map(tests.map((test) => [test.key, readingOf(test, test.resultId === null ? undefined : results[String(test.resultId)]).miss]));
+  return [...tests].sort((a, b) => STANDINGS.indexOf(a.standing) - STANDINGS.indexOf(b.standing)
+    || miss.get(b.key)! - miss.get(a.key)!
+    || a.title.localeCompare(b.title, undefined, { numeric: true }));
 }
 
 /** A row's reading in one line, for a hover and for a reader of the page aloud. */
 export function readingLine(reading: RowReading): string {
   const more = reading.more === 0 ? "" : `; ${reading.more} more ${reading.more === 1 ? "check does" : "checks do"} not hold`;
-  return `${reading.claim === null ? "" : `${reading.claim}: `}${reading.says}${more}`;
+  return `${reading.claim === null ? "" : `${reading.claim}: `}${reading.written ?? reading.says}${more}`;
 }
 
 /** The sets the dashboard's data holds, each with how its assertions stand (disabled ones counted only when included). */

@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  asksOf, briefOf, evidenceOf, figure, plain, shareLine, type BriefFacts, type ShareMeasure, type TargetMeasure,
+  asksOf, briefOf, evidenceGroups, evidenceOf, figure, missOf, offLine, plain, plainProblem, shareLine, tilesOf,
+  type BriefFacts, type ShareMeasure, type TargetMeasure,
 } from "../src/features/delivery/assertions/dashboard/checkBrief.ts";
 
 function check(over: Partial<BriefFacts> & Pick<BriefFacts, "type" | "expected">): BriefFacts {
@@ -80,6 +81,33 @@ describe("a number against what it had to be", () => {
     assert.equal(brief.why, null);
   });
 
+  it("leads with by how much it missed, and stands its figures in a row with the miss in its tone", () => {
+    const brief = briefOf(wellbores);
+    const measure = target(wellbores);
+    assert.equal(brief.headline, "172 short of 812 (21.2%)");
+    assert.deepEqual([measure.counts, measure.off, measure.offShare], [true, -172, "21.2%"]);
+    assert.equal(Math.round(missOf(measure) * 1000), 212);
+    assert.equal(brief.miss, missOf(measure));
+    assert.deepEqual(tilesOf(measure, brief.result), [
+      { label: "Expected", lead: null, value: "812", aside: null, tone: null },
+      { label: "Found", lead: null, value: "640", aside: null, tone: null },
+      { label: "Short by", lead: null, value: "172", aside: "21.2%", tone: "failed" },
+    ]);
+
+    // Over what it had to be, a count is over by it and any other measure above it; within it, there is no third figure.
+    const over = target(check({ type: "count", expected: "atMost 10", actual: "12 record(s)", value: 12 }));
+    assert.deepEqual(tilesOf(over, "warned").map((tile) => [tile.label, tile.lead, tile.value, tile.aside, tile.tone]),
+      [["Expected", "at most", "10", null, null], ["Found", null, "12", null, null], ["Over by", null, "2", "20%", "warned"]]);
+    const average = target(check({ type: "aggregate", expected: "equals 0.1524 (tolerance 1E-05)", actual: "avg(data.SamplingInterval) is 0.3048", value: 0.3048 }));
+    assert.deepEqual(tilesOf(average, "failed").map((tile) => [tile.label, tile.value, tile.aside]),
+      [["Expected", "0.1524", "give or take 0.00001"], ["Found", "0.3048", null], ["Above by", "0.1524", "100%"]]);
+    const within = briefOf(check({ type: "count", outcome: "passed", expected: "atLeast 5", actual: "7 record(s)", value: 7 }));
+    assert.deepEqual(tilesOf(within.measure!, within.result).map((tile) => tile.label), ["Expected", "Found"]);
+    assert.deepEqual([within.headline, within.miss], ["7 found", 0]);
+    // A check only noted is held against nothing: its miss stands as a plain figure.
+    assert.equal(tilesOf(over, "noted")[2]!.tone, null);
+  });
+
   it("keeps of a miss what the gap does not say: that it is within the warning band", () => {
     const brief = briefOf({
       ...wellbores,
@@ -100,6 +128,8 @@ describe("a number against what it had to be", () => {
     const measure = target(none);
     assert.deepEqual([measure.low, measure.high, measure.lead, measure.expected, measure.of, measure.gap], [5, null, "at least", "5", "records", "Nothing found"]);
     assert.equal(brief.gist, "0 found, at least 5 expected");
+    assert.equal(brief.headline, "Nothing found, at least 5 expected");
+    assert.deepEqual([measure.off, measure.offShare, brief.miss], [-5, "100%", 1]);
     assert.equal(brief.why, null);
     // A count's failing is a flag, not a number of records.
     assert.equal(brief.failing, null);
@@ -156,6 +186,15 @@ describe("a share that holds", () => {
     assert.equal(brief.gist, "3 of 5 rows hold, 1 differs, 1 is not found");
     assert.deepEqual(brief.foundNotes, ["4 records read in 5 searches", "differing most in DT at 2000.0976 (1)"]);
     assert.equal(brief.failing, 2);
+    // What does not hold first, for the row; each part a figure of its own, under what it is.
+    assert.equal(brief.headline, "2 of 5 rows do not hold: 1 differs, 1 is not found");
+    assert.equal(brief.miss, 0.4);
+    assert.deepEqual(tilesOf(measure, brief.result).map((tile) => [tile.label, tile.value, tile.aside, tile.tone]), [
+      ["Rows checked", "5", null, null],
+      ["Hold", "3", null, null],
+      ["Differ", "1", "20%", "failed"],
+      ["Not found", "1", "20%", "missing"],
+    ]);
 
     const one = briefOf({
       ...rows,
@@ -166,6 +205,8 @@ describe("a share that holds", () => {
     });
     assert.equal(one.gist, "The row is not found");
     assert.equal(one.why, null);
+    // Of one thing a line says it, so it has no figures.
+    assert.deepEqual([one.headline, one.miss, tilesOf(one.measure!, one.result)], ["The row is not found", 1, []]);
 
     const banded = briefOf({
       ...rows,
@@ -193,6 +234,7 @@ describe("a share that holds", () => {
     const brief = briefOf(bulk);
     assert.equal(brief.found, "0 of 3 records' bulk data meet it");
     assert.equal(brief.gist, "0 of 3 records pass");
+    assert.equal(brief.headline, "None of the 3 records pass");
     assert.equal(brief.why, null);
     assert.deepEqual(brief.foundNotes, []);
     assert.deepEqual(share(bulk).parts.map((part) => [part.tone, part.count]), [["passed", 0], ["failed", 3]]);
@@ -214,6 +256,9 @@ describe("a share that holds", () => {
       value: 1,
     }));
     assert.equal(delivered.gist, "74 of 75 records pass");
+    assert.equal(delivered.headline, "1 of 75 records does not pass");
+    assert.deepEqual(tilesOf(delivered.measure!, delivered.result).map((tile) => [tile.label, tile.value, tile.aside, tile.tone]),
+      [["Records checked", "75", null, null], ["Pass", "74", null, null], ["Do not pass", "1", "1.3%", "failed"]]);
     assert.deepEqual(delivered.foundNotes, ["75 delivered, 74 found", "1 delivered record not found, 0 found and not delivered"]);
     assert.equal(delivered.why, "1 record differs between the ledger of welllog-03-header-delivery and what OSDU holds.");
 
@@ -223,13 +268,27 @@ describe("a share that holds", () => {
     assert.equal(briefOf(check({ type: "legal", outcome: "passed", expected: "every legal tag the records carry is valid", actual: "1 legal tag(s) on 5 record(s); 0 invalid", checked: 1, failing: 0 })).gist, "The legal tag passes");
   });
 
+  it("says what does not hold of a share by its parts, the one that is all of it plainly", () => {
+    const rows = (actual: string, checked: number, failing: number) => share(check({
+      type: "knownValues", expected: `each of ${checked} row(s) finds one record and holds its 2 proof value(s)`, actual, checked, failing,
+    }));
+    assert.equal(offLine(rows("9 row(s) with 2 proof value(s): 6 hold their values, 3 differ, 0 not found, 0 found more than once", 9, 3)), "3 of 9 rows differ");
+    assert.equal(offLine(rows("4 row(s) with 2 proof value(s): 0 hold their values, 0 differ, 4 not found, 0 found more than once", 4, 4)), "All 4 rows are not found");
+    assert.equal(offLine(rows("4 row(s) with 2 proof value(s): 0 hold their values, 1 differ, 3 not found, 0 found more than once", 4, 4)), "None of the 4 rows hold: 1 differs, 3 are not found");
+    assert.equal(offLine(rows("4 row(s) with 2 proof value(s): 4 hold their values, 0 differ, 0 not found, 0 found more than once", 4, 0)), "4 of 4 rows hold");
+    assert.equal(offLine(share(check({ type: "field", expected: "is not empty", actual: "872 of 1000 record(s) meet it", checked: 1000, failing: 128 }))), "128 of 1,000 records do not pass");
+  });
+
   it("makes no share where nothing was judged, or where the two counts are of different things", () => {
     const empty = briefOf(check({ type: "conforms", expected: "every record meets the template of its kind", actual: "0 of 0 record(s) meet it", message: "No record was there to check: none matched, none met the where conditions, or none had a value.", checked: 0, failing: 0 }));
     assert.equal(empty.measure, null);
     assert.equal(empty.gist, "No record was there to check: none matched, none met the where conditions, or none had a value");
+    // With nothing there to check, all of it does not hold; where it does not hold and makes no measure, half is taken.
+    assert.equal(empty.miss, 1);
     const set = briefOf(check({ type: "recordSet", expected: "includes 1 row(s)", actual: "5 record(s) read against 1 row(s) expected", message: "1 row(s) differ from the rows expected (includes).", checked: 5, failing: 1 }));
     assert.equal(set.measure, null);
     assert.equal(set.gist, "1 row differs from the rows expected (includes)");
+    assert.equal(set.miss, 0.5);
     assert.equal(briefOf(check({ type: "unique", outcome: "passed", expected: "no two records share data.Code", actual: "5 record(s), 5 distinct; 0 value(s) shared by more than one record", checked: 5, failing: 0 })).gist,
       "found 5 records, 5 distinct; 0 values shared by more than one record");
   });
@@ -238,11 +297,27 @@ describe("a share that holds", () => {
 describe("a check that was not judged, and one the dashboard does not know", () => {
   it("says why a check could not be made, and that one is disabled", () => {
     const errored = briefOf(check({ type: "groupBy", outcome: "errored", expected: "includes STAT_COMP atLeast 5", actual: null, message: "HTTP 400 BadRequest from POST https://osdu.example.com/api/search/v2/query: Aggregations are not supported (Bad Request)" }));
-    assert.deepEqual([errored.result, errored.measure, errored.found], ["errored", null, "-"]);
-    assert.equal(errored.gist, "HTTP 400 BadRequest from POST https://osdu.example.com/api/search/v2/query: Aggregations are not supported (Bad Request)");
+    assert.deepEqual([errored.result, errored.measure, errored.found, errored.miss], ["errored", null, "-", 1]);
+    // A service's answer is said by the service and what it answered, and kept as written for whoever looks into it.
+    assert.equal(errored.gist, "The search service answered 400 Bad Request: Aggregations are not supported");
+    assert.equal(errored.why, "The search service answered 400 Bad Request: Aggregations are not supported.");
+    assert.equal(errored.whyWritten, "HTTP 400 BadRequest from POST https://osdu.example.com/api/search/v2/query: Aggregations are not supported (Bad Request).");
     const skipped = briefOf(check({ type: "aggregate", outcome: "skipped", expected: "equals 2765 (warning within 10%)", message: "The test is disabled: No flow delivers these logs yet." }));
-    assert.deepEqual([skipped.result, skipped.measure], ["disabled", null]);
+    assert.deepEqual([skipped.result, skipped.measure, skipped.whyWritten, skipped.miss], ["disabled", null, null, 0]);
     assert.equal(skipped.why, "The test is disabled: No flow delivers these logs yet.");
+  });
+
+  it("says a service's answer in plain words, and any other problem as it is", () => {
+    assert.deepEqual(
+      plainProblem("HTTP 503 ServiceUnavailable from POST https://osdu.example.com/api/search/v2/query_with_cursor (correlation-id IG-17-4LTGq4Y6): the search answered 503 three times."),
+      {
+        said: "The search service answered 503 Service Unavailable: the search answered 503 three times.",
+        written: "HTTP 503 ServiceUnavailable from POST https://osdu.example.com/api/search/v2/query_with_cursor (correlation-id IG-17-4LTGq4Y6): the search answered 503 three times.",
+      },
+    );
+    assert.equal(plainProblem("HTTP 404 NotFound from GET https://osdu.example.com/api/schema-service/v1/schema/x").said, "The schema service answered 404 Not Found.");
+    assert.equal(plainProblem("HTTP 500 InternalServerError from GET https://osdu.example.com/health").said, "OSDU answered 500 Internal Server Error.");
+    assert.deepEqual(plainProblem("It read 1 record(s)."), { said: "It read 1 record.", written: null });
   });
 
   it("asks nothing of a type it does not know, and shows its texts as they are", () => {
@@ -260,21 +335,47 @@ describe("the records that fail a check", () => {
       reason: "differs in 4 proof value(s): MD step is 0.1524 in every one of its 29052 steps, expected each step equals 0.3048 (tolerance 0.0001); GR at 2000.0976 is 53.1875 (row 12128), expected it equals 60 (tolerance 0.0001); GR at 1000 has no row: the index MD holds no 1000 (nearest: 999.8964 in row 5565 and 1000.0488 in row 5566); expected it equals 25 (tolerance 0.0001); DT first is 441.0456 (row 1898), expected it equals 44",
     });
     assert.equal(differs.reason, "differs in 4 proof values");
+    // A number is a figure with where it was read after it, beside what was expected and how far apart the two are.
     assert.deepEqual(differs.differences, [
-      { what: "MD step", found: "0.1524 in every one of its 29052 steps", expected: "equals 0.3048 (tolerance 0.0001)", note: null },
-      { what: "GR at 2000.0976", found: "53.1875 (row 12128)", expected: "equals 60 (tolerance 0.0001)", note: null },
-      { what: "GR at 1000 has no row", found: "the index MD holds no 1000 (nearest: 999.8964 in row 5565 and 1000.0488 in row 5566)", expected: "equals 25 (tolerance 0.0001)", note: null },
-      { what: "DT first", found: "441.0456 (row 1898)", expected: "equals 44", note: null },
+      { what: "MD step", found: "0.1524", foundExact: null, foundNote: "in every one of its 29052 steps", expected: "0.3048 ± 0.0001", off: "-0.1524", note: null },
+      { what: "GR at 2000.0976", found: "53.1875", foundExact: null, foundNote: "row 12128", expected: "60 ± 0.0001", off: "-6.8125", note: null },
+      { what: "GR at 1000 has no row", found: "the index MD holds no 1000 (nearest: 999.8964 in row 5565 and 1000.0488 in row 5566)", foundExact: null, foundNote: null, expected: "25 ± 0.0001", off: null, note: null },
+      { what: "DT first", found: "441.0456", foundExact: null, foundNote: "row 1898", expected: "44", off: "+397.0456", note: null },
     ]);
 
     const banded = evidenceOf({
       reason: "differs within the warning band in 2 proof value(s): GR max is 178.173095703125, expected it equals 180; 1.826904 below 180 (1.01%), within the warning band of 2%, so it warns; GR avg is 64.98302286855925, expected it equals 65.5; 0.516977 below 65.5 (0.79%), within the warning band of 2%, so it warns",
     });
     assert.equal(banded.reason, "differs within the warning band in 2 proof values");
-    assert.deepEqual(banded.differences.map((d) => [d.what, d.found, d.expected, d.note]), [
-      ["GR max", "178.173095703125", "equals 180", "1.826904 below 180 (1.01%), within the warning band of 2%, so it warns"],
-      ["GR avg", "64.98302286855925", "equals 65.5", "0.516977 below 65.5 (0.79%), within the warning band of 2%, so it warns"],
+    // A long number is shortened to a figure, the number as written kept; of by how much it missed, that it only warns.
+    assert.deepEqual(banded.differences.map((d) => [d.what, d.found, d.foundExact, d.expected, d.off, d.note]), [
+      ["GR max", "178.1731", "178.173095703125", "180", "-1.8269", "within the warning band of 2%"],
+      ["GR avg", "64.983", "64.98302286855925", "65.5", "-0.517", "within the warning band of 2%"],
     ]);
+
+    // What was expected is said as it is where it is no number, and nothing is set against it.
+    const worded = evidenceOf({ reason: "differs in 2 proof value(s): data.Name is \"STAT\", expected it equals \"STAT_COMP\"; data.LogRun is 3, expected it atLeast 5" });
+    assert.deepEqual(worded.differences.map((d) => [d.what, d.found, d.expected, d.off]), [
+      ["data.Name", "\"STAT\"", "equals \"STAT_COMP\"", null],
+      ["data.LogRun", "3", "at least 5", "-2"],
+    ]);
+  });
+
+  it("gathers the records that fail for one reason under it, and keeps one that lists its differences alone", () => {
+    const groups = evidenceGroups([
+      evidenceOf({ id: "dev:x:1", value: "GR, RD", reason: "its bulk data has no column MD" }),
+      evidenceOf({ id: "dev:x:2", reason: "differs in 1 proof value(s): GR max is 178, expected it equals 180" }),
+      evidenceOf({ id: "dev:x:3", value: "DRHO, GR", reason: "its bulk data has no column MD" }),
+      evidenceOf({ id: "dev:x:4", reason: "108 of 117 row(s) do not meet it. First: is -999" }),
+      evidenceOf({ id: "dev:x:5", reason: "differs in 1 proof value(s): GR max is 178, expected it equals 180" }),
+    ]);
+    assert.deepEqual(groups.map((group) => [group.reason, group.differences.length, group.items.map((item) => item.id)]), [
+      ["its bulk data has no column MD", 0, ["dev:x:1", "dev:x:3"]],
+      ["differs in 1 proof value", 1, ["dev:x:2"]],
+      ["108 of 117 rows do not meet it. First: is -999", 0, ["dev:x:4"]],
+      ["differs in 1 proof value", 1, ["dev:x:5"]],
+    ]);
+    assert.deepEqual(evidenceGroups([]), []);
   });
 
   it("shows any other reason as it is, in plain words", () => {

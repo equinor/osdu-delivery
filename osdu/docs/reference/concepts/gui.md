@@ -281,16 +281,18 @@ picked records, and the removal runs that wrote to its ledger.
 - **Assertions**: the dashboard of every assertion in the partition, each by where it stands now, its latest result of
   the assertion as its document states it. The GUI calls each entry of a flow's `tests:` an assertion, and each item of
   its `assert:` a check. From the top: the title with one pill per set beside it (one picked narrows the page, kept in
-  the address as `?set=`, with **Run the set**); the verdict in one sentence, saying where most of what fails is, with
-  the health figure beside it and under them the counts of **Failing**, **Could not be checked**, **Warnings**, **Not
-  yet checked** and **Passing**, each a filter whose hover says what it means; a
-  map of where the data stands, a row per value of one dimension and a column per value of another (the reader picks
-  them), each square how its assertions stand and the filter to them; and the assertions grouped by what they need, ten
-  at a time, a search narrowing them. A row says what the assertion found: its first check that does not hold, what was
-  found against it, and the measure of the two, drawn. One opens at a time on
-  [its brief](../flow/assertion-sets.md#an-open-assertion): each check that does not hold as a card with **Expected**
-  beside **Found** in plain words and the records that fail it, the checks that hold a line each, and beside them its
-  dimensions, how it was checked, its report, its flow and **Run again**. Disabled assertions are left out until **Include disabled**, then listed with the reason their document gives;
+  the address as `?set=`, with **Run the set**); the summary, a ring of how the assertions stand with the health figure
+  in its middle, the verdict in one sentence, the **Largest gaps** named in words, each opening its assertion, and the
+  counts of **Failing**, **Could not be checked**, **Warnings**, **Not yet checked** and **Passing**, each a filter
+  whose hover says what it means; a map of where the data stands, a row per value of one dimension and a column per
+  value of another (the reader picks them), each square a mark per assertion and the filter to them; and the assertions
+  grouped by what they need, ten at a time, a search narrowing them, what needs attention listed with the most that does
+  not hold first. A row says what does not hold of the assertion (`172 short of 812 (21.2%)`), the check that is of, and
+  the measure, drawn. One opens at a time on [its brief](../flow/assertion-sets.md#an-open-assertion): each check that
+  does not hold as a card with its figures in a row (**Expected**, **Found**, **Short by**), the bar that draws them and,
+  under **Where it does not hold**, the records that fail it gathered by why; the checks that hold a line each; and
+  beside them its dimensions, how it was checked, its report, its flow and **Run again**. Disabled assertions are left
+  out until **Include disabled**, then listed with the reason their document gives;
   one changed since its last result is not yet checked, and one whose proof values are past their day warns. **Present**
   shows it full screen, and **Download** saves it as one HTML page that works offline, and with a set picked the set's
   report as Markdown, JSON or JUnit XML. An assertion flow's **Assertions** tab is the same dashboard of its assertions,

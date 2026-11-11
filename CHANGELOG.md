@@ -618,14 +618,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named by, where the headers route took 1,000 ids a request and returns no data: a storage build sends about ten times
   the read requests it did. A removal still checks ids through the headers route
   ([Reading OSDU](osdu/docs/reference/flow/inventory.md#reading-osdu)).
-- **An open assertion on the Assertions page reads as a brief, and a row says what was found.** A check that does not
-  hold is a card with **Expected** beside **Found** in plain words (`5 records`, `at least 5`): a count against its
-  number as figures over a bar that shows the range that holds and by how much it missed (`172 short of 812 (21.2%)`), a
-  share as one bar (`3 of 5 rows hold, 1 differs, 1 is not found`), and the records that fail it with each value they
-  differ in on a line of its own. The checks that hold are a line each, and what the assertion is about and how it was
-  checked stand beside them, with a step to the next assertion. A row names its first check that does not hold, what was
-  found against it and the measure of the two, and the downloaded dashboard reads the same
-  ([an open assertion](osdu/docs/reference/flow/assertion-sets.md#an-open-assertion)).
+- **The Assertions page says what is wrong in words, worst first, and an open assertion reads as a brief.** The summary
+  is a ring of how the assertions stand, the verdict, and the **Largest gaps** named (`Nothing found, 62 expected`),
+  each opening its assertion; a square of the map draws a mark for each of its assertions; and what needs attention is
+  listed with the most that does not hold first, a row leading with it (`172 short of 812 (21.2%)`). In an open
+  assertion a check that does not hold is a card with its figures in a row (**Expected**, **Found**, **Short by**) over
+  one bar that draws them, what is missing hatched, in plain words (`5 records`, `at least 5`); the records that fail it
+  are gathered by why under **Where it does not hold**, and each value a row of proof values differs in is a line of
+  **Expected**, **Found** and **Off by**. An answer of an OSDU service is said by the service and what it answered, with
+  the text as written a click away. The checks that hold are a line each, what the assertion is about and how it was
+  checked stand beside them with a step to the next, and the downloaded dashboard reads the same
+  ([the dashboard](osdu/docs/reference/flow/assertion-sets.md#the-dashboard),
+  [an open assertion](osdu/docs/reference/flow/assertion-sets.md#an-open-assertion)).
 - **The Mappings and Templates grids fit the window and say what is wrong first.** The rows of several repositories are
   listed under a heading for each, with its count and when its sync last saw it, in place of a repository and a synced
   column on every row; a mapping that does not load, or a file that holds no template, says why in its row, and a line

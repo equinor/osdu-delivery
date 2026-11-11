@@ -1,17 +1,21 @@
-import { useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Info } from "lucide-react";
-import { figure, heldOf, holdsAs, plain, shareLine, type Evidence } from "./checkBrief";
-import { Gauge, Glyph, ShareLegend } from "./DashboardParts";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { evidenceGroups, figure, plain, plainProblem, shareLine, tilesOf, type Difference, type EvidenceGroup } from "./checkBrief";
+import { Gauge, Glyph, Tiles } from "./DashboardParts";
 import { checksOf, needsLook, type CheckOutcome, type DashCheck, type DashTest, type ResultFacts, type Standing } from "./dashboardModel";
 import { RESULT_STANDING, RESULT_WORDS, plural, when } from "./dashboardText";
 
 // An open assertion (osdu/docs/reference/flow/assertion-sets.md, An open assertion): what it checks in the words of its
-// document, then each check that does not hold as a card that sets what was expected beside what was found, with the
-// measure of the two drawn and the records that fail it under it, then the checks that hold, a line each. What it is
-// about, and how it was checked, stand beside them, so the reading column keeps a width a line can be read at.
+// document, then each check that does not hold as a card: its figures in a row (what was expected, what was found, by
+// how much it missed), one bar that draws them, and, a click away, the records that fail it, gathered by why. The
+// checks that hold follow, a line each. What it is about, and how it was checked, stand beside them, so the reading
+// column keeps a width a line can be read at.
 
-/** The failing records a check shows before it offers the rest. */
-const FIRST_PROOFS = 3;
+/** The reasons a check's failing records are gathered under that show before it offers the rest. */
+const FIRST_REASONS = 3;
+
+/** The records under one reason that show before it offers the rest. */
+const FIRST_RECORDS = 5;
 
 /** The checks that hold a list shows before it offers the rest. */
 const FIRST_HOLDS = 12;
@@ -28,86 +32,174 @@ export interface BriefStep {
   go: (by: 1 | -1) => void;
 }
 
-/** A line that stands out from the reading: why an assertion has no result, or what kept it from one. */
-function Callout({ standing, lead, children, testId }: { standing: Standing; lead?: string; children: ReactNode; testId?: string }) {
+/** A text as the engine wrote it, behind a line to open: for whoever looks into what the page says in other words. */
+function Written({ text }: { text: string }) {
   return (
-    <p className={`adb-reason adb-edge-${standing}`} data-testid={testId}>
-      <Glyph standing={standing} size={14} />
-      <span>{lead !== undefined && <b>{lead} </b>}{children}</span>
-    </p>
+    <details className="adb-written">
+      <summary>As it was written</summary>
+      <code>{text}</code>
+    </details>
   );
 }
 
-/** The records, or rows, that fail a check: the first few, each with why, and each value it differs in on a line of its own. */
-function Proofs({ check }: { check: DashCheck }) {
-  const [all, setAll] = useState(false);
-  const listed = check.examples.length;
-  if (listed === 0) {
-    return null;
-  }
-
-  const failing = check.failing !== null && check.failing > listed ? check.failing : null;
-  const shown = all ? check.examples : check.examples.slice(0, FIRST_PROOFS);
+/** A line that stands out from the reading: why an assertion has no result, or what kept it from one. */
+function Callout({ standing, lead, children, written, testId }: { standing: Standing; lead?: string; children: ReactNode; written?: string | null; testId?: string }) {
   return (
-    <div className="adb-proofs" data-testid="dashboard-examples">
-      <p className="adb-cap">
-        Where it does not hold
-        <span className="adb-cap-n">
-          {failing !== null ? `the first ${listed} of ${figure(failing)}` : check.examplesTrimmed ? `the first ${listed}, of more` : listed}
-        </span>
-      </p>
-      <ul>
-        {shown.map((proof, at) => <Proof key={`${proof.id ?? ""}-${at}`} proof={proof} />)}
-      </ul>
-      {listed > FIRST_PROOFS && (
-        <button type="button" className="adb-link" onClick={() => setAll((was) => !was)} data-testid="dashboard-examples-toggle">
-          {all ? `Show the first ${FIRST_PROOFS} only` : `Show all ${listed} listed`}
-        </button>
-      )}
+    <div className={`adb-reason adb-edge-${standing}`} data-testid={testId}>
+      <Glyph standing={standing} size={14} />
+      <div>
+        <p>{lead !== undefined && <b>{lead} </b>}{children}</p>
+        {written !== undefined && written !== null && <Written text={written} />}
+      </div>
     </div>
   );
 }
 
-function Proof({ proof }: { proof: Evidence }) {
+/** A reason as a line of its own: one that starts as the rest of a sentence about its record starts with a capital. */
+function asLine(reason: string): string {
+  return /^[a-z]+ /.test(reason) ? `${reason.charAt(0).toUpperCase()}${reason.slice(1)}` : reason;
+}
+
+/** The values a record differs in: one a line, what was expected, what was found and how far apart the two are. */
+function Differences({ differences }: { differences: Difference[] }) {
+  return (
+    <div className="adb-diffs" role="table" aria-label="The values it differs in">
+      <div className="adb-diffs-head" role="row">
+        <span role="columnheader">Value</span>
+        <span role="columnheader">Expected</span>
+        <span role="columnheader">Found</span>
+        <span role="columnheader">Off by</span>
+      </div>
+      {differences.map((difference, at) => (
+        <div key={`${difference.what}-${at}`} className="adb-diff" role="row">
+          <span role="cell" className="adb-diff-what">{difference.what}</span>
+          <span role="cell" className="adb-diff-num">{difference.expected ?? ""}</span>
+          {difference.off === null && difference.foundNote === null ? (
+            <span role="cell" className="adb-diff-said" title={difference.foundExact ?? undefined}>{difference.found ?? ""}</span>
+          ) : (
+            <>
+              <span role="cell" className="adb-diff-num adb-diff-found" title={difference.foundExact ?? undefined}>
+                {difference.found ?? ""}
+                {difference.foundNote !== null && <small>{difference.foundNote}</small>}
+              </span>
+              <span role="cell" className="adb-diff-num adb-diff-off">{difference.off ?? ""}</span>
+            </>
+          )}
+          {difference.note !== null && <span role="cell" className="adb-diff-note">{difference.note}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The records that fail a check for one reason: the reason, then each record by what names it and its id. */
+function Reason({ group, unit, every }: { group: EvidenceGroup; unit: [string, string]; every: boolean }) {
+  const named = group.items.filter((item) => item.value !== null || item.id !== null);
+  const shown = every ? named : named.slice(0, FIRST_RECORDS);
+  const only = group.items.length === 1 && group.items[0]!.value !== null ? group.items[0]! : null;
+  if (only !== null) {
+    // One record with a name of its own: the record, then what is wrong with it.
+    return (
+      <li className="adb-proof">
+        <p className="adb-proof-what">
+          <span className="adb-proof-value">{only.value}</span>
+          {only.id !== null && <code>{only.id}</code>}
+        </p>
+        <p className="adb-proof-why">{asLine(group.reason)}</p>
+        {group.differences.length > 0 && <Differences differences={group.differences} />}
+      </li>
+    );
+  }
+
   return (
     <li className="adb-proof">
-      {(proof.value !== null || proof.id !== null) && (
-        <p className="adb-proof-what">
-          {proof.value !== null && <span className="adb-proof-value">{proof.value}</span>}
-          {proof.id !== null && <code>{proof.id}</code>}
-        </p>
-      )}
-      <p className="adb-proof-why">{proof.reason}</p>
-      {proof.differences.length > 0 && (
-        <div className="adb-diffs" role="table" aria-label="The values it differs in">
-          <div className="adb-diffs-head" role="row">
-            <span role="columnheader">Value</span>
-            <span role="columnheader">Found</span>
-            <span role="columnheader">Expected</span>
-          </div>
-          {proof.differences.map((difference, at) => (
-            <div key={`${difference.what}-${at}`} className="adb-diff" role="row">
-              <span role="cell" className={difference.found === null ? "adb-diff-wide" : undefined}>{difference.what}</span>
-              {difference.found !== null && <span role="cell" className="adb-diff-found">{difference.found}</span>}
-              <span role="cell">{difference.expected ?? ""}</span>
-              {difference.note !== null && <span role="cell" className="adb-diff-note">{difference.note}</span>}
-            </div>
+      <p className="adb-proof-why">
+        {asLine(group.reason)}
+        {group.items.length > 1 && <span className="adb-proof-n">{plural(group.items.length, unit[0], unit[1])}</span>}
+      </p>
+      {shown.length > 0 && (
+        <ul className="adb-proof-items">
+          {shown.map((item, at) => (
+            <li key={`${item.id ?? item.value ?? ""}-${at}`}>
+              {item.value !== null && <span className="adb-proof-value">{item.value}</span>}
+              {item.id !== null && <code>{item.id}</code>}
+            </li>
           ))}
-        </div>
+          {named.length > shown.length && <li className="adb-proof-rest">and {plural(named.length - shown.length, "more", "more")}</li>}
+        </ul>
       )}
+      {group.differences.length > 0 && <Differences differences={group.differences} />}
     </li>
   );
 }
 
 /**
- * A check that does not hold, as a card: what it claims and the question that is, what was expected beside what was
- * found, each as a figure where it is a number, the measure of the two, why, and the records that fail it.
+ * The records, or rows, that fail a check, a click away: gathered by why, a reason many share said once with the
+ * records under it, and each value a record differs in on a line of its own.
  */
-function CheckCard({ check, actions }: { check: DashCheck; actions: ReactNode }) {
+function Proofs({ check, initiallyOpen }: { check: DashCheck; initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const [every, setEvery] = useState(false);
+  const listed = check.examples.length;
+  if (listed === 0) {
+    return null;
+  }
+
+  const unit: [string, string] = check.measure !== null && check.measure.form === "share" ? check.measure.unit : ["record", "records"];
+  const groups = evidenceGroups(check.examples);
+  const more = groups.length > FIRST_REASONS || groups.some((group) => group.items.length > FIRST_RECORDS);
+  const failing = check.failing !== null && check.failing > listed ? check.failing : null;
+  const count = failing !== null ? `the first ${listed} of ${figure(failing)} ${unit[1]}`
+    : check.examplesTrimmed ? `the first ${plural(listed, unit[0], unit[1])}, of more`
+      : plural(listed, unit[0], unit[1]);
+  return (
+    <div className="adb-proofs" data-testid="dashboard-examples">
+      <button type="button" className="adb-proofs-head" aria-expanded={open} onClick={() => setOpen((was) => !was)} data-testid="dashboard-examples-open">
+        {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+        Where it does not hold
+        <span className="adb-proof-n">{count}</span>
+      </button>
+      {open && (
+        <>
+          <ul className="adb-proof-list">
+            {(every ? groups : groups.slice(0, FIRST_REASONS)).map((group, at) => <Reason key={`${group.reason}-${at}`} group={group} unit={unit} every={every} />)}
+          </ul>
+          {more && (
+            <button type="button" className="adb-link" onClick={() => setEvery((was) => !was)} data-testid="dashboard-examples-toggle">
+              {every ? "Show fewer" : `Show all ${listed} listed`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What qualifies a check's expectation, as someone who did not write it takes it. */
+function qualifierWords(qualifier: string): string {
+  const band = /^warns within (.+)$/.exec(qualifier);
+  return band === null ? qualifier : `a miss within ${band[1]} only warns`;
+}
+
+/**
+ * A check that does not hold, as a card: what it claims and the question that is, its figures in a row with the one
+ * that is the news in its tone, the bar that draws them, what is left to say in a line, and the records that fail it.
+ */
+function CheckCard({ check, actions, openProofs }: { check: DashCheck; actions: ReactNode; openProofs: boolean }) {
   const standing = RESULT_STANDING[check.result];
-  const target = check.measure !== null && check.measure.form === "target" ? check.measure : null;
-  const share = check.measure !== null && check.measure.form === "share" ? check.measure : null;
+  const measure = check.measure;
+  const tiles = measure === null ? [] : tilesOf(measure, check.result);
   const about = check.description ?? check.asks;
+  // A number against its range says what it expected among its figures; any other check says it in words above them,
+  // unless its title already does (a check named by what it expects: `columns exactly MD, GR, RD`).
+  const worded = measure !== null && measure.form === "share" && !check.label.toLowerCase().includes(check.expected.toLowerCase());
+  // What was left out is said once, by the finding that counts it.
+  const counted = check.foundNotes.some((note) => note.includes("left out"));
+  const fine = [
+    measure !== null && measure.form === "target" && measure.of !== null && measure.of !== "records" ? `measured as ${measure.of}` : null,
+    ...check.qualifiers.filter((qualifier) => !(counted && qualifier.startsWith("leaving out "))).map(qualifierWords),
+    ...check.foundNotes,
+  ].filter((part): part is string => part !== null).join(" · ");
   return (
     <article className={`adb-check adb-edge-${standing}`} data-testid="dashboard-check">
       <header className="adb-check-head">
@@ -118,43 +210,33 @@ function CheckCard({ check, actions }: { check: DashCheck; actions: ReactNode })
         </div>
         <span className="adb-check-word">{RESULT_WORDS[check.result]}</span>
       </header>
-      <div className="adb-ledger">
-        <div className="adb-ledger-side">
-          <p className="adb-cap">Expected</p>
-          {target !== null ? (
-            <p className="adb-fig">
-              {target.lead !== null && <span className="adb-fig-lead">{target.lead}</span>}
-              {target.expected}
-              {target.trail !== null && <span className="adb-fig-trail">{target.trail}</span>}
-            </p>
-          ) : <p className="adb-said">{check.expected}</p>}
-          {check.qualifiers.length > 0 && <p className="adb-fine">{check.qualifiers.join(" · ")}</p>}
-        </div>
-        <div className="adb-ledger-side">
-          <p className="adb-cap">Found</p>
-          {target !== null && (
-            <p className="adb-fig">
-              {figure(target.found)}
-              {target.of !== null && <span className="adb-fig-trail">{target.of}</span>}
-            </p>
-          )}
-          {share !== null && share.whole > 1 && (
-            <p className="adb-fig">
-              {figure(heldOf(share))}
-              <span className="adb-fig-trail">of {figure(share.whole)} {share.unit[1]} {holdsAs(share)[1]}</span>
-            </p>
-          )}
-          {share !== null && share.whole === 1 && <p className="adb-said">{shareLine(share)}.</p>}
-          {check.measure === null && <p className="adb-said">{check.found === "-" ? "Nothing: it could not be found out." : check.found}</p>}
-          {check.measure !== null && <Gauge measure={check.measure} result={check.result} />}
-          {target !== null && target.gap !== null && <p className="adb-gap">{target.gap}</p>}
-          {share !== null && share.whole > 1 && <ShareLegend measure={share} />}
-          {check.foundNotes.length > 0 && <p className="adb-fine">{check.foundNotes.join(" · ")}</p>}
-        </div>
+      <div className="adb-check-body">
+        {worded && <p className="adb-expected"><span className="adb-cap">Expected</span>{check.expected}</p>}
+        {measure !== null && tiles.length > 0 && (
+          <div className="adb-measure" style={{ "--adb-tiles": tiles.length } as CSSProperties}>
+            <Tiles tiles={tiles} />
+            <Gauge measure={measure} result={check.result} />
+          </div>
+        )}
+        {measure !== null && measure.form === "share" && tiles.length === 0 && <p className="adb-said adb-said-news">{shareLine(measure)}.</p>}
+        {measure === null && (
+          <div className="adb-ledger">
+            <div>
+              <p className="adb-cap">Expected</p>
+              <p className="adb-said">{check.expected}</p>
+            </div>
+            <div>
+              <p className="adb-cap">Found</p>
+              <p className="adb-said">{check.found === "-" ? "Nothing: it could not be found out." : check.found}</p>
+            </div>
+          </div>
+        )}
+        {fine !== "" && <p className="adb-fine">{fine.charAt(0).toUpperCase()}{fine.slice(1)}</p>}
+        {check.why !== null && <p className="adb-check-why">{check.why}</p>}
+        {check.whyWritten !== null && <Written text={check.whyWritten} />}
+        <Proofs check={check} initiallyOpen={openProofs} />
+        {actions}
       </div>
-      {check.why !== null && <p className="adb-check-why">{check.why}</p>}
-      <Proofs check={check} />
-      {actions}
     </article>
   );
 }
@@ -223,7 +305,13 @@ function Checks({ test, checks, outcomes, checkActions }: {
         )}
       </div>
       {cards.map(({ check, at }) => (
-        <CheckCard key={`${check.label}-${at}`} check={check} actions={checkActions !== undefined && outcomes[at] !== undefined ? checkActions(test, outcomes[at]) : null} />
+        <CheckCard
+          key={`${check.label}-${at}`}
+          check={check}
+          // The records that fail the one check that does not hold are the next thing asked for; of several, a click each.
+          openProofs={cards.length === 1}
+          actions={checkActions !== undefined && outcomes[at] !== undefined ? checkActions(test, outcomes[at]) : null}
+        />
       ))}
       {quiet.length > 0 && cards.length > 0 && quiet.length > HOLDS_BESIDE_CARDS && (
         <button type="button" className="adb-link" aria-expanded={!folded} onClick={() => setFolded((was) => !was)} data-testid="dashboard-holds-toggle">
@@ -256,8 +344,8 @@ function Fact({ name, children, mono = false }: { name: string; children: ReactN
 }
 
 /**
- * An open assertion: what it checks, why it stands where it does, each check that does not hold with what it expected
- * and found, and the checks that hold; beside them what it is about, when it was checked and how.
+ * An open assertion: what it checks, why it stands where it does, each check that does not hold with its figures and
+ * the bar that draws them, and the checks that hold; beside them what it is about, when it was checked and how.
  */
 export function AssertionBrief({ test, result, failure, loading, actions, checkActions, step }: {
   test: DashTest;
@@ -273,20 +361,23 @@ export function AssertionBrief({ test, result, failure, loading, actions, checkA
   const named = test.dimensions.filter((d) => d.name !== "Set" && d.name !== "Type" && d.name !== "Check");
   const derived = test.dimensions.filter((d) => d.name === "Set" || d.name === "Type" || d.name === "Check");
   const error = result?.error ?? null;
+  // Why it could not be checked, once: its result's own account before the board's, which is the same text.
+  const unchecked = test.standing === "errored" ? error ?? test.reason : null;
+  const reason = test.standing === "errored" ? null : test.reason;
+  const problem = unchecked === null || unchecked === "" ? null : plainProblem(unchecked);
   return (
     <div className="adb-brief" data-testid="dashboard-detail">
       <div className="adb-brief-main">
         {test.description !== null && <p className="adb-brief-lede">{test.description}</p>}
-        {test.reason !== null && (
-          <Callout
-            standing={test.standing}
-            lead={test.standing === "disabled" ? "Disabled:" : test.standing === "notRun" ? "Not yet checked:" : test.standing === "errored" ? "Could not be checked:" : undefined}
-            testId="dashboard-reason"
-          >
-            {test.reason}
+        {reason !== null && (
+          <Callout standing={test.standing} lead={test.standing === "disabled" ? "Disabled:" : test.standing === "notRun" ? "Not yet checked:" : undefined} testId="dashboard-reason">
+            {reason}
           </Callout>
         )}
-        {error !== null && error !== "" && error !== test.reason && <Callout standing="errored" lead="Could not be checked:">{error}</Callout>}
+        {problem !== null && <Callout standing="errored" lead="Could not be checked:" written={problem.written} testId="dashboard-reason">{problem.said}</Callout>}
+        {test.standing !== "errored" && error !== null && error !== "" && error !== test.reason && (
+          <Callout standing="errored" lead="Could not be checked:" written={plainProblem(error).written}>{plainProblem(error).said}</Callout>
+        )}
         {(result?.notes ?? []).map((note) => (
           <p key={note} className="adb-note" data-testid="dashboard-note"><Info size={14} aria-hidden /><span>{plain(note)}</span></p>
         ))}

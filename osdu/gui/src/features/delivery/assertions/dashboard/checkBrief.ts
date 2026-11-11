@@ -142,11 +142,15 @@ export function asksOf(check: Pick<BriefFacts, "type" | "expected" | "actual">):
 /** How a share's part is drawn: what holds, what is within a warning band, what does not hold, and what is not there at all. */
 export type PartTone = "passed" | "warned" | "failed" | "missing";
 
-/** One part of a share: how many, and the words that follow the count for one and for many (`differs`, `differ`). */
+/**
+ * One part of a share: how many, the words that follow the count for one and for many (`differs`, `differ`), and what
+ * the part is called where its count stands as a figure (`Differ`).
+ */
 export interface SharePart {
   tone: PartTone;
   count: number;
   words: [string, string];
+  label: string;
 }
 
 /** A number measured against the range that holds: `640` against `exactly 812`. */
@@ -170,6 +174,29 @@ export interface TargetMeasure {
   of: string | null;
   /** By how much it missed (`172 short of 812 (21.2%)`, `Nothing found`); null when it is within the range. */
   gap: string | null;
+  /** Whether it counts things, so what it is short by is missing and what it is over by is too many. */
+  counts: boolean;
+  /** How far outside the range it is, from the end it missed: under it below zero, over it above; null within the range. */
+  off: number | null;
+  /** That distance as a share of the end it missed (`21.2%`); null within the range, or when that end is zero. */
+  offShare: string | null;
+}
+
+/**
+ * How much of a measure does not hold, from 0 (all of it holds) to 1 (none of it does): the share of what was judged, or
+ * how far a number is from the end it missed, as a part of that end. What the dashboard lists the largest gaps by.
+ */
+export function missOf(measure: Measure): number {
+  if (measure.form === "share") {
+    return (measure.whole - heldOf(measure)) / measure.whole;
+  }
+
+  if (measure.off === null) {
+    return 0;
+  }
+
+  const against = measure.found - measure.off;
+  return against === 0 ? 1 : Math.min(1, Math.abs(measure.off) / Math.abs(against));
 }
 
 /** How many of what a check judged hold: `3 of 5 rows`, each part of the rest named. */
@@ -268,12 +295,13 @@ function targetOf(check: BriefFacts, expected: string, qualifiers: readonly stri
   const against = range.exact ?? (range.low !== null && found < range.low ? range.low : range.high !== null && found > range.high ? range.high : null);
   const outside = (range.low !== null && found < range.low) || (range.high !== null && found > range.high);
   let gap: string | null = null;
-  if (outside && against !== null && counts && found === 0) {
-    gap = "Nothing found";
-  } else if (outside && against !== null) {
-    const amount = Math.abs(found - against);
+  let off: number | null = null;
+  let offShare: string | null = null;
+  if (outside && against !== null) {
+    off = found - against;
+    offShare = against === 0 ? null : percent(Math.abs(off) / Math.abs(against));
     const side = found < against ? (counts ? "short of" : "below") : (counts ? "over" : "above");
-    gap = `${figure(amount)} ${side} ${figure(against)}${against === 0 ? "" : ` (${percent(amount / Math.abs(against))})`}`;
+    gap = counts && found === 0 ? "Nothing found" : `${figure(Math.abs(off))} ${side} ${figure(against)}${offShare === null ? "" : ` (${offShare})`}`;
   }
 
   // The band widens each number the comparison names its own way: a percentage is of that number.
@@ -287,16 +315,19 @@ function targetOf(check: BriefFacts, expected: string, qualifiers: readonly stri
     warnHigh: range.high === null ? null : range.high + reach(range.high),
     of: check.type === "count" ? "records" : measured === null ? null : `${MEASURED_AS[measured[1]!]} ${measured[2]}`,
     gap,
+    counts,
+    off,
+    offShare,
   };
 }
 
 /** The parts a proof values check counts its rows in, as its finding names them. */
-const ROW_PARTS: readonly { says: string; tone: PartTone; words: [string, string] }[] = [
-  { says: "hold their values", tone: "passed", words: ["holds", "hold"] },
-  { says: "within the warning band", tone: "warned", words: ["is within the warning band", "are within the warning band"] },
-  { says: "differ", tone: "failed", words: ["differs", "differ"] },
-  { says: "not found", tone: "missing", words: ["is not found", "are not found"] },
-  { says: "found more than once", tone: "failed", words: ["is found more than once", "are found more than once"] },
+const ROW_PARTS: readonly { says: string; tone: PartTone; words: [string, string]; label: string }[] = [
+  { says: "hold their values", tone: "passed", words: ["holds", "hold"], label: "Hold" },
+  { says: "within the warning band", tone: "warned", words: ["is within the warning band", "are within the warning band"], label: "In the warning band" },
+  { says: "differ", tone: "failed", words: ["differs", "differ"], label: "Differ" },
+  { says: "not found", tone: "missing", words: ["is not found", "are not found"], label: "Not found" },
+  { says: "found more than once", tone: "failed", words: ["is found more than once", "are found more than once"], label: "Found more than once" },
 ];
 
 /** The checks whose `checked` and `failing` count the same things, so the two make a share, and what those things are. */
@@ -325,7 +356,7 @@ function shareOf(check: BriefFacts, result: CheckResult): ShareMeasure | null {
   if (check.type === "knownValues") {
     const parts = ROW_PARTS.flatMap((part): SharePart[] => {
       const counted = new RegExp(`(\\d+) ${part.says}\\b`).exec(check.actual ?? "");
-      return counted === null ? [] : [{ tone: part.tone, count: Number(counted[1]), words: part.words }];
+      return counted === null ? [] : [{ tone: part.tone, count: Number(counted[1]), words: part.words, label: part.label }];
     });
     if (parts.reduce((sum, part) => sum + part.count, 0) === checked && parts.some((part) => part.tone === "passed")) {
       return { form: "share", whole: checked, unit: SHARED_UNITS.knownValues!, parts };
@@ -342,8 +373,8 @@ function shareOf(check: BriefFacts, result: CheckResult): ShareMeasure | null {
     whole: checked,
     unit,
     parts: [
-      { tone: "passed", count: checked - failing, words: ["passes", "pass"] },
-      { tone: result === "warned" ? "warned" : "failed", count: failing, words: ["does not", "do not"] },
+      { tone: "passed", count: checked - failing, words: ["passes", "pass"], label: "Pass" },
+      { tone: result === "warned" ? "warned" : "failed", count: failing, words: ["does not", "do not"], label: "Do not pass" },
     ],
   };
 }
@@ -383,6 +414,94 @@ export function shareLine(share: ShareMeasure): string {
   ].join(", ");
 }
 
+/**
+ * What of a share does not hold, in one line, the news before the rest: `1 of 75 records does not pass`,
+ * `2 of 5 rows do not hold: 1 differs, 1 is not found`, `None of the 3 records pass`, `All 4 rows are not found`; of one
+ * thing, what it does.
+ */
+export function offLine(share: ShareMeasure): string {
+  const held = heldOf(share);
+  const off = share.whole - held;
+  const rest = share.parts.filter((part) => part.tone !== "passed" && part.count > 0);
+  if (share.whole === 1 || off === 0 || rest.length === 0) {
+    return shareLine(share);
+  }
+
+  const holds = holdsAs(share);
+  const says = (part: SharePart) => `${figure(part.count)} ${part.words[part.count === 1 ? 0 : 1]}`;
+  // A part named only as what does not hold takes the verb of what holds: `does not pass`.
+  const plainly = rest.length === 1 && rest[0]!.words[1] === "do not";
+  const each = plainly ? "" : `: ${rest.map(says).join(", ")}`;
+  if (held === 0) {
+    return rest.length === 1 && !plainly
+      ? `All ${figure(share.whole)} ${share.unit[1]} ${rest[0]!.words[1]}`
+      : `None of the ${figure(share.whole)} ${share.unit[1]} ${holds[1]}${each}`;
+  }
+
+  if (rest.length === 1 && !plainly) {
+    return `${figure(off)} of ${figure(share.whole)} ${share.unit[1]} ${rest[0]!.words[off === 1 ? 0 : 1]}`;
+  }
+
+  return `${figure(off)} of ${figure(share.whole)} ${share.unit[1]} ${off === 1 ? "does" : "do"} not ${holds[1]}${each}`;
+}
+
+/** One figure of a check as it stands in a row of them: what it counts, the number, and what qualifies it. */
+export interface Tile {
+  label: string;
+  /** The words before the figure: `at least`. */
+  lead: string | null;
+  value: string;
+  /** What follows the figure, smaller: a tolerance, a share of the whole. */
+  aside: string | null;
+  /** The tone the figure is drawn in when it is the news (what is missing, what differs); null for a plain figure. */
+  tone: PartTone | null;
+}
+
+/**
+ * The figures a measure is read by, in the order a reader takes them: what was expected, what was found and by how much it
+ * missed; or how many were checked, how many hold, and each part of the rest. None for a share of one thing, which a
+ * line says better.
+ */
+export function tilesOf(measure: Measure, result: CheckResult): Tile[] {
+  if (measure.form === "target") {
+    const tiles: Tile[] = [
+      { label: "Expected", lead: measure.lead, value: measure.expected, aside: measure.trail, tone: null },
+      { label: "Found", lead: null, value: figure(measure.found), aside: null, tone: null },
+    ];
+    if (measure.off !== null) {
+      const under = measure.off < 0;
+      tiles.push({
+        label: measure.counts ? (under ? "Short by" : "Over by") : (under ? "Below by" : "Above by"),
+        lead: null,
+        value: figure(Math.abs(measure.off)),
+        aside: measure.offShare,
+        // A check only noted is held against nothing, so its figure is plain.
+        tone: result === "warned" ? "warned" : result === "noted" ? null : "failed",
+      });
+    }
+
+    return tiles;
+  }
+
+  if (measure.whole <= 1) {
+    return [];
+  }
+
+  const unit = measure.unit[1];
+  const held = measure.parts.find((part) => part.tone === "passed");
+  return [
+    { label: `${unit.charAt(0).toUpperCase()}${unit.slice(1)} checked`, lead: null, value: figure(measure.whole), aside: null, tone: null },
+    { label: held?.label ?? "Pass", lead: null, value: figure(heldOf(measure)), aside: null, tone: null },
+    ...measure.parts.filter((part) => part.tone !== "passed" && part.count > 0).map((part): Tile => ({
+      label: part.label,
+      lead: null,
+      value: figure(part.count),
+      aside: percent(part.count / measure.whole),
+      tone: result === "noted" ? null : part.tone,
+    })),
+  ];
+}
+
 /** What a clause of a message only says again once a measure is drawn: the counts the measure shows. */
 const RESTATES: readonly RegExp[] = [
   /^The bulk data of \d+ of \d+ record\(s\) does not meet it$/,
@@ -420,12 +539,60 @@ function whyOf(why: string | null, measure: Measure | null): string | null {
   return `${said.charAt(0).toUpperCase()}${said.slice(1)}.`;
 }
 
-/** One value a record differs in: what it is, what was found and what was expected, and what the engine adds. */
+/**
+ * One value a record differs in: what it is, what was expected and what was found, each as a figure where it is one
+ * number, how far apart the two are, and what the engine adds.
+ */
 export interface Difference {
   what: string;
+  /** What was found: a number as a figure (`25.2812`), anything else as it is written. */
   found: string | null;
+  /** What was found as the engine wrote it, when the figure shortens it. */
+  foundExact: string | null;
+  /** What follows what was found: where it was read (`row 5565`). */
+  foundNote: string | null;
+  /** What was expected: `60 ± 0.0001`, `at least 5`. */
   expected: string | null;
+  /** How far what was found is from what was expected, signed (`-6.8125`); null when either is not a number. */
+  off: string | null;
   note: string | null;
+}
+
+const FOUND_NUMBER = new RegExp(`^${NUMBER}(?: (.+))?$`);
+
+/** What a comparison expects, as a reader says it: `60 ± 0.0001`, `at least 5`, `2 to 4`; any other as it is written. */
+function expectedWords(expected: string): { said: string; range: ReturnType<typeof rangeOf> } {
+  const range = rangeOf(expected);
+  if (range === null) {
+    return { said: plain(expected), range };
+  }
+
+  const within = range.trail === null ? "" : ` ± ${range.trail.replace(/^give or take /, "")}`;
+  return { said: `${range.lead === null ? "" : `${range.lead} `}${range.expected}${within}`, range };
+}
+
+/** What was found as a figure with what follows it, and how far it is from the range expected. */
+function differenceOf(what: string, found: string | null, expected: string | null): Difference {
+  const wanted = expected === null ? null : expectedWords(expected);
+  const number = found === null ? null : FOUND_NUMBER.exec(found);
+  if (found === null || number === null) {
+    return { what, found: found === null ? null : plain(found), foundExact: null, foundNote: null, expected: wanted?.said ?? null, off: null, note: null };
+  }
+
+  const value = Number(number[1]);
+  const shown = figure(value);
+  const range = wanted?.range ?? null;
+  const against = range === null ? null : range.exact ?? (range.low !== null && value < range.low ? range.low : range.high !== null && value > range.high ? range.high : null);
+  const off = against === null || value === against ? null : value - against;
+  return {
+    what,
+    found: shown,
+    foundExact: shown === number[1] ? null : number[1]!,
+    foundNote: number[2] === undefined ? null : plain(number[2].replace(/^\((.*)\)$/, "$1")),
+    expected: wanted?.said ?? null,
+    off: off === null ? null : `${off < 0 ? "-" : "+"}${figure(Math.abs(off))}`,
+    note: null,
+  };
 }
 
 /** Why one record, or row, fails a check: the reason in a line, and each value it differs in when the reason lists several. */
@@ -454,21 +621,86 @@ export function evidenceOf(example: CheckExample): Evidence {
     const last = differences[differences.length - 1];
     const differs = DIFFERS.exec(clause);
     if (differs !== null) {
-      differences.push({ what: differs[1]!, found: differs[2]!, expected: plain(differs[3]!), note: null });
+      differences.push(differenceOf(differs[1]!, differs[2]!, differs[3]!));
     } else if (last !== undefined && last.expected === null && /^expected (?:it|each step) /.test(clause)) {
-      last.expected = plain(clause.replace(/^expected (?:it|each step) /, ""));
+      last.expected = expectedWords(clause.replace(/^expected (?:it|each step) /, "")).said;
     } else if (last !== undefined && last.expected !== null && /^-?[\d.]+ (?:below|above) /.test(clause)) {
-      last.note = last.note === null ? plain(clause) : `${last.note}; ${plain(clause)}`;
+      // By how much it missed the figures already say; what is left is that it only warns.
+      const band = /, (within the warning band of [^,]+)/.exec(clause);
+      const said = band !== null ? band[1]! : last.off === null ? plain(clause) : null;
+      if (said !== null) {
+        last.note = last.note === null ? said : `${last.note}; ${said}`;
+      }
     } else {
       // A value that is not there to compare says so after its name: `GR at 1000 has no row: the index MD holds no 1000`.
       const cut = clause.indexOf(": ");
       differences.push(cut < 0
-        ? { what: plain(clause), found: null, expected: null, note: null }
-        : { what: plain(clause.slice(0, cut)), found: plain(clause.slice(cut + 2)), expected: null, note: null });
+        ? { what: plain(clause), found: null, foundExact: null, foundNote: null, expected: null, off: null, note: null }
+        : { what: plain(clause.slice(0, cut)), found: plain(clause.slice(cut + 2)), foundExact: null, foundNote: null, expected: null, off: null, note: null });
     }
   }
 
   return { id, value, reason: plain(listed[1]!), differences };
+}
+
+/** The records, or rows, that fail a check for one reason: the reason once, and each of them under it. */
+export interface EvidenceGroup {
+  reason: string;
+  /** The values it differs in, when the reason lists them: then the group is the one record. */
+  differences: Difference[];
+  items: { id: string | null; value: string | null }[];
+}
+
+/**
+ * The records that fail a check, gathered by why: a reason many records share is said once with the records under it,
+ * in the order the reasons first appear. A record whose reason lists the values it differs in stands alone.
+ */
+export function evidenceGroups(examples: readonly Evidence[]): EvidenceGroup[] {
+  const groups: EvidenceGroup[] = [];
+  const shared = new Map<string, EvidenceGroup>();
+  for (const example of examples) {
+    const item = { id: example.id, value: example.value };
+    const known = example.differences.length === 0 ? shared.get(example.reason) : undefined;
+    if (known !== undefined) {
+      known.items.push(item);
+      continue;
+    }
+
+    const group: EvidenceGroup = { reason: example.reason, differences: example.differences, items: [item] };
+    groups.push(group);
+    if (example.differences.length === 0) {
+      shared.set(example.reason, group);
+    }
+  }
+
+  return groups;
+}
+
+const HTTP_PROBLEM = /^HTTP (\d{3}) ([A-Za-z]+) from (?:GET|POST|PUT|PATCH|DELETE) (\S+?)(?: \(correlation-id [^)]*\))?(?:: (.+))?$/s;
+
+/** The OSDU service an address is of, as people name it: the part after `/api/`. */
+function serviceOf(address: string): string {
+  const named = /\/api\/([a-z-]+)/.exec(address)?.[1];
+  return named === undefined ? "OSDU" : `The ${named.replace(/-service$/, "").replace(/-/g, " ")} service`;
+}
+
+/**
+ * A problem as a reader takes it: an answer of an OSDU service is said by the service and what it answered
+ * (`The search service answered 503 Service Unavailable`), with what it said after it, and the text as written is kept
+ * for whoever looks into it. Any other text is said as it is, in plain words, with nothing more to show.
+ */
+export function plainProblem(text: string): { said: string; written: string | null } {
+  const answer = HTTP_PROBLEM.exec(text.trim());
+  if (answer === null) {
+    return { said: plain(text), written: null };
+  }
+
+  const [, status, reason, address, detail] = answer;
+  const words = reason!.replace(/([a-z])([A-Z])/g, "$1 $2");
+  // What the service said often ends by naming its status again: `(Bad Request)`.
+  const more = detail === undefined ? "" : detail.trim().replace(/\.$/, "").replace(new RegExp(`\\s*\\(${words}\\)$`, "i"), "").trim();
+  const said = `${serviceOf(address!)} answered ${status} ${words}${more === "" ? "." : `: ${more}${/[.!?]$/.test(more) ? "" : "."}`}`;
+  return { said, written: text };
 }
 
 /** One check as the dashboard reads it. */
@@ -484,9 +716,21 @@ export interface CheckBrief {
   /** What the check adds about what it found: values left out, and the like. */
   foundNotes: string[];
   why: string | null;
+  /** Why as the engine wrote it, when the brief says it in other words: a service's answer whole, for whoever looks into it. */
+  whyWritten: string | null;
   measure: Measure | null;
-  /** What it found in one line, for an assertion's row: `640 found, 812 expected`, `3 of 5 rows hold, 2 differ`. */
+  /** What it found in one line, where it holds: `640 found, 812 expected`, `3 of 5 rows hold, 2 differ`. */
   gist: string;
+  /**
+   * What does not hold, the news first, for an assertion's row and its largest gaps: `172 short of 812 (21.2%)`,
+   * `Nothing found, 62 expected`, `2 of 5 rows do not hold: 1 differs, 1 is not found`; the gist where it holds.
+   */
+  headline: string;
+  /**
+   * How much of it does not hold, from 0 to 1: its measure's miss; all of it where it could not be made or had nothing
+   * to check; and half where it does not hold and makes no measure, so it ranks under what is known to be all off.
+   */
+  miss: number;
   /** How many records, or rows, fail it; null when it does not say. */
   failing: number | null;
   examples: Evidence[];
@@ -526,14 +770,20 @@ export function briefOf(check: BriefFacts): CheckBrief {
     ? (check.severity === "warning" ? "warned" : check.severity === "info" ? "noted" : "failed")
     : check.outcome === "skipped" ? "disabled" : check.outcome === "errored" ? "errored" : check.outcome === "warned" ? "warned" : "passed";
   const measure = result === "disabled" || result === "errored" ? null : measureOf(check, reading.expected, reading.qualifiers, result);
-  const why = whyOf(reading.why, measure);
+  const problem = reading.why === null || measure !== null ? null : plainProblem(reading.why);
+  const why = problem !== null && problem.written !== null ? problem.said : whyOf(reading.why, measure);
   const found = plain(reading.found);
   const said = why === null ? null : why.replace(/\.$/, "");
+  const wanted = measure === null || measure.form !== "target" ? "" : `${measure.lead === null ? "" : `${measure.lead} `}${measure.expected} expected`;
   const gist = measure === null
     ? (result === "passed" ? null : said) ?? (reading.found === "-" ? "nothing found" : `found ${found}`)
     : measure.form === "share" ? shareLine(measure)
       : measure.gap === null ? `${figure(measure.found)} found`
-        : `${figure(measure.found)} found, ${measure.lead === null ? "" : `${measure.lead} `}${measure.expected} expected`;
+        : `${figure(measure.found)} found, ${wanted}`;
+  const headline = measure === null || result === "passed" ? gist
+    : measure.form === "share" ? offLine(measure)
+      : measure.gap === null ? gist
+        : measure.counts && measure.found === 0 ? `Nothing found, ${wanted}` : measure.gap;
   return {
     label: plain(check.label),
     description: check.description ?? null,
@@ -544,8 +794,13 @@ export function briefOf(check: BriefFacts): CheckBrief {
     found,
     foundNotes: measure === null ? [] : notesOf(check, measure),
     why,
+    whyWritten: problem?.written ?? null,
     measure,
     gist,
+    headline,
+    miss: result === "passed" || result === "disabled" ? 0
+      : measure !== null ? missOf(measure)
+        : result === "errored" || check.checked === 0 ? 1 : 0.5,
     failing: typeof check.failing === "number" && check.type !== "count" ? check.failing : null,
     examples: (check.examples ?? []).map(evidenceOf),
     examplesTrimmed: check.examplesTrimmed === true,

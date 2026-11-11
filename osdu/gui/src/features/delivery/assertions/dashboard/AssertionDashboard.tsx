@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Maximize2, Minimize2, Moon, OctagonAlert, Search, Sun, X } from "lucide-react";
 import { AssertionBrief, type BriefStep } from "./AssertionBrief";
-import { Gauge, Glyph } from "./DashboardParts";
+import { Gauge, Glyph, Marks, Ring } from "./DashboardParts";
 import {
-  GROUPS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, defaultAxes, dimensionsOf, groupOf, inScope, matches, passRate, readingLine,
+  GROUPS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, byMiss, defaultAxes, dimensionsOf, groupOf, inScope, matches, passRate, readingLine,
   readingOf, setsOf, square, tally, verdictOf, type AxisValue, type CheckOutcome, type DashData, type DashTest, type GroupId, type ResultFacts,
-  type Standing,
+  type RowReading, type Standing,
 } from "./dashboardModel";
 import { plural, when } from "./dashboardText";
 import "./dashboard.css";
@@ -23,6 +23,18 @@ const PAGE = 10;
 
 /** The results a read asks the control plane for at most. */
 const RESULTS_PER_READ = 100;
+
+/**
+ * The assertions needing attention the dashboard reads the results of at once, to list them by how much of each does
+ * not hold; past it they are listed by title, and each result is read as its row comes into view.
+ */
+const MAX_RANKED = 200;
+
+/** The largest gaps the summary names. */
+const GAPS = 3;
+
+/** The marks a square of the map draws, one an assertion, before it counts the rest. */
+const MARKS = 6;
 
 /** What the dashboard is being read as: the set picked (undefined for every set) and whether disabled assertions are in. */
 export interface DashView {
@@ -136,19 +148,27 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
     && (only === null || test.standing === only)
     && matches(test, term)), [cellCol, cellRow, colDim, only, rowDim, scoped, term]);
 
-  const groups = useMemo(() => GROUPS
+  const listedGroups = useMemo(() => GROUPS
     .filter((g) => g.id !== "disabled" || includeDisabled)
     .map((g) => ({ ...g, ...groupOf(listed, g.id) }))
     .filter((g) => g.tests.length > 0), [includeDisabled, listed]);
   const narrowed = cellRow !== undefined || only !== null || term.trim() !== "";
-  const isOpen = (id: GroupId, initially: boolean) => groupsOpen[id] ?? (initially || narrowed || groups.length === 1);
+  const isOpen = (id: GroupId, initially: boolean) => groupsOpen[id] ?? (initially || narrowed || listedGroups.length === 1);
 
-  // The results the rows in view need: what the open groups list, and the open assertion.
+  // Every assertion in scope that needs attention, whatever the list is narrowed to: what the summary names the largest
+  // gaps of, and what the list is ordered by.
+  const attention = useMemo(() => groupOf(scoped, "attention").tests, [scoped]);
+  const rankable = attention.length <= MAX_RANKED;
+
+  // The results the dashboard reads: of every assertion needing attention while they can be ranked, else of the rows in
+  // view; and of the open assertion.
   const wanted = useMemo(() => {
     const ids = new Set<number>();
-    const attention = groups.find((g) => g.id === "attention");
-    if (attention !== undefined && (groupsOpen.attention ?? true)) {
-      attention.tests.slice(0, shown.attention ?? PAGE).forEach((t) => t.resultId !== null && ids.add(t.resultId));
+    const inView = listedGroups.find((g) => g.id === "attention");
+    if (rankable) {
+      attention.forEach((t) => t.resultId !== null && ids.add(t.resultId));
+    } else if (inView !== undefined && (groupsOpen.attention ?? true)) {
+      inView.tests.slice(0, shown.attention ?? PAGE).forEach((t) => t.resultId !== null && ids.add(t.resultId));
     }
 
     const opened = scoped.find((t) => t.key === open);
@@ -157,8 +177,34 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
     }
 
     return [...ids].sort((a, b) => a - b).join(",");
-  }, [groups, groupsOpen.attention, open, scoped, shown.attention]);
+  }, [attention, groupsOpen.attention, listedGroups, open, rankable, scoped, shown.attention]);
   const { results, failures } = useResults(props.results, props.loadResults, wanted);
+
+  // Ranked once every result is at hand (or could not be read), so the rows change places once and not as each arrives.
+  const settled = rankable && attention.every((t) => t.resultId === null || results[String(t.resultId)] !== undefined || failures[String(t.resultId)] !== undefined);
+  const ranked = useMemo(() => (settled ? byMiss(attention, results) : attention), [attention, results, settled]);
+  const groups = useMemo(() => {
+    const place = new Map(ranked.map((test, at) => [test.key, at]));
+    return listedGroups.map((g) => (g.id === "attention" ? { ...g, tests: [...g.tests].sort((a, b) => place.get(a.key)! - place.get(b.key)!) } : g));
+  }, [listedGroups, ranked]);
+  const gaps = useMemo(() => (settled
+    ? ranked.filter((t) => t.standing === "failed")
+      .map((test) => ({ test, reading: readingOf(test, test.resultId === null ? undefined : results[String(test.resultId)]) }))
+      .filter(({ reading }) => reading.miss > 0)
+      .slice(0, GAPS)
+    : []), [ranked, results, settled]);
+
+  // Opens an assertion that needs attention wherever the list stands: nothing narrows it, its group is open, and the
+  // rows listed reach it.
+  const openGap = (key: string) => {
+    const at = ranked.findIndex((t) => t.key === key);
+    setCell(null);
+    setOnly(null);
+    setTerm("");
+    setGroupsOpen((was) => ({ ...was, attention: true }));
+    setShown((was) => ({ ...was, attention: Math.max(was.attention ?? PAGE, PAGE * Math.ceil((at + 1) / PAGE)) }));
+    setOpen(key);
+  };
 
   const present = () => {
     if (document.fullscreenElement !== null) {
@@ -286,6 +332,9 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
             includeDisabled={includeDisabled}
             only={only}
             onOnly={(s) => setOnly((was) => (was === s ? null : s))}
+            gaps={gaps}
+            onGap={openGap}
+            checkedUtc={scoped.reduce<string | null>((last, t) => (t.checkedUtc !== null && (last === null || t.checkedUtc > last) ? t.checkedUtc : last), null)}
           />
 
           {rowDim !== null && (rows.length > 1 || cols.length > 1) && (
@@ -429,18 +478,22 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
 }
 
 /**
- * The summary: the verdict with the health figure beside it, and under them each standing's count, which narrows the list
- * to it and says, on a hover, what the standing means: the counts are the legend of every glyph below them.
+ * The summary, read left to right: how the assertions stand as a ring with the share that passes in its middle, the
+ * verdict in a sentence with what was checked under it and the largest gaps named in words, each opening its assertion,
+ * and each standing's count, which narrows the list to it and says, on a hover, what the standing means: the counts are
+ * the legend of the ring and of every glyph below them.
  */
-function Summary({ verdict, n, includeDisabled, only, onOnly }: {
+function Summary({ verdict, n, includeDisabled, only, onOnly, gaps, onGap, checkedUtc }: {
   verdict: { standing: Standing; text: string };
   n: ReturnType<typeof tally>;
   includeDisabled: boolean;
   only: Standing | null;
   onOnly: (s: Standing) => void;
+  gaps: { test: DashTest; reading: RowReading }[];
+  onGap: (key: string) => void;
+  checkedUtc: string | null;
 }) {
   const rate = passRate(n);
-  const parts: Standing[] = ["passed", "warned", "errored", "failed", "notRun", ...(includeDisabled ? ["disabled" as const] : [])];
   const figures: { standing: Standing; label: string }[] = [
     { standing: "failed", label: "Failing" },
     { standing: "errored", label: "Could not be checked" },
@@ -449,18 +502,42 @@ function Summary({ verdict, n, includeDisabled, only, onOnly }: {
     { standing: "passed", label: "Passing" },
     ...(includeDisabled ? [{ standing: "disabled" as const, label: "Disabled" }] : []),
   ];
+  const checked = [
+    n.judged === 0 ? "Nothing checked yet" : `${n.passed.toLocaleString("en-US")} of ${n.judged.toLocaleString("en-US")} checked pass`,
+    n.notRun > 0 ? `${n.notRun.toLocaleString("en-US")} not yet checked` : null,
+    checkedUtc === null ? null : `last checked ${when(checkedUtc)}`,
+  ].filter((part) => part !== null).join(" · ");
   return (
     <section className={`adb-summary adb-edge-${verdict.standing}`}>
-      <div className="adb-verdict" data-testid="dashboard-verdict">
-        <Glyph standing={verdict.standing} size={20} />
-        <p className="adb-verdict-text">{verdict.text}</p>
-        <div className="adb-health" data-testid="dashboard-health" title="Health: the share of the assertions checked that pass. Those not yet checked, and disabled ones, are counted beside it, never in it.">
+      <div className="adb-health" data-testid="dashboard-health" title="Health: the share of the assertions checked that pass. Those not yet checked, and disabled ones, are counted beside it, never in it.">
+        <Ring counts={{ ...n, disabled: includeDisabled ? n.disabled : 0 }} size={80}>
           <span className="adb-health-rate">{rate === null ? "-" : `${rate}%`}</span>
-          <span className="adb-health-of">{n.judged === 0 ? "nothing checked yet" : `of ${n.judged.toLocaleString("en-US")} checked pass`}</span>
-          <span className="adb-bar" role="img" aria-label={parts.map((s) => `${n[s]} ${STANDING_WORDS[s].toLowerCase()}`).join(", ")}>
-            {parts.filter((s) => n[s] > 0).map((s) => <span key={s} className={`adb-fill-${s}`} style={{ flexGrow: n[s] }} title={`${n[s]} ${STANDING_WORDS[s].toLowerCase()}`} />)}
-          </span>
-        </div>
+          <span className="adb-health-of">pass</span>
+        </Ring>
+      </div>
+      <div className="adb-verdict" data-testid="dashboard-verdict">
+        <p className="adb-verdict-text">{verdict.text}</p>
+        <p className="adb-verdict-of">{checked}</p>
+        {gaps.length > 0 && (
+          <div className="adb-gaps" data-testid="dashboard-gaps">
+            <p className="adb-cap">{gaps.length === 1 ? "The gap" : "Largest gaps"}</p>
+            <ol>
+              {gaps.map(({ test, reading }) => (
+                <li key={test.key}>
+                  <button type="button" className="adb-gap" onClick={() => onGap(test.key)} title={`${test.title}: ${readingLine(reading)}. Click to open it.`} data-testid="dashboard-gap">
+                    <Glyph standing={test.standing} size={13} />
+                    <span className="adb-gap-title">{test.title}</span>
+                    <span className="adb-gap-says">{reading.says}</span>
+                    <span className="adb-gap-gauge">
+                      {reading.measure !== null && reading.result !== null && <Gauge measure={reading.measure} result={reading.result} compact />}
+                    </span>
+                    <ChevronRight size={13} aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </div>
       <div className="adb-figures" data-testid="dashboard-figures">
         {figures.map(({ standing, label }) => {
@@ -549,8 +626,9 @@ function HeatMap({ tests, rowDim, rows, colDim, cols, picked, onPick }: {
                   title={`${where}: ${plural(sq.n.total, "assertion")}; ${sq.n.judged === 0 ? "none checked yet" : `${sq.n.passed} of ${sq.n.judged} checked pass`}${sq.n.failed > 0 ? `, ${sq.n.failed} failing` : ""}${sq.n.errored > 0 ? `, ${sq.n.errored} could not be checked` : ""}${sq.n.warned > 0 ? `, ${plural(sq.n.warned, "warning")}` : ""}${sq.n.notRun > 0 ? `, ${sq.n.notRun} not yet checked` : ""}. Click to list them.`}
                   data-testid="dashboard-cell"
                 >
-                  <span className="adb-cell-main">{sq.main}</span>
-                  <span className="adb-cell-sub"><Glyph standing={sq.n.worst} size={11} />{sq.sub}</span>
+                  <Marks standings={here.map((t) => t.standing)} max={MARKS} />
+                  {here.length > MARKS && <span className="adb-cell-main">{sq.main}</span>}
+                  <span className="adb-cell-sub">{sq.sub}</span>
                 </button>
               );
             })}
@@ -603,16 +681,16 @@ function TestRow({ test, result, failure, loading, open, onToggle, actions, chec
           <span className="adb-row-where">{[...others.map((d) => d.value), test.dimensions.find((d) => d.name === "Check")?.value].filter(Boolean).join(" · ")}</span>
         </span>
         <span className="adb-row-reading" title={readingLine(reading)}>
-          {reading.claim !== null && <span className="adb-row-claim">{reading.claim}</span>}
-          <span className={`adb-row-says${quiet || reading.claim !== null ? " adb-muted" : ""}`}>
+          <span className={`adb-row-says${quiet ? " adb-muted" : ""}`}>
             {reading.says}
             {reading.more > 0 && <span className="adb-row-more">+{reading.more} more</span>}
           </span>
+          {reading.claim !== null && <span className="adb-row-claim">{reading.claim}</span>}
         </span>
         <span className="adb-row-gauge">
           {reading.measure !== null && reading.result !== null && <Gauge measure={reading.measure} result={reading.result} compact />}
         </span>
-        <span className="adb-row-when">{test.checkedUtc === null ? STANDING_WORDS[test.standing] : when(test.checkedUtc)}</span>
+        <span className="adb-row-when">{test.checkedUtc === null ? "" : when(test.checkedUtc)}</span>
         {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
       </button>
       {open && <AssertionBrief test={test} result={result} failure={failure} loading={loading} actions={actions} checkActions={checkActions} step={step} />}
