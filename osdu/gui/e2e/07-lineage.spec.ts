@@ -212,6 +212,8 @@ test.describe.serial("lineage", () => {
     await expect(graph.getByTestId("graph-status-waves")).toHaveCount(0);
     const reset = new URL(adminPage.url()).searchParams;
     expect([reset.get("hide"), reset.get("waves"), reset.get("group"), reset.get("stacks")]).toEqual([null, null, null, null]);
+    // The range is back at the first wave: a step by the keyboard leaves no preview of its own behind.
+    await expect(graph.getByRole("slider", { name: "First wave drawn" })).toHaveAttribute("aria-valuenow", "0");
 
     // Data runs top to bottom unless the reader turns the drawing, and the choice is in the address.
     expect(reset.get("layout")).toBeNull();
