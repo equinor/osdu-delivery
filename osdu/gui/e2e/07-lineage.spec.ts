@@ -124,8 +124,12 @@ test.describe.serial("lineage", () => {
     // by its system and where it is filed, with a cache type it only checks its ids against feeding it. The cache types
     // one mapping reads look alike (one kind, the same flow before them and the same mapping after), so they are one
     // stack until stacks are turned off.
+    // The two clicks come one straight after the other, and both must hold: the address is a render behind, and a
+    // control that started from it would drop the click before.
     await graph.getByTestId("graph-level-all").click();
     await graph.getByTestId("graph-stack-toggle").click();
+    await expect(graph.getByTestId("graph-status-line")).toContainText("everything");
+    await expect.poll(() => new URL(adminPage.url()).searchParams.get("stacks")).toBe("off");
     await expect(graph.getByText(WELL_LOG_MAPPING, { exact: true }).first()).toBeVisible();
     await expect(graph.getByText(`osdu mapping · ${PARTITION}.${SOURCE}/mappings`).first()).toBeVisible();
     await expect(graph.getByText("LogType", { exact: true }).first()).toBeVisible();
@@ -208,6 +212,14 @@ test.describe.serial("lineage", () => {
     await expect(graph.getByTestId("graph-status-waves")).toHaveCount(0);
     const reset = new URL(adminPage.url()).searchParams;
     expect([reset.get("hide"), reset.get("waves"), reset.get("group"), reset.get("stacks")]).toEqual([null, null, null, null]);
+
+    // Data runs top to bottom unless the reader turns the drawing, and the choice is in the address.
+    expect(reset.get("layout")).toBeNull();
+    await graph.getByTestId("graph-orientation-right").click();
+    await expect.poll(() => new URL(adminPage.url()).searchParams.get("layout")).toBe("right");
+    await expect(nodes.first()).toBeVisible();
+    await graph.getByTestId("graph-orientation-down").click();
+    await expect.poll(() => new URL(adminPage.url()).searchParams.get("layout")).toBeNull();
   });
 
   test("a mapping's row jumps to its node in the graph", async ({ adminPage }) => {
