@@ -592,8 +592,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **The lineage graph draws what you ask for instead of everything it knows.** A repository is a scope and opens as its
-  flows alone, a folder to a node; **Show** adds the objects flows hand over, everything, or the data alone; look-alike
-  nodes draw as one stack; the wave filter is a range; the legend hides kinds; and **Trace** draws only what is upstream
+  flows alone, laid in one band per wave so every arrow runs with the plan's order; **Show** adds the objects flows hand over, everything, or the data alone; look-alike
+  nodes draw as one stack, and a folder's flows as one node when asked; the wave filter is a range; the legend hides kinds; and **Trace** draws only what is upstream
   and downstream of one node, by hops and by side. A line under the bar says what is drawn and takes each reduction back,
   a level too wide for one line is laid in staggered lines, **Layout** turns the graph left to right, and the two views
   named Flows and Objects are now levels of **Show**. Links to the
