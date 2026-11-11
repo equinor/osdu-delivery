@@ -159,6 +159,12 @@ html.adb-standalone #root {
   white-space: nowrap;
 }
 
+/* What the host sets beside the title (the workbench's Explain), close to it rather than a row gap away. */
+.adb-title-aside {
+  display: inline-flex;
+  margin-left: -8px;
+}
+
 .adb-title-set {
   margin-left: 10px;
   padding-left: 10px;

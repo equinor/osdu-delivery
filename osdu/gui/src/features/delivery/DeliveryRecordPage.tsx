@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CorrelationError } from "@/components/CorrelationError";
 import { EmptyState } from "@/components/EmptyState";
 import { IdChip } from "@/components/IdChip";
+import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import { Page } from "@/components/Page";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
 import { BlockedBadge, RecordStatusBadge, RestrictedBadge } from "./DeliveryBadges";
@@ -270,6 +271,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
       <Card className="gap-2 rounded-lg p-3" data-testid="record-header">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="min-w-0 break-words text-lg font-semibold leading-7">{record.label ?? record.sourceKey}</h1>
+          <ExplainPageButton />
           <RecordStatusBadge status={record.status} />
           {record.restrictionId != null && <RestrictedBadge asked={record.restrictedUtc == null} />}
           {record.blocked && <BlockedBadge />}

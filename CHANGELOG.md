@@ -596,6 +596,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **Explain sits beside a page's title.** The question-mark button after a page's name (at the end of the lineage graph's
+  toolbar) has the assistant explain the page; it no longer takes room at the end of the tab strip
+  ([Explain](sqlflow/docs/reference/guides/chat-assistant.md#explain)).
+- **A detail page's header is lean.** A flow's, a run's, a repository's and a submission's page show the same facts in
+  about two thirds of the height: the identifiers on the line under the title, and each fact's caption beside its value,
+  so a dozen facts take a line or two and the page's own content starts higher
+  ([the page scaffold](sqlflow/gui/DESIGN.md#71-page-scaffold)).
 - **The lineage graph draws what you ask for instead of everything it knows.** A repository is a scope and opens as its
   flows alone, laid in one band per wave so every arrow runs with the plan's order; **Show** adds the objects flows hand over, everything, or the data alone; look-alike
   nodes draw as one stack, and a folder's flows as one node when asked; the wave filter is a range; the legend hides kinds; and **Trace** draws only what is upstream
@@ -966,6 +973,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- Every open page stays within reach of the tab strip. A page opened past the strip's end was never scrolled into view,
+  and the strip had no scrollbar, so its tab and its close could not be reached. Tabs now give up width before the strip
+  scrolls, a chevron at each end and the mouse wheel scroll it, the page in view always has its tab in view, the arrow
+  keys walk the tabs and Delete closes one, and each row of the Open pages menu closes its page
+  ([the workbench layout](sqlflow/gui/DESIGN.md#6-the-workbench-layout)).
 - The Runs page's Schedule filter offers every schedule. It read one page of them, so past the 200th a schedule could not
   be picked and the runs of its flows were grouped under Unscheduled
   ([Reading a schedule's plan](sqlflow/docs/reference/flow/schedule.md#reading-a-schedules-plan)).

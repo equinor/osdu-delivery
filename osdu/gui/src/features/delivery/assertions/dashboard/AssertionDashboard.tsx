@@ -67,6 +67,8 @@ export interface AssertionDashboardProps {
   data: DashData;
   /** The page's title; left out on a flow's tab, whose page names it. */
   title?: string;
+  /** What the host sets beside the title: the workbench's Explain for the page. Left out of a downloaded dashboard. */
+  titleAside?: ReactNode;
   /** The set picked, undefined for every set: kept by the host (the workbench in its address) when it passes onSet. */
   set: string | null | undefined;
   /** Picks a set; without it the dashboard keeps the set picked itself, starting from set. */
@@ -211,7 +213,14 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
   if (data.tests.length === 0 && problems.length === 0) {
     return (
       <div className="adb" ref={root} data-testid="assertion-dashboard">
-        {title !== undefined && <header className="adb-head"><div className="adb-titles"><h1>{title}</h1></div></header>}
+        {title !== undefined && (
+          <header className="adb-head">
+            <div className="adb-titles">
+              <h1>{title}</h1>
+              {props.titleAside !== undefined && <span className="adb-title-aside">{props.titleAside}</span>}
+            </div>
+          </header>
+        )}
         {props.empty ?? <p className="adb-empty" data-testid="dashboard-empty">No assertion checks this partition yet.</p>}
       </div>
     );
@@ -222,6 +231,7 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
       <header className="adb-head">
         <div className="adb-titles">
           {title !== undefined && <h1>{title}{set !== undefined && !pills ? <span className="adb-title-set">{set ?? "No set"}</span> : null}</h1>}
+          {title !== undefined && props.titleAside !== undefined && <span className="adb-title-aside">{props.titleAside}</span>}
           {pills && (
             <nav className="adb-sets" aria-label="Sets">
               <button type="button" className="adb-set" aria-pressed={set === undefined} onClick={() => pickSet(undefined)} data-testid="dashboard-set-all">

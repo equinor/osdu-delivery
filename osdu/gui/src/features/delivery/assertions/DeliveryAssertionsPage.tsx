@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
+import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import { deliveryApi } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
 import { ProblemView } from "../TemplateSheet";
@@ -69,6 +70,7 @@ export default function DeliveryAssertionsPage() {
       <AssertionDashboard
         data={data}
         title="Assertions"
+        titleAside={<ExplainPageButton />}
         set={set}
         onSet={onSet}
         showSets

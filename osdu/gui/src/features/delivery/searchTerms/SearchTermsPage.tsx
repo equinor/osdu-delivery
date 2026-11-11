@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RichTooltip } from "@/components/RichTooltip";
+import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import { cn } from "@/lib/utils";
 import { failureText } from "../answers";
 import { counted } from "../assertions/assertionFormat";
@@ -385,6 +386,7 @@ export default function SearchTermsPage() {
     <Page data-testid="page-delivery-search-terms">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="text-lg font-semibold leading-7">Search terms</h1>
+        <ExplainPageButton className="-ml-1.5" />
         <RichTooltip
           title="Search terms"
           body="The columns of your source systems, as the mappings of active delivery flows read them, each with the place in the OSDU record it fills. The explorer searches by them: a value typed for a term is put through the mapping as a delivery puts it, and the search asks OSDU's own search service. Each sync extracts them again; a name, a note, the route picked or a term deleted here holds across syncs. Pick several to delete or restore them together."

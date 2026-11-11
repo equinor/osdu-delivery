@@ -10,6 +10,7 @@ import { useSideBarFold } from "@/layout/workbench/SideBarRoom";
 import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { RichTooltip } from "@/components/RichTooltip";
+import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import type { DeliveryOsduRead } from "../../../api/delivery";
 import { explorerApi, type ExplorerFieldInfo, type ExplorerFilter, type ExplorerSearchRequest, type ExplorerSort, type ExplorerTypes } from "../../../api/explorer";
 import { useActivePartition } from "../activePartition";
@@ -222,7 +223,10 @@ export default function ExplorerPage() {
 
   const header = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <h1 className="text-lg font-semibold leading-7">Explorer</h1>
+      <div className="flex items-center gap-1.5">
+        <h1 className="text-lg font-semibold leading-7">Explorer</h1>
+        <ExplainPageButton />
+      </div>
       {connection.data?.available && (
         <RichTooltip
           title="Read live from OSDU"

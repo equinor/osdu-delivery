@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CodeView } from "@/components/CodeView";
 import { GlyphRef } from "@/components/GlyphRef";
+import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
 import { deliveryApi, type DeliveryMappingDetail } from "../../api/delivery";
 import { KindText } from "./KindText";
@@ -50,6 +51,7 @@ function MappingHeader({ detail, id, loading }: { detail: DeliveryMappingDetail 
         {mapping !== undefined && (
           <>
             <h1 className="min-w-0"><MappingPicker current={id} name={mapping.reference} /></h1>
+            <ExplainPageButton />
             <span className="min-w-0 flex-1 pl-1 text-muted-foreground" data-testid="delivery-mapping-kind"><KindText kind={mapping.kind} /></span>
           </>
         )}
