@@ -235,6 +235,11 @@ export function useDimensionBuild({ partition, reachable, scopeKind, recordId, r
   return {
     /** The draft; null while no dimension is built. */
     draft,
+    /** The draft once it has stopped changing, which is written, checked and read by. */
+    settled,
+    /** The partition the build reads, and whether its connection can be read through. */
+    partition,
+    reachable,
     /** Starts a build reading `start` (empty for none yet), leaving any build before it. */
     start: (start: string) => {
       setAutoFor(null);

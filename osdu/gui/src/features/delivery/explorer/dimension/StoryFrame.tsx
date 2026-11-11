@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, CircleX, Info, TableProperties, TriangleAlert } from "lucide-react";
+import { ChevronDown, CirclePlus, CircleX, Info, TriangleAlert, type LucideIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DimensionDraftIssue } from "../../../../api/explorer";
@@ -150,11 +150,14 @@ export function NoteLine({ children, testId }: { children: ReactNode; testId?: s
   );
 }
 
-/** The menu beside each value of a record while a dimension is built, drawn inside a sentence that says to open it. */
+/** The glyph of the button beside each value of a record while a dimension is built, which opens what the value can be. */
+export const PICK_ICON: LucideIcon = CirclePlus;
+
+/** The button beside each value of a record while a dimension is built, drawn inside a sentence that says to click it. */
 export function PickGlyph() {
   return (
-    <span className="mx-0.5 inline-flex size-5 items-center justify-center rounded border border-border align-[-5px] text-muted-foreground" aria-label="the menu beside the value">
-      <TableProperties className="size-3.5" aria-hidden />
+    <span className="mx-0.5 inline-flex size-5 items-center justify-center align-[-5px] text-primary" aria-label="the + beside the value">
+      <PICK_ICON className="size-4" aria-hidden />
     </span>
   );
 }

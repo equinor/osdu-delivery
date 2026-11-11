@@ -339,6 +339,7 @@ the workbench header.
 | `GET /explorer/dimension/candidates` | operate | `kind` | The keys the template of a kind a synced repository holds suggests for a dimension. |
 | `POST /explorer/dimension/keys` | operate | body `kind`, `query`, `path`; `partition` | The commonest keys of a drafted dimension's path. |
 | `POST /explorer/dimension/compose` | operate | body `draft`, `example`; `partition` | A drafted dimension as YAML, checked; nothing is saved. |
+| `POST /explorer/dimension/preview` | operate | body `draft`; `partition` | The commonest keys of a drafted dimension made into the rows a build would make; nothing is saved. |
 | `GET /search-terms` | read | `entityType`, `kind`, `orphans` | The search terms of an entity type, or of every one. |
 | `GET /search-terms/entity-types` | read | | The entity types with how many terms each has. |
 | `GET /search-terms/{termId}` | read | `entityType` | One term; 404 when unknown. |

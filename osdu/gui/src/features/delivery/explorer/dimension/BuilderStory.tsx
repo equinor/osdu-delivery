@@ -9,10 +9,9 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { cn } from "@/lib/utils";
 import type { DimensionDraft, DimensionDraftIssue, DimensionKeyCandidate } from "../../../../api/explorer";
 import { failureText } from "../../answers";
-import { idParts } from "../../osduRecordModel";
 import { applyPlan, firstValueAt, MAX_ATTRIBUTES, type PickPlan } from "./dimensionDraft";
 import {
-  PLAIN_STEPS, STEP_HELP, chainWords, cleanWords, kindTypeName, lastProperty, stepOfTarget, typeName, type StepState, type StoryStep,
+  PLAIN_STEPS, STEP_HELP, chainWords, cleanWords, kindTypeName, lastProperty, shortId, stepOfTarget, typeName, type StepState, type StoryStep,
 } from "./dimensionStory";
 import { NoteLine, PickGlyph, PickName, StoryFrame } from "./StoryFrame";
 import type { DimensionBuild } from "./useDimensionBuild";
@@ -33,20 +32,9 @@ interface StepProps {
 const issuesAt = (issues: DimensionDraftIssue[], step: StoryStep) => issues.filter((issue) => stepOfTarget(issue.target) === step);
 const toggle = (props: StepProps, step: StoryStep) => () => props.onOpen(props.open === step ? null : step);
 
-/** A record id as a step names it: its unique part as a person reads it, the type and the partition said elsewhere. */
-function shortId(value: string): string {
-  const unique = idParts(value).unique || value;
-  try {
-    return decodeURIComponent(unique);
-  } catch {
-    // A part that is not percent-encoded as a whole (a lone `%`) is shown as it is held.
-    return unique;
-  }
-}
-
 /**
  * The steps a person picks a dimension by (osdu/docs/reference/concepts/explorer-dimension-builder.md), read as one
- * sentence: from these records, one row per this key, shown as this value, with these columns, cleaned so. The table it
+ * sentence: from these records, one row per this key, named by this, with these columns, cleaned so. The table it
  * makes ends the story ({@link BuilderRow}).
  */
 export function BuilderSteps(props: StepProps & { startKind: string }) {
@@ -186,7 +174,7 @@ function RowsStep(props: StepProps) {
       hint={states.rows === "next" && (
         <>
           Pick what each row stands for{suggestions !== undefined && suggestions.keys.length > 0 ? ": one of the values below, which name other records, or" : ":"} any value of a {kindType} record,
-          with <PickGlyph /> <PickName>One row for each value</PickName> beside it.
+          clicking <PickGlyph /> beside it, then <PickName>One row for each value</PickName>.
         </>
       )}
     >
@@ -198,7 +186,7 @@ function RowsStep(props: StepProps) {
       )}
       {states.rows !== "next" && (
         <p className="text-[12px] text-muted-foreground">
-          Any value of a {kindType} record can be the key: <PickGlyph /> <PickName>One row for each value</PickName> beside it.
+          Any value of a {kindType} record can be the key: click <PickGlyph /> beside it, then <PickName>One row for each value</PickName>.
         </p>
       )}
       <div className="flex flex-col gap-2.5 border-t border-border/60 pt-3">
@@ -332,7 +320,11 @@ function OpenKeyRecord({ build }: { build: DimensionBuild }) {
   );
 }
 
-/** What each row shows: the key itself, or a value read in the record the key names, and what a row shows where none is. */
+/**
+ * What each row is named by: a value read in the record the key names, or the key's own code when none is picked, and the
+ * name a row takes where its record holds none. The name is what the dimension's filters and views show, and rows whose
+ * names clean alike are one value; the columns beside it are carried as they are read.
+ */
 function ShownStep(props: StepProps) {
   const { build, draft, states } = props;
   const ids = useId();
@@ -344,17 +336,17 @@ function ShownStep(props: StepProps) {
       draft.label.length === 1 ? `read in the ${keyType ?? "named"} record` : `read through ${chainWords(draft.label.slice(0, -1))}`,
       draft.unlabelled === null ? null : `otherwise "${draft.unlabelled}"`,
     ].filter((fact) => fact !== null).join(" · ")
-    : keyType !== null ? `the ${keyType}'s id, cleaned` : "cleaned as the last step says";
+    : keyType !== null ? `the code its ${keyType}'s id ends with` : "the key's own text";
   const editable = labelled || reads || keyType !== null;
 
   return (
     <StoryFrame
       step="shown"
       state={states.shown}
-      lead="Shown as"
+      lead="Named by"
       answer={labelled
         ? <span className="font-mono" data-testid="builder-shown">{lastProperty(draft.label[draft.label.length - 1])}</span>
-        : <span data-testid="builder-shown">the key itself</span>}
+        : <span data-testid="builder-shown">{keyType !== null ? "the key's code" : "the key itself"}</span>}
       facts={states.shown === "waiting" ? null : facts}
       issues={issuesAt(props.issues, "shown")}
       open={props.open === "shown"}
@@ -362,7 +354,9 @@ function ShownStep(props: StepProps) {
       hint={states.shown === "next" && (
         <div className="flex flex-col items-start gap-2.5">
           <span>
-            Each row shows its {keyType}'s id. To show a name instead, open the {keyType} and choose <PickGlyph /> <PickName>Show each row as this</PickName> beside the value to show.
+            A row's name is what the dimension's filters and views show, and rows whose names clean alike are one value. Each row
+            is named by its {keyType}'s code now; to name it by what the {keyType} holds, open the {keyType} and click <PickGlyph /> beside
+            that value, then <PickName>Name each row by this</PickName>.
           </span>
           <OpenKeyRecord build={build} />
         </div>
@@ -382,7 +376,7 @@ function ShownStep(props: StepProps) {
             <OpenKeyRecord build={build} />
             <Button variant="ghost" size="sm" onClick={() => build.update({ ...draft, label: [] })} data-testid="builder-shown-clear">
               <Trash2 />
-              Show the key itself
+              Name by the key's code
             </Button>
           </div>
         </div>
@@ -390,7 +384,7 @@ function ShownStep(props: StepProps) {
       {!labelled && keyType !== null && states.shown !== "next" && (
         <div className="flex flex-col items-start gap-2">
           <span className="text-[12px] text-muted-foreground">
-            Open the {keyType} and choose <PickGlyph /> <PickName>Show each row as this</PickName> beside a value to show it in place of the id.
+            To name each row by what its {keyType} holds, open the {keyType} and click <PickGlyph /> beside that value, then <PickName>Name each row by this</PickName>.
           </span>
           <OpenKeyRecord build={build} />
         </div>
@@ -406,14 +400,14 @@ function ShownStep(props: StepProps) {
             className="h-8 max-w-72 text-[12.5px] md:text-[12.5px]"
             data-testid="builder-unlabelled"
           />
-          <span className="text-[12px] text-muted-foreground">The row's value, and every column read from its record, take this.</span>
+          <span className="text-[12px] text-muted-foreground">The row's name, and every column read from its record, take this.</span>
         </div>
       )}
     </StoryFrame>
   );
 }
 
-/** The columns beside the value: read through the record a key names, or collected from the dimension's own records. */
+/** The columns beside the name: read through the record a key names, or collected from the dimension's own records. */
 function WithStep(props: StepProps) {
   const { build, draft, states } = props;
   const attributes = draft.attributes;
@@ -461,14 +455,14 @@ function WithStep(props: StepProps) {
         </ul>
       )}
       {attributes.length >= MAX_ATTRIBUTES
-        ? <span className="text-[12px] text-muted-foreground">{`A dimension reads at most ${MAX_ATTRIBUTES} columns besides its value.`}</span>
+        ? <span className="text-[12px] text-muted-foreground">{`A dimension reads at most ${MAX_ATTRIBUTES} columns besides its name.`}</span>
         : (
           <div className="flex flex-col items-start gap-2">
             <span className="text-[12px] text-muted-foreground">
               {keyType !== null && (
-                <>Add a column from the {keyType}, or a record it names: <PickGlyph /> <PickName>Add as a column</PickName> beside the value. </>
+                <>Add a column from the {keyType}, or a record it names: click <PickGlyph /> beside the value, then <PickName>Add as a column</PickName>. </>
               )}
-              Collect what a row's {kindType} records hold: <PickGlyph /> <PickName>Collect into a column</PickName> beside a value of one.
+              Collect what a row's {kindType} records hold: click <PickGlyph /> beside a value of one, then <PickName>Collect into a column</PickName>.
             </span>
             <OpenKeyRecord build={build} />
           </div>
@@ -477,7 +471,7 @@ function WithStep(props: StepProps) {
   );
 }
 
-/** How each key's value is cleaned before rows are grouped by it: the plain steps picked, and replacements, in order. */
+/** How each row's name is cleaned before rows are grouped by it: the plain steps picked, and replacements, in order. */
 function CleanedStep(props: StepProps) {
   const { build, draft, states } = props;
   const plain = new Set(draft.clean.filter((c) => c.step !== "replace").map((c) => c.step));
@@ -497,7 +491,7 @@ function CleanedStep(props: StepProps) {
       answer={draft.clean.length === 0
         ? <span className="font-normal text-muted-foreground">as found</span>
         : <span data-testid="builder-cleaned">{draft.clean.map(cleanWords).join(", then ")}</span>}
-      facts={draft.clean.length === 0 ? null : "spellings that clean alike are one row"}
+      facts={draft.clean.length === 0 ? null : "names that clean alike are one value"}
       issues={issuesAt(props.issues, "cleaned")}
       open={props.open === "cleaned"}
       onToggle={states.cleaned === "waiting" ? undefined : toggle(props, "cleaned")}

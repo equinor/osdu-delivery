@@ -34,6 +34,9 @@ public sealed record DeliveryDimensionKeysRequest(string? Kind, string? Query = 
 /// <summary>A drafted dimension to write as YAML and check, and the key to make an example row of.</summary>
 public sealed record DeliveryDimensionComposeRequest(DimensionDraft? Draft, string? Example = null);
 
+/// <summary>A drafted dimension whose commonest keys are made into the rows of its table, as a build would make them.</summary>
+public sealed record DeliveryDimensionPreviewRequest(DimensionDraft? Draft);
+
 /// <summary>
 /// One key of a drafted dimension made into its row as a build makes it: the key, its label and the record it came from, why
 /// it has none, its value or why it is left out of every value, its attributes, the records holding it and the filter
@@ -54,12 +57,12 @@ public sealed record DeliveryDimensionComposeDto(
     IReadOnlyList<DimensionDraftIssue> Issues, bool Valid, DeliveryDimensionExampleDto? Example, string? ExampleProblem);
 
 /// <summary>
-/// The explorer's dimension builder (osdu/docs/reference/concepts/explorer.md, Building a dimension): what a person
-/// picks from the records OSDU holds, written as the item a dimension flow lists and checked by the same loader and
-/// blueprint a flow's own dimension is. The explorer's own reads show the records a person picks from; here, the keys a
-/// kind's template suggests, the commonest keys of a path (through the partition's own connection, as the explorer reads it),
-/// and a compose that writes the draft, checks it, and makes one key into its row as a build would. Nothing is saved:
-/// the YAML is the builder's output.
+/// The explorer's dimension builder (osdu/docs/reference/concepts/explorer-dimension-builder.md): what a person picks from
+/// the records OSDU holds, written as the item a dimension flow lists and checked by the same loader and blueprint a flow's
+/// own dimension is. The explorer's own reads show the records a person picks from; here, the keys a kind's template
+/// suggests, the commonest keys of a path (through the partition's own connection, as the explorer reads it), a compose that
+/// writes the draft, checks it, and makes one key into its row as a build would, and a preview that makes the commonest
+/// keys into their rows the same way. Nothing is saved: the YAML is the builder's output.
 /// </summary>
 public static partial class DeliveryExplorerEndpoints
 {
@@ -71,6 +74,7 @@ public static partial class DeliveryExplorerEndpoints
         delivery.MapGet("/explorer/dimension/candidates", DimensionCandidatesAsync).WithName("SuggestDeliveryDimensionKeys");
         delivery.MapPost("/explorer/dimension/keys", DimensionKeysAsync).WithName("ReadDeliveryDimensionKeys");
         delivery.MapPost("/explorer/dimension/compose", ComposeDimensionAsync).WithName("ComposeDeliveryDimensionDraft");
+        delivery.MapPost("/explorer/dimension/preview", PreviewDimensionAsync).WithName("PreviewDeliveryDimensionDraft");
     }
 
     /// <summary>
@@ -145,31 +149,10 @@ public static partial class DeliveryExplorerEndpoints
             return DeliveryEndpoints.Invalid(invalid);
         }
 
-        var item = DimensionBuilder.ToYaml(draft);
-        var document = DimensionBuilder.Document(item);
-        var issues = new List<DimensionDraftIssue>(DimensionBuilder.Incomplete(draft));
-        DimensionSpec? spec = null;
-        if (issues.Count == 0)
+        var (item, document, spec, blueprint, issues) = await LoadDraftAsync(draft, documents, ledger, folders, ct).ConfigureAwait(false);
+        if (spec is not null && await CollisionAsync(spec, db, osdu, documents, ct).ConfigureAwait(false) is { } collision)
         {
-            try
-            {
-                spec = documents.ParseDimension(document, DimensionBuilder.CheckSource).Dimensions[0];
-            }
-            catch (FlowValidationException ex)
-            {
-                issues.Add(DimensionBuilder.FromLoader(ex.Message));
-            }
-        }
-
-        DimensionBlueprint? blueprint = null;
-        if (spec is not null)
-        {
-            blueprint = await DimensionBlueprints.DescribeAsync(spec, await RepositoryTemplates.ReadAsync(ledger, folders, ct).ConfigureAwait(false), [], ct).ConfigureAwait(false);
-            issues.AddRange(BlueprintIssues(spec, blueprint));
-            if (await CollisionAsync(spec, db, osdu, documents, ct).ConfigureAwait(false) is { } collision)
-            {
-                issues.Add(collision);
-            }
+            issues.Add(collision);
         }
 
         DeliveryDimensionExampleDto? example = null;
@@ -191,6 +174,80 @@ public static partial class DeliveryExplorerEndpoints
             spec is not null && distinct.All(i => i.Severity != DimensionDraftIssue.Error),
             example,
             exampleProblem));
+    }
+
+    /// <summary>
+    /// The commonest keys of a drafted dimension made into the rows of its table as a build would make them, through the
+    /// partition's own connection, as the explorer reads it: the draft written and read back as a compose reads it, and
+    /// refused, with the first thing to put right, while a build would refuse it.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> PreviewDimensionAsync(
+        DeliveryDimensionPreviewRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger,
+        DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
+        CancellationToken ct)
+    {
+        if (body?.Draft is not { } draft)
+        {
+            return DeliveryEndpoints.Invalid("Send the draft whose table to preview.");
+        }
+
+        if (DraftProblem(draft) is { } invalid)
+        {
+            return DeliveryEndpoints.Invalid(invalid);
+        }
+
+        var (item, _, spec, blueprint, issues) = await LoadDraftAsync(draft, documents, ledger, folders, ct).ConfigureAwait(false);
+        var error = issues.FirstOrDefault(i => i.Severity == DimensionDraftIssue.Error);
+        if (spec is null || blueprint is null || error is not null)
+        {
+            return DeliveryEndpoints.Invalid($"The table is previewed once a build would make it: {error?.Message ?? "the draft does not load."}");
+        }
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        try
+        {
+            LongArgument.Put(arguments, ExploreOperation.ItemArgument, item);
+            LongArgument.Put(arguments, ExploreOperation.FieldsArgument, JsonSerializer.Serialize(FieldsOf(spec, blueprint), ExploreOperation.BuilderJson));
+        }
+        catch (SqlFlowException ex)
+        {
+            return DeliveryEndpoints.Invalid(ex.Message);
+        }
+
+        return await ExploreAsync(ExploreOperation.DimensionPreviewAction, arguments, partition, partitions, config, direct, loggers, request, user, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A drafted dimension written as its item and read back: the item, the document holding it, the dimension the document
+    /// loader reads (null while the draft is incomplete or the loader refuses it), its blueprint against the templates the
+    /// synced repositories hold, and what is wrong with it, the loader's refusal or the blueprint's findings.
+    /// </summary>
+    private static async Task<(string Item, string Document, DimensionSpec? Spec, DimensionBlueprint? Blueprint, List<DimensionDraftIssue> Issues)> LoadDraftAsync(
+        DimensionDraft draft, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders folders, CancellationToken ct)
+    {
+        var item = DimensionBuilder.ToYaml(draft);
+        var document = DimensionBuilder.Document(item);
+        var issues = new List<DimensionDraftIssue>(DimensionBuilder.Incomplete(draft));
+        if (issues.Count > 0)
+        {
+            return (item, document, null, null, issues);
+        }
+
+        DimensionSpec spec;
+        try
+        {
+            spec = documents.ParseDimension(document, DimensionBuilder.CheckSource).Dimensions[0];
+        }
+        catch (FlowValidationException ex)
+        {
+            issues.Add(DimensionBuilder.FromLoader(ex.Message));
+            return (item, document, null, null, issues);
+        }
+
+        var blueprint = await DimensionBlueprints.DescribeAsync(spec, await RepositoryTemplates.ReadAsync(ledger, folders, ct).ConfigureAwait(false), [], ct).ConfigureAwait(false);
+        issues.AddRange(BlueprintIssues(spec, blueprint));
+        return (item, document, spec, blueprint, issues);
     }
 
     /// <summary>Why the keys cannot be asked for, as the operation would refuse them; null when they can.</summary>

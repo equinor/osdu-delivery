@@ -1,11 +1,12 @@
 import { isRecordReference, withoutVersion } from "../../osduDocument.ts";
+import { idParts } from "../../osduRecordModel.ts";
 
 // How the explorer's dimension builder tells a draft (osdu/docs/reference/concepts/explorer-dimension-builder.md): as a
-// story read top to bottom, a step per choice, "from these records, one row per this key, shown as this, with these
+// story read top to bottom, a step per choice, "from these records, one row per this key, named by this, with these
 // columns, cleaned so, makes this table". This module says which step a draft has reached, which step asks for a pick
-// next, which step each of the builder's findings is about, the words a clean step is said in, how the types and
-// properties a story names are written, and where in a record a key's value is held. It reads no API type and no SQLFlow
-// component, so the unit tier checks it.
+// next, which step each of the builder's findings is about, the words a clean step is said in, how the types, ids and
+// properties a story names are written, where in a record a key's value is held, and how the table's preview lays out
+// the keys it made. It reads no API type and no SQLFlow component, so the unit tier checks it.
 
 /** The steps a dimension is told in, in order: the records read, the key, the value, the attributes, the cleaning, the table. */
 export type StoryStep = "from" | "rows" | "shown" | "with" | "cleaned" | "makes";
@@ -237,4 +238,103 @@ export function firstLocationAt(record: unknown, path: string, wanted: string | 
   };
 
   return walk(record, 0, "");
+}
+
+/** A record id as the builder names it: its unique part as a person reads it, the type and the partition said elsewhere. */
+export function shortId(value: string): string {
+  const unique = idParts(value).unique || value;
+  try {
+    return decodeURIComponent(unique);
+  } catch {
+    // A part that is not percent-encoded as a whole (a lone `%`) is shown as it is held.
+    return unique;
+  }
+}
+
+/** A key the table's preview made, as much of it as the table's rows are laid out from. */
+export interface PreviewKey {
+  key: string;
+  /** Its name, cleaned; none for a key cleaning left out. */
+  value?: string | null;
+  /** Why it is under no name. */
+  leftOut?: string | null;
+  attributes: readonly { name: string; value: string; records?: number | null }[];
+  records?: number | null;
+}
+
+/** A row of the table's preview: its key, its name, each attribute's value, and the records of the row. */
+export interface PreviewRow {
+  /** What tells the row from the others: its key, and the place of its collected value. */
+  id: string;
+  key: string;
+  value: string;
+  attributes: Readonly<Record<string, string>>;
+  records: number | null;
+}
+
+/** A key the preview made that is no row of the table, and why. */
+export interface PreviewLeftOut {
+  key: string;
+  why: string;
+}
+
+/** How several values of one attribute are joined in its column, as a build joins them. */
+const JOINED = "; ";
+
+/**
+ * The keys a preview made laid out as a build lays out the dimension's table
+ * (osdu/docs/reference/flow/dimension-table.md): a row a key, or, for a dimension collecting an attribute, a row for
+ * each value a key collects, with the records holding that value (one row, with every record of the key, where it
+ * collects none). A key cleaning left under no name is no row; it is listed with why.
+ */
+export function previewRows(
+  keys: readonly PreviewKey[], attributes: readonly { name: string; collect: string | null }[],
+): { rows: PreviewRow[]; leftOut: PreviewLeftOut[] } {
+  const collected = attributes.find((attribute) => attribute.collect !== null)?.name ?? null;
+  const rows: PreviewRow[] = [];
+  const leftOut: PreviewLeftOut[] = [];
+  for (const made of keys) {
+    const value = made.value ?? null;
+    if (value === null) {
+      leftOut.push({ key: made.key, why: made.leftOut ?? "it has no name" });
+      continue;
+    }
+
+    const read: Record<string, string> = {};
+    for (const attribute of attributes) {
+      const values = attribute.name === collected ? [] : made.attributes.filter((a) => a.name === attribute.name).map((a) => a.value);
+      if (values.length > 0) {
+        read[attribute.name] = values.join(JOINED);
+      }
+    }
+
+    const takes = collected === null ? [] : made.attributes.filter((a) => a.name === collected);
+    if (takes.length === 0) {
+      rows.push({ id: made.key, key: made.key, value, attributes: read, records: made.records ?? null });
+      continue;
+    }
+
+    takes.forEach((take, index) => rows.push({
+      id: `${made.key}\u001f${index}`,
+      key: made.key,
+      value,
+      attributes: collected === null ? read : { ...read, [collected]: take.value },
+      records: take.records ?? null,
+    }));
+  }
+
+  return { rows, leftOut };
+}
+
+/**
+ * What the preview's rows stand for, in a line: every row of the table, or the rows of the keys most records hold among
+ * how many the search named (`or more` where it named as many as one answer holds).
+ */
+export function previewWords(rows: number, made: number, keys: number, everyKey: boolean): string {
+  const rowWords = `${rows.toLocaleString("en-US")} ${rows === 1 ? "row" : "rows"}`;
+  if (everyKey && made >= keys) {
+    return `${rowWords}, the whole table: ${made.toLocaleString("en-US")} ${made === 1 ? "key" : "keys"}`;
+  }
+
+  return `${rowWords} from the ${made.toLocaleString("en-US")} keys most records hold, of ${keys.toLocaleString("en-US")}${everyKey ? "" : " or more"}`;
 }

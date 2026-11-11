@@ -14,6 +14,7 @@ import { failureText } from "../../answers";
 import { BlueprintDiagram } from "../../dimensions/BlueprintDiagram";
 import { examplesOf, layoutOf } from "../../dimensions/blueprintModel";
 import { BuilderFilterDialog } from "./BuilderFilterDialog";
+import { BuilderPreview } from "./BuilderPreview";
 import { BuilderRow } from "./BuilderRow";
 import { BuilderSteps } from "./BuilderStory";
 import { BuilderYaml } from "./BuilderYaml";
@@ -21,8 +22,13 @@ import { kindTypeName, nextStep, stepOfTarget, stepStates, type StoryStep } from
 import { IssueLine, QuietInput } from "./StoryFrame";
 import type { DimensionBuild } from "./useDimensionBuild";
 
-/** What the panel shows: the story the dimension is picked by, or the YAML it makes. */
-type BuilderView = "story" | "yaml";
+/** What the panel shows: the story the dimension is picked by, the table it makes previewed, or its YAML. */
+type BuilderView = "story" | "preview" | "yaml";
+
+/** Whether a value the view toggle gives is one of the panel's views. */
+function isView(value: string): value is BuilderView {
+  return value === "story" || value === "preview" || value === "yaml";
+}
 
 /** The example row a dimension's pages draw a key from, made of what the builder's example read. */
 function keyOf(example: DimensionExample): DeliveryDimensionKey {
@@ -50,10 +56,11 @@ function keyOf(example: DimensionExample): DeliveryDimensionKey {
 /**
  * The dimension being built in the explorer (osdu/docs/reference/concepts/explorer-dimension-builder.md), docked
  * beside the records it is built from and told as a story read top to bottom, one step per choice: from these records,
- * one row per this key, shown as this, with these columns, cleaned so, it makes this table, whose example row ends it.
+ * one row per this key, named by this, with these columns, cleaned so, it makes this table, whose example row ends it.
  * Only the step asking for a pick says what to do, with the one action that does it; every step's settings open in
- * place, and the picks themselves are made on the values of the records. Its name heads it, the YAML is a view of its
- * own, and the foot says whether the YAML is ready and copies it.
+ * place, and the picks themselves are made on the values of the records. Its name heads it; the table it makes,
+ * previewed with the rows of the keys most records hold, and its YAML are views of their own; and the foot says whether
+ * the YAML is ready and copies it.
  */
 export function DimensionBuildPanel({ build, startKind }: {
   build: DimensionBuild;
@@ -89,6 +96,8 @@ export function DimensionBuildPanel({ build, startKind }: {
   const issues = compose.data?.issues ?? [];
   const named = issues.filter((issue) => stepOfTarget(issue.target) === "name");
   const keyed = draft.path !== null && draft.path !== "";
+  // The preview reads the rows of keys, so a draft without one shows its story.
+  const shown: BuilderView = view === "preview" && !keyed ? "story" : view;
 
   // A problem named in the foot is shown where it is: its step opened in the story, and brought into view.
   const showProblem = (issue: DimensionDraftIssue) => {
@@ -117,9 +126,9 @@ export function DimensionBuildPanel({ build, startKind }: {
               type="single"
               variant="outline"
               size="sm"
-              value={view}
+              value={shown}
               onValueChange={(value) => {
-                if (value === "story" || value === "yaml") {
+                if (isView(value)) {
                   setView(value);
                 }
               }}
@@ -127,6 +136,7 @@ export function DimensionBuildPanel({ build, startKind }: {
               data-testid="builder-view"
             >
               <ToggleGroupItem value="story" className="h-7 px-2.5 text-[12.5px]" data-testid="builder-view-story">Build</ToggleGroupItem>
+              <ToggleGroupItem value="preview" className="h-7 px-2.5 text-[12.5px]" disabled={!keyed} data-testid="builder-view-preview">Preview</ToggleGroupItem>
               <ToggleGroupItem value="yaml" className="h-7 px-2.5 text-[12.5px]" disabled={draft.kind === ""} data-testid="builder-view-yaml">YAML</ToggleGroupItem>
             </ToggleGroup>
             <RichTooltip body={startKind === "" ? "Start over: a new dimension." : `Start over: a new dimension of ${kindTypeName(startKind)} records.`}>
@@ -162,14 +172,16 @@ export function DimensionBuildPanel({ build, startKind }: {
         {named.map((issue, index) => <IssueLine key={`${index}-${issue.message}`} issue={issue} />)}
       </div>
 
-      {view === "story"
+      {shown === "story"
         ? (
           <div ref={story} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4" data-testid="builder-story">
             <BuilderSteps build={build} draft={draft} states={states} open={open} onOpen={setOpen} issues={issues} startKind={startKind} />
-            <BuilderRow build={build} draft={draft} state={states.makes} issues={issues} onShowRow={() => setShowRow(true)} />
+            <BuilderRow build={build} draft={draft} state={states.makes} issues={issues} onShowRow={() => setShowRow(true)} onPreview={() => setView("preview")} />
           </div>
         )
-        : <BuilderYaml compose={compose.data} failure={compose.isError ? failureText(compose.error) : null} />}
+        : shown === "preview"
+          ? <BuilderPreview build={build} draft={draft} />
+          : <BuilderYaml compose={compose.data} failure={compose.isError ? failureText(compose.error) : null} />}
 
       <div className="flex min-h-11 items-center gap-2 border-t px-3 py-1.5">
         <Verdict

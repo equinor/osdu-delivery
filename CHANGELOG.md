@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The explorer's dimension builder previews the table it makes.** **Preview**, beside **Build** and **YAML**, shows the
+  rows of the 100 keys most records hold, read from OSDU as a build reads them and laid out as the `dim_` table is (a row
+  for each value a key collects), with the keys that make no row and what a build would refuse;
+  `POST /api/v1/delivery/explorer/dimension/preview` answers it. Nothing is written
+  ([the preview](osdu/docs/reference/concepts/explorer-dimension-builder.md#the-preview)).
 - **The Pipelines page filters by schedule, and by a wave of its fire.** A Schedule filter beside the repo narrows the
   tree to the flows that joined a schedule, the members one fire of it runs, and `GET /api/v1/pipelines` takes
   `scheduleId` for the same list. With a schedule picked, each flow shows the wave of the fire it runs in, numbered as the
@@ -608,11 +613,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page on the schedule's flows, a schedule of one flow included, which went to that flow's page
   ([Reading a schedule's plan](sqlflow/docs/reference/flow/schedule.md#reading-a-schedules-plan)).
 - **The explorer's dimension builder tells the dimension as a story of steps, and opens the record a key names itself.**
-  From the records read, one row per key, shown as a value, with columns, cleaned, it makes a table whose example row
+  From the records read, one row per key, named by a value, with columns, cleaned, it makes a table whose example row
   ends it; only the step asking for a pick says what to do, each step's settings open in place, a problem is said at its
-  step, and the YAML is a view of its own. The menu beside a value offers **One row for each value**, **Collect into a
-  column**, **Show each row as this** and **Add as a column**, and **Open the *type* record** opens the example key's
-  record on the trail, from a record of the kind found holding it when none is open
+  step, and the YAML is a view of its own. The + beside a value, whose tooltip says what the value can be, offers **One
+  row for each value**, **Collect into a column**, **Name each row by this** and **Add as a column**, and **Open the
+  *type* record** opens the example key's record on the trail, from a record of the kind found holding it when none is open
   ([building a dimension in the explorer](osdu/docs/reference/concepts/explorer-dimension-builder.md)).
 - **A cache flow's table type captures up to 1,000,000 rows, where it stopped at 100,000, and `types[].maxRows` sets
   another number, up to 5,000,000.** A table holding more than its type takes still refuses the capture, now naming the

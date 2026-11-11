@@ -78,15 +78,31 @@ public sealed record DimensionExample(
     IReadOnlyList<DimensionAttributeState> Attributes, long? Records, string? Filter, IReadOnlyList<string> Notes);
 
 /// <summary>
-/// The reads the explorer's dimension builder makes of OSDU (osdu/docs/reference/concepts/explorer.md, Building a
-/// dimension), beyond the explorer's own reads of the records a person browses: the commonest keys of a path, which the
-/// builder's example steps through, and one key made into its row exactly as a build makes it, through the build's own
-/// labeler, collector display, cleaner and attribute assembly. Nothing is written.
+/// A drafted dimension's commonest keys made into the rows a build makes of them: how many records the kind (and the query)
+/// holds, how many keys the search named and whether it named every one (it names as many as the platform groups in one
+/// answer), each key made, the most records first, what the reads had to say, and the search service's own words when it
+/// refused the query. A key's own notes are on it.
+/// </summary>
+public sealed record DimensionPreview(
+    long Total, long Keys, bool EveryKey, IReadOnlyList<DimensionExample> Rows, IReadOnlyList<string> Notes, string? Refusal);
+
+/// <summary>
+/// The reads the explorer's dimension builder makes of OSDU (osdu/docs/reference/concepts/explorer-dimension-builder.md),
+/// beyond the explorer's own reads of the records a person browses: the commonest keys of a path, which the builder's
+/// example steps through; one key made into its row exactly as a build makes it, through the build's own labeler,
+/// collector display, cleaner and attribute assembly; and the commonest keys made into their rows the same way, the
+/// preview of the table. Nothing is written.
 /// </summary>
 public sealed class DimensionSampler
 {
     /// <summary>The keys offered as examples: the commonest, as a dimension's own pages offer theirs.</summary>
     public const int ExampleKeys = 25;
+
+    /// <summary>The keys a preview makes into rows: the commonest, as many as a person reads down at a glance.</summary>
+    public const int PreviewKeys = 100;
+
+    /// <summary>How many keys' own records a preview reads at once, counting them or collecting their values.</summary>
+    private const int KeysAtOnce = 4;
 
     private readonly OsduSearch _search;
     private readonly ILogger _log;
@@ -150,48 +166,141 @@ public sealed class DimensionSampler
         ArgumentNullException.ThrowIfNull(collected);
         ArgumentNullException.ThrowIfNull(cleaner);
         var notes = new List<string>();
-        var labeler = new DimensionLabeler(_search, concurrency: 4);
-        var labels = await labeler.ReadAsync([key], dimension.Label, dimension.Attributes, dimension.LookupKinds, ct).ConfigureAwait(false);
-        notes.AddRange(labels.Notes);
-        var labelled = labels.Labels.GetValueOrDefault(key);
+        var row = (await RowsAsync(dimension, [new KeyToMake(key, null)], query, keyField, collected, cleaner, notes, ct).ConfigureAwait(false))[0];
+        notes.AddRange(row.Notes);
+        return row with { Notes = notes };
+    }
 
-        string? filter = null;
-        long? records = null;
+    /// <summary>
+    /// The commonest keys of <paramref name="dimension"/> read with <paramref name="query"/> (its tokens filled), up to
+    /// <see cref="PreviewKeys"/>, each made into its row as <see cref="ExampleAsync"/> makes one, with the records the search
+    /// counted for it as it grouped them, as a build counts a key's records: one search for the keys, the labeler's passes for
+    /// what they read through the records they name, and a search of each key's records for each value it collects. A key
+    /// longer than a dimension keeps is left out, as a build leaves it out, and said to be.
+    /// </summary>
+    public async Task<DimensionPreview> PreviewAsync(
+        DimensionSpec dimension, string? query, OsduField? keyField, IReadOnlyDictionary<string, OsduField> collected, DimensionCleaner cleaner,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(dimension);
+        ArgumentNullException.ThrowIfNull(collected);
+        ArgumentNullException.ThrowIfNull(cleaner);
+        var notes = new List<string>();
+        if (keyField is null)
+        {
+            notes.Add($"How {dimension.Path} is indexed is not known, so its keys are not grouped: put the template of {dimension.Kind} in a template folder and sync the repository to read them.");
+            var total = await _search.CountAsync(new OsduSearchQuery { Kind = dimension.Kind, Query = query }, ct).ConfigureAwait(false);
+            return new DimensionPreview(total, 0, false, [], notes, null);
+        }
+
+        var answer = await _search.PageAsync(new OsduSearchQuery { Kind = dimension.Kind, Query = query }, 0, 1, keyField.AggregateBy, ct).ConfigureAwait(false);
+        if (answer.Refusal is { } refusal)
+        {
+            return new DimensionPreview(0, 0, false, [], notes, refusal);
+        }
+
+        var held = answer.Buckets.Where(b => !string.IsNullOrEmpty(b.Key)).ToList();
+        var named = answer.Buckets.Count < DimensionSource.DefaultAggregationSize;
+        var tooLong = held.Count(b => b.Key!.Length > DimensionSpec.MaxOriginalLength);
+        if (tooLong > 0)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{tooLong} key(s) are longer than the {DimensionSpec.MaxOriginalLength} characters a dimension keeps, and are left out."));
+        }
+
+        var kept = held.Where(b => b.Key!.Length <= DimensionSpec.MaxOriginalLength).ToList();
+        if (named && kept.Count > dimension.MaxValues)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"The records hold {kept.Count:N0} keys, more than the {dimension.MaxValues:N0} the dimension's maxValues allows, so a build fails before it writes anything."));
+        }
+
+        var keys = kept.Take(PreviewKeys).Select(b => new KeyToMake(b.Key!, b.Count)).ToList();
+        var rows = await RowsAsync(dimension, keys, query, keyField, collected, cleaner, notes, ct).ConfigureAwait(false);
+        return new DimensionPreview(answer.Total, kept.Count, named, rows, notes, null);
+    }
+
+    /// <summary>A key to make into its row, with the records holding it when the search counted them as it grouped the keys.</summary>
+    private sealed record KeyToMake(string Key, long? Records);
+
+    /// <summary>
+    /// Each of <paramref name="keys"/> made into its row as a build makes it: its label and attributes read through the record
+    /// it names by the build's labeler, all the keys in its passes; the records holding it, counted where they were not, and
+    /// the values it collects from them, a few keys at once; its value cleaned from what a build cleans it from. What the
+    /// labeler had to say is added to <paramref name="notes"/>; what a key's own reads had to say is on its row.
+    /// </summary>
+    private async Task<List<DimensionExample>> RowsAsync(
+        DimensionSpec dimension, IReadOnlyList<KeyToMake> keys, string? query, OsduField? keyField, IReadOnlyDictionary<string, OsduField> collected,
+        DimensionCleaner cleaner, List<string> notes, CancellationToken ct)
+    {
+        var labeler = new DimensionLabeler(_search, concurrency: KeysAtOnce);
+        var labels = await labeler.ReadAsync(keys.Select(k => k.Key).ToList(), dimension.Label, dimension.Attributes, dimension.LookupKinds, ct).ConfigureAwait(false);
+        notes.AddRange(labels.Notes);
+
+        var reads = new KeyRead[keys.Count];
+        await Parallel.ForAsync(0, keys.Count, new ParallelOptions { MaxDegreeOfParallelism = KeysAtOnce, CancellationToken = ct }, async (at, token) =>
+            reads[at] = await ReadKeyAsync(dimension, keys[at], query, keyField, collected, token).ConfigureAwait(false)).ConfigureAwait(false);
+
+        var attributes = DimensionRunner.KeyAttributes(
+            dimension, keys.Select(k => k.Key), labels,
+            keys.Select((k, at) => (k.Key, reads[at].Collected)).ToDictionary(k => k.Key, k => k.Collected, StringComparer.Ordinal));
+        var rows = new List<DimensionExample>(keys.Count);
+        for (var at = 0; at < keys.Count; at++)
+        {
+            var key = keys[at].Key;
+            var labelled = labels.Labels.GetValueOrDefault(key);
+            var cleaned = cleaner.Clean(DimensionRunner.ValueSourceOf(dimension, key, labelled));
+            rows.Add(new DimensionExample(
+                key, labelled?.Label, labelled?.From, labelled?.Problem,
+                cleaned.Outcome == CleanOutcome.Member ? cleaned.Value : null,
+                cleaned.Outcome == CleanOutcome.Member ? null : cleaned.Note,
+                cleaned.Outcome == CleanOutcome.Member ? cleaned.Note : null,
+                attributes.GetValueOrDefault(key) ?? [], reads[at].Records, reads[at].Filter, reads[at].Notes));
+        }
+
+        return rows;
+    }
+
+    /// <summary>What a key's own records gave its row: their count, the filter finding them, the values it collects from them, and what reading them had to say.</summary>
+    private sealed record KeyRead(long? Records, string? Filter, List<DimensionAttributeState> Collected, List<string> Notes);
+
+    /// <summary>
+    /// The records holding <paramref name="key"/>, counted unless the search counted them as it grouped the keys, the filter
+    /// finding them, and the values each collected attribute reads from them, when <paramref name="keyField"/> says how the
+    /// key is indexed and a query can carry it.
+    /// </summary>
+    private async Task<KeyRead> ReadKeyAsync(
+        DimensionSpec dimension, KeyToMake key, string? query, OsduField? keyField, IReadOnlyDictionary<string, OsduField> collected, CancellationToken ct)
+    {
+        var notes = new List<string>();
         var collects = new List<DimensionAttributeState>();
         if (keyField is null)
         {
             notes.Add("How the key is indexed is not known, so the records holding it are not counted and its collected values are not read.");
+            return new KeyRead(key.Records, null, collects, notes);
         }
-        else if (!DimensionFilters.Filterable(keyField, key))
+
+        if (!DimensionFilters.Filterable(keyField, key.Key))
         {
             notes.Add("The key holds what no query can carry, so no filter finds its records: a build keeps it, marked unfilterable.");
+            return new KeyRead(key.Records, null, collects, notes);
         }
-        else
+
+        var filter = DimensionFilters.Of(keyField, [key.Key])[0];
+        var holding = OsduSearch.Within(query, filter);
+        var records = key.Records ?? await _search.CountAsync(new OsduSearchQuery { Kind = dimension.Kind, Query = holding }, ct).ConfigureAwait(false);
+        foreach (var attribute in dimension.Attributes.Where(a => a.IsCollected))
         {
-            filter = DimensionFilters.Of(keyField, [key])[0];
-            var holding = OsduSearch.Within(query, filter);
-            records = await _search.CountAsync(new OsduSearchQuery { Kind = dimension.Kind, Query = holding }, ct).ConfigureAwait(false);
-            foreach (var attribute in dimension.Attributes.Where(a => a.IsCollected))
+            if (!collected.TryGetValue(attribute.Name, out var field))
             {
-                if (!collected.TryGetValue(attribute.Name, out var field))
-                {
-                    notes.Add($"How {attribute.Collect} is indexed is not known, so the values {attribute.Name} collects are not read.");
-                    continue;
-                }
-
-                collects.AddRange(await CollectAsync(dimension, attribute, holding, field, records ?? 0, notes, ct).ConfigureAwait(false));
+                notes.Add($"How {attribute.Collect} is indexed is not known, so the values {attribute.Name} collects are not read.");
+                continue;
             }
+
+            collects.AddRange(await CollectAsync(dimension, attribute, holding, field, records, notes, ct).ConfigureAwait(false));
         }
 
-        var attributes = DimensionRunner.KeyAttributes(
-            dimension, [key], labels, new Dictionary<string, List<DimensionAttributeState>>(StringComparer.Ordinal) { [key] = collects });
-        var cleaned = cleaner.Clean(DimensionRunner.ValueSourceOf(dimension, key, labelled));
-        return new DimensionExample(
-            key, labelled?.Label, labelled?.From, labelled?.Problem,
-            cleaned.Outcome == CleanOutcome.Member ? cleaned.Value : null,
-            cleaned.Outcome == CleanOutcome.Member ? null : cleaned.Note,
-            cleaned.Outcome == CleanOutcome.Member ? cleaned.Note : null,
-            attributes.GetValueOrDefault(key) ?? [], records, filter, notes);
+        return new KeyRead(records, filter, collects, notes);
     }
 
     /// <summary>

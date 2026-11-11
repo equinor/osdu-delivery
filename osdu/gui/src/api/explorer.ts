@@ -636,6 +636,51 @@ export function dimensionKeys(partition: string | null, request: DimensionKeysRe
   return post<ExplorerAnswer<DimensionKeys>>(`/api/v1/delivery/explorer/dimension/keys${partitionQuery(partition)}`, request);
 }
 
+/**
+ * One key of a draft made into its row in the table's preview, as the read answers it: a part the key has none of is left
+ * out of the answer rather than null.
+ */
+export interface DimensionPreviewKey {
+  key: string;
+  label?: string | null;
+  labelFrom?: string | null;
+  problem?: string | null;
+  value?: string | null;
+  leftOut?: string | null;
+  note?: string | null;
+  attributes: DimensionPreviewAttribute[];
+  records?: number | null;
+  filter?: string | null;
+  notes: string[];
+}
+
+/** An attribute's value for a key of the preview: read through the record it names, or collected with the records holding it. */
+export interface DimensionPreviewAttribute {
+  name: string;
+  value: string;
+  from?: string | null;
+  records?: number | null;
+}
+
+/** A drafted dimension's commonest keys made into the rows a build makes of them. */
+export interface DimensionPreview {
+  /** The records the kind (and the query) holds. */
+  total: number;
+  /** The keys the search named, and whether it named every one (it names as many as the platform groups in one answer). */
+  keys: number;
+  everyKey: boolean;
+  /** The keys made, the most records first. */
+  rows: DimensionPreviewKey[];
+  notes: string[];
+  /** The search service's own words when it refused the query; left out of the answer when it did not. */
+  refusal?: string | null;
+}
+
+/** The commonest keys of a drafted dimension made into the rows of its table, as a build would make them; refused while a build would refuse the draft. */
+export function previewDimension(partition: string | null, draft: DimensionDraft) {
+  return post<ExplorerAnswer<DimensionPreview>>(`/api/v1/delivery/explorer/dimension/preview${partitionQuery(partition)}`, { draft });
+}
+
 /** A drafted dimension written as YAML and checked, with `example` made into its row. */
 export function composeDimension(partition: string | null, draft: DimensionDraft, example: string | null) {
   return post<DimensionCompose>(`/api/v1/delivery/explorer/dimension/compose${partitionQuery(partition)}`, { draft, example });

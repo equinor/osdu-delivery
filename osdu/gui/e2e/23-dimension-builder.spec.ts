@@ -3,13 +3,13 @@ import { E2E } from "../playwright.config";
 import { expect, test } from "./helpers";
 
 // Building a dimension in the explorer: a build mode of the explorer itself, with the builder docked beside the records
-// and telling the dimension as a story, a step per choice: from these records, one row per this key, shown as this, with
+// and telling the dimension as a story, a step per choice: from these records, one row per this key, named by this, with
 // these columns, cleaned so, it makes this table, whose example row ends it. The records are browsed and drilled into as
 // ever, and each value is picked where it is: the key in a record of the dimension's kind (the likeliest one the kind's
-// template suggests is picked as the build starts), the value and the attributes in the records reached from it, link
+// template suggests is picked as the build starts), the name and the attributes in the records reached from it, link
 // after link, or opened by the builder itself from the example key. A step through one item of a list asks which items
 // are meant and suggests the filter keeping it. The YAML is checked as a flow's own dimension is, and an example row made
-// by the build's own labelling, cleaning and counting.
+// by the build's own labelling, cleaning and counting; the table is previewed with the rows a build would make.
 //
 // Nothing here reaches an OSDU: the flows reach the e2e stand-in, which holds, for as long as the spec runs, five well
 // logs, the two wellbores four of them name (the fifth names one OSDU holds nothing under), the political entities those
@@ -150,11 +150,12 @@ test.describe.serial("dimension builder", () => {
     // A whole build, record after record, each pick written and checked by the control plane: more than a page's minute.
     test.setTimeout(BUILD_TIMEOUT);
     // The build starts on the well logs, its key the wellbore each names, which the template says names a wellbore. The
-    // story asks what a row is shown as next, since the key names records.
+    // story asks what a row is named by next, since the key names records.
     await buildOnWellLogs(adminPage);
     await expect(adminPage.getByTestId("builder-name")).toHaveValue("Wellbore");
     await expect(adminPage.getByTestId("builder-step-shown")).toHaveAttribute("data-state", "next");
-    await expect(adminPage.getByTestId("builder-next")).toContainText("Show each row as this");
+    await expect(adminPage.getByTestId("builder-shown")).toHaveText("the key's code");
+    await expect(adminPage.getByTestId("builder-next")).toContainText("Name each row by this");
     await adminPage.getByTestId("builder-name").fill(NAME);
 
     // A log opened: its wellbore's id is marked as one a key can be, and as the key; the example is the log's own key.
@@ -232,6 +233,26 @@ test.describe.serial("dimension builder", () => {
     await adminPage.keyboard.press("Escape");
     await expect(row).toHaveCount(0);
 
+    // The table previewed, read through the partition's connection as a build reads it: a row for each source a
+    // wellbore's logs hold, the wellbore OSDU holds nothing under named by its own code.
+    await adminPage.getByTestId("builder-preview-open").click();
+    await expect(adminPage.getByTestId("builder-view-preview")).toHaveAttribute("data-state", "on");
+    await expect(adminPage.getByTestId("builder-preview-table")).toHaveText(`osdu.dim_${NAME}`);
+    await expect(adminPage.getByTestId("builder-preview-count")).toContainText("4 rows, the whole table: 3 keys", { timeout: 60_000 });
+    const rows = adminPage.getByTestId("builder-preview-grid").getByTestId("table-row");
+    await expect(rows).toHaveCount(4);
+    for (const [key, name, country, held, records] of [
+      [WELLBORE_1, "E2E Builder 1", "United States", "CPI", "2"],
+      [WELLBORE_1, "E2E Builder 1", "United States", "COMP", "1"],
+      [WELLBORE_2, "E2E Builder 2", "United States", "CPI", "1"],
+    ]) {
+      const cells = rows.filter({ hasText: name }).filter({ hasText: held }).locator("td");
+      await expect(cells).toHaveText([`${key}:`, name, country, held, records]);
+    }
+
+    await expect(rows.filter({ hasText: "e2e-builder-gone" })).toHaveCount(1);
+    await story(adminPage);
+
     // The build lives in the explorer's address: a reload brings it back beside the records.
     await adminPage.reload();
     await expect(adminPage.getByTestId("builder-name")).toHaveValue(NAME, { timeout: 30_000 });
@@ -249,7 +270,7 @@ test.describe.serial("dimension builder", () => {
     await expect(adminPage.getByTestId("builder-column-value-example")).toHaveText("E2E Builder 1", { timeout: 60_000 });
     await expect(adminPage.getByTestId("builder-example-count")).toHaveText("1 of 3", { timeout: 60_000 });
 
-    // Back on the log, the record it names opens from the log itself: its name is marked as what a row shows.
+    // Back on the log, the record it names opens from the log itself: its name is marked as what names each row.
     while (await adminPage.locator('[data-testid="osdu-linked-close"]:visible').count() > 0) {
       await adminPage.locator('[data-testid="osdu-linked-close"]:visible').first().click();
     }
@@ -287,8 +308,8 @@ test.describe.serial("dimension builder", () => {
     await adminPage.getByTestId("explorer-grid-row").filter({ hasText: "e2e builder log 1" }).click();
     await expect(field(adminPage, "data.ServiceCompanyID")).toBeVisible({ timeout: 60_000 });
 
-    // The service company is reached through another link than the key's: its name cannot be what a row shows, and its
-    // link is offered as the key instead.
+    // The service company is reached through another link than the key's: its name cannot name a row, and its link is
+    // offered as the key instead.
     await follow(adminPage, COMPANY);
     await expect(field(adminPage, "data.OrganisationName")).toBeVisible({ timeout: 60_000 });
     await field(adminPage, "data.OrganisationName").getByTestId("builder-field-menu").click();

@@ -1,12 +1,13 @@
 // How the dimension builder tells a draft as a story: where each step stands and which asks for a pick next, which step
-// each of the builder's findings is about, the words a clean step is said in, and where a record holds a key's value, so
-// the record the key names can be opened from it.
+// each of the builder's findings is about, the words a clean step is said in, where a record holds a key's value, so the
+// record the key names can be opened from it, and how the table's preview lays out the keys it made as a build lays out
+// the table.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  attributeOfTarget, chainWords, cleanWords, exampleCount, firstLocationAt, keyEntityType, kindTypeName, nextStep, stepOfTarget, stepStates,
-  type StoryDraft,
+  attributeOfTarget, chainWords, cleanWords, exampleCount, firstLocationAt, keyEntityType, kindTypeName, nextStep, previewRows, previewWords, stepOfTarget,
+  stepStates, type PreviewKey, type StoryDraft,
 } from "../src/features/delivery/explorer/dimension/dimensionStory.ts";
 
 const empty: StoryDraft = { kind: "", path: null, label: [], attributes: [], clean: [] };
@@ -173,5 +174,66 @@ describe("firstLocationAt", () => {
     assert.equal(firstLocationAt(wellbore, "data.FacilityName", "W2"), null);
     assert.equal(firstLocationAt(wellbore, "", null), null);
     assert.equal(firstLocationAt(null, "data.FacilityName", null), null);
+  });
+});
+
+describe("previewRows", () => {
+  const wellbore = (key: string, value: string | null, records: number, extra: Partial<PreviewKey> = {}): PreviewKey => ({
+    key, value, records, attributes: [{ name: "UUID", value: `${key}-uuid` }], ...extra,
+  });
+
+  it("lays out a row a key, with each attribute's value and the key's records", () => {
+    const { rows, leftOut } = previewRows(
+      [wellbore("W1", "WELLBORE A", 3), wellbore("W2", "WELLBORE B", 1)],
+      [{ name: "UUID", collect: null }, { name: "Field", collect: null }],
+    );
+    assert.deepEqual(rows, [
+      { id: "W1", key: "W1", value: "WELLBORE A", attributes: { UUID: "W1-uuid" }, records: 3 },
+      { id: "W2", key: "W2", value: "WELLBORE B", attributes: { UUID: "W2-uuid" }, records: 1 },
+    ]);
+    assert.deepEqual(leftOut, []);
+  });
+
+  it("makes a row of each value a key collects, with the records holding that value", () => {
+    const made = wellbore("W1", "WELLBORE A", 3, {
+      attributes: [{ name: "UUID", value: "u1" }, { name: "Source", value: "WellDB", records: 2 }, { name: "Source", value: "Facade API", records: 1 }],
+    });
+    const { rows } = previewRows([made], [{ name: "UUID", collect: null }, { name: "Source", collect: "data.Source" }]);
+    assert.deepEqual(rows.map((row) => [row.value, row.attributes, row.records]), [
+      ["WELLBORE A", { UUID: "u1", Source: "WellDB" }, 2],
+      ["WELLBORE A", { UUID: "u1", Source: "Facade API" }, 1],
+    ]);
+    assert.equal(new Set(rows.map((row) => row.id)).size, 2);
+  });
+
+  it("keeps one row, with every record of the key, for a key collecting no value", () => {
+    const { rows } = previewRows([wellbore("W2", "W2", 4)], [{ name: "Source", collect: "data.Source" }]);
+    assert.deepEqual(rows.map((row) => [row.attributes, row.records]), [[{}, 4]]);
+  });
+
+  it("joins several values of one attribute as a build does", () => {
+    const made = wellbore("W1", "A", 1, { attributes: [{ name: "Alias", value: "a" }, { name: "Alias", value: "b" }] });
+    assert.equal(previewRows([made], [{ name: "Alias", collect: null }]).rows[0].attributes.Alias, "a; b");
+  });
+
+  it("lists a key under no name, which is no row, with why", () => {
+    const { rows, leftOut } = previewRows(
+      [wellbore("W1", null, 3, { leftOut: "cleaning left nothing" }), { key: "W9", attributes: [] }],
+      [],
+    );
+    assert.deepEqual(rows, []);
+    assert.deepEqual(leftOut, [{ key: "W1", why: "cleaning left nothing" }, { key: "W9", why: "it has no name" }]);
+  });
+});
+
+describe("previewWords", () => {
+  it("says the whole table when every key is made", () => {
+    assert.equal(previewWords(12, 10, 10, true), "12 rows, the whole table: 10 keys");
+    assert.equal(previewWords(1, 1, 1, true), "1 row, the whole table: 1 key");
+  });
+
+  it("says how many keys the rows are of, and whether the search named them all", () => {
+    assert.equal(previewWords(100, 100, 2400, true), "100 rows from the 100 keys most records hold, of 2,400");
+    assert.equal(previewWords(140, 100, 1000, false), "140 rows from the 100 keys most records hold, of 1,000 or more");
   });
 });

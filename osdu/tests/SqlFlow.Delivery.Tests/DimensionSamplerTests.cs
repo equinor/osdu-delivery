@@ -19,11 +19,11 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// The reads the explorer's dimension builder makes of OSDU beyond the explorer's own
-/// (osdu/docs/reference/concepts/explorer.md, Building a dimension), against a stand-in of the search service as a
-/// build reads it: the commonest keys of a path in one search, the query narrowing them, a query the service refuses
-/// answered with its words; and one key made into its row exactly as a build makes it, through the build's own labeler,
-/// collector display, cleaner and attribute assembly. Then the same through the explorer's operation, as the control
-/// plane runs it.
+/// (osdu/docs/reference/concepts/explorer-dimension-builder.md), against a stand-in of the search service as a build
+/// reads it: the commonest keys of a path in one search, the query narrowing them, a query the service refuses answered
+/// with its words; one key made into its row exactly as a build makes it, through the build's own labeler, collector
+/// display, cleaner and attribute assembly; and the commonest keys made into their rows the same way, the table's
+/// preview. Then the same through the explorer's operation, as the control plane runs it.
 /// </summary>
 [Trait("Category", "Integration")]
 public class DimensionSamplerTests
@@ -286,6 +286,112 @@ public class DimensionSamplerTests
         Assert.Equal([("WellDB", 2L)], example.Attributes.Where(a => a.Name == "Source").Select(a => (a.Value, a.Records ?? 0)));
     }
 
+    // ---- The table's preview ----
+
+    private static DimensionSpec Plain(long maxValues = DimensionSpec.DefaultMaxValues) => new()
+    {
+        Name = "Wellbore",
+        Kind = WellLog,
+        Path = "data.WellboreID",
+        MaxValues = maxValues,
+    };
+
+    [Fact]
+    public async Task A_preview_makes_the_commonest_keys_into_the_rows_an_example_makes_of_each_with_the_records_the_search_counted()
+    {
+        var spec = Spec();
+        var platform = Estate();
+        var sampler = Sampler(platform);
+
+        var preview = await sampler.PreviewAsync(spec, null, WellboreId, Collected(), DimensionCleaner.Identity, CancellationToken.None);
+
+        Assert.Equal((5L, 3L, true), (preview.Total, preview.Keys, preview.EveryKey));
+        Assert.Null(preview.Refusal);
+        Assert.Equal([(W1 + ":", 3L), (W2 + ":", 1L), ("unknown-well", 1L)], preview.Rows.Select(r => (r.Key, r.Records ?? 0)));
+
+        // The records of a key are the search's own count as it grouped the keys: one search groups them, and each key's
+        // own records are searched only for the values it collects.
+        Assert.Equal(1 + preview.Rows.Count, platform.Calls.Count(c => c.Body!.Contains("aggregateBy", StringComparison.Ordinal)));
+
+        // Each row is the one an example makes of its key.
+        foreach (var row in preview.Rows)
+        {
+            var example = await sampler.ExampleAsync(spec, row.Key, null, WellboreId, Collected(), DimensionCleaner.Identity, CancellationToken.None);
+            Assert.Equal(
+                (example.Label, example.LabelFrom, example.Problem, example.Value, example.LeftOut, example.Records, example.Filter),
+                (row.Label, row.LabelFrom, row.Problem, row.Value, row.LeftOut, row.Records, row.Filter));
+            Assert.Equal(example.Attributes, row.Attributes);
+        }
+
+        Assert.Equal("WELLBORE A/2-9 S", preview.Rows[0].Value);
+        Assert.Equal([("WellDB", 2L), ("Facade API", 1L)], preview.Rows[0].Attributes.Where(a => a.Name == "Source").Select(a => (a.Value, a.Records ?? 0)));
+        Assert.Equal("Not specified", preview.Rows[1].Value);
+        Assert.Equal("it names no OSDU record", preview.Rows[2].Problem);
+        OsduContracts.AssertConform(platform.Calls, null, OsduContracts.Search);
+    }
+
+    [Fact]
+    public async Task A_preview_makes_the_keys_most_records_hold_and_says_how_many_the_search_named()
+    {
+        var platform = new FakeDimensionPlatform();
+        for (var i = 0; i < DimensionSampler.PreviewKeys + 5; i++)
+        {
+            platform.Add($"dev:work-product-component--WellLog:L{i}", WellLog, new JsonObject { ["WellboreID"] = $"dev:master-data--Wellbore:W{i:D3}:" });
+        }
+
+        platform.Add("dev:work-product-component--WellLog:Lx", WellLog, new JsonObject { ["WellboreID"] = "dev:master-data--Wellbore:W004:" });
+
+        var preview = await Sampler(platform).PreviewAsync(Plain(), null, WellboreId, Collected(), DimensionCleaner.Identity, CancellationToken.None);
+
+        Assert.Equal(DimensionSampler.PreviewKeys, preview.Rows.Count);
+        Assert.Equal((DimensionSampler.PreviewKeys + 5L, true), (preview.Keys, preview.EveryKey));
+        Assert.Equal(("dev:master-data--Wellbore:W004:", 2L), (preview.Rows[0].Key, preview.Rows[0].Records ?? 0));
+        Assert.Equal("W004", preview.Rows[0].Value);
+    }
+
+    [Fact]
+    public async Task A_preview_leaves_out_a_key_longer_than_a_dimension_keeps_and_says_when_a_build_would_fail_on_maxValues()
+    {
+        // A property indexed as a keyword keeps text of any length (a text property's keyword sub-field keeps none over 256
+        // characters, so no such key reaches the search's groups).
+        var platform = Estate();
+        var tooLong = "dev:master-data--Wellbore:" + new string('x', DimensionSpec.MaxOriginalLength) + ":";
+        platform.Add("dev:work-product-component--WellLog:L9", WellLog, new JsonObject { ["WellboreID"] = tooLong });
+
+        var preview = await Sampler(platform).PreviewAsync(
+            Plain(maxValues: 2), null, OsduField.Keyword("data.WellboreID"), Collected(), DimensionCleaner.Identity, CancellationToken.None);
+
+        Assert.DoesNotContain(preview.Rows, r => r.Key == tooLong);
+        Assert.Equal(3, preview.Keys);
+        Assert.Contains(preview.Notes, n => n.Contains("1 key(s) are longer than the 1024 characters", StringComparison.Ordinal));
+        Assert.Contains(preview.Notes, n => n.Contains("more than the 2 the dimension's maxValues allows, so a build fails", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Without_knowing_how_the_key_is_indexed_a_preview_counts_the_records_and_makes_no_row()
+    {
+        var platform = Estate();
+        var preview = await Sampler(platform).PreviewAsync(Plain(), null, null, Collected(), DimensionCleaner.Identity, CancellationToken.None);
+
+        Assert.Equal((5L, 0L, false), (preview.Total, preview.Keys, preview.EveryKey));
+        Assert.Empty(preview.Rows);
+        Assert.Contains(preview.Notes, n => n.Contains("is indexed is not known", StringComparison.Ordinal));
+        Assert.DoesNotContain(platform.Calls, c => c.Body!.Contains("aggregateBy", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_query_the_service_refuses_is_the_previews_answer_in_its_words()
+    {
+        var platform = Estate();
+        platform.Fail = _ => HttpStatusCode.BadRequest;
+
+        var preview = await Sampler(platform).PreviewAsync(Plain(), null, WellboreId, Collected(), DimensionCleaner.Identity, CancellationToken.None);
+
+        Assert.NotNull(preview.Refusal);
+        Assert.Empty(preview.Rows);
+        Assert.Single(platform.Calls);
+    }
+
     // ---- Through the explorer's operation, as the control plane runs it ----
 
     private static async Task<string> FlowFileAsync()
@@ -366,6 +472,38 @@ public class DimensionSamplerTests
         Assert.Equal("United States", example.Attributes.Single(a => a.Name == "Country").Value);
         Assert.Equal(["WellDB", "Facade API"], example.Attributes.Where(a => a.Name == "Source").Select(a => a.Value));
         Assert.Equal(3, example.Records);
+    }
+
+    [Fact]
+    public async Task The_operation_previews_the_item_exactly_as_the_builder_wrote_it_with_the_partition_filled_into_its_query()
+    {
+        var platform = Estate();
+        var operation = new ExploreOperation(Samples.Engine(ledger: null), platform, allowLoopback: true);
+        var draft = new DimensionDraft
+        {
+            Name = "Wellbore",
+            Kind = WellLog,
+            Query = "NOT data.Source.keyword:\"{partition}\"",
+            Path = "data.WellboreID",
+            Label = ["data.FacilityName"],
+            Attributes = [new DimensionDraftAttributeSpec("Source", null, "data.Source")],
+            Clean = [new DimensionDraftCleanStep("lower", null, null)],
+        };
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        LongArgument.Put(arguments, ExploreOperation.ItemArgument, DimensionBuilder.ToYaml(draft));
+        LongArgument.Put(arguments, ExploreOperation.FieldsArgument, JsonSerializer.Serialize(
+            new DimensionExampleFields(DimensionFieldWire.Of(WellboreId), new Dictionary<string, DimensionFieldWire> { ["Source"] = DimensionFieldWire.Of(Source) }),
+            ExploreOperation.BuilderJson));
+
+        var answered = JsonNode.Parse(await operation.ExecuteAsync(Task(await FlowFileAsync(), ExploreOperation.DimensionPreviewAction, arguments), CancellationToken.None))!;
+        var preview = answered["answer"]!.Deserialize<DimensionPreview>(ExploreOperation.BuilderJson)!;
+
+        Assert.Equal(
+            [(W1 + ":", "wellbore a/2-9 s", 3L), (W2 + ":", "w2", 1L), ("unknown-well", "unknown-well", 1L)],
+            preview.Rows.Select(r => (r.Key, r.Value!, r.Records ?? 0)));
+        Assert.Equal(["WellDB", "Facade API"], preview.Rows[0].Attributes.Where(a => a.Name == "Source").Select(a => a.Value));
+        Assert.Contains(platform.Calls, c => c.Body!.Contains("NOT data.Source.keyword:\\\"dev\\\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(platform.Calls, c => c.Body!.Contains("{partition}", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Workflow } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Rows3, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ExplainMark } from "@/components/ExplainTip";
@@ -17,16 +17,18 @@ const TABLE_COLUMNS = "Every dimension's table also holds id, partition, key_id,
 /**
  * The end of the dimension's story (osdu/docs/reference/concepts/explorer-dimension-builder.md): the table a build of
  * it writes, and one of its rows as a build would make it, for the record in view's key or one of the commonest, stepped
- * through. Each column is named where it is shown, and what the builder found about a column, or about the whole, is said
- * there too.
+ * through, with the way to the table's preview. Each column is named where it is shown, and what the builder found about
+ * a column, or about the whole, is said there too.
  */
-export function BuilderRow({ build, draft, state, issues, onShowRow }: {
+export function BuilderRow({ build, draft, state, issues, onShowRow, onPreview }: {
   build: DimensionBuild;
   draft: DimensionDraft;
   state: StepState;
   issues: DimensionDraftIssue[];
   /** Opens how a build makes each column, drawn as a flow's own dimension is. */
   onShowRow: () => void;
+  /** Shows the table previewed: the rows of the keys most records hold. */
+  onPreview: () => void;
 }) {
   const compose = build.compose.data;
   const keyed = draft.path !== null && draft.path !== "";
@@ -48,13 +50,19 @@ export function BuilderRow({ build, draft, state, issues, onShowRow }: {
         : <span className="font-normal text-muted-foreground">a table, a row per key</span>}
       issues={whole}
       shownInBody={issues.filter((issue) => stepOfTarget(issue.target) === "makes")}
-      body={keyed && <ExampleRow build={build} draft={draft} issues={issues} onShowRow={onShowRow} />}
+      body={keyed && <ExampleRow build={build} draft={draft} issues={issues} onShowRow={onShowRow} onPreview={onPreview} />}
       last
     />
   );
 }
 
-function ExampleRow({ build, draft, issues, onShowRow }: { build: DimensionBuild; draft: DimensionDraft; issues: DimensionDraftIssue[]; onShowRow: () => void }) {
+function ExampleRow({ build, draft, issues, onShowRow, onPreview }: {
+  build: DimensionBuild;
+  draft: DimensionDraft;
+  issues: DimensionDraftIssue[];
+  onShowRow: () => void;
+  onPreview: () => void;
+}) {
   const compose = build.compose.data;
   const example = compose?.example ?? null;
   const dimension = compose?.dimension ?? null;
@@ -147,6 +155,12 @@ function ExampleRow({ build, draft, issues, onShowRow }: { build: DimensionBuild
             <Workflow />
             How it is built
           </Button>
+          <RichTooltip body="The table's rows for the keys most records hold, read from OSDU as a build reads them.">
+            <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[12px]" onClick={onPreview} data-testid="builder-preview-open">
+              <Rows3 />
+              Preview the table
+            </Button>
+          </RichTooltip>
         </div>
       </div>
       {compose?.exampleProblem && <NoteLine>{`The example row could not be made: ${compose.exampleProblem}`}</NoteLine>}

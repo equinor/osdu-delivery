@@ -19,12 +19,12 @@ using Xunit;
 namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
-/// The explorer's dimension builder as the API serves it (osdu/docs/reference/concepts/explorer.md, Building a
-/// dimension): a draft written as the item a dimension flow lists and read back by the loader a flow is read by;
-/// checked against the templates the synced repositories hold as a flow's own dimension is against its folders, a missing
-/// template said with where to put one; every mistake pointed at the part it is about; a name whose table another flow's
-/// dimension writes warned of; the keys a kind's template suggests; and an example key made into its row, and the
-/// commonest keys of a path, through the partition's own connection, as the explorer reads it, given exactly what the
+/// The explorer's dimension builder as the API serves it (osdu/docs/reference/concepts/explorer-dimension-builder.md): a
+/// draft written as the item a dimension flow lists and read back by the loader a flow is read by; checked against the
+/// templates the synced repositories hold as a flow's own dimension is against its folders, a missing template said with
+/// where to put one; every mistake pointed at the part it is about; a name whose table another flow's dimension writes
+/// warned of; the keys a kind's template suggests; and an example key made into its row, the commonest keys of a path,
+/// and the table previewed, through the partition's own connection, as the explorer reads it, given exactly what the
 /// operation reads back. Nothing here reaches an OSDU: the operations are stood in for (<see cref="RecordedOperations"/>),
 /// and what each was given is read back.
 /// </summary>
@@ -461,10 +461,65 @@ public sealed class DeliveryExplorerDimensionApiTests
         }
     }
 
+    [Fact]
+    public async Task The_table_is_previewed_through_the_connection_from_the_item_exactly_as_written()
+    {
+        var estate = await SeedAsync();
+        const string Preview = """
+            {"connection":"c","partition":"p","correlationId":"x","answeredUtc":"2026-11-11T00:00:00Z","answer":{
+              "total":5,"keys":3,"everyKey":true,"notes":[],
+              "rows":[{"key":"dev:master-data--Wellbore:W1:","value":"WB B/2-9 S","attributes":[],"records":3,"notes":[]}]}}
+            """;
+        var operations = new RecordedOperations { Answer = _ => Preview };
+        try
+        {
+            await using var factory = Host(estate, operations);
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+            var draft = Draft("Wellbore" + estate.Suffix);
+            var yaml = (await ComposeAsync(client, token, estate.Partition, new { draft })).GetProperty("yaml").GetString()!;
+
+            using var response = await SendAsync(client, token, HttpMethod.Post, "/api/v1/delivery/explorer/dimension/preview", new { draft }, estate.Partition);
+            var text = await response.Content.ReadAsStringAsync();
+
+            // The operation's answer, as the explorer's reads are answered.
+            Assert.True(response.StatusCode == HttpStatusCode.OK, text);
+            var answer = JsonDocument.Parse(text).RootElement.GetProperty("answer");
+            Assert.Equal(("WB B/2-9 S", 3), (answer.GetProperty("rows")[0].GetProperty("value").GetString(), answer.GetProperty("keys").GetInt32()));
+
+            // The operation was given the item the compose wrote, and how the key and the collected path are indexed, through the
+            // partition's own connection; no example key.
+            var ran = operations.Last();
+            Assert.Equal((ExploreOperation.DimensionPreviewAction, estate.Partition), (ran.Argument(ExploreOperation.ActionArgument), ran.SourceRef));
+            Assert.Equal(ExploreOperation.PartitionConnectionValue, ran.Argument(ExploreOperation.ConnectionArgument));
+            Assert.Equal(yaml, LongArgument.Read(ran, ExploreOperation.ItemArgument));
+            Assert.Null(ran.Argument(ExploreOperation.KeyArgument));
+            var fields = JsonSerializer.Deserialize<DimensionExampleFields>(LongArgument.Read(ran, ExploreOperation.FieldsArgument)!, ExploreOperation.BuilderJson)!;
+            Assert.Equal(new DimensionFieldWire("data.WellboreID", "text", null), fields.Key);
+            Assert.Equal(new DimensionFieldWire("data.Source", "text", null), fields.Collected!["Source"]);
+        }
+        finally
+        {
+            await CleanAsync(estate);
+        }
+    }
+
     /// <summary>A request the builder refuses before anything is read, and why.</summary>
     public static TheoryData<string, string, string> Refusals => new()
     {
         { "compose", "{}", "Send the draft" },
+        { "preview", "{}", "Send the draft whose table to preview" },
+        { "preview", "{\"draft\":{\"name\":\"" + new string('x', DimensionBuilder.MaxTextLength + 1) + "\",\"kind\":\"k\"}}", "longer than" },
+        {
+            "preview",
+            "{\"draft\":{\"name\":\"W\",\"kind\":\"osdu:wks:WellLog\",\"path\":\"data.WellboreID\",\"label\":[],\"attributes\":[],\"clean\":[]}}",
+            "The table is previewed once a build would make it: "
+        },
+        {
+            "preview",
+            "{\"draft\":{\"name\":\"W\",\"kind\":\"osdu:wks:work-product-component--WellLog:9.9.9\",\"path\":\"data.WellboreID\",\"label\":[],\"attributes\":[],\"clean\":[]}}",
+            "No template a synced repository holds matches"
+        },
         { "compose", "{\"draft\":{\"name\":\"" + new string('x', DimensionBuilder.MaxTextLength + 1) + "\",\"kind\":\"k\"}}", "longer than" },
         {
             "compose",

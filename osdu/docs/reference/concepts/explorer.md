@@ -503,6 +503,7 @@ the workbench's partition, else the registry's default, is read.
 | `GET /api/v1/delivery/explorer/dimension/candidates?kind=` | operate | The keys a kind's template suggests for a dimension. |
 | `POST /api/v1/delivery/explorer/dimension/keys` | operate | The commonest keys of a drafted dimension's path. |
 | `POST /api/v1/delivery/explorer/dimension/compose` | operate | A draft written as a dimension flow's item, and checked. |
+| `POST /api/v1/delivery/explorer/dimension/preview` | operate | The rows a build of a draft would make of the 100 keys most records hold; 400 while a build would refuse the draft. |
 
 A request the read would refuse (a kind that is not one, more than 12 conditions, a page past the window, an id that is
 not one) answers 400 before anything is read, with the reason, for example `The search service pages through the first
