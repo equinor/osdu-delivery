@@ -19,13 +19,16 @@ interface HeadClippedTextProps {
 
 /**
  * A code-like value on one line in whatever width it is given, where the end tells values apart and the start repeats
- * down a column: an OSDU kind, a variable path. The body and tail stay in view and the head clips from the left. The text
- * is the value verbatim, so it selects and copies whole, and the whole value is on hover whenever any of it is hidden.
+ * down a column: an OSDU kind, a variable path. The head clips from the left first; only when the body and tail alone
+ * are wider than the room does the body end in an ellipsis, so it never stops mid-letter at the edge. The tail stays in
+ * view. The text is the value verbatim, so it selects and copies whole, and the whole value is on hover whenever any of
+ * it is hidden.
  */
 export function HeadClippedText({ head, body, tail = "", title, headClassName = "text-muted-foreground", className }: HeadClippedTextProps) {
   const full = `${head}${body}${tail}`;
   const [lineRef, lineClipped] = useClipped(full);
   const [headRef, headClipped] = useClipped(full);
+  const [bodyRef, bodyClipped] = useClipped(full);
 
   const line = (
     <span ref={lineRef} className={cn("flex min-w-0 max-w-full items-baseline overflow-hidden", className)}>
@@ -33,10 +36,14 @@ export function HeadClippedText({ head, body, tail = "", title, headClassName = 
       <span ref={headRef} className={cn("min-w-0 overflow-hidden text-ellipsis whitespace-nowrap [direction:rtl]", headClassName)}>
         <bdi>{head}</bdi>
       </span>
-      <span className="shrink-0 font-medium">{body}</span>
-      {tail !== "" && <span className="shrink-0 text-muted-foreground">{tail}</span>}
+      {/* The body and tail do not shrink, so the head takes the whole squeeze until it is gone; they are never wider than
+          the line, so only then does the body end in an ellipsis, the tail still in view after it. */}
+      <span className="flex max-w-full shrink-0 items-baseline overflow-hidden">
+        <span ref={bodyRef} className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium">{body}</span>
+        {tail !== "" && <span className="shrink-0 text-muted-foreground">{tail}</span>}
+      </span>
     </span>
   );
 
-  return lineClipped || headClipped ? <RichTooltip body={full} title={title} mono>{line}</RichTooltip> : line;
+  return lineClipped || headClipped || bodyClipped ? <RichTooltip body={full} title={title} mono>{line}</RichTooltip> : line;
 }

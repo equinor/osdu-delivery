@@ -63,6 +63,19 @@ describe("the search of the mappings", () => {
     assert.deepEqual(found("welllog petrel"), []);
   });
 
+  it("finds a mapping by its description, and one that does not load by why", () => {
+    const described = { ...log, summary: { ...log.summary, description: "Well logs of the well database, one record per log" } };
+    const broken = { ...bore, message: "record.data.WellID: $search names Well, which the mapping does not declare" };
+    assert.deepEqual(matchingMappings([described, broken], "one record per log").map((row) => row.reference), ["WellLog@1.4.0"]);
+    assert.deepEqual(matchingMappings([described, broken], "does not declare").map((row) => row.reference), ["Wellbore@1.2.0"]);
+  });
+
+  it("reads what the grid shows beyond the row, such as the repository heading its group", () => {
+    const repository = (row: { reference: string }) => (row.reference.startsWith("WellLog") ? "osdu-delivery-estate" : "petrel-estate");
+    assert.deepEqual(matchingMappings([log, bore], "estate", repository).map((row) => row.reference), ["WellLog@1.4.0", "Wellbore@1.2.0"]);
+    assert.deepEqual(matchingMappings([log, bore], "delivery-estate 1.4", repository).map((row) => row.reference), ["WellLog@1.4.0"]);
+  });
+
   it("lists every mapping for an empty search", () => {
     assert.deepEqual(found("   "), ["WellLog@1.4.0", "Wellbore@1.2.0"]);
   });

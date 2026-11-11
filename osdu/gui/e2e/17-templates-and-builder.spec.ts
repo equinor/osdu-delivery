@@ -67,19 +67,22 @@ test.describe.serial("templates and the mapping builder", () => {
   test("a repository's template is listed by its file, laid out from it, and downloads as that file", async ({ adminPage }) => {
     await openTemplates(adminPage);
 
-    // Each row is a file of a synced repository's template folder: the kind and version it holds, the repository, the file.
+    // Each row is a file of a synced repository's template folder: the kind and version it holds, and the file. Several
+    // repositories' files are listed under a heading for each, and the search reads the repository's name as well, so
+    // searching for it lists the fixture repository's files alone.
+    const search = adminPage.getByTestId("templates-search");
+    await search.fill(REPO_NAME);
     const rows = adminPage.getByTestId("templates-table").getByTestId("table-row");
-    const ours = rows.filter({ hasText: REPO_NAME });
-    const wellbore = ours.filter({ hasText: WELLBORE_PATH });
+    const wellbore = rows.filter({ hasText: WELLBORE_PATH });
     await expect(wellbore).toHaveCount(1, { timeout: 30_000 });
     await expect(wellbore).toContainText(WELLBORE_KIND);
     await expect(wellbore).toContainText(WELLBORE_VERSION);
-    await expect(ours.filter({ hasText: WELLLOG_KIND }).first()).toContainText(WELLLOG_VERSION);
+    await expect(rows.filter({ hasText: WELLLOG_KIND }).first()).toContainText(WELLLOG_VERSION);
 
-    // The filter finds a file by any of what its row says.
-    await adminPage.getByTestId("templates-search").fill(WELLBORE_FILE);
-    await expect(ours).toHaveCount(1);
-    await adminPage.getByTestId("templates-search").fill("");
+    // Every word typed is found in what the grid shows of a file, in any order.
+    await search.fill(`${WELLBORE_FILE} ${REPO_NAME}`);
+    await expect(rows).toHaveCount(1);
+    await search.fill(REPO_NAME);
 
     await wellbore.click();
     const sheet = adminPage.getByTestId("templates-sheet");
@@ -233,9 +236,9 @@ test.describe.serial("templates and the mapping builder", () => {
       expect(readFileSync(await fromRow.path(), "utf8")).toBe(wellboreText);
       await expect(adminPage.getByText(/Put it in a folder named templates beside the documents that fill it/).first()).toBeVisible();
 
-      // A kind opens laid out as the template its file holds, with the same download beside it. Nothing is kept: the
-      // template is the repository's once the file is committed to a template folder and synced.
-      await adminPage.getByTestId(`templates-browse-view-${WELLBORE_KIND}`).click();
+      // A kind's row opens it laid out as the template its file holds, with the same download beside it. Nothing is kept:
+      // the template is the repository's once the file is committed to a template folder and synced.
+      await rows.filter({ hasText: WELLBORE_KIND }).click();
       const sheet = adminPage.getByTestId("templates-browse-sheet");
       await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION, { timeout: 15_000 });
       await expect(sheet.getByTestId("templates-browse-source-link")).toHaveAttribute("href", WELLBORE_URL);

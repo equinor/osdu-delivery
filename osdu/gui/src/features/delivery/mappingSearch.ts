@@ -5,6 +5,8 @@ interface SearchedMapping {
   relativePath: string;
   templateVersion: string;
   summary: Readonly<Record<string, unknown>>;
+  /** Why the mapping does not load, which its row shows in place of its description; absent or null when it loads. */
+  message?: string | null;
 }
 
 /** The page of a mapping. */
@@ -31,14 +33,23 @@ export function mappingSearchText(mapping: SearchedMapping): string {
     mapping.templateVersion,
     summaryText(mapping.summary, "system"),
     summaryText(mapping.summary, "key"),
+    summaryText(mapping.summary, "description"),
+    mapping.message ?? "",
   ].join(" ");
 }
 
-/** The mappings a search names: every word typed is found in what the row shows, in any order and ignoring case. */
-export function matchingMappings<T extends SearchedMapping>(mappings: readonly T[], search: string): T[] {
+/**
+ * The mappings a search names: every word typed is found in what the row shows, in any order and ignoring case.
+ * `context` is what the grid shows of a mapping beyond its own row, such as the repository its group is headed by.
+ */
+export function matchingMappings<T extends SearchedMapping>(mappings: readonly T[], search: string, context?: (mapping: T) => string): T[] {
   const words = search.toLowerCase().split(/\s+/).filter((word) => word !== "");
+  if (words.length === 0) {
+    return [...mappings];
+  }
+
   return mappings.filter((mapping) => {
-    const text = mappingSearchText(mapping).toLowerCase();
+    const text = `${mappingSearchText(mapping)} ${context?.(mapping) ?? ""}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }

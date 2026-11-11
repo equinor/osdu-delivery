@@ -596,6 +596,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The Mappings and Templates grids fit the window and say what is wrong first.** The rows of several repositories are
+  listed under a heading for each, with its count and when its sync last saw it, in place of a repository and a synced
+  column on every row; a mapping that does not load, or a file that holds no template, says why in its row, and a line
+  over the grid counts them with **List only these**. A mapping's row adds its description and links its template
+  version to Templates; Browse OSDU opens a kind from its row, marks only a schema that is not published, and puts its
+  search first. Neither grid scrolls sideways or makes the page scroll
+  ([the Build pages](osdu/docs/reference/concepts/gui-build.md#mappings)).
 - **Explain sits beside a page's title.** The question-mark button after a page's name (at the end of the lineage graph's
   toolbar) has the assistant explain the page; it no longer takes room at the end of the tab strip
   ([Explain](sqlflow/docs/reference/guides/chat-assistant.md#explain)).

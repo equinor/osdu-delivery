@@ -100,7 +100,7 @@ version exactly, or name the kind alone and fill the one version the nearest fol
 the template: commit it, and the repository's sync records it; nothing of it is kept in a database. `sqlflow template
 folders --for welldb/mappings/WellLog@1.4.0.yaml` lists the templates the mapping will read.
 
-To see what can be filled, open the kind on the Templates page: **View** on the Browse OSDU tab before the file is
+To see what can be filled, open the kind on the Templates page: its row on the Browse OSDU tab before the file is
 committed, or the file's row on the Repositories tab once the repository has synced. It lists every variable
 (`osdu.data.WellboreID`, `osdu.data.Curves[].CurveUnit`...) with its shape, whether the schema requires it, who writes
 it (a mapping, OSDU Delivery, or OSDU), the entity types it points to and its unit context.

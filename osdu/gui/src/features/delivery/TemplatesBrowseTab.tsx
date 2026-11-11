@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Download, ExternalLink, Eye, FlaskConical, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
+import { Archive, Download, ExternalLink, FlaskConical, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import { LinkRef } from "@/components/LinkRef";
 import { RelativeTime } from "@/components/RelativeTime";
 import { SearchInput } from "@/components/SearchInput";
 import { StatePill } from "@/components/StatusBadge";
+import { DimensionGrid } from "./dimensions/DimensionGrid";
 import { KindText } from "./KindText";
 import { TemplateCompareSheet, type CompareStart } from "./TemplateCompareSheet";
 import { kindStem, osduTemplateFileQuery, templateFileName } from "./templateFormat";
@@ -38,20 +39,27 @@ interface Viewing {
   kind: string;
 }
 
-/** A published schema, the usual case, reads plainly; one in development or obsolete stands out. */
-function StatusCell({ schema }: { schema: DeliveryOsduSchema }) {
-  if (schema.status === null || schema.status === "PUBLISHED") {
-    return <span className="text-muted-foreground">{schema.status === null ? "-" : "Published"}</span>;
-  }
-
+/**
+ * A schema's kind, and its status after it when that is not the usual one: a published schema says nothing, one in
+ * development or obsolete stands out beside its kind.
+ */
+function KindStatusCell({ schema }: { schema: DeliveryOsduSchema }) {
+  const usual = schema.status === null || schema.status === "PUBLISHED";
   const obsolete = schema.status === "OBSOLETE";
   return (
-    <StatePill
-      tone={obsolete ? "muted" : "warning"}
-      label={obsolete ? "Obsolete" : schema.status === "DEVELOPMENT" ? "In development" : schema.status}
-      icon={obsolete ? Archive : FlaskConical}
-      testId={`templates-browse-status-${schema.kind}`}
-    />
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="min-w-0 shrink"><KindText kind={schema.kind} /></span>
+      {!usual && (
+        <span className="shrink-0">
+          <StatePill
+            tone={obsolete ? "muted" : "warning"}
+            label={obsolete ? "Obsolete" : schema.status === "DEVELOPMENT" ? "In development" : schema.status ?? ""}
+            icon={obsolete ? Archive : FlaskConical}
+            testId={`templates-browse-status-${schema.kind}`}
+          />
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -198,15 +206,15 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
     setComparing({ from: { release: previous, kind }, to: { release: current, kind } });
   };
 
+  // A row opens its kind laid out as a template; the glyphs at its end do the rest, each named on hover.
   const columns: Column<BrowseRow>[] = [
-    { id: "kind", header: "Kind", fill: true, render: (row) => <KindText kind={row.schema.kind} /> },
-    { id: "status", header: "Status", render: (row) => <StatusCell schema={row.schema} /> },
+    { id: "kind", header: "Kind", fill: true, floor: 200, render: (row) => <KindStatusCell schema={row.schema} /> },
     ...(allVersions ? [] : [{
       id: "versions",
       header: "Versions",
       align: "right" as const,
       render: (row: BrowseRow) => (
-        <span className="font-mono tabular-nums text-muted-foreground">{row.versions} version{row.versions === 1 ? "" : "s"}</span>
+        <span className="tabular-nums text-muted-foreground">{row.versions} version{row.versions === 1 ? "" : "s"}</span>
       ),
     }]),
     {
@@ -214,7 +222,7 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
       header: "",
       align: "right",
       render: (row) => (
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-0.5 text-muted-foreground">
           <LinkRef
             url={row.schema.webUrl}
             title="In the OSDU data definitions"
@@ -224,12 +232,14 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
           <IconAction
             label="Compare versions"
             icon={<GitCompareArrows />}
+            className="text-muted-foreground"
             onClick={(event) => { event.stopPropagation(); compare(row.schema.kind); }}
             data-testid={`templates-browse-compare-${row.schema.kind}`}
           />
           <IconAction
             label={`Download ${templateFileName(row.schema.kind)} for a repository's template folder`}
             icon={download.isPending && download.variables?.kind === row.schema.kind ? <Loader2 className="animate-spin" /> : <Download />}
+            className="text-muted-foreground"
             onClick={(event) => {
               event.stopPropagation();
               if (index.data !== undefined) {
@@ -239,15 +249,6 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
             disabled={download.isPending}
             data-testid={`templates-browse-download-${row.schema.kind}`}
           />
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={(event) => { event.stopPropagation(); view(row.schema.kind); }}
-            data-testid={`templates-browse-view-${row.schema.kind}`}
-          >
-            <Eye />
-            View
-          </Button>
         </span>
       ),
     },
@@ -282,6 +283,14 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
     <div className="flex flex-col gap-3" data-testid="templates-browse">
       <Card className="gap-2 rounded-lg p-3" data-testid="templates-browse-form">
         <FilterBar>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Wellbore, WellLog, reference-data..."
+            label="Search the record kinds of the release"
+            className="sm:w-80"
+            testId="templates-browse-search"
+          />
           <div className="flex items-center gap-2">
             <Label htmlFor="templates-browse-release" className="text-[13px] font-normal text-muted-foreground">Release</Label>
             <Select value={release ?? ""} onValueChange={setPickedRelease} disabled={releases.data === undefined}>
@@ -299,14 +308,6 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
               </SelectContent>
             </Select>
           </div>
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Wellbore, WellLog, reference-data..."
-            label="Search the record kinds of the release"
-            className="sm:w-80"
-            testId="templates-browse-search"
-          />
           <Label className="flex items-center gap-2 text-[13px] font-normal">
             <Switch checked={allVersions} onCheckedChange={setAllVersions} data-testid="templates-browse-all-versions" />
             Every version
@@ -362,19 +363,21 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
         : <Skeleton className="h-64 w-full rounded-lg" />)}
 
       {shownRows !== undefined && (
-        <DataTable
-          columns={columns}
-          rows={shownRows}
-          rowKey={(row) => row.schema.kind}
-          onRowClick={(row) => view(row.schema.kind)}
-          emptyMessage={`No record kind in ${listed?.name ?? "the release"} matches the search.`}
-          footer={rows !== undefined && rows.length > MAX_ROWS ? (
-            <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground" data-testid="templates-browse-truncated">
-              {`Showing ${MAX_ROWS.toLocaleString()} of ${rows.length.toLocaleString()}. Narrow the search to see the rest.`}
-            </div>
-          ) : undefined}
-          data-testid="templates-browse-results"
-        />
+        <DimensionGrid testId="templates-browse-grid">
+          <DataTable
+            columns={columns}
+            rows={shownRows}
+            rowKey={(row) => row.schema.kind}
+            onRowClick={(row) => view(row.schema.kind)}
+            emptyMessage={`No record kind in ${listed?.name ?? "the release"} matches the search.`}
+            footer={rows !== undefined && rows.length > MAX_ROWS ? (
+              <div className="flex h-8 items-center border-t border-border px-3 text-xs text-muted-foreground" data-testid="templates-browse-truncated">
+                {`Showing ${MAX_ROWS.toLocaleString()} of ${rows.length.toLocaleString()}. Narrow the search to see the rest.`}
+              </div>
+            ) : undefined}
+            data-testid="templates-browse-results"
+          />
+        </DimensionGrid>
       )}
 
       {comparing !== null && (

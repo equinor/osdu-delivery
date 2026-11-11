@@ -42,9 +42,15 @@ The **Delivery** section of Build: what a delivered record is built from, and th
 ## Mappings
 
 The mapping documents the repositories hold, as the last sync found them, one row each, with **New mapping** (opens the
-builder). The search comes first and has the cursor when the page opens: it finds a mapping by anything its row shows (name,
-kind, source, template version or path), every word typed in any order, and Enter opens the first row listed. **All repos**
-narrows the list to a repository.
+builder). Each row gives the mapping's name, its description, the template it fills (its kind and version, the version a
+link to Templates), its source system and dataset key, and how many entries it has. The rows of several repositories are
+listed under a heading for each, naming the repository, how many mappings it holds, when its sync last saw them and how
+many do not load; a heading folds its rows away. A mapping that does not load says why in place of its description, and
+a line over the grid counts them, with **List only these**. The grid fits the window and scrolls inside it, its foot
+counting the rows listed. The search comes first and has the cursor when the page opens: it finds a mapping by anything the
+grid shows of it (name, description or why it does not load, kind, source, template version, path or repository), every
+word typed in any order, and Enter opens the first row listed. With more than one repository, **Every repository**
+narrows the list to one.
 
 A mapping opens on a page of its own, at `/delivery/documents/{id}`, in a workbench tab named after it, so a link, a reload
 and Back land on it. The page fills the window and does not scroll. Its heading is the mapping's name, a click from a
@@ -153,17 +159,22 @@ The OSDU record schemas the synced repositories hold in their template folders, 
 keeps none of them. A repository adds and removes its templates by committing and deleting their files, and its sync
 records them. Two tabs:
 
-- **Repositories**: every file of every synced repository's template folders, filtered by kind, version, repository or
-  file, each with the kind and version it holds (or why it holds none) and when its repository's sync last saw it; a
-  template linked to a canonical kind shows a link beside its kind, naming the parent on hover
-  ([linked templates](templates.md#linked-templates)). A file opens laid out as a template, with its repository and
-  path, the kind it is linked to, and each kind of the repository linked to it, as a **Child**; **Download** saves it as a template file under its
-  own name, to keep in another repository's template folder. A link naming a kind and version opens the file holding
-  it, and says so when no repository holds it.
-- **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, by **Release**,
-  searched by kind, with **Every version**, **View**, **Compare versions**, **Download** (on a kind's row and in its
-  sheet: the kind's schema as the file a template folder keeps), and **Sync with the repository**, which reads the
-  release list again and downloads the release in view.
+- **Repositories**: every file of every synced repository's template folders, each with the kind and version it holds
+  (or why it holds none) and its path; a template linked to a canonical kind shows a link beside its kind, naming the
+  parent on hover ([linked templates](templates.md#linked-templates)). The files of several repositories are listed
+  under a heading for each, naming the repository, how many files it holds, when its sync last saw them and how many
+  hold no template; a line over the grid counts the files that hold none, with **List only these**. The search finds a
+  file by its kind, parent, version, repository, path or why it holds none, every word typed in any order, and with
+  more than one repository **Every repository** narrows the list to one. A file opens laid out as a template, with its
+  repository and path, the kind it is linked to, and each kind of the repository linked to it, as a **Child**;
+  **Download** (on its row and in its sheet) saves it as a template file under its own name, to keep in another
+  repository's template folder. A link naming a kind and version opens the file holding it, and says so when no
+  repository holds it.
+- **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, searched by kind, by
+  **Release**, with **Every version**. A kind's row opens it laid out as a template; a schema in development or obsolete
+  says so beside its kind. Each row has its link to the kind's file in the repository, **Compare versions** and
+  **Download** (also in its sheet: the kind's schema as the file a template folder keeps). **Sync with the repository**
+  reads the release list again and downloads the release in view.
 
 See [templates](templates.md).
 

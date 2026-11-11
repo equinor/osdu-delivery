@@ -491,10 +491,10 @@ mapping reads before the repository is synced.
 | Lay one file's template out as variables | Repositories tab, a row | | `GET /templates/detail?repoId=&path=[&scope=]` |
 | Copy a repository's template file | Repositories tab, a row: Download | | `GET /templates/schema?repoId=&path=` (a file to save) |
 | List releases, list a release's record kinds | Browse OSDU | | `GET /templates/osdu/releases`, `GET /templates/osdu/schemas?release=` |
-| Read a kind from a release | Browse OSDU, View | | `GET /templates/osdu/schema?release=&kind=` |
+| Read a kind from a release | Browse OSDU, a row | | `GET /templates/osdu/schema?release=&kind=` |
 | Download a kind as a template file | Browse OSDU, Download | `sqlflow template capture --kind <kind> --out <file>` | `GET /templates/osdu/file?release=&kind=` (a file to save) |
 | Write a schema of one's own as a template file | | `sqlflow template import <schema.json> --kind <kind> --out <file>` | |
-| Lay out a schema without keeping it | Browse OSDU, View | | `POST /templates/preview` |
+| Lay out a schema without keeping it | Browse OSDU, a row | | `POST /templates/preview` |
 | Compare two versions of a kind | Browse OSDU, Compare versions | | `GET /templates/osdu/compare` |
 | Read the release list again and download a release | Sync with the repository | | `POST /templates/osdu/sync` |
 | Add or remove a template | Commit its file to, or delete it from, a template folder, and sync the repository | | |

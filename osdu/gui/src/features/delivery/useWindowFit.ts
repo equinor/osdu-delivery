@@ -63,16 +63,31 @@ export function useWindowFit(
     }
 
     const sized = (target === undefined ? element : target(element)) ?? element;
-    for (let node: Element | null = sized; node !== null && node !== document.body; node = node.parentElement) {
-      for (let before = node.previousElementSibling; before !== null; before = before.previousElementSibling) {
-        observer.observe(before);
+    const observeBefore = () => {
+      for (let node: Element | null = sized; node !== null && node !== document.body; node = node.parentElement) {
+        for (let before = node.previousElementSibling; before !== null; before = before.previousElementSibling) {
+          observer.observe(before);
+        }
       }
+    };
+    observeBefore();
+
+    // An element put in before it later moves it too (a grid's toolbar, shown once its rows arrive say a problem), and is
+    // watched from then on: the elements from the one sized up to `ref`'s are watched for children coming and going.
+    // What happens inside the sized element itself, its rows, is not.
+    const added = new MutationObserver(() => {
+      observeBefore();
+      schedule();
+    });
+    for (let node = sized === element ? null : sized.parentElement; node !== null && element.contains(node); node = node.parentElement) {
+      added.observe(node, { childList: true });
     }
 
     window.addEventListener("resize", schedule);
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
+      added.disconnect();
       window.removeEventListener("resize", schedule);
     };
   }, [ref, below, min, target, property]);
