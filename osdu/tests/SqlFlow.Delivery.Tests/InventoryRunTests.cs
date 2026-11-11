@@ -3,8 +3,10 @@ using System.Net;
 using System.Text.Json.Nodes;
 using System.Web;
 using Microsoft.EntityFrameworkCore;
+using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Inventories;
+using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
@@ -14,11 +16,11 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// An inventory flow's runs end to end (osdu/docs/reference/flow/inventory.md), over the module's database on SQL Server and
-/// a platform that serves the search index's cursor read and storage's own listing, headers, versions and schema listing: a
-/// build reads the kind whole, merges and reconciles; a read that fails part way changes nothing; storage's headers route
-/// falls back where it is not deployed and a wildcard kind is expanded through the schema service; versions are read only for
-/// what moved; the ids a ledger expects are read from storage within the flow's bound; owners are declared or inferred; a
-/// reconcile compares the last build with the ledgers as they stand; a plan reads no id.
+/// a platform that serves the search index's cursor read and storage's own listing, reads by id, versions and schema listing:
+/// a build reads the kind whole, each id with its record's name, merges and reconciles; a read that fails part way, or holds
+/// an id storage never answers for, changes nothing; a wildcard kind is expanded through the schema service; versions are read
+/// only for what moved; the ids a ledger expects are read from storage within the flow's bound; owners are declared or
+/// inferred; a reconcile compares the last build with the ledgers as they stand; a plan reads no id.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -63,9 +65,10 @@ public sealed class InventoryRunTests : IDisposable
         parallelism: { recordsAtOnce: 2 }
         """;
 
-    private JsonObject Add(string key, long version = 3, string creator = Estate, string kind = Kind)
+    /// <summary>A record OSDU serves, its data <paramref name="data"/>, or a <c>Name</c> that is its key when none is given.</summary>
+    private JsonObject Add(string key, long version = 3, string creator = Estate, string kind = Kind, JsonObject? data = null)
     {
-        var record = _search.Add(Id(key), kind, new JsonObject { ["Name"] = key });
+        var record = _search.Add(Id(key), kind, data ?? new JsonObject { ["Name"] = key });
         record["version"] = version;
         record["createUser"] = creator;
         record["createTime"] = "2026-09-01T08:00:00.000Z";
@@ -148,8 +151,9 @@ public sealed class InventoryRunTests : IDisposable
         var records = await RecordsAsync(ledger, inventory.InventoryId);
         var tracked = records[Id("log-0000")];
         Assert.Equal((Kind, 3L, Estate, new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc)), (tracked.Kind, tracked.Version!.Value, tracked.CreateUser, tracked.CreateTime!.Value));
+        Assert.Equal("log-0000", tracked.Name);
 
-        // The search was asked for the system properties an inventory keeps, and nothing more.
+        // The search was asked for the system properties an inventory keeps and the properties a record is named by, nothing more.
         var asked = JsonNode.Parse(_search.Calls.First(c => c.Uri.AbsolutePath.EndsWith("/query_with_cursor", StringComparison.Ordinal)).Body!)!;
         Assert.Equal(SearchInventoryReader.Fields, asked["returnedFields"]!.AsArray().Select(f => f!.GetValue<string>()));
     }
@@ -194,7 +198,7 @@ public sealed class InventoryRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_storage_build_lists_every_active_record_reads_their_headers_and_leaves_out_one_deleted_between_the_two()
+    public async Task A_storage_build_lists_every_active_record_reads_their_system_properties_and_names_a_hundred_at_a_time_and_leaves_out_one_deleted_between_the_two()
     {
         for (var i = 0; i < 2100; i++)
         {
@@ -207,31 +211,97 @@ public sealed class InventoryRunTests : IDisposable
         var summary = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
         Assert.Equal(2099L, summary.Listed);
-        Assert.Equal(3, _platform.Listings);
-        Assert.Equal(3, _platform.HeaderReads);
+        // Three listing pages (1,000, 1,000 and 100 ids), each read by id a hundred at a time; the headers route returns no data,
+        // so a name is never read there.
+        Assert.Equal((3, 21, 0), (_platform.Listings, _platform.RecordReads, _platform.HeaderReads));
+        Assert.All(_platform.AttributesAsked, asked => Assert.Equal(RecordNames.Fields, asked));
         var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
         Assert.DoesNotContain(Id("log-7"), records.Keys);
-        Assert.Equal(Estate, records[Id("log-0")].ModifyUser);
+        Assert.Equal((Estate, "log-0"), (records[Id("log-0")].ModifyUser, records[Id("log-0")].Name));
         Assert.DoesNotContain(_search.Calls, c => c.Uri.AbsolutePath.EndsWith("/query_with_cursor", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task Where_the_headers_route_is_not_deployed_records_are_read_a_hundred_at_a_time_and_a_wildcard_kind_is_expanded()
+    public async Task A_storage_read_expands_a_wildcard_kind_through_the_schema_service_and_reads_every_kind_it_matches()
     {
         Add("a", kind: "osdu:wks:work-product-component--WellLog:1.0.0");
         Add("b", kind: "osdu:wks:work-product-component--WellLog:1.4.0");
         Add("other", kind: "osdu:wks:master-data--Wellbore:1.0.0");
-        _platform.HeadersDeployed = false;
         var (runner, ledger, _) = await RunnerAsync(Flow(read: "storage", kind: "osdu:wks:work-product-component--WellLog:*"));
 
         var summary = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
         Assert.Equal(2L, summary.Listed);
         Assert.Equal(["osdu:wks:work-product-component--WellLog:1.0.0", "osdu:wks:work-product-component--WellLog:1.4.0"], _platform.KindsListed.Order(StringComparer.Ordinal));
-        Assert.True(_platform.RecordReads > 0, "records read through POST /query/records");
-        Assert.Equal(1, _platform.HeaderReads);
+        Assert.Equal(0, _platform.HeaderReads);
         var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
         Assert.Equal(["osdu:wks:work-product-component--WellLog:1.0.0", "osdu:wks:work-product-component--WellLog:1.4.0"], records.Values.Select(r => r.Kind!).Order(StringComparer.Ordinal));
+        Assert.Equal(["a", "b"], records.Values.Select(r => r.Name!).Order(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("search")]
+    [InlineData("storage")]
+    public async Task A_name_is_the_first_property_a_record_is_named_by_whichever_way_the_read_returns_it(string read)
+    {
+        Add("named", data: new JsonObject { ["FacilityName"] = "  Wellbore A-1 ", ["Name"] = "not this one" });
+        Add("file", data: new JsonObject { ["DatasetProperties"] = new JsonObject { ["FileSourceInfo"] = new JsonObject { ["Name"] = "gr-run-1.las" } } });
+        Add("blank", data: new JsonObject { ["Name"] = "   ", ["Code"] = "C-1" });
+        Add("unnamed", data: new JsonObject { ["Depth"] = 1200 });
+        Add("long", data: new JsonObject { ["Name"] = new string('n', DeliveryModel.MaxInventoryNameLength + 50) });
+        var (runner, ledger, _) = await RunnerAsync(Flow(read: read));
+
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+
+        var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
+        Assert.Equal("Wellbore A-1", records[Id("named")].Name);
+        Assert.Equal("gr-run-1.las", records[Id("file")].Name);
+        Assert.Equal("C-1", records[Id("blank")].Name);
+        Assert.Null(records[Id("unnamed")].Name);
+        Assert.Equal(new string('n', DeliveryModel.MaxInventoryNameLength), records[Id("long")].Name);
+    }
+
+    [Fact]
+    public async Task Rows_kept_before_names_were_read_take_them_from_the_next_build_without_counting_as_changed()
+    {
+        var a = Add("a");
+        Add("b");
+        var (runner, ledger, _) = await RunnerAsync(Flow());
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        await using (var db = _db.CreateDbContext())
+        {
+            await db.DeliveryInventoryRecords.ExecuteUpdateAsync(s => s.SetProperty(r => r.Name, (string?)null));
+        }
+
+        var filled = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
+
+        Assert.Equal((0L, 0L, 0L), (filled.Added, filled.Changed, filled.Gone));
+        var inventoryId = (await ledger.ListInventoriesAsync(Partition))[0].InventoryId;
+        Assert.Equal(["a", "b"], (await RecordsAsync(ledger, inventoryId)).Values.Select(r => r.Name!).Order(StringComparer.Ordinal));
+
+        // A record renamed in OSDU comes with a new version: a change, its name with it.
+        a["version"] = 4;
+        a["data"]!["Name"] = "a renamed";
+        var renamed = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
+        Assert.Equal(1L, renamed.Changed);
+        Assert.Equal("a renamed", (await RecordsAsync(ledger, inventoryId))[Id("a")].Name);
+    }
+
+    [Fact]
+    public async Task A_storage_listing_holding_an_id_storage_never_answers_for_fails_whole_and_merges_nothing()
+    {
+        Add("a");
+        Add("b");
+        var (runner, ledger, _) = await RunnerAsync(Flow(read: "storage"));
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        _search.Records.RemoveAt(0);
+        _platform.RetryForever.Add(Id("b"));
+
+        var failed = await Assert.ThrowsAsync<InventoryRunsFailedException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
+
+        Assert.Contains("never said whether it holds them", Assert.Single(failed.Outcome.Inventories).Error, StringComparison.Ordinal);
+        Assert.All((await RecordsAsync(ledger, inventory.InventoryId)).Values, r => Assert.Null(r.GoneUtc));
     }
 
     [Fact]
@@ -262,7 +332,10 @@ public sealed class InventoryRunTests : IDisposable
         await ClaimAsync(ledger, "listed", "delivered", 3);
         await ClaimAsync(ledger, "gone-from-osdu", "delivered", 3);
         await ClaimAsync(ledger, "not-indexed", "delivered", 3);
-        _platform.StorageOnly[Id("not-indexed")] = new JsonObject { ["id"] = Id("not-indexed"), ["kind"] = Kind, ["version"] = 3, ["createUser"] = Estate };
+        _platform.StorageOnly[Id("not-indexed")] = new JsonObject
+        {
+            ["id"] = Id("not-indexed"), ["kind"] = Kind, ["version"] = 3, ["createUser"] = Estate, ["data"] = new JsonObject { ["Name"] = "Never indexed" },
+        };
 
         var summary = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
@@ -270,7 +343,31 @@ public sealed class InventoryRunTests : IDisposable
         Assert.Equal(("declared", 1L), (summary.OwnersSource, Assert.Single(summary.Owners).Records));
         var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
         Assert.Null(records[Id("gone-from-osdu")].FirstSeenUtc);
-        Assert.Equal(_deliveryFlow, records[Id("not-indexed")].LedgerFlowId);
+        Assert.Null(records[Id("gone-from-osdu")].Name);
+        // An id the read never listed that storage holds gets its row with its record's name, read with it.
+        Assert.Equal((_deliveryFlow, "Never indexed"), (records[Id("not-indexed")].LedgerFlowId, records[Id("not-indexed")].Name));
+        Assert.Equal(0, _platform.HeaderReads);
+    }
+
+    [Fact]
+    public async Task An_id_a_ledger_expects_that_storage_never_answers_for_is_not_checked_and_the_next_build_asks_again()
+    {
+        Add("listed");
+        var (runner, ledger, _) = await RunnerAsync(Flow(kind: "*:*:work-product-component--WellLog:*", extra: "owners: [delivery-sp@contoso.com]"));
+        await ClaimAsync(ledger, "listed", "delivered", 3);
+        await ClaimAsync(ledger, "not-indexed", "delivered", 3);
+        _platform.StorageOnly[Id("not-indexed")] = new JsonObject { ["id"] = Id("not-indexed"), ["kind"] = Kind, ["version"] = 3, ["createUser"] = Estate };
+        _platform.RetryForever.Add(Id("not-indexed"));
+
+        var unanswered = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
+
+        Assert.Equal((InventoryRunStatus.Completed, 0L, 0L, 0L), (unanswered.Status, unanswered.MissingChecked, Of(unanswered, InventoryFindings.Missing), Of(unanswered, InventoryFindings.Unlisted)));
+        var inventoryId = (await ledger.ListInventoriesAsync(Partition))[0].InventoryId;
+        Assert.DoesNotContain(Id("not-indexed"), (await RecordsAsync(ledger, inventoryId)).Keys);
+
+        _platform.RetryForever.Clear();
+        var answered = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
+        Assert.Equal((1L, 1L), (answered.MissingChecked, Of(answered, InventoryFindings.Unlisted)));
     }
 
     [Fact]
@@ -285,7 +382,7 @@ public sealed class InventoryRunTests : IDisposable
 
         var summary = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
-        Assert.Equal((0L, 1L, 0), (summary.MissingChecked, summary.Gone, _platform.HeaderReads));
+        Assert.Equal((0L, 1L, 0, 0), (summary.MissingChecked, summary.Gone, _platform.HeaderReads, _platform.RecordReads));
         Assert.Equal(1L, Of(summary, InventoryFindings.Gone));
     }
 
@@ -362,22 +459,6 @@ public sealed class InventoryRunTests : IDisposable
 
         Assert.Contains(expected, Assert.Single(failed.Outcome.Inventories).Error, StringComparison.Ordinal);
         Assert.All((await RecordsAsync(ledger, inventory.InventoryId)).Values, r => Assert.Null(r.GoneUtc));
-    }
-
-    [Fact]
-    public async Task A_headers_404_naming_the_ids_it_does_not_hold_is_an_answer_so_none_is_served_and_the_route_stays_in_use()
-    {
-        for (var i = 0; i < 1200; i++)
-        {
-            Add("log-" + i.ToString(CultureInfo.InvariantCulture));
-        }
-
-        _platform.HeadersHoldNone = true;
-        var (runner, _, _) = await RunnerAsync(Flow(read: "storage"));
-
-        var summary = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
-
-        Assert.Equal((0L, 2, 2, 0), (summary.Listed, _platform.Listings, _platform.HeaderReads, _platform.RecordReads));
     }
 
     [Fact]

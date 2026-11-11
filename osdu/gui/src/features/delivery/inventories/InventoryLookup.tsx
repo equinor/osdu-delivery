@@ -95,6 +95,7 @@ export function InventoryLookupBox() {
                   {record.version !== undefined && <span className="font-mono text-[12px] tabular-nums text-muted-foreground">v{record.version}</span>}
                   <span className="ml-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground">{inventory.flowName}</span>
                 </span>
+                {record.name !== undefined && <span className="truncate pl-5 text-[12.5px]" title={record.name} data-testid="inventory-lookup-name">{record.name}</span>}
                 {record.detail !== undefined && <span className="truncate pl-5 text-[11.5px] text-muted-foreground">{record.detail}</span>}
               </button>
             </li>

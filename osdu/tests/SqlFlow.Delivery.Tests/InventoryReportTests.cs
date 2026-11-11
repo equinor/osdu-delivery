@@ -69,7 +69,7 @@ public sealed class InventoryReportTests : IDisposable
         var rows = Enumerable.Range(0, ids)
             .Select(i => new InventoryScanRow(
                 $"{Partition}:work-product-component--WellLog:{i:D5}", Kind, 1, i == 7 ? "=HYPERLINK(\"x\")" : "someone@elsewhere.com",
-                new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), null, null))
+                new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), null, null, $"WellLog {i:D5}"))
             .ToList();
         var run = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
         await ledger.AppendInventoryScanAsync(_inventoryFlow, run, rows);
@@ -80,8 +80,10 @@ public sealed class InventoryReportTests : IDisposable
         Assert.Equal(ids, await InventoryExport.WriteAsync(ledger, inventory, null, all, CancellationToken.None));
         var lines = all.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(ids + 1, lines.Length);
-        Assert.StartsWith("inventory_record_id,id,kind,version,finding,", lines[0], StringComparison.Ordinal);
+        Assert.StartsWith("inventory_record_id,id,name,kind,version,finding,", lines[0], StringComparison.Ordinal);
         Assert.Equal(ids, lines.Skip(1).Select(l => l.Split(',')[1]).Distinct(StringComparer.Ordinal).Count());
+        // Each id is named beside it, by the name the build read of its record.
+        Assert.All(lines.Skip(1).Select(l => l.Split(',')), cells => Assert.Equal("WellLog " + cells[1][^5..], cells[2]));
         Assert.Contains(lines, l => l.Contains("\"'=HYPERLINK(\"\"x\"\")\"", StringComparison.Ordinal));
 
         using var foreign = new StringWriter();

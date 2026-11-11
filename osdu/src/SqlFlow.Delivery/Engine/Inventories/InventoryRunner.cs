@@ -293,8 +293,9 @@ public sealed partial class InventoryRunner
     private async Task<InventoryMerge> ReadAndMergeAsync(
         ILedger ledger, OsduHttpClient client, InventorySpec inventory, InventoryState state, long runRow, string partition, InventoryReadStats stats, CancellationToken ct)
     {
+        // An inventory keeps each record's name with its id, so a storage read reads records rather than their headers alone.
         IInventoryReader reader = _flow.Source.Read == InventoryRead.Storage
-            ? new StorageInventoryReader(client, _flow.Source, _context.Time)
+            ? new StorageInventoryReader(client, _flow.Source, _context.Time, names: true)
             : new SearchInventoryReader(new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging));
         var buffer = new List<InventoryScanRow>(StageChunk);
         long listed = 0;
@@ -381,8 +382,19 @@ public sealed partial class InventoryRunner
         var checks = new List<InventoryCheck>(candidates.Count);
         if (candidates.Count > 0)
         {
-            var headers = await new StorageHeaders(client, _flow.Source).ReadAsync(candidates.Select(c => c.TargetId).ToList(), stats, ct).ConfigureAwait(false);
-            checks.AddRange(candidates.Select(c => headers.TryGetValue(c.TargetId, out var held) ? new InventoryCheck(c, true, held) : new InventoryCheck(c, false, null)));
+            // Read with names, so an id storage holds that the read never listed (unlisted) gets its row with its name. An id
+            // storage never says whether it holds is no check: this build has not asked for it, as for one past maxMissingChecks.
+            var read = await new StorageHeaders(client, _flow.Source, names: true).ReadAsync(candidates.Select(c => c.TargetId).ToList(), stats, ct).ConfigureAwait(false);
+            checks.AddRange(candidates
+                .Where(c => !read.Unanswered.Contains(c.TargetId))
+                .Select(c => read.Held.TryGetValue(c.TargetId, out var held) ? new InventoryCheck(c, true, held) : new InventoryCheck(c, false, null)));
+            if (read.Unanswered.Count > 0)
+            {
+                _log.LogWarning(
+                    "inventory '{Inventory}': storage, asked twice, never said whether it holds {Count} id(s) a ledger expects; this build counts them as not asked, and the next build asks again",
+                    inventory.Name, read.Unanswered.Count);
+            }
+
             if (candidates.Count >= _flow.MaxMissingChecks)
             {
                 _log.LogWarning(

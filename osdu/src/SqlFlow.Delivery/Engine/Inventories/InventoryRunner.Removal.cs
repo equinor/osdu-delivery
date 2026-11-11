@@ -364,7 +364,8 @@ public sealed partial class InventoryRunner
             client,
             new ProtocolOptions { DeletePath = _flow.Source.DeletePath, BulkDeletePath = _flow.Source.BulkDeletePath, PurgePath = _flow.Source.PurgePath },
             _context.Time);
-        var headers = new StorageHeaders(client, _flow.Source);
+        // A removal checks each id's version and creator, never its name: the headers route, a thousand ids a request.
+        var headers = new StorageHeaders(client, _flow.Source, names: false);
         var scope = request.Scope == InventoryRemovals.Purge ? RemovalScope.Everything : RemovalScope.Record;
         var removedDetail = string.Create(CultureInfo.InvariantCulture, $"removed by {actor} in removal {removalId} (run {runId:D}): {InventoryRemovals.Describe(request.Scope)}");
         var goneDetail = string.Create(CultureInfo.InvariantCulture, $"OSDU no longer served it when removal {removalId} reached it");
@@ -444,12 +445,18 @@ public sealed partial class InventoryRunner
             ? (await ledger.InventorySelectionKeepersAsync(_flow.LedgerId, selectionId, checking.Select(c => c.InventoryRecordId).ToList(), ct).ConfigureAwait(false))
                 .ToDictionary(k => k.InventoryRecordId)
             : [];
-        var served = await headers.ReadAsync(
+        var read = await headers.ReadAsync(
             checking.Select(c => c.TargetId).Concat(keepers.Values.Select(k => k.KeptTargetId)).Distinct(StringComparer.Ordinal).ToList(), stats, ct).ConfigureAwait(false);
+        var served = read.Held;
         var removing = new List<InventoryRemovalCandidate>(checking.Count);
         foreach (var candidate in checking)
         {
-            if (!served.TryGetValue(candidate.TargetId, out var held))
+            if (read.Unanswered.Contains(candidate.TargetId))
+            {
+                items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Skipped,
+                    "storage, asked twice, never said whether it holds it, so nothing was asked of OSDU: a later removal reads it again"));
+            }
+            else if (!served.TryGetValue(candidate.TargetId, out var held))
             {
                 items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Gone, "storage no longer holds it: nothing was asked of OSDU"));
             }
@@ -463,6 +470,11 @@ public sealed partial class InventoryRunner
             {
                 items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Skipped,
                     "the selection names no copy its group keeps for it, so it is left: a copy goes only beside the copy kept"));
+            }
+            else if (duplicates && read.Unanswered.Contains(keepers[candidate.InventoryRecordId].KeptTargetId))
+            {
+                items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Skipped,
+                    $"storage, asked twice, never said whether it holds {keepers[candidate.InventoryRecordId].KeptTargetId}, the copy its group keeps, so this copy is left: a later removal reads both again"));
             }
             else if (duplicates && !served.ContainsKey(keepers[candidate.InventoryRecordId].KeptTargetId))
             {

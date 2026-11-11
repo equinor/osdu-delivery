@@ -2,7 +2,7 @@
 id: delivery-table-inventory-scan
 title: "osdu.InventoryScan: each id a build listed, staged until the read is whole and merged into the inventory"
 type: table
-summary: "One row per id an inventory build's read listed, with its system properties as OSDU served them, held only until the build merges or fails."
+summary: "One row per id an inventory build's read listed, with its record's name and system properties as OSDU served them, held only until the build merges or fails."
 keywords:
   - osdu.InventoryScan
   - inventory scan table
@@ -39,6 +39,7 @@ those of a run whose process stopped are deleted by the next run of the inventor
 | `ScanId` | `bigint` identity | no | The row's id within the partition. |
 | `InventoryRunId` | `bigint` | no | The build that listed it ([`osdu.InventoryRun`](inventory-run.md)). |
 | `TargetId` | `nvarchar(500)` | no | Collation `Latin1_General_100_BIN2`. The OSDU id, compared exactly. |
+| `Name` | `nvarchar(400)` | yes | The record's name as the read served it, cut to 400 characters: the first of the properties a record is named by that it holds ([Names](../flow/inventory.md#names)). Null when it holds none. |
 | `Kind` | `nvarchar(300)` | yes | Its kind, as OSDU served it, at most 300 characters. |
 | `Version` | `bigint` | yes | Its version. |
 | `CreateUser` | `nvarchar(256)` | yes | Who created it, at most 256 characters. |

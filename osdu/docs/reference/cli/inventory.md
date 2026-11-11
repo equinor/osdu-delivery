@@ -121,7 +121,8 @@ With `--json`: the inventory's fields as in `list`, `counts` (every finding, wit
 ## records
 
 A page of the inventory's ids, of the finding `--finding` names or every one, in the order the inventory took them in:
-each with its number, finding, OSDU id and version, the ledger, record, status and version or the minted id it rests on,
+each with its number, finding, OSDU id, the record's name in quotes when it has one
+([Names](../flow/inventory.md#names)), its version, the ledger, record, status and version or the minted id it rests on,
 and why it has its finding. `--limit` is 1 to 1,000 (50 when left out); the line under a full page names the `--after`
 of the next.
 
@@ -134,7 +135,7 @@ WellLogs in dev: 2 id(s) missing
 ```
 
 With `--json`: `partition`, `inventoryId`, `inventory`, `finding`, `next` and `records`, each with `inventoryRecordId`,
-`targetId`, `kind`, `version`, `createUser`, `createTime`, `modifyUser`, `modifyTime`, `firstSeenUtc`, `changedUtc`,
+`targetId`, `name`, `kind`, `version`, `createUser`, `createTime`, `modifyUser`, `modifyTime`, `firstSeenUtc`, `changedUtc`,
 `goneUtc`, `finding`, `findingUtc`, `detail`, `ledgerFlowId`, `ledger`, `deliveryKey`, `ledgerStatus`, `ledgerVersion`,
 `artifactId` and `artifactState`.
 
@@ -149,7 +150,7 @@ sqlflow inventory lookup dev dev:work-product-component--WellLog:9a41c7e2d05b4f6
 
 ```text
 dev:work-product-component--WellLog:9a41c7e2d05b4f6a8c3e1b7d2f9064ab in dev: 1 inventory(ies)
-  welldb-06-inventory / WellLogs (inventory 5): gone, v1712309988776655
+  welldb-06-inventory / WellLogs (inventory 5): gone, 'GR_RUN1', v1712309988776655
       removed by analyst@example.com in removal 9 (run 0199a3c2-5e4f-7b21-9c3d-8e1f2a3b4c5d): soft deleted (reversible)
   removal 9 at 2026-10-09 09:12:30Z: removed (orphan): removed from OSDU (reversible, in bulk)
 ```
@@ -177,7 +178,7 @@ With `--json`: `partition`, `inventoryId`, `inventory` and `runs`, each with `in
 The inventory's ids, of one finding or every one, as CSV with a header row, to `--out` or the console. A file is written
 beside its name and moved into place, so a failure never leaves half a file; `Wrote 37 id(s) orphan of WellLogs to
 <path>` goes to the error stream. It is the same file the GUI's export gives. The columns are `inventory_record_id`,
-`id`, `kind`, `version`, `finding`, `finding_utc`, `detail`, `create_user`, `create_time`, `modify_user`, `modify_time`,
+`id`, `name`, `kind`, `version`, `finding`, `finding_utc`, `detail`, `create_user`, `create_time`, `modify_user`, `modify_time`,
 `first_seen_utc`, `changed_utc`, `gone_utc`, `ledger`, `ledger_flow_id`, `delivery_key`, `ledger_status`,
 `ledger_version`, `artifact_id` and `artifact_state`. A cell a spreadsheet would run as a formula is written with a
 leading apostrophe.

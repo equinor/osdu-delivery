@@ -117,8 +117,8 @@ compares them.
 
 ### What a row of an inventory holds
 
-An id's system properties as OSDU last served them, when a build first listed it, last saw it change and first found it
-gone, when a reconcile last asked storage for it, its finding with when it last changed and what it rests on, and the
+An id's record name ([Names](inventory.md#names)) and system properties as OSDU last served them, when a build first
+listed it, last saw it change and first found it gone, when a reconcile last asked storage for it, its finding with when it last changed and what it rests on, and the
 ledger, record and artifact that claim it. Every column: [`osdu.InventoryRecord`](../tables/inventory-record.md).
 
 ### How a build moves rows through the scan
@@ -136,18 +136,21 @@ ledger, record and artifact that claim it. Every column: [`osdu.InventoryRecord`
    | Count | What changes in `osdu.InventoryRecord` |
    | --- | --- |
    | served again | A row gone, or never listed, that the read lists: its properties are written, `GoneUtc` cleared, `FirstSeenUtc` set when empty. |
-   | changed | A row the read lists whose kind, version or system properties differ: they are rewritten and `ChangedUtc` set. |
+   | changed | A row the read lists whose kind, version or system properties differ: they are rewritten with its name and `ChangedUtc` set. |
    | added | An id with no row: inserted, `unreconciled`, first seen now. |
    | gone | A row listed before that the read did not list: `GoneUtc` set. The row stays. |
 
-   The run's staged rows are then deleted in the same transaction, so `osdu.InventoryScan` holds nothing of a merged run.
+   A row whose name alone differs takes the name read and is not counted: a record's name changes only with a new
+   version, so it is a row kept before names were read. The run's staged rows are then deleted in the same transaction,
+   so `osdu.InventoryScan` holds nothing of a merged run.
 4. **Versions** (`versions: all`): the records served whose `VersionsAt` is not their version, 500 at a time, have their
    versions read and their rows in `osdu.InventoryVersion` replaced.
 5. **Reconcile.** The finding of every row OSDU serves is set from the ledgers, written only where the finding, the
    ledger record or the detail changed. Then the ids a ledger expects and the read did not list are asked of storage, up
-   to `maxMissingChecks`, and in one transaction: the rows not asked become `gone` (or keep what storage last answered),
-   the rows asked become `missing` or `unlisted` with `CheckedUtc` set, and an id a ledger expects that has no row is
-   inserted with no `FirstSeenUtc`.
+   to `maxMissingChecks`, 100 ids a request with their names, and in one transaction: the rows not asked become `gone`
+   (or keep what storage last answered), the rows asked become `missing` or `unlisted` with `CheckedUtc` set, and an id a
+   ledger expects that has no row is inserted with no `FirstSeenUtc`. An id storage names under `retryRecords` twice is
+   not asked: storage has not said whether it holds it, and the next build asks again.
 6. **Close.** A completed run writes its counts and findings to `osdu.InventoryRun` and its last build, last reconcile
    and owners to `osdu.Inventory`. A failed run's staged rows are deleted when it closes; those of a run whose process
    stopped are deleted by the next run of the inventory (step 1).
@@ -162,3 +165,4 @@ ids ([Removing gone ids](inventory-removals.md#removing-gone-ids)); a removal fr
 | `Inventory 'WellLogs' has never been built in 'dev', so there is nothing to reconcile yet; build it first.` | `reconcile` before a build. |
 | `Storage no longer knows the cursor of its listing of <kind> part way through, so the listing cannot be read whole; the next build reads it again from the start.` | A storage listing lost its cursor. |
 | `Storage handed back a cursor of its listing of <kind> it had handed back before, so the listing goes in circles and cannot be read whole.` | A storage listing repeated a cursor. |
+| `Storage listed 1 id(s) of <kind> and, asked twice, never said whether it holds them (retryRecords; <id> among them), so the listing cannot be read whole; the next build reads it again.` | A storage read listed an id that storage named under `retryRecords` on both readings of it. |

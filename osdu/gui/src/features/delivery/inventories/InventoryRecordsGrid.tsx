@@ -99,7 +99,8 @@ function LedgerCell({ row }: { row: InventoryRecord }) {
 /**
  * The ids of an inventory with one finding, or every id, as a grid that fits the window and scrolls inside the page: the
  * findings to pick from lead its toolbar, and more ids are read as it is scrolled, a page at a time after the last id
- * read. Each id is named as a reader knows it (the whole id on hover, its copy on the row's hover), with its finding (why
+ * read. Each id is led by its record's name (a dash, saying why on hover, where it has none), and named as a reader knows
+ * it (the whole id on hover, its copy on the row's hover), with its finding (why
  * it has it on hover, to copy), its version, the ledger that holds it (which opens its record), who created it and when it
  * last changed, and since when it has its finding; columns are left out under View. A reader who can read OSDU opens an
  * id by its row in the workbench's bottom panel, over the page as a run's trace is, and steps through the ids there with
@@ -329,12 +330,31 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
     { id: "changed", label: "Changed" },
     { id: "since", label: "Since" },
   ];
+  // The record's name leads the row, as the explorer's does: what a reader knows the record by, its id beside it.
+  const named: Column<InventoryRecord> = {
+    id: "name",
+    header: "Name",
+    fill: true,
+    floor: 160,
+    render: (row) => (row.name !== undefined
+      ? <span className="min-w-0" data-testid="inventory-record-name"><TruncatedText text={row.name} maxWidth={480} className="text-[12.5px]" /></span>
+      : (
+        <RichTooltip
+          body={row.finding === MISSING_FINDING
+            ? "Storage holds no record of it, so there is no name to read."
+            : "Its record holds none of the properties a record is named by: FacilityName, Name, ProjectName, Code or a file's name. A row kept from before names were read takes its name from the next build."}
+        >
+          <span className="text-[12px] text-muted-foreground" data-testid="inventory-record-name">-</span>
+        </RichTooltip>
+      )),
+  };
   const all: Column<InventoryRecord>[] = [
     {
       id: "id",
       header: "Id",
       fill: true,
-      floor: 200,
+      // The name before it takes what is left, so the id keeps room for its type and a minted id of 32 characters.
+      floor: 316,
       render: (row) => (
         <span className="flex min-w-0 items-center gap-1.5">
           <RecordName id={row.targetId} kind={row.kind} copy className="text-[12.5px]" testId="inventory-record-id" copyTestId="inventory-record-copy-id" />
@@ -412,7 +432,7 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
     header: fieldLabel(path),
     render: (row) => <SelectionValueCell values={row.values?.[path]} testId="inventory-record-value" />,
   }));
-  const columns = [all[0], ...valueColumns, ...all.slice(1)].filter((column) => !hidden.has(column.id));
+  const columns = [named, all[0], ...valueColumns, ...all.slice(1)].filter((column) => !hidden.has(column.id));
   const findingNoun = finding === null ? "id" : `${findingVisual(finding).label.toLowerCase()} id`;
   const noun = selected === undefined ? findingNoun : `matching ${findingNoun}`;
   const picking = removes && (picked.size > 0 || everyOne);

@@ -14,8 +14,9 @@ export interface CheckFacts {
 /**
  * How one check reads, each fact once (the control plane's CheckView reads it alike for its reports): what it expects (the
  * comparison alone, `equals 5191`), what qualifies that (`warns within 10%`, `leaving out "MD"`, `stated as of 2026-10-27`),
- * what it found (the number a count or an aggregate measured, else what the check says it found), and why it came out as it
- * did when that adds to the two (`1 below 5191 (0.02%), within the warning band of 10%, so it warns.`).
+ * what it found (the number a count or an aggregate measured, else what the check says it found, as an aggregate over each
+ * record's bulk data does: `2 of 3 record(s)' bulk data meet it`), and why it came out as it did when that adds to the two
+ * (`1 below 5191 (0.02%), within the warning band of 10%, so it warns.`).
  */
 export interface CheckReading {
   expected: string;
@@ -28,6 +29,9 @@ export interface CheckReading {
 const STATED = / \(stated as of ([^)]+)\)$/;
 const LEAVING_OUT = /, leaving out (.+)$/;
 const BAND = / \(warning within ([^)]+)\)/;
+
+/** What a check found record by record, whose number is the share that held and not a measure of its own. */
+const PER_RECORD = /^\d+ of \d+ record\(s\)/;
 
 export function checkReading(outcome: CheckFacts): CheckReading {
   let expected = outcome.expected;
@@ -56,9 +60,9 @@ export function checkReading(outcome: CheckFacts): CheckReading {
   }
 
   const value = outcome.value;
-  const found = (outcome.type === "count" || outcome.type === "aggregate") && typeof value === "number" && Number.isFinite(value)
-    ? String(Math.round(value * 10000) / 10000)
-    : outcome.actual ?? "-";
+  const measured = (outcome.type === "count" || outcome.type === "aggregate") && typeof value === "number" && Number.isFinite(value)
+    && !PER_RECORD.test(outcome.actual ?? "");
+  const found = measured ? String(Math.round(value * 10000) / 10000) : outcome.actual ?? "-";
   let why: string | null = null;
   if (outcome.message && outcome.outcome !== "passed") {
     const clauses = outcome.message.replace(/[. ]+$/, "").split("; ")

@@ -126,12 +126,12 @@ html.adb-standalone #root {
 .adb-tone-passed { color: var(--adb-passed); }
 .adb-tone-disabled { color: var(--adb-disabled); }
 
-.adb-edge-failed { border-left-color: var(--adb-failed) !important; }
-.adb-edge-errored { border-left-color: var(--adb-errored) !important; }
-.adb-edge-warned { border-left-color: var(--adb-warned) !important; }
-.adb-edge-notRun { border-left-color: var(--adb-notRun) !important; }
-.adb-edge-passed { border-left-color: var(--adb-passed) !important; }
-.adb-edge-disabled { border-left-color: var(--adb-disabled) !important; }
+.adb-edge-failed { --adb-tone: var(--adb-failed); border-left-color: var(--adb-failed) !important; }
+.adb-edge-errored { --adb-tone: var(--adb-errored); border-left-color: var(--adb-errored) !important; }
+.adb-edge-warned { --adb-tone: var(--adb-warned); border-left-color: var(--adb-warned) !important; }
+.adb-edge-notRun { --adb-tone: var(--adb-notRun); border-left-color: var(--adb-notRun) !important; }
+.adb-edge-passed { --adb-tone: var(--adb-passed); border-left-color: var(--adb-passed) !important; }
+.adb-edge-disabled { --adb-tone: var(--adb-disabled); border-left-color: var(--adb-disabled) !important; }
 
 /* The heading, one row: the title and the sets beside it, the controls at the right. */
 .adb-head {
@@ -748,10 +748,14 @@ html.adb-standalone #root {
   border-top: 1px solid var(--border);
 }
 
-/* A row's glyph sits under its group's, past the group's chevron; its title starts where the detail's text does. */
+/*
+ * A row reads left to right as a sentence: where it stands, what it is, the claim that does not hold with what was found
+ * against it, and the measure of the two. Its glyph sits under its group's, past the group's chevron; its title starts
+ * where an open assertion's text does.
+ */
 .adb-row-head {
   display: grid;
-  grid-template-columns: 14px minmax(10rem, 1fr) minmax(0, 1.6fr) auto 14px;
+  grid-template-columns: 14px minmax(10rem, 1fr) minmax(0, 1.5fr) 7rem 8rem 14px;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -762,11 +766,34 @@ html.adb-standalone #root {
   cursor: pointer;
 }
 
+/* An open assertion is one sheet, its row and its brief bound by an edge in the tone it stands in. */
+.adb-row-open {
+  position: relative;
+}
+
+.adb-row-open::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  width: 3px;
+  background: var(--adb-tone, var(--border));
+  content: "";
+}
+
 .adb-row-open > .adb-row-head {
   background: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
-.adb-row-main {
+/* Open, a row is its brief's heading: the title is there whole, however long. */
+.adb-row-open .adb-row-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.adb-row-main,
+.adb-row-reading {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -788,9 +815,16 @@ html.adb-standalone #root {
   text-overflow: ellipsis;
 }
 
-.adb-row-finding {
+.adb-row-claim {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adb-row-says {
   display: -webkit-box;
-  min-width: 0;
   overflow: hidden;
   font-size: 12.5px;
   line-height: 1.35;
@@ -799,10 +833,34 @@ html.adb-standalone #root {
   overflow-wrap: anywhere;
 }
 
+.adb-row-claim + .adb-row-says {
+  font-size: 12px;
+  -webkit-line-clamp: 1;
+}
+
+.adb-row-more {
+  margin-left: 8px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: 11px;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.adb-row-gauge {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .adb-row-when {
+  overflow: hidden;
   font-size: 11.5px;
   color: var(--muted-foreground);
+  text-align: right;
   white-space: nowrap;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
 
@@ -822,124 +880,24 @@ html.adb-standalone #root {
   text-decoration: underline;
 }
 
-/* An open assertion. */
-.adb-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 6px var(--adb-pad) 10px 56px;
-  background: color-mix(in oklab, var(--muted) 45%, var(--card));
-}
-
 .adb-muted {
   color: var(--muted-foreground);
 }
 
-.adb-dims {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.adb-dim {
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--card);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.adb-dim > span {
-  margin-right: 5px;
-  color: var(--muted-foreground);
-}
-
-.adb-reason {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
-  border-radius: var(--radius, 0.375rem);
-  background: var(--card);
-  font-size: 12.5px;
-}
-
-.adb-reason .adb-glyph {
-  margin-top: 2px;
-}
-
-.adb-checks {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-collapse: separate;
-  border-spacing: 0;
-  border-radius: var(--radius, 0.375rem);
-  background: var(--card);
-  font-size: 12.5px;
-  overflow: hidden;
-}
-
-.adb-checks th {
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted-foreground);
-  text-align: left;
-}
-
-.adb-checks td {
-  padding: 5px 8px;
-  border-top: 1px solid var(--border);
-  vertical-align: top;
-  overflow-wrap: anywhere;
-}
-
-.adb-checks tbody tr:first-child td {
-  border-top: 0;
-}
-
-.adb-check-bad td {
-  background: color-mix(in oklab, var(--adb-failed) 4%, var(--card));
-}
-
-.adb-check-label {
-  font-weight: 550;
-}
-
-.adb-check-result {
-  white-space: nowrap;
-}
-
-.adb-check-result .adb-glyph {
-  margin-right: 5px;
-  vertical-align: -2px;
-}
-
-.adb-check-q {
-  display: block;
-  font-size: 11.5px;
-  color: var(--muted-foreground);
-}
-
-.adb-check-found {
+.adb-mono {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .adb-link {
+  align-self: flex-start;
   display: block;
-  margin-top: 2px;
-  text-align: left;
   padding: 0;
   border: 0;
   background: none;
   color: var(--primary) !important;
   font-size: 12px;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -947,70 +905,732 @@ html.adb-standalone #root {
   text-decoration: underline;
 }
 
-.adb-examples-row td {
-  background: color-mix(in oklab, var(--muted) 50%, var(--card));
+/*
+ * A measure, drawn. A number against its range is a bullet: the bar is what was found, the shaded stretch the range that
+ * holds, the lighter stretch beside it what only warns, and a tick the one number expected. A share is one bar of its
+ * parts, a surface gap between them, what is not there at all hatched so it reads apart from what differs without colour.
+ */
+.adb-gauge {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--muted);
+  overflow: hidden;
 }
 
-.adb-examples {
+.adb-gauge-zone,
+.adb-gauge-warn,
+.adb-gauge-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.adb-gauge-zone {
+  background: color-mix(in oklab, var(--adb-passed) 34%, var(--card));
+}
+
+.adb-gauge-warn {
+  background: color-mix(in oklab, var(--adb-warned) 30%, var(--card));
+}
+
+.adb-gauge-tick {
+  width: 2px;
+  margin-left: -1px;
+  background: var(--foreground);
+}
+
+.adb-gauge-found {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  min-width: 2px;
+  border-radius: 0 3px 3px 0;
+}
+
+.adb-gauge-share {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 2px;
+  height: 8px;
+  background: transparent;
+}
+
+.adb-gauge-share > span {
+  min-width: 4px;
+  border-radius: 2px;
+}
+
+.adb-gauge-compact {
+  max-width: none;
+  height: 10px;
+}
+
+.adb-gauge-compact .adb-gauge-found {
+  top: 3px;
+  bottom: 3px;
+}
+
+.adb-gauge-share.adb-gauge-compact {
+  height: 6px;
+}
+
+.adb-part-passed { background: var(--adb-passed); }
+.adb-part-warned { background: var(--adb-warned); }
+.adb-part-failed { background: var(--adb-failed); }
+.adb-part-quiet { background: var(--muted-foreground); }
+
+.adb-part-missing {
+  background: repeating-linear-gradient(135deg, var(--adb-failed) 0 3px, color-mix(in oklab, var(--adb-failed) 30%, var(--card)) 3px 6px);
+}
+
+.adb-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
   font-size: 12px;
 }
 
-.adb-examples li {
+.adb-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.adb-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/*
+ * An open assertion: the reading in one column kept to a width a line reads at, what it is about beside it. The checks
+ * that do not hold are cards on the brief's ground; the ones that hold are one quiet list.
+ */
+.adb-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  gap: 16px 24px;
+  padding: 12px var(--adb-pad) 16px 56px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--muted) 45%, var(--card));
+}
+
+.adb-brief-main {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-width: 64rem;
 }
 
-.adb-examples code {
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+.adb-brief-lede {
+  max-width: 46rem;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.adb-example-value {
-  font-family: var(--font-mono);
+.adb-reason,
+.adb-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 54rem;
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
-.adb-detail-foot {
+.adb-reason {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+}
+
+.adb-reason .adb-glyph,
+.adb-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.adb-reason b {
+  font-weight: 600;
+}
+
+.adb-note {
+  color: var(--muted-foreground);
+}
+
+.adb-brief-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.adb-brief-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 4px 10px;
+}
+
+.adb-brief-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* One square a check, in the order the document states them: where in the assertion it does not hold. */
+.adb-pips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.adb-pips i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.adb-pip-passed { background: color-mix(in oklab, var(--adb-passed) 55%, var(--card)); }
+.adb-pip-warned { background: var(--adb-warned); }
+.adb-pip-failed { background: var(--adb-failed); }
+.adb-pip-errored { background: var(--adb-errored); }
+.adb-pip-notRun { background: var(--muted-foreground); }
+.adb-pip-disabled { background: transparent; box-shadow: inset 0 0 0 1px var(--input, var(--border)); }
+
+.adb-check {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--adb-radius);
+  background: var(--card);
+}
+
+.adb-check-head {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.adb-check-head > .adb-glyph {
+  margin-top: 2px;
+}
+
+.adb-check-titles h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.adb-check-titles p {
   font-size: 12px;
   color: var(--muted-foreground);
 }
 
-.adb-detail-actions {
+.adb-check-word {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--adb-tone, var(--muted-foreground));
+  white-space: nowrap;
+}
+
+/* What was expected beside what was found, as wide as each other, under the check's title. */
+.adb-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-left: 24px;
+}
+
+.adb-ledger-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 16px;
+}
+
+.adb-ledger-side + .adb-ledger-side {
+  padding-right: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+.adb-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.adb-cap-n {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-fig {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.adb-fig-lead,
+.adb-fig-trail {
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+}
+
+.adb-said {
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.adb-fine {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.adb-gap {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.adb-check .adb-check-why {
+  max-width: 46rem;
+  margin-left: 24px;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.adb-check > .adb-link {
+  margin-left: 24px;
+}
+
+/* The records, or rows, that fail a check. */
+.adb-proofs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 24px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.adb-proofs ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adb-proof {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.adb-proof-what {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+}
+
+.adb-proof-value {
+  font-size: 12.5px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.adb-proof code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.adb-proof-why {
+  max-width: 54rem;
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* The values a record differs in: one a line, what was found beside what was expected. */
+.adb-diffs {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.8fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+  max-width: 54rem;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.adb-diffs-head,
+.adb-diff {
+  display: contents;
+}
+
+.adb-diffs-head > span {
+  padding: 3px 8px;
+  background: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.adb-diff > span {
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.adb-diff > span:first-child {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.adb-diff > .adb-diff-wide {
+  grid-column: span 2;
+  font-weight: 400;
+}
+
+.adb-diff > .adb-diff-note {
+  grid-column: 1 / -1;
+  padding-top: 0;
+  border-top: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+/* The checks that need no look, and the checks an assertion states when it has no result: a line each. */
+.adb-holds {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--adb-radius);
+  background: var(--card);
+  list-style: none;
+  overflow: hidden;
+}
+
+.adb-holds > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.adb-holds .adb-more {
+  padding-left: 12px;
+  border-top: 0;
+}
+
+.adb-hold {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.adb-hold > .adb-glyph {
+  align-self: center;
+}
+
+.adb-hold-label {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.adb-hold-expected,
+.adb-hold-found {
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.adb-hold-found {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-hold-stated {
+  grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.4fr);
+}
+
+/* While an open assertion's result is read. */
+.adb-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.adb-wait-text {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.adb-wait i {
+  display: block;
+  height: 40px;
+  border-radius: var(--adb-radius);
+  background: var(--muted);
+  animation: adb-wait 1.4s ease-in-out infinite;
+}
+
+.adb-wait i:nth-of-type(2) { width: 82%; animation-delay: 0.15s; }
+.adb-wait i:nth-of-type(3) { width: 64%; animation-delay: 0.3s; }
+
+@keyframes adb-wait {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adb-wait i {
+    animation: none;
+  }
+}
+
+/* Beside the reading: what the assertion is about, when it was checked, how, and what can be done with it. */
+.adb-brief-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.adb-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-content: start;
+  gap: 3px 12px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.adb-facts dt {
+  color: var(--muted-foreground);
+}
+
+.adb-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.adb-brief-side > * + * {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.adb-how summary {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.adb-how summary:hover {
+  color: var(--foreground);
+}
+
+.adb-how[open] summary {
+  margin-bottom: 6px;
+}
+
+.adb-brief-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-@media (max-width: 900px) {
-  .adb-row-head {
-    grid-template-columns: 14px minmax(0, 1fr) auto 14px;
+.adb-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-step-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+  cursor: pointer;
+}
+
+.adb-step-go:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.adb-step-go:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.adb-presenting .adb-brief-lede {
+  font-size: 16px;
+}
+
+.adb-presenting .adb-fig {
+  font-size: 24px;
+}
+
+.adb-presenting .adb-check-titles h4 {
+  font-size: 16px;
+}
+
+/* Under the width two columns read at, what the assertion is about goes under the reading, its facts two abreast. */
+@media (max-width: 1180px) {
+  .adb-brief {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .adb-row-finding {
+  .adb-brief-side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px 24px;
+    padding-top: 12px;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .adb-brief-side > * + * {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .adb-brief-actions,
+  .adb-step {
+    align-self: start;
+  }
+
+  .adb-row-when {
+    display: none;
+  }
+
+  .adb-row-head {
+    grid-template-columns: 14px minmax(10rem, 1fr) minmax(0, 1.5fr) 6rem 14px;
+  }
+}
+
+@media (max-width: 900px) {
+  .adb-row-head {
+    grid-template-columns: 14px minmax(0, 1fr) 5rem 14px;
+  }
+
+  .adb-row-reading {
     grid-column: 2 / -1;
     grid-row: 2;
   }
 
-  .adb-detail {
+  .adb-brief {
     padding-left: var(--adb-pad);
   }
 
   .adb-presenting,
   .adb:fullscreen {
     padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .adb-ledger,
+  .adb-brief-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adb-ledger-side + .adb-ledger-side {
+    margin-top: 10px;
+    padding-top: 10px;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .adb-ledger,
+  .adb-check-why,
+  .adb-proofs,
+  .adb-check > .adb-link {
+    margin-left: 0;
+  }
+
+  .adb-hold,
+  .adb-hold-stated {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .adb-hold-expected,
+  .adb-hold-found {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .adb-diffs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adb-diffs-head {
+    display: none;
+  }
+
+  .adb-diff > span + span {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .adb-diff > .adb-diff-wide {
+    grid-column: auto;
   }
 }

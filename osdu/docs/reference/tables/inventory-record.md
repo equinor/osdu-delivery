@@ -30,9 +30,9 @@ sourceRefs:
 
 # osdu.InventoryRecord: each id an inventory holds or a ledger expects, and what the ledgers hold of it
 
-One id an [inventory](inventory.md) holds, or a ledger of its partition expects: its kind, version and system properties
-as OSDU served them, when it was first listed, last changed and found gone, and what the ledgers hold of it (the
-finding). The reconcile sets every row's finding from the delivery ledgers' [`osdu.Record`](record.md),
+One id an [inventory](inventory.md) holds, or a ledger of its partition expects: its record's name, kind, version and
+system properties as OSDU served them, when it was first listed, last changed and found gone, and what the ledgers hold
+of it (the finding). The reconcile sets every row's finding from the delivery ledgers' [`osdu.Record`](record.md),
 [`osdu.Artifact`](artifact.md) and [`osdu.PurgedRecord`](purged-record.md), and never writes them
 ([The findings](../flow/inventory-builds.md#the-findings)).
 
@@ -47,6 +47,7 @@ restore serves the ids it brought back again, with the finding the reconcile's r
 | `InventoryRecordId` | `bigint` identity | no | The row's id within the partition. |
 | `InventoryId` | `int` | no | The inventory ([`osdu.Inventory`](inventory.md)). |
 | `TargetId` | `nvarchar(500)` | no | Collation `Latin1_General_100_BIN2`. The OSDU id, compared exactly. |
+| `Name` | `nvarchar(400)` | yes | The record's name as OSDU last served it (or, for an id never listed, as storage answered when asked), cut to 400 characters: the first of the properties a record is named by that it holds ([Names](../flow/inventory.md#names)). Null when it holds none, or OSDU never served it to the inventory; a gone id keeps the name it was last listed with. |
 | `Kind` | `nvarchar(300)` | yes | Its kind as OSDU last served it (or, for an id never listed, as storage answered when asked), cut to 300 characters. |
 | `Version` | `bigint` | yes | Its version. |
 | `CreateUser` | `nvarchar(256)` | yes | Who created it, cut to 256 characters. |

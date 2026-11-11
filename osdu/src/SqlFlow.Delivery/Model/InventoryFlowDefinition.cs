@@ -300,7 +300,11 @@ public sealed record InventorySource
     /// <summary>Storage's listing of a kind's ids (GET) and its read of records by id (POST), openapi storage v2 <c>/query/records</c>.</summary>
     public const string DefaultRecordQueryPath = "/api/storage/v2/query/records";
 
-    /// <summary>Storage's read of up to 1,000 records' system properties by id, openapi storage v2 <c>/query/records/headers</c>.</summary>
+    /// <summary>
+    /// Storage's read of up to 1,000 records' system properties by id, openapi storage v2 <c>/query/records/headers</c>: what a
+    /// removal checks each id against, and what a download's storage listing reads. An inventory's storage read and its missing
+    /// checks read records through <see cref="DefaultRecordQueryPath"/> instead, since a record's name is in its data.
+    /// </summary>
     public const string DefaultHeadersPath = "/api/storage/v2/query/records/headers";
 
     /// <summary>Storage's list of a record's versions, openapi storage v2 <c>/records/versions/{id}</c>.</summary>

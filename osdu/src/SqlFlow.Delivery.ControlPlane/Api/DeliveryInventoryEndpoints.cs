@@ -132,14 +132,14 @@ public sealed record DeliveryInventoryRemovalItemDto(
 public sealed record DeliveryInventoryRemovalItemPageDto(IReadOnlyList<DeliveryInventoryRemovalItemDto> Items, long? Next);
 
 /// <summary>
-/// One id of an inventory: what OSDU serves of it (kind, version, who created and last changed it and when), when the inventory
-/// first listed it, last saw it change and saw it go, its finding with why (<c>Detail</c>), and what the ledgers hold of it:
-/// the ledger (its identity and name), the record's delivery key, status and version, and the artifact a delivery minted with its
-/// state. An id of a selection also carries the version the search index held when the match read it (<c>MatchedVersion</c>) and
-/// what it held at each property the selection's conditions ask (<c>Values</c>).
+/// One id of an inventory: what OSDU serves of it (the record's name, kind, version, who created and last changed it and when),
+/// when the inventory first listed it, last saw it change and saw it go, its finding with why (<c>Detail</c>), and what the
+/// ledgers hold of it: the ledger (its identity and name), the record's delivery key, status and version, and the artifact a
+/// delivery minted with its state. An id of a selection also carries the version the search index held when the match read it
+/// (<c>MatchedVersion</c>) and what it held at each property the selection's conditions ask (<c>Values</c>).
 /// </summary>
 public sealed record DeliveryInventoryRecordDto(
-    long InventoryRecordId, int InventoryId, string TargetId, string? Kind, long? Version, string? CreateUser, DateTime? CreateTime, string? ModifyUser,
+    long InventoryRecordId, int InventoryId, string TargetId, string? Name, string? Kind, long? Version, string? CreateUser, DateTime? CreateTime, string? ModifyUser,
     DateTime? ModifyTime, DateTime? FirstSeenUtc, DateTime? ChangedUtc, DateTime? GoneUtc, string Finding, DateTime FindingUtc, Guid? LedgerFlowId,
     string? Ledger, Guid? DeliveryKey, string? LedgerStatus, long? LedgerVersion, long? ArtifactId, string? ArtifactState, string? Detail,
     long? MatchedVersion = null, IReadOnlyDictionary<string, IReadOnlyList<string>>? Values = null);
@@ -1177,7 +1177,7 @@ public static partial class DeliveryInventoryEndpoints
     }
 
     private static DeliveryInventoryRecordDto ToDto(InventoryRecordState record, IReadOnlyDictionary<Guid, string> ledgers) => new(
-        record.InventoryRecordId, record.InventoryId, record.TargetId, record.Kind, record.Version, record.CreateUser, Utc(record.CreateTime), record.ModifyUser,
+        record.InventoryRecordId, record.InventoryId, record.TargetId, record.Name, record.Kind, record.Version, record.CreateUser, Utc(record.CreateTime), record.ModifyUser,
         Utc(record.ModifyTime), Utc(record.FirstSeenUtc), Utc(record.ChangedUtc), Utc(record.GoneUtc), record.Finding, Utc(record.FindingUtc), record.LedgerFlowId,
         record.LedgerFlowId is { } flowId ? ledgers.GetValueOrDefault(flowId) : null, record.DeliveryKey, record.LedgerStatus, record.LedgerVersion, record.ArtifactId,
         record.ArtifactState, record.Detail);

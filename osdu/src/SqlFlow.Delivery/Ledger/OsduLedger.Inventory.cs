@@ -414,6 +414,7 @@ public sealed partial class OsduLedger
         InventoryRecordId = r.InventoryRecordId,
         InventoryId = r.InventoryId,
         TargetId = r.TargetId,
+        Name = r.Name,
         Kind = r.Kind,
         Version = r.Version,
         CreateUser = r.CreateUser,

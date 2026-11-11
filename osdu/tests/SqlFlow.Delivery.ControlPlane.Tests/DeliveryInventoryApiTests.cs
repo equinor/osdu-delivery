@@ -106,7 +106,7 @@ public sealed class DeliveryInventoryApiTests
             var build = await ledger.StartInventoryRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-2));
             await ledger.AppendInventoryScanAsync(flow.LedgerId, build,
             [
-                Row(Id("tracked"), 10, Estate), Row(Id("drifted"), 12, Estate), Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("theirs"), 1, Stranger),
+                Row(Id("tracked"), 10, Estate), Row(Id("drifted"), 12, Estate), Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("theirs"), 1, Stranger, named: false),
             ]);
             var merge = await ledger.MergeInventoryAsync(flow.LedgerId, wellLogs.InventoryId, build, now.AddHours(-2));
             await ledger.ReconcileInventoryAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], now.AddHours(-2));
@@ -202,8 +202,10 @@ public sealed class DeliveryInventoryApiTests
             Assert.Equal(5, all.GetProperty("items").GetArrayLength());
             Assert.False(all.TryGetProperty("next", out _));
 
-            // A tracked id carries what the ledger holds of it: the ledger by identity and name, the record, its status and version.
+            // A tracked id carries the record's name beside it, and what the ledger holds of it: the ledger by identity and name,
+            // the record, its status and version.
             var tracked = Assert.Single((await JsonAsync(client, token, $"{inventoryPath}/records?finding=tracked")).GetProperty("items").EnumerateArray().ToList());
+            Assert.Equal((Id("tracked"), "Log tracked"), (tracked.GetProperty("targetId").GetString(), tracked.GetProperty("name").GetString()));
             Assert.Equal((deliveryFlow, deliveryName, trackedKey.Value), (tracked.GetProperty("ledgerFlowId").GetGuid(), tracked.GetProperty("ledger").GetString(), tracked.GetProperty("deliveryKey").GetGuid()));
             Assert.Equal(("delivered", 10L, 10L), (tracked.GetProperty("ledgerStatus").GetString(), tracked.GetProperty("ledgerVersion").GetInt64(), tracked.GetProperty("version").GetInt64()));
             var drifted = Assert.Single((await JsonAsync(client, token, $"{inventoryPath}/records?finding=drifted")).GetProperty("items").EnumerateArray().ToList());
@@ -211,6 +213,7 @@ public sealed class DeliveryInventoryApiTests
             var foreign = Assert.Single((await JsonAsync(client, token, $"{inventoryPath}/records?finding=foreign")).GetProperty("items").EnumerateArray().ToList());
             Assert.False(foreign.TryGetProperty("ledgerFlowId", out _));
             Assert.Equal(Stranger, foreign.GetProperty("createUser").GetString());
+            Assert.False(foreign.TryGetProperty("name", out _), "a record holding none of the properties a record is named by has no name");
 
             await ProblemAsync(client, token, $"{inventoryPath}/records?finding=lost", HttpStatusCode.BadRequest, "is not a finding");
             await ProblemAsync(client, token, $"{inventoryPath}/records?limit=0", HttpStatusCode.BadRequest, "limit");
@@ -231,7 +234,7 @@ public sealed class DeliveryInventoryApiTests
             var lookup = await JsonAsync(client, token, $"{root}/lookup?partition={partition}&id={Uri.EscapeDataString(Id("tracked"))}");
             var hit = Assert.Single(lookup.GetProperty("hits").EnumerateArray().ToList());
             Assert.Equal(("WellLogs", "tracked"), (hit.GetProperty("inventory").GetProperty("name").GetString(), hit.GetProperty("record").GetProperty("finding").GetString()));
-            Assert.Equal(deliveryName, hit.GetProperty("record").GetProperty("ledger").GetString());
+            Assert.Equal((deliveryName, "Log tracked"), (hit.GetProperty("record").GetProperty("ledger").GetString(), hit.GetProperty("record").GetProperty("name").GetString()));
             using (var byHeader = await SendAsync(client, token, $"{root}/lookup?id={Uri.EscapeDataString("  " + Id("theirs") + " ")}", partition))
             {
                 var text = await byHeader.Content.ReadAsStringAsync();
@@ -252,7 +255,7 @@ public sealed class DeliveryInventoryApiTests
                 Assert.True(csv.StatusCode == HttpStatusCode.OK, body);
                 Assert.Equal("text/csv", csv.Content.Headers.ContentType?.MediaType);
                 var lines = body.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-                Assert.StartsWith("inventory_record_id,id,kind,version,finding", lines[0], StringComparison.Ordinal);
+                Assert.StartsWith("inventory_record_id,id,name,kind,version,finding", lines[0], StringComparison.Ordinal);
                 Assert.Equal(3, lines.Length);
                 Assert.All(lines.Skip(1), line => Assert.Contains(",orphan,", line, StringComparison.Ordinal));
                 var file = csv.Content.Headers.ContentDisposition?.FileNameStar ?? csv.Content.Headers.ContentDisposition?.FileName ?? string.Empty;
@@ -1313,9 +1316,10 @@ public sealed class DeliveryInventoryApiTests
         Assert.Contains(says, text, StringComparison.Ordinal);
     }
 
-    private static InventoryScanRow Row(string id, long version, string creator)
+    /// <summary>An id as a build reads it, named <c>Log</c> and the unique part of its id unless <paramref name="named"/> says it holds no name.</summary>
+    private static InventoryScanRow Row(string id, long version, string creator, bool named = true)
         => new(id, "osdu:wks:work-product-component--WellLog:1.4.0", version, creator, new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), creator,
-            new DateTime(2026, 9, 2, 8, 0, 0, DateTimeKind.Utc));
+            new DateTime(2026, 9, 2, 8, 0, 0, DateTimeKind.Utc), named ? "Log " + id[(id.LastIndexOf(':') + 1)..] : null);
 
     /// <summary>A record of the delivery ledger claiming <paramref name="targetId"/>, in <paramref name="status"/> at <paramref name="version"/>.</summary>
     private static async Task<DeliveryKey> ClaimAsync(string cs, OsduLedger ledger, Guid flowId, string targetId, string sourceKey, string status, long? version)

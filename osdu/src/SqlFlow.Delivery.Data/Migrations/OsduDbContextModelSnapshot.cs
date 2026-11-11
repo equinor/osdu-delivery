@@ -2643,6 +2643,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("Name")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
                     b.Property<string>("TargetId")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -2932,6 +2936,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<string>("ModifyUser")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("TargetId")
                         .IsRequired()

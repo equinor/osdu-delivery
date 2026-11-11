@@ -208,4 +208,21 @@ public sealed class AssertionSetReportTests
         Assert.Equal(["leaving out \"MD\""], passed.Qualifiers);
         Assert.Null(passed.Why);
     }
+
+    [Fact]
+    public void An_aggregate_over_each_records_bulk_data_reads_how_many_records_meet_it()
+    {
+        // Its value is the share of the records that held, which is not a number it found.
+        var view = CheckView.Of(Warning() with
+        {
+            Label = "max(MD) between 2741 and 3107",
+            Severity = "error",
+            Expected = "between 2741 and 3107",
+            Actual = "2 of 3 record(s)' bulk data meet it",
+            Message = "The bulk data of 1 of 3 record(s) does not meet it.",
+            Value = 66.6667,
+        });
+        Assert.Equal("between 2741 and 3107", view.Expected);
+        Assert.Equal("2 of 3 record(s)' bulk data meet it", view.Found);
+    }
 }

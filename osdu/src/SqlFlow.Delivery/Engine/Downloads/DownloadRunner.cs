@@ -280,8 +280,9 @@ public sealed class DownloadRunner
     private async Task<DownloadMerge> ListAndMergeAsync(
         ILedger ledger, OsduHttpClient client, DownloadSpec download, DownloadState state, long runRow, string partition, InventoryReadStats stats, CancellationToken ct)
     {
+        // A listing needs each id, its kind and version, not its name: a storage listing reads headers, a thousand ids a request.
         IInventoryReader reader = _flow.Source.Read == InventoryRead.Storage
-            ? new StorageInventoryReader(client, _flow.Source, _context.Time)
+            ? new StorageInventoryReader(client, _flow.Source, _context.Time, names: false)
             : new SearchInventoryReader(new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging));
         var buffer = new List<DownloadScanRow>(StageChunk);
         long listed = 0;

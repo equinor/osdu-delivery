@@ -148,6 +148,9 @@ public sealed record InventoryRecordState
 
     public required string TargetId { get; init; }
 
+    /// <summary>The record's name as OSDU last served it (<see cref="Engine.Search.RecordNames"/>); null when it holds none, or OSDU never served it to the inventory.</summary>
+    public string? Name { get; init; }
+
     public string? Kind { get; init; }
 
     public long? Version { get; init; }
@@ -185,8 +188,9 @@ public sealed record InventoryRecordState
     public string? Detail { get; init; }
 }
 
-/// <summary>One id a build listed: what OSDU served of it.</summary>
-public sealed record InventoryScanRow(string TargetId, string? Kind, long? Version, string? CreateUser, DateTime? CreateTime, string? ModifyUser, DateTime? ModifyTime);
+/// <summary>One id a build listed: what OSDU served of it, its name among it (<see cref="Engine.Search.RecordNames"/>).</summary>
+public sealed record InventoryScanRow(
+    string TargetId, string? Kind, long? Version, string? CreateUser, DateTime? CreateTime, string? ModifyUser, DateTime? ModifyTime, string? Name = null);
 
 /// <summary>What merging a complete read into an inventory changed.</summary>
 public sealed record InventoryMerge(long Listed, long Added, long Changed, long Gone, long Returned);

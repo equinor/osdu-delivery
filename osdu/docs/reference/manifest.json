@@ -3871,6 +3871,10 @@
         "disabled assertions and why",
         "include disabled",
         "not yet checked",
+        "open an assertion",
+        "expected and found",
+        "how far a count is off",
+        "failing records of a check",
         "changed since its last result",
         "run a set",
         "assertion-results route",
@@ -3897,6 +3901,8 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs",
         "osdu/gui/src/features/delivery/assertions/dashboard/dashboardModel.ts",
         "osdu/gui/src/features/delivery/assertions/dashboard/AssertionDashboard.tsx",
+        "osdu/gui/src/features/delivery/assertions/dashboard/AssertionBrief.tsx",
+        "osdu/gui/src/features/delivery/assertions/dashboard/checkBrief.ts",
         "osdu/gui/src/features/delivery/assertions/dashboard/exportDashboard.ts",
         "osdu/gui/vite.config.ts"
       ]
@@ -9334,7 +9340,7 @@
       "path": "tables/inventory-scan.md",
       "title": "osdu.InventoryScan: each id a build listed, staged until the read is whole and merged into the inventory",
       "type": "table",
-      "summary": "One row per id an inventory build's read listed, with its system properties as OSDU served them, held only until the build merges or fails.",
+      "summary": "One row per id an inventory build's read listed, with its record's name and system properties as OSDU served them, held only until the build merges or fails.",
       "keywords": [
         "osdu.InventoryScan",
         "inventory scan table",

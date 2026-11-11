@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
@@ -8,8 +9,10 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// Storage's own reads over the records the search stand-in holds (openapi storage v2): the listing of a kind's ids a page at
-/// a time under a cursor, the headers of up to a thousand ids (or 404 where the route is not deployed), records by id, a
-/// record's versions, and the schema service's listing of the kinds; and its removals, each taking a record out of what it
+/// a time under a cursor, the headers of up to a thousand ids (or 404 where the route is not deployed), records by id (their
+/// data trimmed to the <c>data.</c> attributes asked, a nested one under its dotted rest, as os-core-common's
+/// PersistenceHelper.filterRecordDataFields does), a record's versions, and the schema service's listing of the kinds; and
+/// its removals, each taking a record out of what it
 /// serves: the soft delete of a list (204, or 207 naming the ids it did not delete), the soft delete of one id, and its purge.
 /// A soft-deleted record is kept, as storage keeps it, and its merge patch of <c>{"deleted": false}</c> serves it again
 /// (osdu/specs/core/INTEGRATION.md, D3): 400 for a record it serves already, 404 for one it holds no record of, 409 for one it
@@ -37,6 +40,12 @@ internal sealed class StoragePlatform : DelegatingHandler
 
     /// <summary>The headers route answers 404 with every id it was asked for under notFound: it holds none of them.</summary>
     public bool HeadersHoldNone { get; set; }
+
+    /// <summary>The ids a read by id names under retryRecords every time it is asked: storage never says whether it holds them.</summary>
+    public HashSet<string> RetryForever { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The attributes each read by id asked for, in the order the reads came.</summary>
+    public ConcurrentQueue<IReadOnlyList<string>> AttributesAsked { get; } = new();
 
     public ListingCursors Cursors { get; set; }
 
@@ -174,14 +183,18 @@ internal sealed class StoragePlatform : DelegatingHandler
         if (path == "/api/storage/v2/query/records" && request.Method == HttpMethod.Post)
         {
             Interlocked.Increment(ref _recordReads);
-            var asked = JsonNode.Parse(body!)!["records"]!.AsArray().Select(i => i!.GetValue<string>()).ToList();
+            var asking = JsonNode.Parse(body!)!;
+            var asked = asking["records"]!.AsArray().Select(i => i!.GetValue<string>()).ToList();
             Assert.True(asked.Count <= 100);
-            var (found, missing) = Held(asked);
+            var attributes = asking["attributes"]?.AsArray().Select(a => a!.GetValue<string>()).ToList() ?? [];
+            AttributesAsked.Enqueue(attributes);
+            var retry = asked.Where(RetryForever.Contains).ToList();
+            var (found, missing) = Held(asked.Except(retry, StringComparer.Ordinal).ToList());
             return FakeHttpHandler.Json(HttpStatusCode.OK, new JsonObject
             {
-                ["records"] = new JsonArray(found.Select(r => (JsonNode?)r.DeepClone()).ToArray()),
+                ["records"] = new JsonArray(found.Select(r => (JsonNode?)Projected(r, attributes)).ToArray()),
                 ["invalidRecords"] = new JsonArray(missing.Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()),
-                ["retryRecords"] = new JsonArray(),
+                ["retryRecords"] = new JsonArray(retry.Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()),
             }.ToJsonString());
         }
 
@@ -356,6 +369,38 @@ internal sealed class StoragePlatform : DelegatingHandler
         }
 
         return (found, missing);
+    }
+
+    /// <summary>
+    /// A record as storage's read by id returns it: whole when no attribute names a <c>data.</c> property, else with its data
+    /// holding only those, each under the path after <c>data.</c>, a nested one under that dotted path rather than nested.
+    /// </summary>
+    private static JsonObject Projected(JsonObject record, IReadOnlyList<string> attributes)
+    {
+        var copy = (JsonObject)record.DeepClone();
+        var wanted = attributes.Select(a => a.Trim()).Where(a => a.StartsWith("data.", StringComparison.Ordinal)).Select(a => a["data.".Length..]).ToList();
+        if (wanted.Count == 0)
+        {
+            return copy;
+        }
+
+        var data = new JsonObject();
+        foreach (var attribute in wanted)
+        {
+            JsonNode? node = record["data"];
+            foreach (var segment in attribute.Split('.'))
+            {
+                node = node is JsonObject inner ? inner[segment] : null;
+            }
+
+            if (node is not null)
+            {
+                data[attribute] = node.DeepClone();
+            }
+        }
+
+        copy["data"] = data;
+        return copy;
     }
 
     private static JsonObject Header(JsonObject record)

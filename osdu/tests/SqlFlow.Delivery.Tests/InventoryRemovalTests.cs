@@ -218,6 +218,27 @@ public sealed partial class InventoryRemovalTests : IDisposable
     }
 
     [Fact]
+    public async Task An_id_storage_never_answers_for_is_skipped_rather_than_taken_for_gone_and_stays_in_the_inventory()
+    {
+        Add("plain");
+        Add("unanswered");
+        var (runner, ledger, inventory) = await BuiltAsync(Flow());
+        // Read by id a hundred at a time where the headers route is not deployed, storage names the id under retryRecords each time.
+        _platform.HeadersDeployed = false;
+        _platform.RetryForever.Add(Id("unanswered"));
+
+        var outcome = await runner.RemoveAsync("WellLogs", Every(InventoryFindings.Orphan, 2), Partition, Guid.NewGuid(), Operator, CancellationToken.None);
+
+        Assert.Equal((1L, 0L, 1L, 0L), (outcome.Removed, outcome.Gone, outcome.Skipped, outcome.Failed));
+        Assert.Equal([Id("plain")], _platform.SoftDeleted);
+        var items = await ItemsAsync(ledger, outcome.InventoryRemovalId);
+        Assert.Equal(InventoryRemovals.Skipped, items[Id("unanswered")].Outcome);
+        Assert.Contains("never said whether it holds it", items[Id("unanswered")].Reason, StringComparison.Ordinal);
+        var row = Assert.Single(await ledger.LookupInventoryRecordsAsync(Partition, Id("unanswered")));
+        Assert.Equal((InventoryFindings.Orphan, (DateTime?)null), (row.Finding, row.GoneUtc));
+    }
+
+    [Fact]
     public async Task A_removal_is_refused_before_anything_is_read_unless_the_flow_allows_it_the_partition_is_confirmed_and_the_count_holds()
     {
         Add("a");

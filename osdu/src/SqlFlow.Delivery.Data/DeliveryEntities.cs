@@ -1012,6 +1012,12 @@ public sealed class DeliveryInventoryRecord
     /// <summary>The OSDU id, compared exactly.</summary>
     public string TargetId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The record's name as OSDU last served it: the first of the properties a record is named by that it holds (FacilityName,
+    /// Name, ProjectName, Code, a file's name). Null when it holds none, or OSDU never served it to the inventory.
+    /// </summary>
+    public string? Name { get; set; }
+
     public string? Kind { get; set; }
 
     public long? Version { get; set; }
@@ -1505,6 +1511,9 @@ public sealed class DeliveryInventoryScan
     public long InventoryRunId { get; set; }
 
     public string TargetId { get; set; } = string.Empty;
+
+    /// <summary>The record's name as the read served it; null when it holds none of the properties a record is named by.</summary>
+    public string? Name { get; set; }
 
     public string? Kind { get; set; }
 
@@ -3995,6 +4004,9 @@ public static class DeliveryModel
     /// <summary>The longest identity an inventory keeps as a record's creator or last modifier.</summary>
     public const int MaxInventoryUserLength = 256;
 
+    /// <summary>The longest name an inventory keeps of a record; a longer one is cut to it.</summary>
+    public const int MaxInventoryNameLength = 400;
+
     /// <summary>The longest line an inventory record keeps of what its finding rests on.</summary>
     public const int MaxInventoryDetailLength = 1000;
 
@@ -4469,6 +4481,7 @@ public static class DeliveryModel
             e.HasKey(r => new { r.PartitionId, r.InventoryRecordId });
             e.Property(r => r.InventoryRecordId).ValueGeneratedOnAdd();
             OsduId(e.Property(r => r.TargetId)).HasMaxLength(MaxTargetIdLength);
+            e.Property(r => r.Name).HasMaxLength(MaxInventoryNameLength);
             e.Property(r => r.Kind).HasMaxLength(MaxInventoryKindLength);
             e.Property(r => r.CreateUser).HasMaxLength(MaxInventoryUserLength);
             e.Property(r => r.ModifyUser).HasMaxLength(MaxInventoryUserLength);
@@ -4604,6 +4617,7 @@ public static class DeliveryModel
             e.HasKey(s => new { s.PartitionId, s.ScanId });
             e.Property(s => s.ScanId).ValueGeneratedOnAdd();
             OsduId(e.Property(s => s.TargetId)).HasMaxLength(MaxTargetIdLength);
+            e.Property(s => s.Name).HasMaxLength(MaxInventoryNameLength);
             e.Property(s => s.Kind).HasMaxLength(MaxInventoryKindLength);
             e.Property(s => s.CreateUser).HasMaxLength(MaxInventoryUserLength);
             e.Property(s => s.ModifyUser).HasMaxLength(MaxInventoryUserLength);

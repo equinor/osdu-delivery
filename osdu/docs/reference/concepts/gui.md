@@ -286,9 +286,11 @@ picked records, and the removal runs that wrote to its ledger.
   yet checked** and **Passing**, each a filter whose hover says what it means; a
   map of where the data stands, a row per value of one dimension and a column per value of another (the reader picks
   them), each square how its assertions stand and the filter to them; and the assertions grouped by what they need, ten
-  at a time, a search narrowing them. A row says in a line or two what the assertion found; one opens at a time on its checks
-  (what each expected and found, why, and the records that fail it), its dimensions, its report, its flow and **Run
-  again**. Disabled assertions are left out until **Include disabled**, then listed with the reason their document gives;
+  at a time, a search narrowing them. A row says what the assertion found: its first check that does not hold, what was
+  found against it, and the measure of the two, drawn. One opens at a time on
+  [its brief](../flow/assertion-sets.md#an-open-assertion): each check that does not hold as a card with **Expected**
+  beside **Found** in plain words and the records that fail it, the checks that hold a line each, and beside them its
+  dimensions, how it was checked, its report, its flow and **Run again**. Disabled assertions are left out until **Include disabled**, then listed with the reason their document gives;
   one changed since its last result is not yet checked, and one whose proof values are past their day warns. **Present**
   shows it full screen, and **Download** saves it as one HTML page that works offline, and with a set picked the set's
   report as Markdown, JSON or JUnit XML. An assertion flow's **Assertions** tab is the same dashboard of its assertions,

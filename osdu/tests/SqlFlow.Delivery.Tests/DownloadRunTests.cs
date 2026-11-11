@@ -322,7 +322,7 @@ public sealed class DownloadRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_storage_read_lists_every_record_of_the_kind_from_storage_and_writes_each()
+    public async Task A_storage_read_lists_every_record_of_the_kind_from_storage_reading_their_headers_and_writes_each()
     {
         Add(Id("WB-0001"));
         Add(Id("WB-0002"));
@@ -331,7 +331,38 @@ public sealed class DownloadRunTests : IDisposable
         var summary = Assert.Single((await RunAsync(runner)).Downloads);
 
         Assert.Equal((2L, 2L), (summary.Listed, summary.Written));
-        Assert.True(_platform.Listings > 0);
+        // A listing needs no record's name, so it reads the headers route, a thousand ids a request.
+        Assert.Equal((1, 1), (_platform.Listings, _platform.HeaderReads));
+    }
+
+    [Fact]
+    public async Task Where_the_headers_route_is_not_deployed_a_storage_listing_reads_records_a_hundred_at_a_time()
+    {
+        Add(Id("WB-0001"));
+        Add(Id("WB-0002"));
+        _platform.HeadersDeployed = false;
+        var (runner, _, _) = Runner(Flow(read: "storage"));
+
+        var summary = Assert.Single((await RunAsync(runner)).Downloads);
+
+        Assert.Equal((2L, 2L, 1), (summary.Listed, summary.Written, _platform.HeaderReads));
+        Assert.True(_platform.RecordReads >= 2, "the listing's read by id, then the write's");
+    }
+
+    [Fact]
+    public async Task A_headers_404_naming_the_ids_it_does_not_hold_is_an_answer_so_none_is_listed_and_the_route_stays_in_use()
+    {
+        for (var i = 0; i < 1200; i++)
+        {
+            Add(Id($"WB-{i:D4}"));
+        }
+
+        _platform.HeadersHoldNone = true;
+        var (runner, _, _) = Runner(Flow(read: "storage"));
+
+        var summary = Assert.Single((await RunAsync(runner)).Downloads);
+
+        Assert.Equal((0L, 2, 2, 0), (summary.Listed, _platform.Listings, _platform.HeaderReads, _platform.RecordReads));
     }
 
     [Fact]

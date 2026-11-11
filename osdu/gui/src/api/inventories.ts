@@ -309,6 +309,8 @@ export interface InventoryRecord {
   inventoryRecordId: number;
   inventoryId: number;
   targetId: string;
+  /** The record's name as OSDU last served it: the first of FacilityName, Name, ProjectName, Code or a file's name it holds. */
+  name?: string;
   kind?: string;
   version?: number;
   createUser?: string;

@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **An inventory names every id it lists by its record's name.** A build reads the first of `FacilityName`, `Name`,
+  `ProjectName`, `Code` or a file's name each record holds, as the explorer names records, and keeps it in
+  `osdu.InventoryRecord.Name` (migration InventoryRecordNames, module version 1.68.0). The Ids grid leads each row with
+  the name, the lookup shows it, and the API, the CLI's `records` and `lookup` and the export carry it. Rows kept before
+  take their names from the next build, which does not count them as changed ([Names](osdu/docs/reference/flow/inventory.md#names)).
+- **A file flow reads a Power Apps (Microsoft Dataverse) table.** `source.type: dataverse` with the environment URL and
+  the table's logical name lands the table typed from its metadata, so a column added or lengthened in Power Apps
+  reaches the target through schema evolution; an incremental `watermarkColumn` (`versionnumber` or `modifiedon`) asks the
+  service only for rows past the target's high-water mark, and throttling is waited out as the service asks
+  ([Dataverse source](sqlflow/docs/reference/flow/source-types/dataverse.md)).
 - **`sqlflow template register` registers a repository's custom schemas with a partition's Schema service.** It reads
   the connection and partition from an env file (`.sqlflow/env` by default), finds every template whose kind's authority
   is not `osdu`, shows where each stands in OSDU and what it would write, and registers or updates it in development,
@@ -601,6 +611,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **An inventory's export has a `name` column after `id`**, so a script reading its columns by position reads one column
+  further along from `kind` on ([export](osdu/docs/reference/cli/inventory.md#export)).
+- **An inventory's storage read (`read: storage`) and its missing checks read records by id, 100 to a request.** They read
+  each id's system properties with its name through `POST /query/records`, asking only for the properties a record is
+  named by, where the headers route took 1,000 ids a request and returns no data: a storage build sends about ten times
+  the read requests it did. A removal still checks ids through the headers route
+  ([Reading OSDU](osdu/docs/reference/flow/inventory.md#reading-osdu)).
+- **An open assertion on the Assertions page reads as a brief, and a row says what was found.** A check that does not
+  hold is a card with **Expected** beside **Found** in plain words (`5 records`, `at least 5`): a count against its
+  number as figures over a bar that shows the range that holds and by how much it missed (`172 short of 812 (21.2%)`), a
+  share as one bar (`3 of 5 rows hold, 1 differs, 1 is not found`), and the records that fail it with each value they
+  differ in on a line of its own. The checks that hold are a line each, and what the assertion is about and how it was
+  checked stand beside them, with a step to the next assertion. A row names its first check that does not hold, what was
+  found against it and the measure of the two, and the downloaded dashboard reads the same
+  ([an open assertion](osdu/docs/reference/flow/assertion-sets.md#an-open-assertion)).
 - **The Mappings and Templates grids fit the window and say what is wrong first.** The rows of several repositories are
   listed under a heading for each, with its count and when its sync last saw it, in place of a repository and a synced
   column on every row; a mapping that does not load, or a file that holds no template, says why in its row, and a line
@@ -985,6 +1010,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- An id storage asks twice to have read again (`retryRecords`) is no longer taken for one it does not hold. A storage
+  listing fails whole rather than mark the record gone, a missing check leaves it unasked for the next build, and a
+  removal skips it rather than record it gone
+  ([What a removal does](osdu/docs/reference/flow/inventory-removals.md#what-a-removal-does)).
+- **An aggregate over each record's bulk data reads how many records meet it.** A run's report, a set's report and the
+  dashboard showed the share of the records that held as what the check found (`0`, `100`); they show the finding
+  itself, `2 of 3 record(s)' bulk data meet it` ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 - Every open page stays within reach of the tab strip. A page opened past the strip's end was never scrolled into view,
   and the strip had no scrollbar, so its tab and its close could not be reached. Tabs now give up width before the strip
   scrolls, a chevron at each end and the mouse wheel scroll it, the page in view always has its tab in view, the arrow

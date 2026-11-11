@@ -9,9 +9,9 @@ namespace SqlFlow.Delivery.Engine.Inventories;
 /// Writes an inventory's ids, those of one finding or every one, to a stream as CSV with a header row (RFC 4180), a ledger page
 /// at a time in the order the inventory took them in, so an export of millions of ids never holds more than one page
 /// (osdu/docs/reference/cli/inventory.md, export). The API's download and the CLI's export both write through here, so
-/// the two are the same file. A row is what OSDU serves of the id (its kind, version, who created and last changed it
-/// and when), its finding and why, and what the ledgers hold of it (the ledger, the record's delivery key, status and
-/// version, the artifact and its state).
+/// the two are the same file. A row is the id and the record's name, what else OSDU serves of it (its kind, version, who
+/// created and last changed it and when), its finding and why, and what the ledgers hold of it (the ledger, the record's
+/// delivery key, status and version, the artifact and its state).
 /// </summary>
 /// <remarks>
 /// A cell a spreadsheet would run as a formula is written as text, as a dimension export writes it
@@ -30,7 +30,7 @@ public static class InventoryExport
 
     private static readonly string[] Columns =
     [
-        "inventory_record_id", "id", "kind", "version", "finding", "finding_utc", "detail", "create_user", "create_time", "modify_user", "modify_time",
+        "inventory_record_id", "id", "name", "kind", "version", "finding", "finding_utc", "detail", "create_user", "create_time", "modify_user", "modify_time",
         "first_seen_utc", "changed_utc", "gone_utc", "ledger", "ledger_flow_id", "delivery_key", "ledger_status", "ledger_version", "artifact_id",
         "artifact_state",
     ];
@@ -91,12 +91,7 @@ public static class InventoryExport
                     ledgers[flowId] = ledgerName;
                 }
 
-                var line = DimensionExport.Csv(
-                    Number(record.InventoryRecordId), record.TargetId, record.Kind, Number(record.Version), record.Finding, Instant(record.FindingUtc), record.Detail,
-                    record.CreateUser, Instant(record.CreateTime), record.ModifyUser, Instant(record.ModifyTime), Instant(record.FirstSeenUtc), Instant(record.ChangedUtc),
-                    Instant(record.GoneUtc), ledgerName, record.LedgerFlowId?.ToString("D"), record.DeliveryKey?.ToString("D"), record.LedgerStatus,
-                    Number(record.LedgerVersion), Number(record.ArtifactId), record.ArtifactState);
-                await output.WriteAsync(line + LineEnd).ConfigureAwait(false);
+                await output.WriteAsync(DimensionExport.Csv(Cells(record, ledgerName)) + LineEnd).ConfigureAwait(false);
                 rows++;
             }
 
@@ -160,10 +155,7 @@ public static class InventoryExport
                     var held = InventorySelectionValues.Parse(selected.ValuesJson);
                     var line = DimensionExport.Csv(
                     [
-                        Number(record.InventoryRecordId), record.TargetId, record.Kind, Number(record.Version), record.Finding, Instant(record.FindingUtc), record.Detail,
-                        record.CreateUser, Instant(record.CreateTime), record.ModifyUser, Instant(record.ModifyTime), Instant(record.FirstSeenUtc), Instant(record.ChangedUtc),
-                        Instant(record.GoneUtc), ledgerName, record.LedgerFlowId?.ToString("D"), record.DeliveryKey?.ToString("D"), record.LedgerStatus,
-                        Number(record.LedgerVersion), Number(record.ArtifactId), record.ArtifactState, Number(selected.MatchedVersion),
+                        .. Cells(record, ledgerName), Number(selected.MatchedVersion),
                         .. columns.Select(c => held.TryGetValue(c, out var values) ? string.Join("; ", values) : null),
                     ]);
                     await writer.WriteAsync(line + LineEnd).ConfigureAwait(false);
@@ -180,6 +172,15 @@ public static class InventoryExport
             }
         }
     }
+
+    /// <summary>The cells of one id under <see cref="Columns"/>, in their order: the row an inventory's export and a selection's both start with.</summary>
+    private static string?[] Cells(InventoryRecordState record, string? ledgerName) =>
+    [
+        Number(record.InventoryRecordId), record.TargetId, record.Name, record.Kind, Number(record.Version), record.Finding, Instant(record.FindingUtc), record.Detail,
+        record.CreateUser, Instant(record.CreateTime), record.ModifyUser, Instant(record.ModifyTime), Instant(record.FirstSeenUtc), Instant(record.ChangedUtc),
+        Instant(record.GoneUtc), ledgerName, record.LedgerFlowId?.ToString("D"), record.DeliveryKey?.ToString("D"), record.LedgerStatus,
+        Number(record.LedgerVersion), Number(record.ArtifactId), record.ArtifactState,
+    ];
 
     private static string? Number(long? value) => value?.ToString(CultureInfo.InvariantCulture);
 

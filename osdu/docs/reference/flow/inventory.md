@@ -49,8 +49,9 @@ sourceRefs:
 
 # Inventory flow (flowType: inventory): every id OSDU serves, compared with the ledgers to find orphans and missing records
 
-An inventory flow lists every record id one or more OSDU kinds hold in a partition, with its version and who created and
-last changed it, keeps the list in the module's database, and compares every id with every ledger of the partition.
+An inventory flow lists every record id one or more OSDU kinds hold in a partition, with the record's name, its version
+and who created and last changed it, keeps the list in the module's database, and compares every id with every ledger of
+the partition.
 The ledgers say what the delivery flows delivered and minted; the inventory says what OSDU serves; where the two
 disagree is the report. Use it to find records no ledger knows (orphans), records a ledger expects that OSDU no longer
 holds (missing), ids an unfinished delivery left behind, and records a ledger removed or forgot that OSDU still serves.
@@ -144,8 +145,8 @@ Unknown keys are refused when the document is read.
 | `queryPath` | text | `/api/search/v2/query` | The offset search a plan counts through. |
 | `searchPath` | text | `/api/search/v2/query_with_cursor` | The cursor search a search read pages through. |
 | `paging` | `cursor` or `createTime` | `cursor` | How a search read pages: through `searchPath`, or through `queryPath` in the order each record was created, which holds nothing on the service between pages. See [Search paging](../concepts/search-paging.md). |
-| `recordQueryPath` | text | `/api/storage/v2/query/records` | Storage's listing of a kind's ids (GET) and its read of records by id (POST). |
-| `headersPath` | text | `/api/storage/v2/query/records/headers` | Storage's read of up to 1,000 records' system properties by id. |
+| `recordQueryPath` | text | `/api/storage/v2/query/records` | Storage's listing of a kind's ids (GET) and its read of records by id (POST), which a storage read and the missing checks read each id's system properties and name through. |
+| `headersPath` | text | `/api/storage/v2/query/records/headers` | Storage's read of up to 1,000 records' system properties by id, which a removal checks each id against before it goes. |
 | `versionsPath` | text | `/api/storage/v2/records/versions` | Storage's list of a record's versions, for `versions: all`. |
 | `schemaPath` | text | `/api/schema-service/v1/schema` | The schema service, which expands a kind with wildcards for a storage read. |
 | `bulkDeletePath` | text | `/api/storage/v2/records/delete` | Storage's soft delete of a list of records, which a removal sends 500 ids at a time. |
@@ -157,17 +158,36 @@ A path must start with `/` and hold no whitespace, query or fragment.
 ### Reading OSDU
 
 - **`read: search`** (the default) pages the search index (`query_with_cursor`, 1,000 ids a page) returning `id`, `kind`,
-  `version`, `createUser`, `createTime`, `modifyUser` and `modifyTime`. A viewer's entitlements are enough. The index
-  lags writes and leaves out a record it failed to index, so such a record is not listed; when a ledger expects it, it is
-  read from storage by id and reported `unlisted`.
+  `version`, `createUser`, `createTime`, `modifyUser`, `modifyTime` and the properties a record is named by
+  ([Names](#names)). A viewer's entitlements are enough. The index lags writes and leaves out a record it failed to index,
+  so such a record is not listed; when a ledger expects it, it is read from storage by id and reported `unlisted`.
 - **`read: storage`** lists every active record of each kind from storage itself (`GET /query/records?kind=`, 1,000 ids a
-  page, the `service.storage.admin` role), and reads their system properties 1,000 at a time (`POST
-  /query/records/headers`), or 100 at a time through `POST /query/records` where a deployment does not serve the headers
-  route. A kind with wildcards is expanded through the schema service into the kinds it matches, where `*` stands for
+  page, the `service.storage.admin` role), and reads their system properties and names 100 at a time through `POST
+  /query/records`, asking only for the properties a record is named by, so storage returns no more of each record's data
+  than those. A kind with wildcards is expanded through the schema service into the kinds it matches, where `*` stands for
   any text within its segment (`1.*.*` takes every 1.x.y version), matched ignoring case as the search service matches a
-  kind. Unindexed records are listed. A storage read takes no `query`.
+  kind. Unindexed records are listed. A storage read takes no `query`. An id storage names under `retryRecords` when asked,
+  and again when asked a second time, fails the build: storage has not said whether it holds the id, and a read is whole or
+  nothing.
 
 A soft-deleted record is not served, so it is in no inventory.
+
+### Names
+
+Every id an inventory lists carries the record's name, so a reader sees what a record is beside its id. The name is the
+first of these properties the record holds as text, trimmed, in this order: `data.FacilityName`, `data.Name`,
+`data.ProjectName`, `data.Code` and a file's `data.DatasetProperties.FileSourceInfo.Name`. These are the properties the
+[explorer](../concepts/explorer.md) names a record by. A record holding none of them has no name. A name is cut to 400
+characters.
+
+- **Reading it costs.** A search read asks for the name properties on the pages it reads already, so names cost no
+  request. A storage read reads records by id, 100 to a request, where reading headers alone took 1,000: it sends about
+  ten times the requests a headers read did. Storage's headers route returns no data, and a name is in the data.
+- **The missing checks read it too.** The ids a ledger expects that the read did not list are read from storage the same
+  way, so an `unlisted` id gets its row with its name. A `missing` id has none: storage holds no record of it.
+- **A gone id keeps its name.** An id OSDU no longer serves keeps the name it was last listed with.
+- **Rows kept before names were read** take them from the next build. A name read for the first time is not a change: a
+  record's name changes only with a new version, which is a change, so a build does not count those rows as changed.
 
 ### An inventory
 
@@ -294,7 +314,8 @@ changed since its build, the search requests it sent, its notes, and why it stop
 An inventory flow reads each inventory's kind on its platform and partition and writes nothing another flow reads, so
 lineage orders it after the delivery flows writing those kinds ([lineage](../concepts/lineage.md)). An inventory flow's
 pipeline has an **Inventories** tab. **OSDU**, **Inventories** lists every inventory with what its last
-reconcile raised; an inventory's report has its counts by finding over a grid of ids, the tabs Ids, Duplicates
+reconcile raised; an inventory's report has its counts by finding over a grid of ids, each led by its record's name
+([Names](#names)), the tabs Ids, Duplicates
 ([In the GUI](inventory-duplicates.md#in-the-gui)), Runs and (for a flow that allows removal, or one that has removed
 anything) Removals, a lookup by OSDU id, and a CSV export. A removable finding's tab picks ids, or every one, to
 **Remove from OSDU**; the **gone** tab picks ids, or every one, to **Restore in OSDU** (for a flow that declares

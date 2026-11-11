@@ -21,7 +21,9 @@ referenceRefs:
   - concept-type-inference
   - concept-pre-ingestion-transform
   - concept-provenance-and-row-keys
-updated: 2026-09-09
+related:
+  - wiki-dataverse-is-a-source-type
+updated: 2026-11-11
 ---
 
 # Landing is string-first, and typing is a separate stage
@@ -30,8 +32,10 @@ A file source lands into its raw table with every column as a string. Nothing is
 or rejected on the way in. Types are decided afterwards, by profiling the landed table and emitting
 a typed view over it.
 
-The one exception is Parquet, whose own schema already carries real types, so a Parquet-sourced
-table needs no inference at all.
+The exceptions are sources whose own schema already carries real types: Parquet, a DuckDB scan,
+and a Dataverse table, whose metadata the store enforces (see
+[A Dataverse table is a source type](dataverse-is-a-source-type.md)). Their tables need no
+inference at all.
 
 For the mechanics of how types are then chosen, see
 [concept-type-inference](../../reference/concepts/type-inference.md); for how the typed view is

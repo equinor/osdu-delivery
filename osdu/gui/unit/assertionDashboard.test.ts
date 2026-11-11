@@ -1,11 +1,11 @@
 // The assertion dashboard's model (osdu/docs/reference/flow/assertion-sets.md, The dashboard): where each assertion stands
-// now, what is left out until asked for, the axes and squares of the map, the verdict, the groups, and the line each row
+// now, what is left out until asked for, the axes and squares of the map, the verdict, the groups, and what each row
 // reads.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  axisValues, checksOf, defaultAxes, findingOf, fromBoard, groupOf, inScope, setsOf, square, standingOf, tally, verdictOf,
+  axisValues, checksOf, defaultAxes, fromBoard, groupOf, inScope, readingLine, readingOf, setsOf, square, standingOf, tally, verdictOf,
   type Board, type BoardLatest, type BoardTest,
 } from "../src/features/delivery/assertions/dashboard/dashboardModel.ts";
 
@@ -195,17 +195,53 @@ describe("the list", () => {
     ]);
   });
 
-  it("reads an assertion's first check that does not hold as what it expected and found", () => {
+  it("reads an assertion's first check that does not hold as its claim, what was found against it, and the measure of the two", () => {
     const [test] = fromBoard(boardOf({ set: null, tests: [testOf("a", { latest: latest("failed") })] }), "2026-11-04T08:00:00Z").tests;
     const result = {
       test: "a",
       assertions: [
-        { label: "names", type: "value", severity: "error", outcome: "passed", expected: "is not empty" },
-        { label: "count", type: "count", severity: "error", outcome: "failed", expected: "at least 5", actual: "3 records", value: 3, examples: [{ id: "p1:x:1", reason: "missing" }] },
+        { label: "names", type: "field", severity: "error", outcome: "passed", expected: "is not empty" },
+        { label: "a warning first", type: "field", severity: "warning", outcome: "failed", expected: "exists", actual: "4 of 5 record(s) meet it", checked: 5, failing: 1 },
+        { label: "count atLeast 5", type: "count", severity: "error", outcome: "failed", expected: "atLeast 5", actual: "3 record(s)", value: 3, examples: [{ id: "p1:x:1", reason: "missing" }] },
       ],
     };
-    assert.equal(findingOf(test!, result), "count: expected at least 5, found 3");
-    assert.deepEqual(checksOf(result).map((c) => [c.label, c.result, c.found, c.examples.length]), [["names", "passed", "-", 0], ["count", "failed", "3", 1]]);
-    assert.equal(findingOf(test!, undefined), "1 of 1 checks do not hold");
+    const reading = readingOf(test!, result);
+    assert.equal(reading.claim, "count at least 5");
+    assert.equal(reading.says, "3 found, at least 5 expected");
+    assert.equal(reading.measure?.form, "target");
+    assert.equal(reading.more, 1);
+    assert.equal(readingLine(reading), "count at least 5: 3 found, at least 5 expected; 1 more check does not hold");
+    assert.deepEqual(checksOf(result).map((c) => [c.label, c.result, c.found, c.examples.length]),
+      [["names", "passed", "-", 0], ["a warning first", "warned", "4 of 5 records meet it", 0], ["count at least 5", "failed", "3", 1]]);
+  });
+
+  it("says how many checks do not hold until the result is at hand, and why an assertion has none", () => {
+    const tests = fromBoard(boardOf({
+      set: null,
+      tests: [
+        testOf("failing", { latest: latest("failed") }),
+        testOf("passing", { latest: latest("passed"), assertions: [{ label: "a", expected: "exists" }, { label: "b", expected: "exists" }] }),
+        testOf("off", { disabled: "Not delivered yet." }),
+        testOf("unread", { latest: latest("errored", { error: "OSDU did not answer." }) }),
+      ],
+    }), "2026-11-04T08:00:00Z").tests;
+    assert.deepEqual(tests.map((test) => readingLine(readingOf(test, undefined))), [
+      "1 of 1 check does not hold",
+      "All 2 checks hold",
+      "Not delivered yet.",
+      "OSDU did not answer.",
+    ]);
+    assert.equal(readingOf(tests[3]!, { test: "unread", error: "The search answered 503." }).says, "The search answered 503.");
+  });
+
+  it("counts a passing assertion's check of info severity that does not hold as noted, beside the ones that hold", () => {
+    const [test] = fromBoard(boardOf({
+      set: null,
+      tests: [testOf("noted", {
+        latest: latest("passed", { failedAssertions: 1 }),
+        assertions: [{ label: "a", expected: "exists" }, { label: "b", expected: "exists" }, { label: "c", expected: "atLeast 5" }],
+      })],
+    }), "2026-11-04T08:00:00Z").tests;
+    assert.equal(readingOf(test!, undefined).says, "2 of 3 checks hold, 1 noted");
   });
 });

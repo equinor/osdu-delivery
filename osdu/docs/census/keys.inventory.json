@@ -529,7 +529,7 @@
       "path": "source.headersPath",
       "type": "string",
       "required": false,
-      "description": "Storage's read of up to 1,000 records' system properties by id (openapi storage v2, POST /query/records/headers). Where a deployment does not serve it (404 or 405), records are read through `recordQueryPath`, a hundred at a time.",
+      "description": "Storage's read of up to 1,000 records' system properties by id (openapi storage v2, POST /query/records/headers), which a removal checks each id against before it asks OSDU to remove it. Where a deployment does not serve it (404 or 405), records are read through `recordQueryPath`, a hundred at a time. A storage read and its missing checks read records through `recordQueryPath`, since a record's name is in its data.",
       "default": "/api/storage/v2/query/records/headers"
     },
     {
@@ -572,7 +572,7 @@
       "path": "source.recordQueryPath",
       "type": "string",
       "required": false,
-      "description": "Storage's listing of a kind's record ids (GET) and its read of records by id (POST), openapi storage v2 /query/records.",
+      "description": "Storage's listing of a kind's record ids (GET) and its read of records by id (POST), openapi storage v2 /query/records. A storage read reads each listed id's system properties and name here, a hundred ids a request, asking only for the properties a record is named by.",
       "default": "/api/storage/v2/query/records"
     },
     {

@@ -6,9 +6,10 @@ namespace SqlFlow.Delivery.Engine.Assertions;
 /// <summary>
 /// How one check reads in a report, each fact once: what it expects (the comparison alone, such as <c>equals 5191</c>), what
 /// qualifies that (<c>warns within 10%</c>, <c>leaving out "MD"</c>, <c>stated as of 2026-10-27</c>), what it found (the
-/// number a count or an aggregate measured, else what the check says it found), and why it came out as it did, when that
-/// adds to the two (<c>1 below 5191 (0.02%), within the warning band of 10%, so it warns.</c>). The run's report, a set's
-/// report and the GUI show a check through this one reading.
+/// number a count or an aggregate measured, else what the check says it found, as an aggregate over each record's bulk data
+/// does: <c>2 of 3 record(s)' bulk data meet it</c>), and why it came out as it did, when that adds to the two
+/// (<c>1 below 5191 (0.02%), within the warning band of 10%, so it warns.</c>). The run's report, a set's report and the GUI
+/// show a check through this one reading.
 /// </summary>
 public sealed partial record CheckView(string Expected, IReadOnlyList<string> Qualifiers, string Found, string? Why)
 {
@@ -45,7 +46,10 @@ public sealed partial record CheckView(string Expected, IReadOnlyList<string> Qu
             qualifiers.Add("stated as of " + stated);
         }
 
+        // A check judged record by record (an aggregate of each record's bulk data) keeps the share that held as its
+        // value, which is not what it found: its finding says how many records meet it.
         var found = check.Type is "count" or "aggregate" && check.Value is { } value && double.IsFinite(value)
+            && !PerRecordPattern().IsMatch(check.Actual ?? string.Empty)
             ? value.ToString("0.####", CultureInfo.InvariantCulture)
             : check.Actual ?? "-";
         return new CheckView(expected.Trim(), qualifiers, found, WhyOf(check));
@@ -78,4 +82,7 @@ public sealed partial record CheckView(string Expected, IReadOnlyList<string> Qu
 
     [GeneratedRegex(@" \(warning within ([^)]+)\)", RegexOptions.CultureInvariant)]
     private static partial Regex BandPattern();
+
+    [GeneratedRegex(@"^\d+ of \d+ record\(s\)", RegexOptions.CultureInvariant)]
+    private static partial Regex PerRecordPattern();
 }

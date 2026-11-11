@@ -1,29 +1,18 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Maximize2, Minimize2, Moon, OctagonAlert, Search, Sun, X } from "lucide-react";
+import { AssertionBrief, type BriefStep } from "./AssertionBrief";
+import { Gauge, Glyph } from "./DashboardParts";
 import {
-  ChevronDown, ChevronRight, CircleCheck, CircleDashed, CircleSlash, CircleX, Maximize2, Minimize2, Moon, OctagonAlert, Search, Sun, TriangleAlert, X,
-  type LucideIcon,
-} from "lucide-react";
-import { parseUtc } from "@/lib/time";
-import {
-  GROUPS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, checksOf, defaultAxes, dimensionsOf, findingOf, groupOf, inScope, matches,
-  passRate, setsOf, square, tally, verdictOf, type AxisValue, type CheckOutcome, type DashCheck, type DashData, type DashTest, type GroupId, type ResultFacts,
+  GROUPS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, defaultAxes, dimensionsOf, groupOf, inScope, matches, passRate, readingLine,
+  readingOf, setsOf, square, tally, verdictOf, type AxisValue, type CheckOutcome, type DashData, type DashTest, type GroupId, type ResultFacts,
   type Standing,
 } from "./dashboardModel";
+import { plural, when } from "./dashboardText";
 import "./dashboard.css";
 
 // The assertion dashboard (osdu/docs/reference/flow/assertion-sets.md, The dashboard): one page that says where the data
 // stands, for the workbench and for the file it downloads alike. It imports nothing of the workbench but a time helper, so
 // the file carries the same component, and it never scrolls inside itself: the page scrolls, once.
-
-/** Each standing's glyph: a shape of its own, so a standing reads without its colour. */
-const GLYPHS: Record<Standing, LucideIcon> = {
-  failed: CircleX,
-  errored: OctagonAlert,
-  warned: TriangleAlert,
-  notRun: CircleDashed,
-  passed: CircleCheck,
-  disabled: CircleSlash,
-};
 
 /** The rows the map lays out at most, and the columns; the rest of a dimension's values are gathered as Other. */
 const MAX_ROWS = 12;
@@ -34,27 +23,6 @@ const PAGE = 10;
 
 /** The results a read asks the control plane for at most. */
 const RESULTS_PER_READ = 100;
-
-function Glyph({ standing, size = 15 }: { standing: Standing; size?: number }) {
-  const Icon = GLYPHS[standing];
-  return <Icon className={`adb-glyph adb-tone-${standing}`} size={size} strokeWidth={2.25} aria-hidden />;
-}
-
-const WHEN = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const WHEN_LONG = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-
-function when(utc: string | null, long = false): string {
-  if (utc === null) {
-    return "";
-  }
-
-  const at = parseUtc(utc);
-  return Number.isNaN(at.getTime()) ? utc : (long ? WHEN_LONG : WHEN).format(at);
-}
-
-function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
-}
 
 /** What the dashboard is being read as: the set picked (undefined for every set) and whether disabled assertions are in. */
 export interface DashView {
@@ -415,7 +383,7 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
                   </button>
                   {opened && (
                     <ul className="adb-rows">
-                      {g.tests.slice(0, limit).map((test) => (
+                      {g.tests.slice(0, limit).map((test, at) => (
                         <TestRow
                           key={test.key}
                           test={test}
@@ -426,6 +394,19 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
                           onToggle={() => setOpen((was) => (was === test.key ? null : test.key))}
                           actions={testActions}
                           checkActions={checkActions}
+                          step={{
+                            at,
+                            of: g.tests.length,
+                            among: g.title,
+                            // The next one is listed before it opens: a step past the rows shown lists the next rows too.
+                            go: (by) => {
+                              const next = g.tests[at + by];
+                              if (next !== undefined) {
+                                setShown((was) => ({ ...was, [g.id]: Math.max(limit, PAGE * Math.ceil((at + by + 1) / PAGE)) }));
+                                setOpen(next.key);
+                              }
+                            },
+                          }}
                         />
                       ))}
                       {g.tests.length > limit && (
@@ -580,8 +561,11 @@ function HeatMap({ tests, rowDim, rows, colDim, cols, picked, onPick }: {
   );
 }
 
-/** One assertion: where it stands and what it found in one line, opening on its checks. */
-function TestRow({ test, result, failure, loading, open, onToggle, actions, checkActions }: {
+/**
+ * One assertion: where it stands, the claim that does not hold with what was found against it, and the measure of the
+ * two, in one line; it opens on its brief, which is brought into view when it does not fit under the row.
+ */
+function TestRow({ test, result, failure, loading, open, onToggle, actions, checkActions, step }: {
   test: DashTest;
   result: ResultFacts | undefined;
   failure: string | undefined;
@@ -590,135 +574,48 @@ function TestRow({ test, result, failure, loading, open, onToggle, actions, chec
   onToggle: () => void;
   actions: ((test: DashTest) => ReactNode) | undefined;
   checkActions: ((test: DashTest, check: CheckOutcome) => ReactNode) | undefined;
+  step: BriefStep;
 }) {
+  const row = useRef<HTMLLIElement>(null);
+  const read = result !== undefined;
+  useEffect(() => {
+    const element = row.current;
+    if (!open || element === null) {
+      return;
+    }
+
+    const box = element.getBoundingClientRect();
+    if (box.top < 0 || box.bottom > window.innerHeight) {
+      const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      element.scrollIntoView({ block: box.height > window.innerHeight ? "start" : "nearest", behavior: still ? "auto" : "smooth" });
+    }
+  }, [open, read]);
+
   const others = test.dimensions.filter((d) => d.name !== "Set" && d.name !== "Check" && d.name !== "Type");
-  const finding = findingOf(test, result);
+  const reading = readingOf(test, result);
+  const quiet = test.standing === "passed" || test.standing === "disabled" || test.standing === "notRun";
   return (
-    <li className={`adb-row${open ? " adb-row-open" : ""}`} data-testid="dashboard-row">
+    <li className={`adb-row${open ? ` adb-row-open adb-edge-${test.standing}` : ""}`} ref={row} data-testid="dashboard-row">
       <button type="button" className="adb-row-head" aria-expanded={open} onClick={onToggle}>
         <Glyph standing={test.standing} size={14} />
         <span className="adb-row-main">
           <span className="adb-row-title" title={test.title}>{test.title}</span>
           <span className="adb-row-where">{[...others.map((d) => d.value), test.dimensions.find((d) => d.name === "Check")?.value].filter(Boolean).join(" · ")}</span>
         </span>
-        <span className="adb-row-finding" title={finding}>{finding}</span>
+        <span className="adb-row-reading" title={readingLine(reading)}>
+          {reading.claim !== null && <span className="adb-row-claim">{reading.claim}</span>}
+          <span className={`adb-row-says${quiet || reading.claim !== null ? " adb-muted" : ""}`}>
+            {reading.says}
+            {reading.more > 0 && <span className="adb-row-more">+{reading.more} more</span>}
+          </span>
+        </span>
+        <span className="adb-row-gauge">
+          {reading.measure !== null && reading.result !== null && <Gauge measure={reading.measure} result={reading.result} compact />}
+        </span>
         <span className="adb-row-when">{test.checkedUtc === null ? STANDING_WORDS[test.standing] : when(test.checkedUtc)}</span>
         {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
       </button>
-      {open && <TestDetail test={test} result={result} failure={failure} loading={loading} actions={actions} checkActions={checkActions} />}
+      {open && <AssertionBrief test={test} result={result} failure={failure} loading={loading} actions={actions} checkActions={checkActions} step={step} />}
     </li>
-  );
-}
-
-const RESULT_WORDS: Record<DashCheck["result"], string> = {
-  passed: "Holds",
-  failed: "Fails",
-  warned: "Warns",
-  errored: "Not checked",
-  noted: "Noted",
-  disabled: "Disabled",
-};
-
-const RESULT_STANDING: Record<DashCheck["result"], Standing> = {
-  passed: "passed",
-  failed: "failed",
-  warned: "warned",
-  errored: "errored",
-  noted: "notRun",
-  disabled: "disabled",
-};
-
-/** An open assertion: why it stands where it does, each check with what it expected and found, and the failing records. */
-function TestDetail({ test, result, failure, loading, actions, checkActions }: {
-  test: DashTest;
-  result: ResultFacts | undefined;
-  failure: string | undefined;
-  loading: boolean;
-  actions: ((test: DashTest) => ReactNode) | undefined;
-  checkActions: ((test: DashTest, check: CheckOutcome) => ReactNode) | undefined;
-}) {
-  const [examplesOf, setExamplesOf] = useState<string | null>(null);
-  const checks = result === undefined ? null : checksOf(result);
-  return (
-    <div className="adb-detail" data-testid="dashboard-detail">
-      {test.description !== null && <p className="adb-detail-text">{test.description}</p>}
-      <div className="adb-dims">
-        {test.dimensions.map((d) => <span key={d.name} className="adb-dim"><span>{d.name}</span>{d.value}</span>)}
-      </div>
-      {test.reason !== null && (
-        <p className={`adb-reason adb-edge-${test.standing}`} data-testid="dashboard-reason">
-          <Glyph standing={test.standing} size={14} />
-          <span><b>{test.standing === "disabled" ? "Disabled: " : test.standing === "notRun" ? "Not yet checked: " : ""}</b>{test.reason}</span>
-        </p>
-      )}
-      {checks !== null && checks.length > 0 && (
-        <table className="adb-checks" data-testid="dashboard-checks">
-          <thead>
-            <tr><th>Check</th><th>Result</th><th>Expected</th><th>Found</th><th>Why</th></tr>
-          </thead>
-          <tbody>
-            {checks.map((check, at) => (
-              <Fragment key={check.label}>
-                <tr className={check.result === "passed" ? undefined : "adb-check-bad"}>
-                  <td className="adb-check-label">{check.label}</td>
-                  <td className="adb-check-result"><Glyph standing={RESULT_STANDING[check.result]} size={13} />{RESULT_WORDS[check.result]}</td>
-                  <td>
-                    {check.expected}
-                    {check.qualifiers.length > 0 && <span className="adb-check-q">{check.qualifiers.join("; ")}</span>}
-                  </td>
-                  <td className="adb-check-found">{check.found}</td>
-                  <td>
-                    {check.why ?? ""}
-                    {check.examples.length > 0 && (
-                      <button type="button" className="adb-link" onClick={() => setExamplesOf((was) => (was === check.label ? null : check.label))} data-testid="dashboard-examples-toggle">
-                        {examplesOf === check.label ? "Hide the records" : `Show ${plural(check.examples.length, "failing record")}${check.examplesTrimmed ? ", the first of more" : ""}`}
-                      </button>
-                    )}
-                    {checkActions !== undefined && result?.assertions?.[at] !== undefined && checkActions(test, result.assertions[at])}
-                  </td>
-                </tr>
-                {examplesOf === check.label && (
-                  <tr className="adb-examples-row">
-                    <td colSpan={5}>
-                      <ul className="adb-examples" data-testid="dashboard-examples">
-                        {check.examples.map((e, i) => (
-                          <li key={`${e.id ?? ""}-${i}`}>
-                            {e.id !== null && <code>{e.id}</code>}
-                            {e.value !== null && <span className="adb-example-value">{e.value}</span>}
-                            <span>{e.reason}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {checks === null && test.resultId !== null && (
-        failure !== undefined
-          ? <p className="adb-reason adb-edge-errored">The result could not be read: {failure}</p>
-          : loading && <p className="adb-detail-text adb-muted">Reading what its checks found...</p>
-      )}
-      {checks === null && (test.resultId === null || !loading) && test.definitions.length > 0 && (
-        <table className="adb-checks" data-testid="dashboard-definitions">
-          <thead><tr><th>Check</th><th>Expected</th></tr></thead>
-          <tbody>{test.definitions.map((d) => <tr key={d.label}><td className="adb-check-label">{d.label}</td><td>{d.expected}</td></tr>)}</tbody>
-        </table>
-      )}
-      {result?.error && <p className="adb-reason adb-edge-errored"><Glyph standing="errored" size={14} /><span>{result.error}</span></p>}
-      <div className="adb-detail-foot">
-        <span>
-          {test.flow}
-          {test.checkedUtc !== null && <> · checked {when(test.checkedUtc)}</>}
-          {test.matched !== null && <> · {plural(test.matched, "record")} read</>}
-          {test.template !== null && <> · template {test.template}</>}
-          {test.statedAsOf !== null && <> · values stated as of {test.statedAsOf}</>}
-        </span>
-        {actions !== undefined && <span className="adb-detail-actions">{actions(test)}</span>}
-      </div>
-    </div>
   );
 }

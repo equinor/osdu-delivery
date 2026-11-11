@@ -63,7 +63,9 @@ and the API also refuse while a run of the flow is queued or running.
 It then reads the ids 500 at a time, in order. Each id is checked again just before it goes, and left in OSDU, skipped
 with why, when the inventory no longer finds it so, the ledgers give it another finding now, storage serves another
 version than the inventory listed, (an orphan) storage says no owner created it, or (a copy a duplicate check picked)
-storage no longer holds the copy its group keeps, read in the same pass; an id storage no longer holds is `gone`. The
+storage no longer holds the copy its group keeps, read in the same pass; an id storage no longer holds is `gone`. An id
+storage names under `retryRecords` on both readings (or such a copy its group keeps) is skipped, never taken for gone:
+storage has not said whether it holds it, and a later removal reads it again. The
 rest are removed through the flow's `source`: a soft delete 500 ids a request, or a purge one id at a time. A
 soft delete answered 207 has deleted every id it does not name, and only the ids it names are sent again one at a time, so
 each has its own outcome: one storage no longer holds is `gone`, one it refuses is `failed`. Storage refuses a record with

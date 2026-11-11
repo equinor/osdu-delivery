@@ -37,13 +37,17 @@ internal interface IInventoryReader
 
 /// <summary>
 /// The search index's read (<c>POST /query_with_cursor</c>, a thousand a page), projected onto the system properties an
-/// inventory keeps, through the one cursor read every reader of the module takes (<see cref="OsduSearch.PagesAsync"/>), which
-/// fails rather than hand on less than the search matches.
+/// inventory keeps and the properties a record is named by, through the one cursor read every reader of the module takes
+/// (<see cref="OsduSearch.PagesAsync"/>), which fails rather than hand on less than the search matches.
 /// </summary>
 internal sealed class SearchInventoryReader(OsduSearch search) : IInventoryReader
 {
-    /// <summary>The fields an inventory keeps of each record, which the search returns for every kind.</summary>
-    public static IReadOnlyList<string> Fields { get; } = ["id", "kind", "version", "createUser", "createTime", "modifyUser", "modifyTime"];
+    /// <summary>
+    /// The fields an inventory keeps of each record: its system properties, which the search returns for every kind, and the
+    /// properties a record is named by (<see cref="RecordNames.Fields"/>), which a record holds or not. They ride on the same
+    /// pages, so a name costs no request.
+    /// </summary>
+    public static IReadOnlyList<string> Fields { get; } = ["id", "kind", "version", "createUser", "createTime", "modifyUser", "modifyTime", .. RecordNames.Fields];
 
     public async IAsyncEnumerable<IReadOnlyList<InventoryScanRow>> ReadAsync(InventorySpec inventory, string? query, InventoryReadStats stats, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -69,16 +73,18 @@ internal sealed class SearchInventoryReader(OsduSearch search) : IInventoryReade
 
 /// <summary>
 /// Storage's own read: every active record of each kind (<c>GET /query/records?kind=</c>, a thousand ids a page, which needs
-/// the storage service's admin role), then the system properties of those ids (<c>POST /query/records/headers</c>, a thousand
-/// a request, or <c>POST /query/records</c> a hundred at a time where the headers route is not deployed). A kind with
-/// wildcards is expanded through the schema service, since storage lists one kind at a time.
+/// the storage service's admin role), then what storage holds of those ids (<see cref="StorageHeaders"/>): with
+/// <paramref name="names"/>, their system properties and names through <c>POST /query/records</c> a hundred at a time, as an
+/// inventory reads them; without, their system properties alone through <c>POST /query/records/headers</c> a thousand at a
+/// time, as a download lists them. A kind with wildcards is expanded through the schema service, since storage lists one kind
+/// at a time. An id storage never says whether it holds fails the read, since a read is whole or nothing.
 /// </summary>
-internal sealed class StorageInventoryReader(OsduHttpClient client, InventorySource source, TimeProvider time) : IInventoryReader
+internal sealed class StorageInventoryReader(OsduHttpClient client, InventorySource source, TimeProvider time, bool names) : IInventoryReader
 {
     /// <summary>The most ids one listing page, and one headers request, carry (openapi storage v2).</summary>
     public const int Page = 1000;
 
-    private readonly StorageHeaders _headers = new(client, source);
+    private readonly StorageHeaders _headers = new(client, source, names);
 
     public async IAsyncEnumerable<IReadOnlyList<InventoryScanRow>> ReadAsync(InventorySpec inventory, string? query, InventoryReadStats stats, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -124,10 +130,16 @@ internal sealed class StorageInventoryReader(OsduHttpClient client, InventorySou
                     : throw new DeliveryException($"{url.AbsolutePath} answered the listing of {kind} without its results.");
                 if (ids.Count > 0)
                 {
-                    var headers = await _headers.ReadAsync(ids, stats, ct).ConfigureAwait(false);
+                    var read = await _headers.ReadAsync(ids, stats, ct).ConfigureAwait(false);
+                    if (read.Unanswered.Count > 0)
+                    {
+                        throw new DeliveryException(string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Storage listed {read.Unanswered.Count} id(s) of {kind} and, asked twice, never said whether it holds them (retryRecords; {read.Unanswered.Order(StringComparer.Ordinal).First()} among them), so the listing cannot be read whole; the next build reads it again."));
+                    }
 
                     // An id the listing named that storage no longer holds was deleted between the two calls: it is not served.
-                    yield return ids.Where(headers.ContainsKey).Select(id => headers[id]).ToList();
+                    yield return ids.Where(read.Held.ContainsKey).Select(id => read.Held[id]).ToList();
                 }
 
                 cursor = root.TryGetProperty("cursor", out var next) && next.ValueKind == JsonValueKind.String && next.GetString() is { Length: > 0 } text ? text : null;
@@ -180,20 +192,31 @@ internal sealed class StorageInventoryReader(OsduHttpClient client, InventorySou
 }
 
 /// <summary>
-/// The system properties storage holds of records read by id: through <c>POST /query/records/headers</c>, a thousand ids a
-/// request, or where a deployment does not serve it (404 or 405), <c>POST /query/records</c> a hundred at a time. An id storage
-/// does not hold (soft-deleted, never written, or one the caller may not see) is left out of the answer.
+/// What storage answered for records read by id: the system properties (and, where asked for, the name) of each it holds, and
+/// the ids it never said whether it holds (<c>retryRecords</c> on the second asking too), which are neither held nor missing.
 /// </summary>
-internal sealed class StorageHeaders(OsduHttpClient client, InventorySource source)
+internal sealed record StorageHeadersRead(IReadOnlyDictionary<string, InventoryScanRow> Held, IReadOnlySet<string> Unanswered);
+
+/// <summary>
+/// What storage holds of records read by id. Without names: their system properties through <c>POST /query/records/headers</c>,
+/// a thousand ids a request, or where a deployment does not serve it (404 or 405), through <c>POST /query/records</c>. With
+/// <paramref name="names"/>: through <c>POST /query/records</c> alone, a hundred ids a request, since the headers route returns
+/// no data and a record's name is in its data. The records route asks for the properties a record is named by
+/// (<see cref="RecordNames.Fields"/>), so storage returns its system properties with only those of its data
+/// (os-core-common PersistenceHelper.filterRecordDataFields). An id storage does not hold (soft-deleted, never written, or one
+/// the caller may not see) is left out of what it holds; one it asked twice to retry is unanswered.
+/// </summary>
+internal sealed class StorageHeaders(OsduHttpClient client, InventorySource source, bool names)
 {
     private static readonly string[] Attributes = ["kind", "version", "createUser", "createTime", "modifyUser", "modifyTime"];
 
-    private bool _headersServed = true;
+    private bool _headersServed = !names;
 
-    public async Task<IReadOnlyDictionary<string, InventoryScanRow>> ReadAsync(IReadOnlyList<string> ids, InventoryReadStats stats, CancellationToken ct)
+    public async Task<StorageHeadersRead> ReadAsync(IReadOnlyList<string> ids, InventoryReadStats stats, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ids);
         var found = new Dictionary<string, InventoryScanRow>(StringComparer.Ordinal);
+        var unanswered = new HashSet<string>(StringComparer.Ordinal);
         foreach (var chunk in ids.Distinct(StringComparer.Ordinal).Chunk(StorageInventoryReader.Page))
         {
             if (_headersServed)
@@ -225,7 +248,7 @@ internal sealed class StorageHeaders(OsduHttpClient client, InventorySource sour
             var records = new StorageRecords(client, source.RecordQueryPath);
             foreach (var hundred in chunk.Chunk(StorageRecords.Batch))
             {
-                var read = await records.ReadAsync(hundred, ["id"], ct).ConfigureAwait(false);
+                var read = await records.ReadAsync(hundred, RecordNames.Fields, ct).ConfigureAwait(false);
                 stats.Request();
                 foreach (var record in read.Records)
                 {
@@ -234,10 +257,12 @@ internal sealed class StorageHeaders(OsduHttpClient client, InventorySource sour
                         found[row.TargetId] = row;
                     }
                 }
+
+                unanswered.UnionWith(read.Unanswered.Where(id => !found.ContainsKey(id)));
             }
         }
 
-        return found;
+        return new StorageHeadersRead(found, unanswered);
     }
 
     /// <summary>Whether a 404 is the headers route's own answer (the records were not found) rather than a route the deployment does not serve.</summary>
@@ -299,7 +324,10 @@ internal sealed class StorageVersions(OsduHttpClient client, InventorySource sou
 /// <summary>An inventory's row as a read gives it.</summary>
 internal static class InventoryRows
 {
-    /// <summary>The row a search hit or a storage record gives, or null for one that names no id.</summary>
+    /// <summary>
+    /// The row a search hit or a storage record gives, its name among it (<see cref="RecordNames.Of"/>; null for a headers read,
+    /// which returns no data), or null for one that names no id.
+    /// </summary>
     public static InventoryScanRow? Of(JsonElement record)
     {
         if (record.ValueKind != JsonValueKind.Object || OsduSearch.IdOf(record) is not { } id || id.Length > Data.DeliveryModel.MaxTargetIdLength)
@@ -315,7 +343,8 @@ internal static class InventoryRows
             Text(record, "createUser"),
             Time(record, "createTime"),
             Text(record, "modifyUser"),
-            Time(record, "modifyTime"));
+            Time(record, "modifyTime"),
+            RecordNames.Of(record));
     }
 
     private static string? Text(JsonElement record, string name)

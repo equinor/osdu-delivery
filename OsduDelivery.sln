@@ -119,6 +119,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlFlow.Delivery.Order", "o
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlFlow.Delivery.Order.Tests", "osdu\tests\SqlFlow.Delivery.Order.Tests\SqlFlow.Delivery.Order.Tests.csproj", "{5BF299C7-9B05-4522-BC1A-4D83326872B5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlFlow.Dataverse", "sqlflow\src\SqlFlow.Dataverse\SqlFlow.Dataverse.csproj", "{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -729,6 +731,18 @@ Global
 		{5BF299C7-9B05-4522-BC1A-4D83326872B5}.Release|x64.Build.0 = Release|Any CPU
 		{5BF299C7-9B05-4522-BC1A-4D83326872B5}.Release|x86.ActiveCfg = Release|Any CPU
 		{5BF299C7-9B05-4522-BC1A-4D83326872B5}.Release|x86.Build.0 = Release|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Debug|x64.Build.0 = Debug|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Debug|x86.Build.0 = Debug|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Release|x64.ActiveCfg = Release|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Release|x64.Build.0 = Release|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Release|x86.ActiveCfg = Release|Any CPU
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -790,5 +804,6 @@ Global
 		{35AE31E1-3C45-4890-BE7C-73B0F4EBFAC9} = {8DC0B3B6-1CF0-B741-4735-AC12F10BBC98}
 		{A4E771DD-B5BD-4287-A90C-80085152E3B1} = {D8968F19-B251-FF31-F472-A5B74E406BDE}
 		{5BF299C7-9B05-4522-BC1A-4D83326872B5} = {76F15BD2-FA34-5971-87AA-2BE146CC7CC8}
+		{CE0B53BC-B3CE-4D47-BEC1-05D48DBE5F30} = {FC2BB2F5-E0C8-F08D-841F-0E4D6E7D1E27}
 	EndGlobalSection
 EndGlobal

@@ -536,9 +536,8 @@ public sealed partial class RecordExplorer
     /// <summary>The search the explorer reads (openapi search v2), as a flow's mapping searches reach it.</summary>
     public const string QueryPath = OsduRecordSearch.QueryPath;
 
-    /// <summary>The properties a record's name is read from, in the order they are tried.</summary>
-    public static readonly IReadOnlyList<string> NameFields =
-        ["data.FacilityName", "data.Name", "data.ProjectName", "data.Code", "data.DatasetProperties.FileSourceInfo.Name"];
+    /// <summary>The properties a record's name is read from, in the order they are tried: those an inventory names a record by.</summary>
+    public static readonly IReadOnlyList<string> NameFields = RecordNames.Fields;
 
     /// <summary>
     /// The record's own properties every kind's records hold, with how the indexer keeps them: the keywords of the record

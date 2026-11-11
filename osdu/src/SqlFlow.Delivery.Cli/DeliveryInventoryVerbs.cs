@@ -246,7 +246,7 @@ internal static class DeliveryInventoryVerbs
         foreach (var record in page)
         {
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"  {record.InventoryRecordId,10}  {record.Finding,-12}  {record.TargetId}  {(record.Version is { } version ? "v" + version.ToString(CultureInfo.InvariantCulture) : "no version")}{LedgerText(record, names)}"));
+                $"  {record.InventoryRecordId,10}  {record.Finding,-12}  {record.TargetId}{(record.Name is { } name ? "  '" + name + "'" : string.Empty)}  {(record.Version is { } version ? "v" + version.ToString(CultureInfo.InvariantCulture) : "no version")}{LedgerText(record, names)}"));
             if (record.Detail is { Length: > 0 } detail)
             {
                 context.Out.WriteLine("              " + detail);
@@ -300,7 +300,7 @@ internal static class DeliveryInventoryVerbs
         {
             var inventory = inventories[record.InventoryId]!;
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"  {inventory.FlowName} / {inventory.Name} (inventory {inventory.InventoryId}): {record.Finding}, {(record.Version is { } version ? "v" + version.ToString(CultureInfo.InvariantCulture) : "no version")}{LedgerText(record, names)}"));
+                $"  {inventory.FlowName} / {inventory.Name} (inventory {inventory.InventoryId}): {record.Finding}{(record.Name is { } name ? ", '" + name + "'" : string.Empty)}, {(record.Version is { } version ? "v" + version.ToString(CultureInfo.InvariantCulture) : "no version")}{LedgerText(record, names)}"));
             if (record.Detail is { Length: > 0 } detail)
             {
                 context.Out.WriteLine("      " + detail);
@@ -630,6 +630,7 @@ internal static class DeliveryInventoryVerbs
     {
         ["inventoryRecordId"] = record.InventoryRecordId,
         ["targetId"] = record.TargetId,
+        ["name"] = record.Name,
         ["kind"] = record.Kind,
         ["version"] = record.Version,
         ["createUser"] = record.CreateUser,

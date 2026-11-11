@@ -12,13 +12,15 @@ namespace SqlFlow.Delivery.Ledger;
 internal static partial class SqlServerLedgerBulk
 {
     // The merge of one complete read: the ids it listed once each (the latest version a repeat listed), served again, changed,
-    // new, and the ids it did not list marked gone, never deleted. Two merges of one inventory go one after the other.
+    // new, and the ids it did not list marked gone, never deleted. Two merges of one inventory go one after the other. A record's
+    // name changes only with a new version, so a name alone that differs is one the inventory had not read yet (a row kept
+    // before names were): it is written in without counting the row as changed.
     private const string InventoryMergeSql = """
         DECLARE @lock int;
         EXEC @lock = sp_getapplock @Resource = @resource, @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 600000;
         IF @lock < 0 THROW 51000, N'Another build of the inventory held it for ten minutes; this build merged nothing.', 1;
 
-        SELECT s.[TargetId], s.[Kind], s.[Version], s.[CreateUser], s.[CreateTime], s.[ModifyUser], s.[ModifyTime]
+        SELECT s.[TargetId], s.[Name], s.[Kind], s.[Version], s.[CreateUser], s.[CreateTime], s.[ModifyUser], s.[ModifyTime]
         INTO #Scan
         FROM (
             SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x.[TargetId] ORDER BY x.[Version] DESC, x.[ScanId] DESC) AS [Rank]
@@ -30,7 +32,7 @@ internal static partial class SqlServerLedgerBulk
         DECLARE @returned bigint, @changed bigint, @added bigint, @gone bigint;
 
         UPDATE r SET
-            [Kind] = s.[Kind], [Version] = s.[Version], [CreateUser] = s.[CreateUser], [CreateTime] = s.[CreateTime],
+            [Name] = s.[Name], [Kind] = s.[Kind], [Version] = s.[Version], [CreateUser] = s.[CreateUser], [CreateTime] = s.[CreateTime],
             [ModifyUser] = s.[ModifyUser], [ModifyTime] = s.[ModifyTime],
             [FirstSeenUtc] = COALESCE(r.[FirstSeenUtc], @now), [GoneUtc] = NULL, [ChangedUtc] = @now
         FROM [osdu].[InventoryRecord] AS r
@@ -39,7 +41,7 @@ internal static partial class SqlServerLedgerBulk
         SET @returned = @@ROWCOUNT;
 
         UPDATE r SET
-            [Kind] = s.[Kind], [Version] = s.[Version], [CreateUser] = s.[CreateUser], [CreateTime] = s.[CreateTime],
+            [Name] = s.[Name], [Kind] = s.[Kind], [Version] = s.[Version], [CreateUser] = s.[CreateUser], [CreateTime] = s.[CreateTime],
             [ModifyUser] = s.[ModifyUser], [ModifyTime] = s.[ModifyTime], [ChangedUtc] = @now
         FROM [osdu].[InventoryRecord] AS r
         INNER JOIN #Scan AS s ON r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = s.[TargetId]
@@ -49,9 +51,14 @@ internal static partial class SqlServerLedgerBulk
             SELECT s.[Kind], s.[Version], s.[CreateUser], s.[CreateTime], s.[ModifyUser], s.[ModifyTime]);
         SET @changed = @@ROWCOUNT;
 
-        INSERT INTO [osdu].[InventoryRecord] ([PartitionId], [InventoryId], [TargetId], [Kind], [Version], [CreateUser], [CreateTime],
+        UPDATE r SET [Name] = s.[Name]
+        FROM [osdu].[InventoryRecord] AS r
+        INNER JOIN #Scan AS s ON r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = s.[TargetId]
+        WHERE EXISTS (SELECT r.[Name] EXCEPT SELECT s.[Name]);
+
+        INSERT INTO [osdu].[InventoryRecord] ([PartitionId], [InventoryId], [TargetId], [Name], [Kind], [Version], [CreateUser], [CreateTime],
                 [ModifyUser], [ModifyTime], [FirstSeenUtc], [ChangedUtc], [Finding], [FindingUtc])
-        SELECT @partitionId, @inventoryId, s.[TargetId], s.[Kind], s.[Version], s.[CreateUser], s.[CreateTime],
+        SELECT @partitionId, @inventoryId, s.[TargetId], s.[Name], s.[Kind], s.[Version], s.[CreateUser], s.[CreateTime],
                 s.[ModifyUser], s.[ModifyTime], @now, @now, N'unreconciled', @now
         FROM #Scan AS s
         WHERE NOT EXISTS (
@@ -207,7 +214,7 @@ internal static partial class SqlServerLedgerBulk
             [LedgerFlowId] uniqueidentifier NULL, [DeliveryKey] uniqueidentifier NULL, [LedgerStatus] nvarchar(16) NULL, [LedgerVersion] bigint NULL,
             [ArtifactId] bigint NULL, [ArtifactState] nvarchar(16) NULL,
             [Kind] nvarchar(300) NULL, [Version] bigint NULL, [CreateUser] nvarchar(256) NULL, [CreateTime] datetime2 NULL,
-            [ModifyUser] nvarchar(256) NULL, [ModifyTime] datetime2 NULL);
+            [ModifyUser] nvarchar(256) NULL, [ModifyTime] datetime2 NULL, [Name] nvarchar(400) NULL);
         """;
 
     // The ids OSDU no longer serves: gone unless storage was asked, and then missing (storage does not hold it) or unlisted (it
@@ -242,10 +249,10 @@ internal static partial class SqlServerLedgerBulk
         FROM [osdu].[InventoryRecord] AS r
         INNER JOIN #Checked AS c ON r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = c.[TargetId];
 
-        INSERT INTO [osdu].[InventoryRecord] ([PartitionId], [InventoryId], [TargetId], [Kind], [Version], [CreateUser], [CreateTime],
+        INSERT INTO [osdu].[InventoryRecord] ([PartitionId], [InventoryId], [TargetId], [Name], [Kind], [Version], [CreateUser], [CreateTime],
                 [ModifyUser], [ModifyTime], [Finding], [FindingUtc], [CheckedUtc], [LedgerFlowId], [DeliveryKey], [LedgerStatus], [LedgerVersion],
                 [ArtifactId], [ArtifactState], [Detail])
-        SELECT @partitionId, @inventoryId, c.[TargetId], c.[Kind], c.[Version], c.[CreateUser], c.[CreateTime], c.[ModifyUser], c.[ModifyTime],
+        SELECT @partitionId, @inventoryId, c.[TargetId], c.[Name], c.[Kind], c.[Version], c.[CreateUser], c.[CreateTime], c.[ModifyUser], c.[ModifyTime],
             CASE WHEN c.[Held] = 1 THEN N'unlisted' ELSE N'missing' END, @now, @now, c.[LedgerFlowId], c.[DeliveryKey], c.[LedgerStatus], c.[LedgerVersion],
             c.[ArtifactId], c.[ArtifactState],
             CASE WHEN c.[Held] = 1 THEN N'storage holds it, and the read never listed it: the index has not caught up with it'
@@ -288,12 +295,14 @@ internal static partial class SqlServerLedgerBulk
             table.Columns.Add("CreateTime", typeof(DateTime));
             table.Columns.Add("ModifyUser", typeof(string));
             table.Columns.Add("ModifyTime", typeof(DateTime));
+            table.Columns.Add("Name", typeof(string));
             foreach (var row in rows)
             {
                 table.Rows.Add(
                     partitionId, runId, row.TargetId, Value(Truncate(row.Kind, DeliveryModel.MaxInventoryKindLength)), Value(row.Version),
                     Value(Truncate(row.CreateUser, DeliveryModel.MaxInventoryUserLength)), Value(row.CreateTime),
-                    Value(Truncate(row.ModifyUser, DeliveryModel.MaxInventoryUserLength)), Value(row.ModifyTime));
+                    Value(Truncate(row.ModifyUser, DeliveryModel.MaxInventoryUserLength)), Value(row.ModifyTime),
+                    Value(Truncate(row.Name, DeliveryModel.MaxInventoryNameLength)));
             }
 
             await BulkCopyAsync(connection, transaction, "[osdu].[InventoryScan]", table, ct).ConfigureAwait(false);
@@ -396,7 +405,7 @@ internal static partial class SqlServerLedgerBulk
                 {
                     ("TargetId", typeof(string)), ("Held", typeof(bool)), ("LedgerFlowId", typeof(Guid)), ("DeliveryKey", typeof(Guid)), ("LedgerStatus", typeof(string)),
                     ("LedgerVersion", typeof(long)), ("ArtifactId", typeof(long)), ("ArtifactState", typeof(string)), ("Kind", typeof(string)), ("Version", typeof(long)),
-                    ("CreateUser", typeof(string)), ("CreateTime", typeof(DateTime)), ("ModifyUser", typeof(string)), ("ModifyTime", typeof(DateTime)),
+                    ("CreateUser", typeof(string)), ("CreateTime", typeof(DateTime)), ("ModifyUser", typeof(string)), ("ModifyTime", typeof(DateTime)), ("Name", typeof(string)),
                 })
                 {
                     table.Columns.Add(name, type);
@@ -409,7 +418,7 @@ internal static partial class SqlServerLedgerBulk
                     table.Rows.Add(
                         c.TargetId, check.Held, Value(c.LedgerFlowId), Value(c.DeliveryKey), Value(c.LedgerStatus), Value(c.LedgerVersion), Value(c.ArtifactId), Value(c.ArtifactState),
                         Value(Truncate(h?.Kind, DeliveryModel.MaxInventoryKindLength)), Value(h?.Version), Value(Truncate(h?.CreateUser, DeliveryModel.MaxInventoryUserLength)), Value(h?.CreateTime),
-                        Value(Truncate(h?.ModifyUser, DeliveryModel.MaxInventoryUserLength)), Value(h?.ModifyTime));
+                        Value(Truncate(h?.ModifyUser, DeliveryModel.MaxInventoryUserLength)), Value(h?.ModifyTime), Value(Truncate(h?.Name, DeliveryModel.MaxInventoryNameLength)));
                 }
 
                 await BulkCopyAsync(connection, transaction, "#Checked", table, ct).ConfigureAwait(false);

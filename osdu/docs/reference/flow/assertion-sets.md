@@ -22,6 +22,10 @@ keywords:
   - disabled assertions and why
   - include disabled
   - not yet checked
+  - open an assertion
+  - expected and found
+  - how far a count is off
+  - failing records of a check
   - changed since its last result
   - run a set
   - assertion-results route
@@ -46,6 +50,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs
   - osdu/gui/src/features/delivery/assertions/dashboard/dashboardModel.ts
   - osdu/gui/src/features/delivery/assertions/dashboard/AssertionDashboard.tsx
+  - osdu/gui/src/features/delivery/assertions/dashboard/AssertionBrief.tsx
+  - osdu/gui/src/features/delivery/assertions/dashboard/checkBrief.ts
   - osdu/gui/src/features/delivery/assertions/dashboard/exportDashboard.ts
   - osdu/gui/vite.config.ts
 ---
@@ -148,17 +154,48 @@ assertion flow's **Assertions** tab is the same dashboard of its own assertions.
    documents name and along `Check`, and the reader picks any two. A dimension's values are laid out worst first, at
    most 12 rows and 7 columns, the rest gathered as **Other**. A square lists its assertions.
 4. **The assertions**, grouped by what they need: **Needs attention** (failing, could not be checked, warnings) open,
-   **Not yet checked** and **Passing** closed with their reasons gathered, 10 rows at a time. A row says in a line or two
-   what it found (its first check that does not hold, with what it expected and found); one opens at a time, on each check
-   read once (what it expected and what qualifies that, what it found, why), the records that fail it, its dimensions,
-   and **Run again**, its report and its flow. A check that accounts for a delivery flow's staged rows also offers
-   **Show the rows in SQL** under its failing records: the T-SQL that reads them from the flow's own tables
-   ([the rows in the source](staged-accounting.md#the-rows-in-the-source)).
+   **Not yet checked** and **Passing** closed with their reasons gathered, 10 rows at a time. A row reads as a line: the
+   assertion, its first check that does not hold as its document names it (`812 wellbores`), what was found against it
+   (`640 found, 812 expected`, or `3 of 5 rows hold, 1 differs, 1 is not found`) with how many more of its checks do not
+   hold, and the measure of the two, drawn. One opens at a time, on [its brief](#an-open-assertion).
 
 Disabled assertions are left out of all of it until **Include disabled** is switched on; then they are counted, mapped and
 listed in a **Disabled** group, each with the reason its document gives. **Present** shows the dashboard full screen.
 The page scrolls as one; nothing in it scrolls on its own. A flow whose document does not parse is named above the
 verdict with its problem, since its assertions cannot be shown.
+
+### An open assertion
+
+An open assertion is written for someone who did not write it. It reads from the top, in a column kept to a width a
+line reads at, with what it is about beside it:
+
+- **What it checks**: its `description`; why it stands where it does when no result says so (disabled, not yet checked,
+  could not be checked); and what its result notes, such as that a sample of the records was evaluated.
+- **How many of its checks hold**, with one square per check in the order the document states them.
+- **A card for each check that does not hold**: its label, and under it its `description`, else the question its type
+  asks (`Does OSDU hold exactly what was delivered?`); **Expected** beside **Found**, as wide as each other; why, where
+  that adds to the two; and under **Where it does not hold** the records or rows that fail it, the first 3 shown, each
+  with its reason. A reason that lists the proof values a row differs in is laid out one value a line, what was found
+  beside what was expected.
+- **The checks that hold**, a line each: the label, what it expected and what it found. With more than 3 of them under
+  cards they are folded behind one line.
+- **Beside them**: the assertion's dimensions, the records read, when it was checked, the day its values were stated
+  and the day they hold until, and its flow; under **How it was checked** its name, kind, query, template and report;
+  then **Run again**, its report and its flow, and a step to the assertion before and after it in its group.
+
+Where a check compares numbers, the two are figures and the measure of them is drawn:
+
+| Check | Expected and Found | The measure |
+| --- | --- | --- |
+| A `count`, or an `aggregate` of the records, against `equals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` or `between` | The number expected (`812`, `at least 5`, `172 to 458`) and the number found, with what was measured (`distinct values of data.WellboreID`). | A bar of what was found over the range that holds (a tick where it is one number) and the stretch beside it that only warns, with by how much it missed: `172 short of 812 (21.2%)`, or `Nothing found`. |
+| A check judged record by record, a reference looked up, `delivered`, `indexed`, `legal` | How many pass, of how many: `74 of 75 records pass`. | One bar: the part that passes, and the part that does not. |
+| `knownValues` | How many rows hold, of how many. | One bar of the rows that hold, are within the warning band, differ, are not found (hatched) and are found more than once, each named with its count. |
+
+Any other check shows what it expected and what it found as text. The texts a run recorded are shown in plain words:
+`5 record(s)` reads `5 records`, `1 row(s) find no record` reads `1 row finds no record`, and `atLeast 5` reads
+`at least 5`; a quoted value is left as it is. A check that accounts for a delivery flow's staged rows also offers
+**Show the rows in SQL** under its failing records: the T-SQL that reads them from the flow's own tables
+([the rows in the source](staged-accounting.md#the-rows-in-the-source)).
 
 ### Download the dashboard
 
