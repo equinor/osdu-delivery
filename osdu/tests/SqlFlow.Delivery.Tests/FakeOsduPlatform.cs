@@ -342,7 +342,7 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
             return dspdm;
         }
 
-        if (SchemaServiceRoute(method, path, uri) is { } schema)
+        if (SchemaServiceRoute(method, path, uri, body) is { } schema)
         {
             return schema;
         }

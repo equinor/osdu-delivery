@@ -610,6 +610,8 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("getting started first delivery", &["delivery-guide-getting-started"]),
     ("one source delivers several kinds", &["delivery-flow-interfaces", "delivery-guide-multi-kind-source"]),
     ("download an osdu schema as a template file", &["delivery-cli-template", "delivery-concept-templates"]),
+    ("register a custom schema with osdu", &["delivery-cli-template-register"]),
+    ("my custom kind records say schema not found", &["delivery-cli-template-register", "delivery-concept-templates"]),
     ("register a partition", &["delivery-cli-partition", "delivery-concept-partitions"]),
     ("which route should a delivery flow use", &["delivery-flow-routes", "delivery-wiki-pattern-catalog"]),
     ("run payload recordKeys redeliver", &["delivery-cli-run"]),

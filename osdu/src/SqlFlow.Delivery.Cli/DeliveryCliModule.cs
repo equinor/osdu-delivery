@@ -244,11 +244,18 @@ public sealed class DeliveryCliModule : ICliModule
                 "                                   Write a schema file, bundled with the shared schemas it refers to and",
                 "                                   naming its kind, as a template file: a template of one's own",
                 "                                   A template is a file the repository holds; its next sync records it",
+                "sqlflow template register [<dir>] [--env-file <path>] [--partition <id>] [--kind <kind>... | --all]",
+                "                                   [--publish] [--dry-run | --confirm <partition>] [--json]",
+                "                                   Register the repository's custom kinds (an authority other than osdu)",
+                "                                   with a partition's Schema service, from the connection an env file",
+                "                                   (.sqlflow/env by default) gives: shows where each stands and what it",
+                "                                   would write, asks, writes in development, and reads each back",
             ],
             DeliveryVerbs.TemplateAsync)
         {
-            Subcommands = ["folders", "capture", "import"],
-            ValueOptions = ["--release", "--from-dir", "--out", "--for"],
+            Subcommands = ["folders", "capture", "import", "register"],
+            ValueOptions = ["--release", "--from-dir", "--out", "--for", "--env-file", "--partition", "--kind", "--confirm"],
+            Flags = ["--all", "--publish", "--dry-run"],
         },
         new CliVerb(
             "assertions",

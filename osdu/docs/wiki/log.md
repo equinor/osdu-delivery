@@ -724,3 +724,14 @@ analysis and the ledger's cache sets.
 Added decision 0051; added `delivery-flow-mapping-lookups-composite`; updated `delivery-flow-mapping-lookups`,
 `delivery-guide-lookup-table-cache`, `delivery-flow-cache`, `delivery-concept-partition-cache`,
 `delivery-concept-search-terms`, `delivery-table-cache-set-entry` and the pattern catalog.
+
+## [2026-11-11] ingest | Custom schemas registered by a command
+
+Source: the human's question whether custom schemas should be registered with OSDU automatically, and their ask for a
+robust way to bring OSDU in step with the latest custom schemas from an env file, finding every custom schema and giving
+the developer the choice; the Schema service's own code at the commit the core integration notes pin (its upsert,
+create, resolver, breaking-change check and authorization filter) and the indexer's schema-event handling; the
+template folders, the partition connection and the Schema service reader.
+
+Added decision 0052 and `delivery-cli-template-register`; updated decision 0019's consequence on registration, the
+linked records pattern, `delivery-concept-templates` and `delivery-cli-template`.

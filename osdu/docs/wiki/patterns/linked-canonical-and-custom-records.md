@@ -21,9 +21,11 @@ referenceRefs:
   - delivery-concept-templates
   - delivery-flow-ddms
   - delivery-flow-routes
+  - delivery-cli-template-register
 related:
   - delivery-wiki-0019-linked-templates
   - delivery-wiki-0023-child-links
+  - delivery-wiki-0052-custom-schemas-registered-by-a-command
   - delivery-wiki-0018-template-folders
   - delivery-wiki-pattern-catalog
 sourceRefs:
@@ -33,7 +35,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ChildDeliveryTests.cs
-updated: 2026-10-23
+updated: 2026-11-11
 ---
 
 # Pattern: a custom record beside its canonical record, linked both ways and supplementing each other
@@ -85,8 +87,10 @@ rule: [mapping $parent](../../reference/flow/mapping-parent.md), [mapping $child
   a flow that must carry the object over links through a tag.
 - **The link arrives one canonical run after the custom record lands.** On schedules of their own, that is the canonical
   schedule's next run after the custom one; a canonical run by hand brings it sooner.
-- **Register the custom kind** with the schema service, outside OSDU Delivery, before relying on search to find its
-  records; storage takes them before, and the indexer flags each one `schema not found`.
+- **Register the custom kind** in every partition its records go to, with
+  [`sqlflow template register`](../../reference/cli/template-register.md) ([0052](../decisions/0052-custom-schemas-registered-by-a-command.md)),
+  before relying on search to find its records; storage takes them before, and the indexer flags each one
+  `schema not found`. Run it again after each change of the template file while the kind is in development.
 - **A record taken out of OSDU** leaves the other's link until the other renders again; the ledger re-plans on landings
   only.
 

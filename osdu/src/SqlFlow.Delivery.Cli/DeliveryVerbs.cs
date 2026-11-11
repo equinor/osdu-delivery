@@ -781,8 +781,9 @@ internal static class DeliveryVerbs
     /// <summary>
     /// <c>sqlflow template</c> over the command it runs for, whether the command line or a suite runs it. A template is a file
     /// of a repository's template folder (osdu/docs/reference/concepts/templates.md), so every subcommand reads or writes
-    /// files and none needs a database: <c>folders</c> reads a working copy's template folders, and <c>capture</c> and
-    /// <c>import</c> write a template file into one, which the repository's next sync records.
+    /// files and none needs a database: <c>folders</c> reads a working copy's template folders, <c>capture</c> and
+    /// <c>import</c> write a template file into one, which the repository's next sync records, and <c>register</c> registers
+    /// the custom kinds the folders hold with a partition's Schema service (osdu/docs/reference/cli/template-register.md).
     /// </summary>
     internal static async Task<int> TemplateAsync(ModuleCommand context)
     {
@@ -853,8 +854,12 @@ internal static class DeliveryVerbs
                 return Report(context, imported.Schema, await WriteTemplateFileAsync(imported.Schema, outPath, ct).ConfigureAwait(false));
             }
 
+            case "register":
+                // The one subcommand that reaches OSDU: the custom kinds the folders hold, registered with a partition's Schema service.
+                return await DeliveryTemplateRegister.RegisterAsync(context).ConfigureAwait(false);
+
             default:
-                return context.UsageError($"'{verb}' is not a template subcommand: folders, capture or import.");
+                return context.UsageError($"'{verb}' is not a template subcommand: folders, capture, import or register.");
         }
     }
 

@@ -231,6 +231,78 @@ public sealed partial class SchemaServiceReader
         return null;
     }
 
+    /// <summary>
+    /// Every version of the family <paramref name="family"/> (<c>authority:source:entityType</c>) the service lists, in every
+    /// status and scope, each once, ordered by id: the versions a kind of one's own already has in a partition. Asked one
+    /// status and scope at a time, as <see cref="InfoAsync"/> asks, since a listing naming neither answers only what the
+    /// specification defaults them to; a page holding no schema not listed already ends the pages. A listing the service
+    /// refuses as asked (400), or answers with 404, lists nothing; any other refusal throws.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="family"/> is not three parts a schema id is made of.</exception>
+    public async Task<IReadOnlyList<SchemaListing>> FamilyAsync(string family, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(family);
+        var parts = family.Trim().Split(':');
+        if (parts.Length != 3 || !SchemaId().IsMatch($"{parts[0]}:{parts[1]}:{parts[2]}:0.0.0"))
+        {
+            throw new ArgumentException($"'{family}' is not a family of schemas, authority:source:entityType.", nameof(family));
+        }
+
+        var listed = new SortedDictionary<string, SchemaListing>(StringComparer.Ordinal);
+        foreach (var status in Statuses)
+        {
+            foreach (var scope in Scopes)
+            {
+                for (var offset = 0; ;)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var url = _client.Url(_path);
+                    foreach (var (name, value) in new[]
+                    {
+                        ("authority", parts[0]), ("source", parts[1]), ("entityType", parts[2]), ("status", status), ("scope", scope),
+                        ("limit", ListPage.ToString(CultureInfo.InvariantCulture)), ("offset", offset.ToString(CultureInfo.InvariantCulture)),
+                    })
+                    {
+                        url = OsduHttpClient.WithQuery(url, name, value);
+                    }
+
+                    var result = await _client.SendJsonAsync(HttpMethod.Get, url, null, new HashSet<int> { 400, 404 }, ct, idempotent: true).ConfigureAwait(false);
+                    if ((int)result.Status is 400 or 404)
+                    {
+                        break;
+                    }
+
+                    var infos = Infos(result.Body);
+                    var fresh = 0;
+                    foreach (var info in infos)
+                    {
+                        // The service filters by the parts asked; an entry of another family is left out all the same.
+                        if (Info(info, status, scope) is { } schema
+                            && string.Equals($"{schema.Authority}:{schema.Source}:{schema.EntityType}", family.Trim(), StringComparison.Ordinal)
+                            && listed.TryAdd(schema.Id, schema))
+                        {
+                            fresh++;
+                        }
+                    }
+
+                    if (infos.Count < ListPage || fresh == 0)
+                    {
+                        break;
+                    }
+
+                    if (listed.Count >= MaxListed)
+                    {
+                        throw new DeliveryException(string.Create(CultureInfo.InvariantCulture, $"The Schema service lists more than {MaxListed} schemas of {family}, more than a listing reads."));
+                    }
+
+                    offset += infos.Count;
+                }
+            }
+        }
+
+        return listed.Values.ToList();
+    }
+
     /// <summary>The entries of one page of a listing (<c>SchemaInfoResponse.schemaInfos</c>).</summary>
     private static JsonArray Infos(byte[] body)
     {

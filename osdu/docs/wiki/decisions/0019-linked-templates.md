@@ -25,6 +25,7 @@ related:
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0023-child-links
+  - delivery-wiki-0052-custom-schemas-registered-by-a-command
   - delivery-wiki-linked-canonical-and-custom-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
@@ -36,7 +37,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ParentDeliveryTests.cs
-updated: 2026-10-23
+updated: 2026-11-11
 ---
 # 0019: A custom template is linked to its canonical kind, and its records read their parent from OSDU
 
@@ -108,8 +109,9 @@ reader able to move from one to the other without a lookup.
 
 ## Consequences
 
-- A custom kind is registered with OSDU's schema service like any template of one's own, outside OSDU Delivery; the link
-  is read by OSDU Delivery alone.
+- A custom kind is registered with OSDU's schema service like any template of one's own; the link is read by OSDU
+  Delivery alone. Registration was done outside OSDU Delivery when this was decided; [0052](0052-custom-schemas-registered-by-a-command.md)
+  brings it in, as `sqlflow template register`.
 - Both mappings must key the rows alike (the same `system`, key columns and `idFrom`), or the parent's id is not the
   canonical record's; the preflight cannot see the other mapping, so this is the estate's to keep.
 - A parent written outside the ledger (by another system, or by the DDMS without a delivery) does not re-plan the custom

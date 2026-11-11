@@ -20,6 +20,7 @@ keywords:
   - DDMSDatasets
   - same minted id
 related:
+  - delivery-cli-template-register
   - delivery-flow-mapping-parent
   - delivery-flow-mapping-child
   - delivery-concept-templates
@@ -116,9 +117,10 @@ Name the file after its kind, each colon an underscore (`welldb_wks_work-product
 The sync records its parent and the Templates page shows it; the canonical template's sheet names `WellLogDetail` among
 its **children** ([templates](../concepts/templates.md#linked-templates)).
 
-Register the custom kind with OSDU's schema service, outside OSDU Delivery. Storage accepts records of a kind the schema
-service does not hold, but its indexer flags each of them `schema not found`, so search finds them only once the kind is
-registered.
+Register the custom kind with OSDU's schema service in each partition its records go to:
+`sqlflow template register --dry-run` shows where it stands, and `sqlflow template register` writes it in development,
+asking first ([template register](../cli/template-register.md)). Storage accepts records of a kind the schema service does
+not hold, but its indexer flags each of them `schema not found`, so search finds them only once the kind is registered.
 
 ## 2. The custom mapping: the parent's sections, and the link to it
 
@@ -292,7 +294,7 @@ To see it:
 | The canonical record never links its child | The custom record is not in OSDU (look at the custom flow's ledger), or the two mappings do not key the rows alike (step 2), so the ids differ. |
 | The child landed, and the canonical record still has no link | The canonical flow has not run since: run it, or wait for its schedule. A child delivered outside the ledger asks nothing; the link comes the next time something renders the canonical record. |
 | The custom record was taken out of OSDU, and the canonical record still links it | Taken out through OSDU Delivery (**Remove**, a removal flow, an inventory, a reversal), the canonical flow's next run takes the link away, and gives it back once the custom record is delivered again ([mapping $child](../flow/mapping-child.md#when-a-child-is-taken-out)). Taken out by another system, nothing tells the ledger: the canonical record's **Render** tab says its next run would skip it, and **Redeliver** sends it without the link. |
-| The custom records are not found by search | The custom kind is not registered with the schema service (step 1). |
+| The custom records are not found by search | The custom kind is not registered with the schema service (step 1): `sqlflow template register --dry-run` says where it stands. |
 
 ## See also
 

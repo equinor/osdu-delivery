@@ -116,7 +116,7 @@ What the service says of the kind is set against the template the mapping pins, 
 | --- | --- | --- |
 | Matches the template | The two say the same, titles and descriptions aside. | Held to the service's schema. |
 | Differs from the template | A property is in one and not the other, or they say different things of it. Each is named, the ones that can make the service's schema refuse a document the template accepts first. | Held to the service's schema. |
-| This kind is not registered | The service holds no schema of the kind. Storage takes the record all the same, but the indexer cannot index it, so search and the explorer will not find it by its data until the kind is registered. | Not judged. |
+| This kind is not registered | The service holds no schema of the kind. Storage takes the record all the same, but the indexer cannot index it, so search and the explorer will not find it by its data until the kind is registered ([`sqlflow template register`](../cli/template-register.md) registers a custom kind). | Not judged. |
 | Could not be read | The service refused or did not answer. | Not judged, and the rest of the run goes on. |
 | Not an OSDU record | A DSPDM row or an Energistics object: no OSDU schema describes it, and the template the mapping pins is what it is held to. | Not judged. |
 

@@ -142,7 +142,7 @@ public sealed class TemplateFolderCommandTests : IDisposable
         foreach (var gone in new[] { "list", "show", "delete" })
         {
             refused = await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync(gone));
-            Assert.Contains($"'{gone}' is not a template subcommand: folders, capture or import", refused.Message, StringComparison.Ordinal);
+            Assert.Contains($"'{gone}' is not a template subcommand: folders, capture, import or register", refused.Message, StringComparison.Ordinal);
         }
     }
 

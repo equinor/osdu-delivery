@@ -44,6 +44,7 @@ related:
   - delivery-flow-mapping-parent
   - delivery-flow-mapping-child
   - delivery-guide-linked-records
+  - delivery-cli-template-register
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs
@@ -54,6 +55,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplatePath.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
+  - osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/SchemaSnapshot.cs
   - osdu/src/SqlFlow.Delivery/Json/CanonicalJson.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
@@ -369,6 +371,14 @@ alone follows each edit of the file from the next sync and run, and each edit is
 records with every record it renders. Check it from the working copy with `sqlflow template folders --for <mapping>` and
 `sqlflow check <flow>`, before a sync ever reads it.
 
+A kind of one's own is a **custom kind** to OSDU: one whose authority is not `osdu`, which no partition's Schema service
+holds until it is registered there. Storage takes its records before, but the indexer flags each `schema not found`, so
+search, the explorer and assertions do not find them by their data. `sqlflow template register` registers the custom
+kinds a repository's template folders hold, from the connection an env file gives: it shows where each stands in the
+partition, writes it in development (or publishes it, typed back), and reads it back
+([template register](../cli/template-register.md)). Nothing registers a kind on its own: a sync or a run never writes a
+schema ([decision 0052](../../wiki/decisions/0052-custom-schemas-registered-by-a-command.md)).
+
 ## Linked templates
 
 A custom template is often a copy of an OSDU kind changed where OSDU's schema falls short: a property the source knows
@@ -416,8 +426,8 @@ holds its template, and the sync warns of it by file:
 welldb/templates/welldb_wks_work-product-component--WellLogDetail_1.0.0.json: x-osdu-inheriting-from-kind names 2 record kinds (...), and a template is linked to one parent, so the template is linked to no parent and a mapping of it cannot read $parent.
 ```
 
-A linked template is registered with OSDU's schema service like any template of one's own, outside OSDU Delivery; the
-link is read by OSDU Delivery alone. Storage takes records of a kind the schema service does not hold (it checks the
+A linked template is registered with OSDU's schema service like any template of one's own, with
+[`sqlflow template register`](../cli/template-register.md); the link is read by OSDU Delivery alone. Storage takes records of a kind the schema service does not hold (it checks the
 kind's form, the id, the ACL and the legal tags), and the indexer flags each of them `schema not found`, so register the
 kind before relying on search to find its records. The Templates page shows the kind a template
 is linked to beside it, and `GET /api/v1/delivery/templates` names it as `parent`. A template's sheet also names each kind
@@ -494,14 +504,16 @@ mapping reads before the repository is synced.
 | Read a kind from a release | Browse OSDU, a row | | `GET /templates/osdu/schema?release=&kind=` |
 | Download a kind as a template file | Browse OSDU, Download | `sqlflow template capture --kind <kind> --out <file>` | `GET /templates/osdu/file?release=&kind=` (a file to save) |
 | Write a schema of one's own as a template file | | `sqlflow template import <schema.json> --kind <kind> --out <file>` | |
+| Register the custom kinds a working copy holds with a partition's Schema service | | `sqlflow template register [<dir>] [--env-file <path>] [--dry-run \| --confirm <partition>]` | |
 | Lay out a schema without keeping it | Browse OSDU, a row | | `POST /templates/preview` |
 | Compare two versions of a kind | Browse OSDU, Compare versions | | `GET /templates/osdu/compare` |
 | Read the release list again and download a release | Sync with the repository | | `POST /templates/osdu/sync` |
 | Add or remove a template | Commit its file to, or delete it from, a template folder, and sync the repository | | |
 
 Reading is open to any signed-in user, and syncing the data definitions is an operate action
-([authentication and identity](authentication-and-identity.md)). The CLI's `template` subcommands read and write files
-and need no database. The mapping builder starts a mapping from a template file a repository holds
+([authentication and identity](authentication-and-identity.md)). The CLI's `template` subcommands need no database: `folders`,
+`capture` and `import` read and write files, and `register` writes a working copy's custom kinds to a partition's Schema
+service. The mapping builder starts a mapping from a template file a repository holds
 ([writing a mapping](../guides/writing-a-mapping.md)).
 
 ## Configuration: Osdu:SchemaRepository

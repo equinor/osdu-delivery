@@ -2,7 +2,7 @@
 id: delivery-cli-template
 title: "sqlflow template: a repository's template folders, and template files written into them"
 type: cli-command
-summary: "Read a working copy's template folders, and write a template file into one from the OSDU data definitions or a schema file; no database is needed."
+summary: "Read a working copy's template folders, write a template file into one, and register its custom kinds with OSDU; no database is needed."
 keywords:
   - template
   - template folders
@@ -28,6 +28,7 @@ related:
   - delivery-cli-check
   - delivery-guide-getting-started
   - delivery-concept-gui
+  - delivery-cli-template-register
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
@@ -53,7 +54,12 @@ sqlflow template folders [<dir>] [--for <document>]                             
 sqlflow template capture --kind <kind> [--release <tag>] --out <file.json>           [--json]
 sqlflow template import <schema.json> --kind <kind> [--release <tag>] --out <file.json> [--json]
 sqlflow template import --from-dir <dir> --kind <kind> --out <file.json>             [--json]
+sqlflow template register [<dir>] [--env-file <path>] [--partition <id>] [--kind <kind>... | --all]
+                          [--publish] [--dry-run | --confirm <partition>] [--json]
 ```
+
+`register` reaches OSDU: it registers the custom kinds a working copy's template folders hold with a partition's Schema
+service, and has [a page of its own](template-register.md).
 
 ## Description
 
@@ -63,10 +69,11 @@ same version. A repository keeps the templates its documents fill as files in it
 `templates`, and a document reads those on its path; `sqlflow check` and every run read the files there. The database
 keeps no template: a repository's sync records which file holds which template, and every reader reads the file.
 
-Every subcommand works on files and needs no database. `folders` reads a working copy's template folders from disk: what
+No subcommand needs a database. `folders`, `capture` and `import` work on files: `folders` reads a working copy's template folders from disk: what
 a developer runs before committing a template, or a mapping that names its template's kind alone. `capture` and `import`
 write a template file into a folder, which the repository's next sync records once it is committed. The GUI's Templates
-page downloads the same file from the OSDU data definitions.
+page downloads the same file from the OSDU data definitions. `register` reads the same folders and writes their custom
+kinds to a partition's Schema service ([template register](template-register.md)).
 
 Every template written is checked the same way, whatever its source:
 
@@ -144,7 +151,7 @@ schema it refers to (`../abstract/...`) from the same release: the file the Temp
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `<subcommand>` | yes | One of `folders`, `capture`, `import` (case-insensitive). |
+| `<subcommand>` | yes | One of `folders`, `capture`, `import`, `register` (case-insensitive). |
 | `<dir>` | no | `folders`: the repository's top, the folder scanned or the one a document's walk stops at. |
 | `<schema.json>` | `import` without `--from-dir` | The schema file to write as a template. `capture` takes no file and refuses one. |
 
@@ -177,7 +184,7 @@ version: a version is the hash of the canonical form, which indentation and key 
 | `name the template file to write with --out, in a template folder of the repository (<folder>/templates/<file>.json): a template is a file the repository holds, which its next sync records, and the database keeps none.` | `capture` or `import` without `--out`. |
 | `Kind '<kind>' must be 'authority:source:entityType:major.minor.patch'.` | `capture` or `import` with a `--kind` that is not an OSDU kind. |
 | `'sqlflow template capture' takes no flow: it writes the kind's schema from the OSDU data definitions.` | A file was given to `capture`. |
-| `'<verb>' is not a template subcommand: folders, capture or import.` | Another subcommand, such as the `list`, `show` and `delete` of earlier releases, which kept templates in the database. |
+| `'<verb>' is not a template subcommand: folders, capture, import or register.` | Another subcommand, such as the `list`, `show` and `delete` of earlier releases, which kept templates in the database. |
 | `--for names '<path>', which is not a file; name the mapping or flow whose template folders to read.` | `folders --for` with a path that is not a file. |
 | `The OSDU data definitions have no release '<tag>'; the latest is <tag>.` | `--release` names no release tag. |
 | `The OSDU data definitions have no Generated/<path> at <release>.` | The release publishes no schema for the kind. |

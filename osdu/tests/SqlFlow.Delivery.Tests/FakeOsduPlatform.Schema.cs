@@ -50,8 +50,38 @@ public sealed partial class FakeOsduPlatform
         }
     }
 
-    private HttpResponseMessage? SchemaServiceRoute(string method, string path, Uri uri)
+    /// <summary>The token endpoint of the platform's identity provider: a client credentials grant answered with a token.</summary>
+    public const string TokenPath = "/oauth2/token";
+
+    /// <summary>Writes refused with this status and message instead, by schema id: an entitlement, or a breaking change the service found.</summary>
+    public Dictionary<string, (HttpStatusCode Status, string Message)> SchemaWriteRefusals { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Writes the service takes and a gateway answers with a 504 once, by schema id: an answer lost on the way, which a client sends again.</summary>
+    public HashSet<string> SchemaWriteLostAnswers { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The body of every <c>PUT /schema</c> the service was sent, in order.</summary>
+    public IReadOnlyList<JsonObject> SchemaWrites()
     {
+        lock (_gate)
+        {
+            return Calls.Where(c => c.Method == HttpMethod.Put && c.Uri.AbsolutePath == SchemaList && c.Body is not null)
+                .Select(c => (JsonObject)JsonNode.Parse(c.Body!)!)
+                .ToList();
+        }
+    }
+
+    private HttpResponseMessage? SchemaServiceRoute(string method, string path, Uri uri, string? body)
+    {
+        if (method == "POST" && path == TokenPath)
+        {
+            return Json(HttpStatusCode.OK, new JsonObject { ["access_token"] = "fake-platform-token", ["token_type"] = "Bearer", ["expires_in"] = 3600 });
+        }
+
+        if (method == "PUT" && path == SchemaList)
+        {
+            return SchemaWrite(body);
+        }
+
         if (method != "GET")
         {
             return null;
@@ -82,6 +112,148 @@ public sealed partial class FakeOsduPlatform
             ? Json(HttpStatusCode.OK, (JsonObject)schema.DeepClone())
             : Json(HttpStatusCode.NotFound, new JsonObject { ["code"] = 404, ["reason"] = "Not found", ["message"] = $"Schema {id} is not present" });
     }
+
+    /// <summary>
+    /// <c>PUT /schema</c> (upsertSchema) as the service's own code answers it (schema-service SchemaService.java, update and
+    /// create; SchemaResolver.java): a schema the partition holds in development is replaced, in the status asked; one it
+    /// holds published or obsolete is refused; a new one is created in development only, and refused when the platform's
+    /// shared schemas hold the id. A local reference must end in the name of a top-level definition. What is stored is the
+    /// schema re-serialised, members holding null dropped and keys reordered, as the service's serialisers leave it.
+    /// </summary>
+    private HttpResponseMessage SchemaWrite(string? body)
+    {
+        if ((body is null ? null : JsonNode.Parse(body)) is not JsonObject request
+            || request["schemaInfo"] is not JsonObject info
+            || info["schemaIdentity"] is not JsonObject identity
+            || info["status"]?.GetValue<string>() is not { } status
+            || new[] { "authority", "source", "entityType", "schemaVersionMajor", "schemaVersionMinor", "schemaVersionPatch" }.Any(k => identity[k] is null))
+        {
+            return SchemaError(HttpStatusCode.BadRequest, "The input is invalid. schemaInfo.schemaIdentity and schemaInfo.status are required");
+        }
+
+        if (request["schema"] is not JsonObject schema)
+        {
+            return SchemaError(HttpStatusCode.BadRequest, "The input is invalid. Schema is not a valid JSON Object");
+        }
+
+        var id = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{identity["authority"]}:{identity["source"]}:{identity["entityType"]}:{identity["schemaVersionMajor"]}.{identity["schemaVersionMinor"]}.{identity["schemaVersionPatch"]}");
+        if (SchemaWriteRefusals.TryGetValue(id, out var refusal))
+        {
+            return SchemaError(refusal.Status, refusal.Message);
+        }
+
+        if (UnresolvedReference(schema) is { } unresolved)
+        {
+            return SchemaError(HttpStatusCode.BadRequest, unresolved);
+        }
+
+        var held = Schemas.ContainsKey(id);
+        var (heldStatus, heldScope) = held && SchemaInfos.TryGetValue(id, out var listed) ? listed : ("PUBLISHED", "SHARED");
+        HttpStatusCode answered;
+        if (held && heldScope == "INTERNAL")
+        {
+            if (heldStatus != "DEVELOPMENT")
+            {
+                return SchemaError(HttpStatusCode.BadRequest, "Only schema in developement stage can be updated");
+            }
+
+            answered = HttpStatusCode.OK;
+        }
+        else if (status != "DEVELOPMENT")
+        {
+            return SchemaError(HttpStatusCode.BadRequest, "Only schema in developement stage can be created through put");
+        }
+        else if (held)
+        {
+            return SchemaError(HttpStatusCode.BadRequest, "Update/Create failed because schema id is present in another tenant");
+        }
+        else
+        {
+            answered = HttpStatusCode.Created;
+        }
+
+        Schemas[id] = Reserialized(schema);
+        SchemaInfos[id] = (status, "INTERNAL");
+        if (SchemaWriteLostAnswers.Remove(id))
+        {
+            return SchemaError(HttpStatusCode.GatewayTimeout, "The gateway gave up waiting for the answer");
+        }
+
+        return Json(answered, new JsonObject
+        {
+            ["schemaIdentity"] = identity.DeepClone(),
+            ["createdBy"] = "fake@example.com",
+            ["dateCreated"] = "2026-01-01T00:00:00Z",
+            ["status"] = status,
+            ["scope"] = "INTERNAL",
+        });
+    }
+
+    /// <summary>The first reference the service would refuse, as it says so; null when it takes them all.</summary>
+    private static string? UnresolvedReference(JsonObject schema)
+    {
+        var definitions = schema["definitions"] as JsonObject;
+        var pending = new Stack<JsonNode?>([schema]);
+        while (pending.Count > 0)
+        {
+            switch (pending.Pop())
+            {
+                case JsonObject node:
+                    foreach (var (name, value) in node)
+                    {
+                        if (name == "$ref" && value is JsonValue reference && reference.TryGetValue<string>(out var text))
+                        {
+                            if (text.StartsWith('#') && definitions?.ContainsKey(text[(text.LastIndexOf('/') + 1)..]) != true)
+                            {
+                                return $"Invalid input, no '{text[(text.LastIndexOf('/') + 1)..]}' definition found but provided as a reference";
+                            }
+
+                            if (!text.StartsWith('#') && !text.StartsWith("https", StringComparison.Ordinal))
+                            {
+                                return $"Invalid input, {text} not registered but provided as reference";
+                            }
+                        }
+                        else
+                        {
+                            pending.Push(value);
+                        }
+                    }
+
+                    break;
+                case JsonArray array:
+                    foreach (var element in array)
+                    {
+                        pending.Push(element);
+                    }
+
+                    break;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A schema as the service stores it: members holding null dropped, and its keys in reverse order.</summary>
+    private static JsonObject Reserialized(JsonObject schema)
+    {
+        static JsonNode? Copy(JsonNode? node) => node switch
+        {
+            JsonObject obj => new JsonObject(obj.Where(p => p.Value is not null).Reverse().Select(p => KeyValuePair.Create(p.Key, Copy(p.Value)))),
+            JsonArray array => new JsonArray([.. array.Select(Copy)]),
+            _ => node?.DeepClone(),
+        };
+
+        return (JsonObject)Copy(schema)!;
+    }
+
+    /// <summary>A refusal as the Schema service writes one: <c>{"error":{"code","message","errors"}}</c>.</summary>
+    private static HttpResponseMessage SchemaError(HttpStatusCode status, string message)
+        => Json(status, new JsonObject
+        {
+            ["error"] = new JsonObject { ["code"] = (int)status, ["message"] = message, ["errors"] = new JsonArray() },
+        });
 
     private HttpResponseMessage SchemaListing(Uri uri)
     {

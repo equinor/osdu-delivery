@@ -790,7 +790,7 @@
       "path": "cli/template.md",
       "title": "sqlflow template: a repository's template folders, and template files written into them",
       "type": "cli-command",
-      "summary": "Read a working copy's template folders, and write a template file into one from the OSDU data definitions or a schema file; no database is needed.",
+      "summary": "Read a working copy's template folders, write a template file into one, and register its custom kinds with OSDU; no database is needed.",
       "keywords": [
         "template",
         "template folders",
@@ -816,7 +816,8 @@
         "delivery-guide-writing-a-mapping",
         "delivery-cli-check",
         "delivery-guide-getting-started",
-        "delivery-concept-gui"
+        "delivery-concept-gui",
+        "delivery-cli-template-register"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
@@ -827,6 +828,51 @@
         "osdu/src/SqlFlow.Delivery/Templates/TemplateSources.cs",
         "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/SchemaSnapshot.cs"
+      ]
+    },
+    {
+      "id": "delivery-cli-template-register",
+      "corpus": "reference",
+      "path": "cli/template-register.md",
+      "title": "sqlflow template register: register a repository's custom schemas with a partition's Schema service",
+      "type": "cli-command",
+      "summary": "Find every custom kind in a repository's template folders, show where each stands in OSDU, and register, update or publish it from an env file.",
+      "keywords": [
+        "template register",
+        "register schema",
+        "register custom schema",
+        "custom schema",
+        "custom kind",
+        "schema service",
+        "sync schemas with osdu",
+        "upload schema to osdu",
+        "publish schema",
+        "development schema",
+        "schema not found",
+        "schema-service editors",
+        "env file",
+        ".sqlflow/env",
+        "upsertSchema"
+      ],
+      "cliCommand": "template register",
+      "related": [
+        "delivery-cli-template",
+        "delivery-concept-templates",
+        "delivery-guide-linked-records",
+        "delivery-concept-dry-run",
+        "delivery-concept-partitions",
+        "delivery-cli-dev"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryTemplateRegister.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/ModuleCommand.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/SchemaRegistrar.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/SchemaServiceReader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs"
       ]
     },
     {
@@ -3595,7 +3641,8 @@
         "delivery-table-repository-template",
         "delivery-flow-mapping-parent",
         "delivery-flow-mapping-child",
-        "delivery-guide-linked-records"
+        "delivery-guide-linked-records",
+        "delivery-cli-template-register"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
@@ -3607,6 +3654,7 @@
         "osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplatePath.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/SchemaSnapshot.cs",
         "osdu/src/SqlFlow.Delivery/Json/CanonicalJson.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
@@ -7259,6 +7307,7 @@
         "same minted id"
       ],
       "related": [
+        "delivery-cli-template-register",
         "delivery-flow-mapping-parent",
         "delivery-flow-mapping-child",
         "delivery-concept-templates",
@@ -10600,6 +10649,7 @@
         "delivery-wiki-0004-preserved-keys",
         "delivery-wiki-0002-client-supplied-ids",
         "delivery-wiki-0023-child-links",
+        "delivery-wiki-0052-custom-schemas-registered-by-a-command",
         "delivery-wiki-linked-canonical-and-custom-records"
       ],
       "sourceRefs": [
@@ -11672,6 +11722,33 @@
       ]
     },
     {
+      "id": "delivery-wiki-0052-custom-schemas-registered-by-a-command",
+      "corpus": "wiki",
+      "path": "decisions/0052-custom-schemas-registered-by-a-command.md",
+      "title": "Decision 0052: custom schemas are registered by a command a developer runs, never by a sync or a run",
+      "type": "decision",
+      "summary": "Why custom kinds reach a partition's Schema service through sqlflow template register, in development by default, never as a side effect of a sync or run.",
+      "keywords": [
+        "register custom schema",
+        "schema service registration",
+        "template register",
+        "development schema",
+        "publish schema",
+        "env file input"
+      ],
+      "related": [
+        "delivery-wiki-0019-linked-templates",
+        "delivery-wiki-linked-canonical-and-custom-records"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryTemplateRegister.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/SchemaRegistrar.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/SchemaServiceReader.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs",
+        "osdu/specs/core/INTEGRATION.md"
+      ]
+    },
+    {
       "id": "delivery-wiki-linked-canonical-and-custom-records",
       "corpus": "wiki",
       "path": "patterns/linked-canonical-and-custom-records.md",
@@ -11693,6 +11770,7 @@
       "related": [
         "delivery-wiki-0019-linked-templates",
         "delivery-wiki-0023-child-links",
+        "delivery-wiki-0052-custom-schemas-registered-by-a-command",
         "delivery-wiki-0018-template-folders",
         "delivery-wiki-pattern-catalog"
       ],

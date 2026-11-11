@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`sqlflow template register` registers a repository's custom schemas with a partition's Schema service.** It reads
+  the connection and partition from an env file (`.sqlflow/env` by default), finds every template whose kind's authority
+  is not `osdu`, shows where each stands in OSDU and what it would write, and registers or updates it in development,
+  or publishes it once `publish` is typed back, reading each write back; `--dry-run` writes nothing and `--confirm
+  <partition>` writes without asking ([template register](osdu/docs/reference/cli/template-register.md)).
 - **The explorer's dimension builder previews the table it makes.** **Preview**, beside **Build** and **YAML**, shows the
   rows of the 100 keys most records hold, read from OSDU as a build reads them and laid out as the `dim_` table is (a row
   for each value a key collects), with the keys that make no row and what a build would refuse;
