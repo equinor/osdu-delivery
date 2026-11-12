@@ -76,7 +76,7 @@ describe("a path", () => {
     for (const [path, reason] of refusals) {
       const parsed = parsePath(path);
       assert.equal(parsed.steps, null, path);
-      assert.match(parsed.error ?? "", new RegExp(reason.replace(/[[\]]/g, "\\$&")), path);
+      assert.ok(parsed.error?.includes(reason), `${path}: expected "${reason}" in ${JSON.stringify(parsed.error)}`);
     }
   });
 

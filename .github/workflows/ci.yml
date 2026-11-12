@@ -57,7 +57,7 @@ jobs:
       # The wiki is linted whole on every change with SQLFlow's linter, through the options a product's wiki takes, after
       # the tests of SQLFlow's docs scripts the documentation is built with (CLAUDE.md, The OSDU Wiki). Both read
       # frontmatter with PyYAML.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
