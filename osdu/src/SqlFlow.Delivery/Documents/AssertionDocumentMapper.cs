@@ -1042,6 +1042,7 @@ internal static partial class AssertionMapper
         return assertion with
         {
             Label = name ?? Clip(assertion.Label, MaxLabel),
+            IsNamed = name is not null,
             Description = description,
             Severity = severity,
             Disabled = DisabledOf(y.Disabled, at, test.Source),

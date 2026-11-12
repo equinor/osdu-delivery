@@ -724,6 +724,7 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
         var counts = new Dictionary<Verdict, long> { [Verdict.Holds] = 0, [Verdict.WithinBand] = 0, [Verdict.Differs] = 0, [Verdict.NotFound] = 0, [Verdict.FoundMoreThanOnce] = 0 };
         var differing = new Dictionary<string, long>(StringComparer.Ordinal);
         var failures = new List<AssertionExample>();
+        var read = new ReadingLog();
         long proofValues = 0;
         for (var i = 0; i < rows.Count; i++)
         {
@@ -734,6 +735,13 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
             if (verdict != Verdict.Holds && failures.Count < Examples)
             {
                 failures.Add(new AssertionExample(id, TestResults.Quote(row.Label), reason));
+            }
+
+            // The proof values of a row that finds its one record, each with what the record holds there, while the
+            // outcome keeps more of them: what the rows verified, whether they hold or not.
+            if (!read.Trimmed && located[i].Found is { Count: 1 } one)
+            {
+                Read(row, shape, one[0], read);
             }
         }
 
@@ -776,8 +784,56 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
             notFound > 0 ? string.Create(CultureInfo.InvariantCulture, $"{notFound} row(s) find no record") + (notFoundSeverity != Assertion.Severity ? $" ({AssertionText.Of(notFoundSeverity)})" : string.Empty) : null,
             withinBand > 0 ? string.Create(CultureInfo.InvariantCulture, $"{withinBand} row(s) differ only within the warning band") + (bandSeverity != Assertion.Severity ? $" ({AssertionText.Of(bandSeverity)})" : string.Empty) : null,
         }.Where(m => m is not null)) + ".";
-        var outcome = Result(heaviest is null, actual, message, judged, judged - holding, Math.Round(holding * 100.0 / judged, 3), failures);
+        var outcome = Result(heaviest is null, actual, message, judged, judged - holding, Math.Round(holding * 100.0 / judged, 3), failures, read);
         return heaviest is { } severity ? outcome with { Severity = AssertionText.Of(severity) } : outcome;
+    }
+
+    /// <summary>
+    /// Keeps each proof value of a row as a value read: what it is, what it had to be, what the record the row finds holds
+    /// there, and whether that holds. A curve proof value is kept without what was measured, which its difference says when
+    /// it does not hold.
+    /// </summary>
+    private void Read(KnownRow row, KnownValuesShape shape, Match match, ReadingLog read)
+    {
+        for (var c = 0; c < row.Checks.Count; c++)
+        {
+            var check = row.Checks[c];
+            if (check.Disabled is not null)
+            {
+                continue;
+            }
+
+            var values = Values(match, shape.Check[c]);
+            read.Add(check.Column.Label, Why(check, values, string.Empty) is null, Held(check, values), match.Id, check.Condition.ToString(), row.Label);
+        }
+
+        if (row.CurveChecks.Count > 0 && _curves.TryGetValue(match.Id, out var reading))
+        {
+            foreach (var check in row.CurveChecks.Where(c => c.Disabled is null))
+            {
+                read.Add(check.Label, KnownCurves.Holds(check, reading), null, match.Id, check.Condition.ToString(), row.Label);
+            }
+        }
+    }
+
+    /// <summary>What a record holds at a proof value's path, as a value read shows it: the aggregate the path takes, or the values.</summary>
+    private static string Held(KnownCheck check, IReadOnlyList<JsonNode> values)
+    {
+        var column = check.Column;
+        if (column.Aggregate is not { } function)
+        {
+            return values.Count == 0 ? "(no value)" : Shown(values);
+        }
+
+        var kept = column.Except.Count == 0 ? values : values.Where(v => !column.Except.Any(e => ValueComparer.Equal(v, e, null, out _))).ToList();
+        var aggregator = new Aggregator(function == AggregateFunction.Distinct);
+        foreach (var value in kept)
+        {
+            aggregator.Add(value);
+        }
+
+        var (measured, _) = aggregator.Measure(function, 0, new Comparison(check.Condition.Operands.Select(o => new ComparisonTerm(ComparisonOperator.EqualTo, o)).ToList()));
+        return measured?.ToString() ?? "(no value)";
     }
 
     /// <summary>The records (or items) a row's values find, or why they find none and the record that came closest, when one did.</summary>

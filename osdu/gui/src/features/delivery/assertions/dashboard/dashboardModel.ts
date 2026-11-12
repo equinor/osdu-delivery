@@ -4,16 +4,21 @@
 // carries are computed by the same code, and the unit tests run it as it is.
 
 import type { StagedFacts } from "../assertionReading.ts";
-import { briefOf, plainProblem, type BriefFacts, type CheckBrief, type Measure } from "./checkBrief.ts";
+import { briefOf, plainProblem, type BriefFacts, type CheckBrief, type CheckStated, type Measure } from "./checkBrief.ts";
 
 // What the model reads of the control plane's answers, by shape: the board (DeliveryAssertionBoard) and a test's result
 // whole (DeliveryTestResult) fit these as they are.
 
 /** A check of an assertion as its flow document states it. */
 export interface BoardCheck {
+  index?: number;
   label: string;
   expected: string;
   disabled?: string | null;
+  /** What it tests, whole: what it reads and what that has to be. */
+  criterion?: string | null;
+  /** True when its label is a name the document gives it. */
+  named?: boolean;
 }
 
 /** A test's latest result, without its detail. */
@@ -147,8 +152,11 @@ export interface DashTest {
   matched: number | null;
   checks: number;
   failedChecks: number;
-  /** The checks as the document states them, which a passing assertion shows when its result is not at hand. */
-  definitions: { label: string; expected: string }[];
+  /**
+   * The checks as the document states them now, which an assertion shows when its result is not at hand, and which a
+   * result is read with: what each tests, whole, and whether the document names it.
+   */
+  definitions: CheckStated[];
   query: string | null;
   template: string | null;
   statedAsOf: string | null;
@@ -248,7 +256,8 @@ export function fromBoard(board: Board, generatedUtc: string): DashData {
       matched: stands ? test.latest!.matched : null,
       checks: test.assertions.length,
       failedChecks: stands ? test.latest!.failedAssertions : 0,
-      definitions: test.assertions.filter((check) => !check.disabled).map((check) => ({ label: check.label, expected: check.expected })),
+      definitions: test.assertions.filter((check) => !check.disabled)
+        .map((check) => ({ index: check.index, label: check.label, expected: check.expected, criterion: check.criterion ?? null, named: check.named === true })),
       query: test.query,
       template: test.template,
       statedAsOf: test.asOf ?? null,
@@ -474,9 +483,13 @@ export function matches(test: DashTest, term: string): boolean {
  */
 export type DashCheck = CheckBrief;
 
-/** An assertion's checks as its latest result found them, each read once. */
-export function checksOf(result: ResultFacts): DashCheck[] {
-  return (result.assertions ?? []).map(briefOf);
+/**
+ * An assertion's checks as its latest result found them, each read once, with what its document states of it now: a
+ * result recorded before results kept what a check tests is read with the document's statement of it, found by the
+ * check's position in the assertion.
+ */
+export function checksOf(result: ResultFacts, stated: readonly CheckStated[] = []): DashCheck[] {
+  return (result.assertions ?? []).map((check) => briefOf(check, check.index === undefined ? undefined : stated.find((s) => s.index === check.index)));
 }
 
 /** Whether a check does not hold: it fails, could not be checked, or warns. A noted one (an info check) holds nothing up. */
@@ -521,7 +534,7 @@ export function readingOf(test: DashTest, result: ResultFacts | undefined): RowR
   }
 
   if (result !== undefined) {
-    const checks = checksOf(result);
+    const checks = checksOf(result, test.definitions);
     const looked = checks.filter(needsLook);
     // The check the row names: the one with the most that does not hold, the first of them as the document states them;
     // one that fails or could not be made before one that only warns.

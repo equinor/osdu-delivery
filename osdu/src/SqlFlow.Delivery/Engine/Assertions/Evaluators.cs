@@ -116,10 +116,10 @@ public abstract class Evaluator
 
     public abstract Task<AssertionOutcome> CompleteAsync(TestScope scope, TestSubject subject, CancellationToken ct);
 
-    /// <summary>The outcome the assertion comes to.</summary>
+    /// <summary>The outcome the assertion comes to, with the values it read when it keeps them.</summary>
     protected AssertionOutcome Result(
         bool passed, string? actual, string? message, long? checkedCount = null, long? failing = null, double? value = null,
-        IReadOnlyList<AssertionExample>? examples = null) => new()
+        IReadOnlyList<AssertionExample>? examples = null, ReadingLog? readings = null) => new()
         {
             Index = Index,
             Label = Assertion.Label,
@@ -128,12 +128,16 @@ public abstract class Evaluator
             Severity = AssertionText.Of(Assertion.Severity),
             Outcome = passed ? TestOutcomes.Passed : TestOutcomes.Failed,
             Expected = Assertion.Expected,
+            Criterion = Assertion.Criterion,
+            Named = Assertion.IsNamed,
             Actual = actual,
             Message = passed ? null : message,
             Checked = checkedCount,
             Failing = failing,
             Value = value,
             Examples = examples ?? [],
+            Readings = readings?.List() ?? [],
+            ReadingsTrimmed = readings?.Trimmed ?? false,
         };
 
     /// <summary>The outcome of an assertion over records a test did not read, saying why.</summary>
@@ -310,6 +314,8 @@ internal sealed class CountEvaluator(int index, CountAssertion assertion, int ex
         var count = Measured.Of(matched);
         var passed = ValueComparer.Evaluate(assertion.Comparison, count, null);
         var missing = subject.Missing.Take(Examples).Select(id => new AssertionExample(id, null, "storage does not return it: it was never written, was deleted, or this identity may not read it")).ToList();
+        var read = new ReadingLog();
+        read.Add("record count", passed, matched.ToString(CultureInfo.InvariantCulture));
         var outcome = Result(
             passed,
             string.Create(CultureInfo.InvariantCulture, $"{matched} record(s)"),
@@ -318,7 +324,8 @@ internal sealed class CountEvaluator(int index, CountAssertion assertion, int ex
             matched,
             passed ? 0 : 1,
             matched,
-            missing);
+            missing,
+            read);
         return Task.FromResult(!passed && assertion.WarnWithin is { } band && ValueComparer.Within(assertion.Comparison, count, null, band)
             ? Warned(outcome, WithinBand(band, ValueComparer.Miss(assertion.Comparison, count, null)))
             : outcome);
@@ -330,6 +337,7 @@ internal sealed class FieldEvaluator : Evaluator
 {
     private readonly ValueAssertion _assertion;
     private readonly Tally _tally;
+    private readonly ReadingLog _read = new();
 
     public FieldEvaluator(int index, ValueAssertion assertion, int examples)
         : base(index, assertion, examples)
@@ -357,10 +365,10 @@ internal sealed class FieldEvaluator : Evaluator
             switch (condition.Operator)
             {
                 case ValueOperator.Exists:
-                    _tally.Add(!condition.Flag, id, "(no value)", "has no value");
+                    Judge(!condition.Flag, id, "(no value)", "has no value");
                     return;
                 case ValueOperator.Empty:
-                    _tally.Add(condition.Flag, id, "(no value)", "has no value, and is expected to hold one");
+                    Judge(condition.Flag, id, "(no value)", "has no value, and is expected to hold one");
                     return;
                 default:
                     if (_assertion.Optional)
@@ -369,7 +377,7 @@ internal sealed class FieldEvaluator : Evaluator
                     }
                     else
                     {
-                        _tally.Add(false, id, "(no value)", "has no value");
+                        Judge(false, id, "(no value)", "has no value");
                     }
 
                     return;
@@ -378,7 +386,7 @@ internal sealed class FieldEvaluator : Evaluator
 
         if (condition.Operator == ValueOperator.Exists)
         {
-            _tally.Add(condition.Flag, id, RecordValues.Describe(values), "has a value, and is expected to have none");
+            Judge(condition.Flag, id, RecordValues.Describe(values), "has a value, and is expected to have none");
             return;
         }
 
@@ -397,15 +405,25 @@ internal sealed class FieldEvaluator : Evaluator
         }
 
         var holds = _assertion.AnyValue ? holding > 0 : holding == values.Count;
-        _tally.Add(holds, id, RecordValues.Describe(values), values.Count > 1 && !_assertion.AnyValue
+        Judge(holds, id, RecordValues.Describe(values), values.Count > 1 && !_assertion.AnyValue
             ? string.Create(CultureInfo.InvariantCulture, $"{values.Count - holding} of its {values.Count} values do not meet it; one {reason}")
             : reason);
+    }
+
+    /// <summary>
+    /// Counts a record by whether what it holds meets the condition, and keeps what it holds as a value read: one that
+    /// holds when it meets the condition, or, for <c>none</c>, when it does not.
+    /// </summary>
+    private void Judge(bool meets, string id, string value, string reason)
+    {
+        _tally.Add(meets, id, value, reason);
+        _read.Add(_assertion.Target.Path, _assertion.For.Mode == QuantifierMode.None ? !meets : meets, value, id);
     }
 
     public override Task<AssertionOutcome> CompleteAsync(TestScope scope, TestSubject subject, CancellationToken ct)
         => Task.FromResult(subject.NotRead is not null
             ? NotRead(subject)
-            : Result(_tally.Passed, _tally.Actual("record"), _tally.Message("record"), _tally.Considered, _tally.Failing, _tally.Share, _tally.Examples));
+            : Result(_tally.Passed, _tally.Actual("record"), _tally.Message("record"), _tally.Considered, _tally.Failing, _tally.Share, _tally.Examples, _read));
 }
 
 /// <summary>
@@ -533,7 +551,21 @@ internal sealed class ResolvesEvaluator : Evaluator
         var message = _values == 0
             ? "No record held a reference here to look up."
             : string.Create(CultureInfo.InvariantCulture, $"{failing} value(s) do not resolve to a record{(_assertion.Condition.EntityType is { } type ? " of type " + type : string.Empty)}.");
-        return Result(passed, actual, message, _references.Count + _malformedCount + _wrongTypeCount, failing, _values == 0 ? null : 100.0 * (_values - failing) / _values, examples);
+
+        // The references read: the ones no record answers to first, then the ones most values carry.
+        var read = new ReadingLog();
+        var unresolved = dangling.ToHashSet(StringComparer.Ordinal);
+        foreach (var reference in dangling.Take(TestResults.MaxReadings))
+        {
+            read.Add(_assertion.Target.Path, false, reference, _references[reference].FirstRecord, count: _references[reference].Carried);
+        }
+
+        foreach (var (reference, (first, carried)) in _references.Where(r => !unresolved.Contains(r.Key)).OrderByDescending(r => r.Value.Carried).ThenBy(r => r.Key, StringComparer.Ordinal).Take(TestResults.MaxReadings + 1))
+        {
+            read.Add(_assertion.Target.Path, true, reference, first, count: carried);
+        }
+
+        return Result(passed, actual, message, _references.Count + _malformedCount + _wrongTypeCount, failing, _values == 0 ? null : 100.0 * (_values - failing) / _values, examples, read);
     }
 }
 
@@ -608,7 +640,9 @@ internal sealed class AggregateEvaluator : Evaluator
 
         var passed = ValueComparer.Evaluate(_assertion.Comparison, value, _assertion.Tolerance);
         var actual = $"{AssertionText.Of(_assertion.Function)}({_assertion.Target}) is {value}" + _aggregator.Note(_assertion.Function) + LeftOutNote(_assertion, _leftOut);
-        var outcome = Result(passed, actual, $"{actual}; expected {_assertion.Expected}.", _aggregator.Count, passed ? 0 : 1, value.Number);
+        var read = new ReadingLog();
+        read.Add($"{AssertionText.Of(_assertion.Function)}({_assertion.Target})", passed, value.ToString());
+        var outcome = Result(passed, actual, $"{actual}; expected {_assertion.Expected}.", _aggregator.Count, passed ? 0 : 1, value.Number, readings: read);
         return Task.FromResult(!passed && _assertion.WarnWithin is { } band && ValueComparer.Within(_assertion.Comparison, value, _assertion.Tolerance, band)
             ? Warned(outcome, WithinBand(band, ValueComparer.Miss(_assertion.Comparison, value, _assertion.Tolerance)))
             : outcome);
@@ -795,6 +829,15 @@ internal sealed class UniqueEvaluator : Evaluator
             .ToList();
         var actual = string.Create(CultureInfo.InvariantCulture, $"{_records} record(s), {_keys.Count} distinct; {shared.Count} value(s) shared by more than one record")
             + (_empty > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {_empty} with none of the fields passed over") : string.Empty);
+
+        // The values read: the ones more than one record shares first, then the first of the ones a single record holds.
+        var read = new ReadingLog();
+        var what = string.Join(" + ", _assertion.Fields);
+        foreach (var key in shared.Take(TestResults.MaxReadings).Concat(_keys.Values.Where(k => k.Count == 1).Take(TestResults.MaxReadings + 1)))
+        {
+            read.Add(what, key.Count == 1, key.Shown, key.Ids[0], count: key.Count);
+        }
+
         return Task.FromResult(Result(
             shared.Count == 0 && _records > 0,
             actual,
@@ -802,7 +845,8 @@ internal sealed class UniqueEvaluator : Evaluator
             _records,
             failing,
             shared.Count,
-            examples));
+            examples,
+            read));
     }
 }
 
@@ -856,7 +900,16 @@ internal sealed class GroupEvaluator(int index, GroupAssertion assertion, int ex
             failures.Count > 0 ? string.Create(CultureInfo.InvariantCulture, $"{failures.Count} group(s) differ from what is expected.") : null,
             countFails ? $"There are {found.Count} group(s); expected {assertion.GroupCount}." : null,
         }.Where(m => m is not null));
-        return Result(failures.Count == 0 && !countFails, actual, message, found.Count, failures.Count + (countFails ? 1 : 0), found.Count, failures.Take(Examples).ToList());
+
+        // The groups read, each with how many records are in it; one the assertion faults does not hold.
+        var read = new ReadingLog();
+        var faulted = failures.Select(f => f.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var (key, count) in found.OrderBy(f => !faulted.Contains(f.Key)).ThenByDescending(f => f.Value).ThenBy(f => f.Key, StringComparer.Ordinal).Take(TestResults.MaxReadings + 1))
+        {
+            read.Add(assertion.Field, !faulted.Contains(key), key, count: count);
+        }
+
+        return Result(failures.Count == 0 && !countFails, actual, message, found.Count, failures.Count + (countFails ? 1 : 0), found.Count, failures.Take(Examples).ToList(), read);
     }
 
     /// <summary>
@@ -1159,7 +1212,20 @@ internal sealed class IndexedEvaluator(int index, IndexedAssertion assertion, in
             .ToList();
         var actual = string.Create(CultureInfo.InvariantCulture, $"{total} record(s) indexed with a status above 200")
             + (subject.Matched is { } matched ? string.Create(CultureInfo.InvariantCulture, $", of {matched} matched") : string.Empty);
-        return Result(total == 0, actual, string.Create(CultureInfo.InvariantCulture, $"{total} record(s) are in the index with a status above 200: the indexer could not map them whole."), subject.Matched, total, total, examples);
+
+        // The statuses read: the ones above 200 the search listed, and 200 for the rest of the records the test matches.
+        var read = new ReadingLog();
+        foreach (var example in examples)
+        {
+            read.Add("index.statusCode", false, example.Value ?? "above 200", example.Id);
+        }
+
+        if (subject.Matched is { } all && all > total)
+        {
+            read.Add("index.statusCode", true, "200", count: all - total);
+        }
+
+        return Result(total == 0, actual, string.Create(CultureInfo.InvariantCulture, $"{total} record(s) are in the index with a status above 200: the indexer could not map them whole."), subject.Matched, total, total, examples, read);
     }
 }
 
@@ -1234,9 +1300,17 @@ internal sealed class LegalEvaluator(int index, LegalAssertion assertion, int ex
         var failing = invalid.Keys.Sum(t => _tags[t].Carried) + _untaggedCount;
         var actual = string.Create(CultureInfo.InvariantCulture, $"{_tags.Count} legal tag(s) on {_records} record(s); {invalid.Count} invalid")
             + (_untaggedCount > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {_untaggedCount} record(s) carry none") : string.Empty);
+
+        // The legal tags read: the invalid ones first, then the ones most records carry.
+        var read = new ReadingLog();
+        foreach (var (tag, (first, carried)) in _tags.OrderBy(t => !invalid.ContainsKey(t.Key)).ThenByDescending(t => t.Value.Carried).ThenBy(t => t.Key, StringComparer.Ordinal).Take(TestResults.MaxReadings + 1))
+        {
+            read.Add("legal.legaltags", !invalid.ContainsKey(tag), tag, first, count: carried);
+        }
+
         return Result(failing == 0 && _records > 0, actual,
             _records == 0 ? "No record was there to check." : string.Create(CultureInfo.InvariantCulture, $"{failing} record(s) carry an invalid legal tag, or none."),
-            _tags.Count, invalid.Count + _untaggedCount, invalid.Count, examples);
+            _tags.Count, invalid.Count + _untaggedCount, invalid.Count, examples, read);
     }
 }
 

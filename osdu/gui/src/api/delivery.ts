@@ -3266,6 +3266,26 @@ export interface DeliveryAssertionDefinition {
   validUntil?: string | null;
   /** True when that day is past: a run flags the check as needing new proof values instead of judging it. */
   needsNewProofValues?: boolean;
+  /** What it tests, whole: what it reads and what that has to be (`data.WellboreID resolves to a master-data--Wellbore`). */
+  criterion?: string | null;
+  /** True when `label` is a name the document gives the check, rather than one read off what it tests. */
+  named?: boolean;
+}
+
+/** One value a check read and held to what it expects, alike values once with how many records hold them. */
+export interface DeliveryAssertionReading {
+  /** What was read: a record path, a measure (`record count`), a proof value's label. */
+  what: string;
+  holds: boolean;
+  /** What was found there; absent for a value the check judged without keeping it. */
+  found?: string | null;
+  /** What this value had to be, where each value has its own (a proof value). */
+  expected?: string | null;
+  /** The first record met that holds the value. */
+  id?: string | null;
+  /** What the value belongs to: the row of proof values that states it. */
+  of?: string | null;
+  count?: number;
 }
 
 /** One run's outcome of a test, as a history strip or a matrix cell shows it. */
@@ -3449,6 +3469,14 @@ export interface DeliveryAssertionOutcome {
   examplesTrimmed?: boolean;
   /** The staged rows it read, for a staged delivered assertion; absent for one that reads OSDU alone. */
   staged?: DeliveryStagedScope | null;
+  /** What it tests, whole; absent in a result recorded before results kept it. */
+  criterion?: string | null;
+  /** True when `label` is a name the document gives the check. */
+  named?: boolean;
+  /** The values it read and held to what it expects, whether they hold or not; empty for a check that keeps none. */
+  readings?: DeliveryAssertionReading[];
+  /** True when it read more distinct values than `readings` lists. */
+  readingsTrimmed?: boolean;
 }
 
 /** Which of the staged rows a check read a query shows: the ones it lists by their keys, or every row of its scope. */

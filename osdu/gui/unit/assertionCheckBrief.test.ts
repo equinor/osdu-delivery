@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  asksOf, briefOf, evidenceGroups, evidenceOf, figure, missOf, offLine, plain, plainProblem, shareLine, tilesOf,
+  asksOf, briefOf, criterionOf, didOf, evidenceGroups, evidenceOf, figure, missOf, offLine, plain, plainProblem, shareLine, tilesOf,
   type BriefFacts, type ShareMeasure, type TargetMeasure,
 } from "../src/features/delivery/assertions/dashboard/checkBrief.ts";
 
@@ -324,6 +324,103 @@ describe("a check that was not judged, and one the dashboard does not know", () 
     const unknown = briefOf(check({ type: "somethingNew", expected: "holds water", actual: "3 bucket(s) leak", checked: 3, failing: 3 }));
     assert.deepEqual([unknown.asks, unknown.measure, unknown.gist], ["", null, "found 3 buckets leak"]);
     assert.equal(briefOf(check({ type: "field", expected: "is not empty", description: "Every log names its wellbore." })).description, "Every log names its wellbore.");
+  });
+});
+
+describe("what a check tests, what it did and the values it read", () => {
+  const resolves = check({
+    index: 4,
+    label: "data.Curves.CurveUnit resolves to a reference-data--UnitOfMeasure",
+    type: "field",
+    outcome: "passed",
+    expected: "resolves to a reference-data--UnitOfMeasure",
+    actual: "3 distinct reference(s) in 6 value(s) of 1 record(s); 0 do not resolve",
+    checked: 3,
+    failing: 0,
+    value: 100,
+  });
+
+  it("calls a check by what it tests, whole, and by its name when its document gives it one", () => {
+    const kept = briefOf({ ...resolves, criterion: "data.Curves.CurveUnit resolves to a reference-data--UnitOfMeasure" });
+    assert.deepEqual([kept.name, kept.label, kept.criterion], [null, "data.Curves.CurveUnit resolves to a reference-data--UnitOfMeasure", "data.Curves.CurveUnit resolves to a reference-data--UnitOfMeasure"]);
+
+    const named = briefOf(check({ label: "one record holds the business key", type: "count", outcome: "passed", expected: "equals 1", actual: "1 record(s)", value: 1, criterion: "record count equals 1", named: true }));
+    assert.deepEqual([named.name, named.label, named.criterion], ["one record holds the business key", "one record holds the business key", "record count equals 1"]);
+
+    // A result recorded before results kept what a check tests is read with what its document states of it now.
+    const earlier = check({ index: 0, label: "one record holds the business key", type: "count", outcome: "passed", expected: "equals 1", actual: "1 record(s)", value: 1 });
+    const stated = briefOf(earlier, { index: 0, label: "one record holds the business key", expected: "equals 1", criterion: "record count atLeast 1", named: true });
+    assert.deepEqual([stated.name, stated.criterion, stated.keepsValues], ["one record holds the business key", "record count at least 1", false]);
+
+    // With neither, a label that says what the check expects is what it tests, and any other is its name.
+    assert.deepEqual(criterionOf({ label: "count atLeast 5", expected: "atLeast 5" }), { name: null, criterion: "count at least 5" });
+    assert.deepEqual(criterionOf({ label: "the reference curve is MD", expected: "equals \"MD\"" }), { name: "the reference curve is MD", criterion: "equals \"MD\"" });
+  });
+
+  it("says what a check found in values, never that it holds", () => {
+    const one = briefOf({ ...resolves, criterion: "x", readings: [{ what: "data.WellboreID", holds: true, found: "dev:master-data--Wellbore:3c1b", id: "dev:log:1", count: 1 }], expected: "resolves to a master-data--Wellbore" });
+    assert.equal(one.value, "3c1b");
+    const several = briefOf({
+      ...resolves,
+      criterion: "x",
+      readings: [
+        { what: "data.Curves.CurveUnit", holds: true, found: "dev:reference-data--UnitOfMeasure:m", id: "dev:log:1", count: 3 },
+        { what: "data.Curves.CurveUnit", holds: true, found: "dev:reference-data--UnitOfMeasure:g%2Fcm3", id: "dev:log:1", count: 1 },
+        { what: "data.Curves.CurveUnit", holds: true, found: "dev:reference-data--UnitOfMeasure:gAPI", id: "dev:log:1", count: 2 },
+        { what: "data.Curves.CurveUnit", holds: true, found: "dev:reference-data--UnitOfMeasure:in", id: "dev:log:1", count: 1 },
+      ],
+    });
+    // A reference is named by its own part, its escapes undone, with how many records hold it when there are several.
+    assert.equal(several.value, "m (3), g/cm3, gAPI (2), +1 more");
+    assert.deepEqual(several.values[1], { what: "data.Curves.CurveUnit", holds: true, found: "dev:reference-data--UnitOfMeasure:g%2Fcm3", expected: null, id: "dev:log:1", of: null, count: 1 });
+    assert.equal(several.keepsValues, true);
+
+    const name = briefOf(check({ label: "the log is the composite", type: "field", outcome: "passed", expected: "equals \"STAT_COMP\"", actual: "1 of 1 record(s) meet it", checked: 1, failing: 0, criterion: "data.Name equals \"STAT_COMP\"", named: true, readings: [{ what: "data.Name", holds: true, found: "STAT_COMP", id: "dev:log:1" }] }));
+    assert.equal(name.value, "STAT_COMP");
+    assert.equal(briefOf(check({ type: "count", outcome: "passed", expected: "equals 1", actual: "1 record(s)", value: 1, criterion: "record count equals 1", readings: [{ what: "record count", holds: true, found: "1250" }] })).value, "1,250");
+
+    // The rows of proof values: how many values were read, each with what it had to be and whether it holds.
+    const proofs = briefOf(check({
+      type: "knownValues",
+      outcome: "passed",
+      expected: "each of 1 row(s) finds one record and holds its 2 proof value(s)",
+      actual: "1 row(s) with 2 proof value(s): 1 hold their values, 0 differ, 0 not found, 0 found more than once",
+      checked: 1,
+      failing: 0,
+      criterion: "each of 1 row(s) finds one record and holds its 2 proof value(s)",
+      readings: [
+        { what: "data.TopMeasuredDepth", holds: true, found: "2741.5", expected: "equals 2741.5 (tolerance 0.01)", id: "dev:log:1", of: "BR 1 / STAT_COMP" },
+        { what: "GR at 2800", holds: true, expected: "equals 61.25 (tolerance 0.0001)", id: "dev:log:1", of: "BR 1 / STAT_COMP" },
+      ],
+      readingsTrimmed: true,
+    }));
+    assert.equal(proofs.value, "2 proof values");
+    assert.deepEqual(proofs.values.map((v) => [v.what, v.expected, v.found, v.of]), [
+      ["data.TopMeasuredDepth", "2,741.5 ± 0.01", "2,741.5", "BR 1 / STAT_COMP"],
+      ["GR at 2800", "61.25 ± 0.0001", null, "BR 1 / STAT_COMP"],
+    ]);
+    assert.equal(proofs.valuesTrimmed, true);
+  });
+
+  it("says how many it judged where a result keeps no values, and what its run recorded", () => {
+    const earlier = briefOf(resolves);
+    assert.deepEqual([earlier.value, earlier.values, earlier.keepsValues], ["3 references", [], false]);
+    assert.equal(earlier.recorded, "3 distinct references in 6 values of 1 record; 0 do not resolve");
+    assert.equal(briefOf(check({ type: "count", outcome: "passed", expected: "equals 1", actual: "1 record(s)", value: 1 })).value, "1");
+    assert.equal(briefOf(check({ type: "conforms", outcome: "passed", expected: "every record meets the template of its kind", actual: "1 of 1 record(s) meet it", checked: 1, failing: 0 })).value, "1 record");
+    assert.equal(briefOf(check({ type: "unique", outcome: "passed", expected: "no two records share data.Code", actual: "5 record(s), 5 distinct; 0 value(s) shared by more than one record", checked: 5, failing: 0 })).value,
+      "5 records, 5 distinct; 0 values shared by more than one record");
+    assert.deepEqual([briefOf(check({ type: "groupBy", outcome: "errored", expected: "includes A atLeast 5", actual: null })).value, briefOf(check({ type: "groupBy", outcome: "errored", expected: "includes A atLeast 5", actual: null })).recorded], ["", ""]);
+  });
+
+  it("says what a check did to find out, by its type", () => {
+    assert.equal(didOf(resolves), "Read the references the records hold at the property, and looked each one up in storage.");
+    assert.equal(didOf({ type: "field", expected: "is not empty", actual: null }), "Read the property from each record, and held what it holds to the condition.");
+    assert.equal(didOf({ type: "aggregate", expected: "between 1 and 2", actual: "0 of 3 record(s)' bulk data meet it" }), "Took the measure over the column of each record's bulk data, record by record.");
+    assert.equal(didOf({ type: "delivered", expected: "x", actual: null, staged: { flow: "f", values: {} } }),
+      "Compared the rows the delivery flow stages with the records the query matches, and asked its ledger about each row that is not one.");
+    assert.equal(didOf({ type: "somethingNew", expected: "x", actual: null }), "");
+    assert.equal(briefOf(check({ type: "count", outcome: "passed", expected: "equals 1", actual: "1 record(s)", value: 1 })).did, "Counted the records the assertion's query matches.");
   });
 });
 

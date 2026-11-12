@@ -632,6 +632,21 @@ public abstract record TestAssertion
     /// <summary>What the assertion expects, as reports quote it.</summary>
     [JsonIgnore]
     public abstract string Expected { get; }
+
+    /// <summary>
+    /// What the assertion tests, whole: what it reads and what that has to be
+    /// (<c>data.WellboreID resolves to a master-data--Wellbore</c>, <c>record count equals 1</c>), where
+    /// <see cref="Expected"/> alone is the second half. It is what a reader sees a check as, whatever the document names it.
+    /// </summary>
+    [JsonIgnore]
+    public virtual string Criterion => Expected;
+
+    /// <summary>
+    /// True when <see cref="Label"/> is the <c>name</c> the document gives the assertion, rather than a label read off what
+    /// it asserts. Not part of the definition: the label is.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsNamed { get; init; }
 }
 
 /// <summary>How many records the test matches: the index's exact count, or the records its ids name that storage holds.</summary>
@@ -643,6 +658,9 @@ public sealed record CountAssertion(Comparison Comparison) : TestAssertion
     public override string Type => "count";
 
     public override string Expected => Comparison + WarningBand.Note(WarnWithin);
+
+    [JsonIgnore]
+    public override string Criterion => $"record count {Comparison}";
 }
 
 /// <summary>
@@ -674,6 +692,10 @@ public sealed record ValueAssertion : TestAssertion
     public override string Type => Target.IsColumn ? "column" : "field";
 
     public override string Expected => Condition.ToString() + (For.Mode == QuantifierMode.All ? string.Empty : $" for {For}");
+
+    [JsonIgnore]
+    public override string Criterion => (Target.IsColumn ? "column " : string.Empty) + $"{Target} {Expected}"
+        + (Where.Count == 0 ? string.Empty : " where " + string.Join(" and ", Where));
 }
 
 /// <summary>An aggregate of the values a field yields over every record, or a column over each record's rows, compared.</summary>
@@ -711,6 +733,12 @@ public sealed record AggregateAssertion : TestAssertion
     public override string Expected => Comparison + (Tolerance is { } tolerance ? " (tolerance " + tolerance.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty)
         + WarningBand.Note(WarnWithin)
         + (Except.Count == 0 ? string.Empty : ", leaving out " + string.Join(", ", Except));
+
+    [JsonIgnore]
+    public override string Criterion => $"{AssertionText.Of(Function)}({Target}) {Comparison}"
+        + (Tolerance is { } tolerance ? " (tolerance " + tolerance.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty)
+        + (Except.Count == 0 ? string.Empty : ", leaving out " + string.Join(", ", Except))
+        + (Target.IsColumn ? ", in each record's bulk data" : string.Empty);
 }
 
 /// <summary>No two records carry the same values of the fields named, taken together.</summary>
@@ -766,6 +794,9 @@ public sealed record GroupAssertion : TestAssertion
             return string.Join("; ", parts);
         }
     }
+
+    [JsonIgnore]
+    public override string Criterion => $"groups of {Field}: {Expected}";
 }
 
 /// <summary>One group a grouping expects, with what its count has to be.</summary>
@@ -793,6 +824,9 @@ public sealed record RecordSetAssertion : TestAssertion
         RecordSetMode.Includes => $"includes {Rows.Count} row(s)",
         _ => $"excludes {Rows.Count} row(s)",
     };
+
+    [JsonIgnore]
+    public override string Criterion => $"the records as {string.Join(", ", Columns)}: {Expected}";
 }
 
 /// <summary>
@@ -1300,6 +1334,9 @@ public sealed record RowCountAssertion(Comparison Comparison) : TestAssertion
     public override string Type => "rowCount";
 
     public override string Expected => Comparison.ToString();
+
+    [JsonIgnore]
+    public override string Criterion => $"row count {Comparison}, in each record's bulk data";
 }
 
 /// <summary>The columns (curves) each record's bulk data holds.</summary>
@@ -1337,6 +1374,9 @@ public sealed record ColumnsAssertion : TestAssertion
             return string.Join("; ", parts);
         }
     }
+
+    [JsonIgnore]
+    public override string Criterion => $"columns {Expected}, in each record's bulk data";
 }
 
 /// <summary>A column's values rise (or fall) row after row in each record's bulk data, as an index curve does.</summary>
@@ -1345,6 +1385,9 @@ public sealed record MonotonicAssertion(string Column, MonotonicDirection Direct
     public override string Type => "monotonic";
 
     public override string Expected => $"{Column} {AssertionText.Of(Direction)}";
+
+    [JsonIgnore]
+    public override string Criterion => $"column {Expected}, in each record's bulk data";
 }
 
 public enum MonotonicDirection

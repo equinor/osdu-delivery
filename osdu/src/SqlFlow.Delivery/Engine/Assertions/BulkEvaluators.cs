@@ -12,6 +12,12 @@ namespace SqlFlow.Delivery.Engine.Assertions;
 /// <param name="WithinBand">For one that failed: whether it missed only within the assertion's warning band, so it warns.</param>
 public sealed record BulkVerdict(bool Passed, string? Value, string Reason, bool WithinBand = false)
 {
+    /// <summary>
+    /// What the record's bulk data came to where the assertion reads one thing of it (its row count, its columns, an
+    /// aggregate of a column), whether it holds or not; null for an assertion that judges it row by row.
+    /// </summary>
+    public string? Read { get; init; }
+
     public static BulkVerdict Pass { get; } = new(true, null, string.Empty);
 
     public static BulkVerdict Fail(string? value, string reason) => new(false, value, reason);
@@ -42,6 +48,7 @@ public abstract class BulkEvaluator : Evaluator
 {
     private readonly Lock _gate = new();
     private readonly List<AssertionExample> _examples = [];
+    private readonly ReadingLog _read = new();
     private long _records;
     private long _failing;
     private long _withinBand;
@@ -56,6 +63,9 @@ public abstract class BulkEvaluator : Evaluator
     /// <summary>The columns whose values the evaluator reads; none when the shape of the bulk data settles it.</summary>
     public virtual IReadOnlyList<string> Columns => [];
 
+    /// <summary>What the assertion reads of each record's bulk data, as a value read names it (<see cref="BulkVerdict.Read"/>).</summary>
+    protected virtual string Reads => Assertion.Type;
+
     /// <summary>A check of one record's bulk data, whose shape is <paramref name="shape"/> (null when the DDMS holds none for it).</summary>
     public abstract BulkCheck Start(string id, BulkShape? shape, long? rowsNotRead);
 
@@ -66,6 +76,11 @@ public abstract class BulkEvaluator : Evaluator
         lock (_gate)
         {
             _records++;
+            if (verdict.Read is { } read)
+            {
+                _read.Add(Reads, verdict.Passed, read, id);
+            }
+
             if (!verdict.Passed)
             {
                 _failing++;
@@ -96,7 +111,7 @@ public abstract class BulkEvaluator : Evaluator
             var message = _records == 0
                 ? "No record was there whose bulk data could be checked."
                 : string.Create(CultureInfo.InvariantCulture, $"The bulk data of {_failing} of {_records} record(s) does not meet it.");
-            var outcome = Result(passed, actual, message, _records, _failing, _records == 0 ? null : 100.0 * (_records - _failing) / _records, _examples.ToList());
+            var outcome = Result(passed, actual, message, _records, _failing, _records == 0 ? null : 100.0 * (_records - _failing) / _records, _examples.ToList(), _read);
 
             // Every record that misses, misses within the warning band: the assertion warns.
             return Task.FromResult(!passed && _records > 0 && _withinBand == _failing
@@ -175,11 +190,14 @@ public abstract class BulkEvaluator : Evaluator
 /// <summary>How many rows each record's bulk data holds.</summary>
 internal sealed class RowCountEvaluator(int index, RowCountAssertion assertion, int examples) : BulkEvaluator(index, assertion, examples)
 {
+    protected override string Reads => "row count";
+
     public override BulkCheck Start(string id, BulkShape? shape, long? rowsNotRead) => new Settled(shape is null
         ? BulkVerdict.Fail(null, "the DDMS holds no bulk data for the record")
-        : ValueComparer.Evaluate(assertion.Comparison, Measured.Of(shape.Rows), null)
+        : (ValueComparer.Evaluate(assertion.Comparison, Measured.Of(shape.Rows), null)
             ? BulkVerdict.Pass
-            : BulkVerdict.Fail(shape.Rows.ToString(CultureInfo.InvariantCulture), string.Create(CultureInfo.InvariantCulture, $"holds {shape.Rows} row(s); expected {assertion.Comparison}")));
+            : BulkVerdict.Fail(shape.Rows.ToString(CultureInfo.InvariantCulture), string.Create(CultureInfo.InvariantCulture, $"holds {shape.Rows} row(s); expected {assertion.Comparison}")))
+            with { Read = shape.Rows.ToString(CultureInfo.InvariantCulture) });
 
     /// <summary>A check the record's shape already settled.</summary>
     internal sealed class Settled(BulkVerdict verdict) : BulkCheck
@@ -191,6 +209,8 @@ internal sealed class RowCountEvaluator(int index, RowCountAssertion assertion, 
 /// <summary>The columns each record's bulk data holds.</summary>
 internal sealed class ColumnsEvaluator(int index, ColumnsAssertion assertion, int examples) : BulkEvaluator(index, assertion, examples)
 {
+    protected override string Reads => "columns";
+
     public override BulkCheck Start(string id, BulkShape? shape, long? rowsNotRead)
     {
         if (shape is null)
@@ -221,9 +241,8 @@ internal sealed class ColumnsEvaluator(int index, ColumnsAssertion assertion, in
             }
         }
 
-        return new RowCountEvaluator.Settled(problems.Count == 0
-            ? BulkVerdict.Pass
-            : BulkVerdict.Fail(string.Join(", ", shape.Columns.Take(30)) + (shape.Columns.Count > 30 ? ", ..." : string.Empty), string.Join("; ", problems)));
+        var listed = string.Join(", ", shape.Columns.Take(30)) + (shape.Columns.Count > 30 ? ", ..." : string.Empty);
+        return new RowCountEvaluator.Settled((problems.Count == 0 ? BulkVerdict.Pass : BulkVerdict.Fail(listed, string.Join("; ", problems))) with { Read = listed });
     }
 }
 
@@ -338,6 +357,8 @@ internal sealed class ColumnValueEvaluator(int index, ValueAssertion assertion, 
 /// <summary>An aggregate of a column over each record's rows, compared record by record.</summary>
 internal sealed class ColumnAggregateEvaluator(int index, AggregateAssertion assertion, int examples) : BulkEvaluator(index, assertion, examples)
 {
+    protected override string Reads => $"{AssertionText.Of(assertion.Function)}({assertion.Target})";
+
     public override IReadOnlyList<string> Columns { get; } = [assertion.Target.Path];
 
     public override BulkCheck Start(string id, BulkShape? shape, long? rowsNotRead)
@@ -399,13 +420,13 @@ internal sealed class ColumnAggregateEvaluator(int index, AggregateAssertion ass
 
             if (ValueComparer.Evaluate(assertion.Comparison, value, assertion.Tolerance))
             {
-                return BulkVerdict.Pass;
+                return BulkVerdict.Pass with { Read = value.ToString() };
             }
 
             var reason = $"{AssertionText.Of(assertion.Function)}({assertion.Target}) is {value}{_aggregator.Note(assertion.Function)}{AggregateEvaluator.LeftOutNote(assertion, _leftOut)}; expected {assertion.Expected}";
-            return assertion.WarnWithin is { } band && ValueComparer.Within(assertion.Comparison, value, assertion.Tolerance, band)
+            return (assertion.WarnWithin is { } band && ValueComparer.Within(assertion.Comparison, value, assertion.Tolerance, band)
                 ? BulkVerdict.Warn(value.ToString(), reason + "; " + Evaluator.WithinBand(band, ValueComparer.Miss(assertion.Comparison, value, assertion.Tolerance)))
-                : BulkVerdict.Fail(value.ToString(), reason);
+                : BulkVerdict.Fail(value.ToString(), reason)) with { Read = value.ToString() };
         }
     }
 }

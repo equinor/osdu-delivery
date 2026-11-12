@@ -396,6 +396,139 @@ public sealed class AssertionRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Every_check_keeps_what_it_tests_whole_and_the_values_it_read()
+    {
+        Estate();
+        var (runner, ledger, _) = await RunnerAsync();
+        await DeliveredAsync(ledger);
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
+        var results = (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        var wellbores = results["wellbores"];
+
+        // What a check tests is kept whole: what it reads and what that has to be, where Expected is the second half alone.
+        var count = Of(wellbores, "count");
+        Assert.Equal("record count equals 4", count.Criterion);
+        Assert.False(count.Named);
+        Assert.Equal(new AssertionReading("record count", true, "4"), Assert.Single(count.Readings));
+        Assert.StartsWith("data.FacilityName ", Of(wellbores, "field").Criterion, StringComparison.Ordinal);
+        Assert.Equal("max(data.SequenceNumber) atMost 4", Of(wellbores, "aggregate").Criterion);
+        Assert.StartsWith("groups of kind: exactly ", Of(wellbores, "groupBy").Criterion, StringComparison.Ordinal);
+        Assert.Equal("the records as data.FacilityName, data.SequenceNumber: includes 1 row(s)", Of(wellbores, "recordSet").Criterion);
+        Assert.Equal(Of(wellbores, "conforms").Expected, Of(wellbores, "conforms").Criterion);
+
+        // A field keeps the values the records hold there, alike values once with how many hold them, the most common first.
+        var names = Of(wellbores, "field").Readings;
+        Assert.Equal(
+            [("A/1-F-12", 2L, "dev:master-data--Wellbore:w2"), ("A/1-F-11", 1L, "dev:master-data--Wellbore:w1"), ("A/1-F-14", 1L, "dev:master-data--Wellbore:w4")],
+            names.Select(r => (r.Found!, r.Count, r.Id!)));
+        Assert.All(names, r => Assert.True(r is { What: "data.FacilityName", Holds: true }));
+
+        // A value that does not hold comes first: the name two records share, the reference no record answers to, the
+        // status the indexer gave the record it could not map, the legal tag that has expired.
+        var unique = Of(wellbores, "unique").Readings;
+        Assert.Equal(new AssertionReading("data.FacilityName", false, "A/1-F-12", null, "dev:master-data--Wellbore:w2", null, 2), unique[0]);
+        Assert.Equal(2, unique.Count(r => r.Holds));
+
+        var resolves = Of(wellbores, "field", 1);
+        Assert.Contains("data.WellID resolves", resolves.Criterion, StringComparison.Ordinal);
+        Assert.Equal(
+            [("dev:master-data--Well:MISSING", false, 1L), ("dev:master-data--Well:W1", true, 3L)],
+            resolves.Readings.Select(r => (r.Found!, r.Holds, r.Count)));
+
+        Assert.Equal(new AssertionReading("max(data.SequenceNumber)", true, "4"), Assert.Single(Of(wellbores, "aggregate").Readings));
+        Assert.Equal(new AssertionReading("kind", true, Wellbore, Count: 4), Assert.Single(Of(wellbores, "groupBy").Readings));
+        Assert.Equal(
+            [("400", false, 1L, "dev:master-data--Wellbore:w2"), ("200", true, 3L, null)],
+            Of(wellbores, "indexed").Readings.Select(r => (r.Found!, r.Holds, r.Count, r.Id)));
+        var legal = Of(wellbores, "legal").Readings;
+        Assert.Equal(("legal.legaltags", false, "dev-expired", 1L), (legal[0].What, legal[0].Holds, legal[0].Found, legal[0].Count));
+        Assert.All(legal.Skip(1), r => Assert.True(r.Holds));
+
+        // A check that judges each record whole, or compares them with a ledger, reads no one value and keeps none.
+        Assert.Empty(Of(wellbores, "conforms").Readings);
+        Assert.Empty(Of(wellbores, "delivered").Readings);
+
+        // Bulk data: what each record's bulk data came to, where the check reads one thing of it.
+        var logs = results["logs"];
+        Assert.Equal("row count atLeast 10, in each record's bulk data", Of(logs, "rowCount").Criterion);
+        Assert.Equal(new AssertionReading("row count", true, "20", Id: Of(logs, "rowCount").Readings[0].Id, Count: 2), Assert.Single(Of(logs, "rowCount").Readings));
+        Assert.Equal(["MD, GR", "MD, GR, CALI"], Of(logs, "columns").Readings.Select(r => r.Found).Order(StringComparer.Ordinal));
+        Assert.Equal("column GR between 0 and 300", Of(logs, "column").Criterion);
+        Assert.Empty(Of(logs, "column").Readings);
+        Assert.Equal("max(GR) atMost 500, in each record's bulk data", Of(logs, "aggregate").Criterion);
+        Assert.Equal(["400", "70"], Of(logs, "aggregate").Readings.Select(r => r.Found).Order(StringComparer.Ordinal));
+        Assert.All(Of(logs, "aggregate").Readings, r => Assert.True(r is { What: "max(GR)", Holds: true }));
+
+        // A check that was not evaluated still says what it tests.
+        Assert.All(results["misspelled"].Assertions, a => Assert.StartsWith("data.FacilityNam ", a.Criterion, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_check_the_document_names_is_marked_as_named_and_keeps_its_criterion()
+    {
+        var flow = new DeliveryDocumentLoader().ParseAssertion($$"""
+            flowType: assertion
+            name: named-checks
+            partitions: [dev]
+            source:
+              endpoint: http://localhost
+            tests:
+              - name: wellbores
+                kind: {{Wellbore}}
+                assert:
+                  - name: one record holds the business key
+                    count: 1
+                  - { field: data.FacilityName, startsWith: "A/", where: [{ field: data.Source, equals: WellDB }] }
+            """, "flow.yaml");
+        var checks = flow.Tests[0].Assertions;
+        Assert.Equal(("one record holds the business key", true, "record count equals 1"), (checks[0].Label, checks[0].IsNamed, checks[0].Criterion));
+        Assert.False(checks[1].IsNamed);
+        Assert.Equal(checks[1].Label, checks[1].Criterion);
+        Assert.Contains(" where data.Source ", checks[1].Criterion, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_values_a_check_reads_are_bounded_and_cut_back_with_a_result_past_its_budget()
+    {
+        var log = new ReadingLog();
+        for (var i = 0; i < TestResults.MaxReadings + 5; i++)
+        {
+            log.Add("data.Name", true, "value " + i, "id-" + i);
+        }
+
+        log.Add("data.Name", true, "value 3", "another");
+        Assert.True(log.Trimmed);
+        var kept = log.List();
+        Assert.Equal(TestResults.MaxReadings, kept.Count);
+        // A value read again is counted once more with the first record that held it.
+        Assert.Equal(new AssertionReading("data.Name", true, "value 3", null, "id-3", null, 2), kept[0]);
+
+        var large = new string('x', TestResults.MaxQuoted);
+        var result = new TestResult
+        {
+            Test = "t",
+            Kind = Wellbore,
+            Outcome = TestOutcomes.Passed,
+            DefinitionHash = "h",
+            Assertions = Enumerable.Range(0, 60).Select(i => new AssertionOutcome
+            {
+                Index = i,
+                Label = "check",
+                Type = "field",
+                Severity = "error",
+                Outcome = TestOutcomes.Passed,
+                Expected = "exists",
+                Readings = Enumerable.Range(0, TestResults.MaxReadings).Select(n => new AssertionReading("data.Name", true, large + n)).ToList(),
+            }).ToList(),
+        };
+        var json = TestResults.Serialize(result);
+        Assert.True(json.Length <= TestResults.DetailBudget);
+        var back = TestResults.Deserialize(json)!;
+        Assert.All(back.Assertions, a => Assert.True(a.ReadingsTrimmed && a.Readings.Count < TestResults.MaxReadings));
+    }
+
+    [Fact]
     public async Task The_report_renders_every_result_in_every_format()
     {
         Estate();

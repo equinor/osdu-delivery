@@ -25,11 +25,14 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 /// An assertion of a test as the document states it: <c>Disabled</c> says why it is disabled (null when it is judged),
 /// <c>AsOf</c> the day what it expects was stated (its own or its test's), <c>ValidUntil</c> the last day that holds
 /// (<c>validUntil</c>, or <c>validFor</c> after <c>asOf</c>; null for good), and <c>NeedsNewProofValues</c> is true when that
-/// day is past, so a run flags the check rather than judging it.
+/// day is past, so a run flags the check rather than judging it. <c>Criterion</c> is what it tests, whole (what it reads and
+/// what that has to be), and <c>Named</c> is true when <c>Label</c> is a name the document gives it rather than one read off
+/// what it tests.
 /// </summary>
 public sealed record DeliveryAssertionDefinitionDto(
     int Index, string Label, string Type, string Severity, string Expected, string? Description,
-    string? Disabled = null, string? AsOf = null, string? ValidUntil = null, bool NeedsNewProofValues = false);
+    string? Disabled = null, string? AsOf = null, string? ValidUntil = null, bool NeedsNewProofValues = false,
+    string? Criterion = null, bool Named = false);
 
 /// <summary>One run's outcome of a test, as a history strip shows it.</summary>
 public sealed record DeliveryAssertionPointDto(long AssertionRunId, string Outcome, int FailedAssertions, long? Matched, DateTime CompletedUtc);
@@ -608,7 +611,8 @@ public static class DeliveryAssertionEndpoints
         var (asOf, validUntil, validFor) = AssertionActivity.Validity(assertion, test);
         return new DeliveryAssertionDefinitionDto(
             index, assertion.Label, assertion.Type, AssertionText.Of(assertion.Severity), assertion.Expected, assertion.Description,
-            assertion.Disabled, asOf, LastDay(asOf, validUntil, validFor), AssertionActivity.Stale(assertion, test, now) is not null);
+            assertion.Disabled, asOf, LastDay(asOf, validUntil, validFor), AssertionActivity.Stale(assertion, test, now) is not null,
+            assertion.Criterion, assertion.IsNamed);
     }
 
     /// <summary>The last day values hold (<c>2027-01-11</c>), from <c>validUntil</c> or <c>validFor</c> after <c>asOf</c>; null when they hold for good.</summary>

@@ -241,6 +241,34 @@ describe("the list", () => {
       [["names", "passed", "-", 0], ["a warning first", "warned", "4 of 5 records meet it", 0], ["count at least 5", "failed", "3", 1]]);
   });
 
+  it("reads a result with what the board states of each check now, found by the check's position in its assertion", () => {
+    const [test] = fromBoard(boardOf({
+      set: null,
+      tests: [testOf("a", {
+        latest: latest("passed"),
+        assertions: [
+          { index: 0, label: "one record holds the key", expected: "equals 1", criterion: "record count equals 1", named: true },
+          { index: 1, label: "switched off", expected: "exists", disabled: "Not delivered yet.", criterion: "data.Other exists", named: true },
+          { index: 2, label: "data.Name exists", expected: "exists", criterion: "data.Name exists" },
+        ],
+      })],
+    }), "2026-11-04T08:00:00Z").tests;
+    assert.deepEqual(test!.definitions, [
+      { index: 0, label: "one record holds the key", expected: "equals 1", criterion: "record count equals 1", named: true },
+      { index: 2, label: "data.Name exists", expected: "exists", criterion: "data.Name exists", named: false },
+    ]);
+
+    // A result recorded before results kept what a check tests: each check is read with its document's statement of it.
+    const checks = checksOf({
+      test: "a",
+      assertions: [
+        { index: 0, label: "one record holds the key", type: "count", severity: "error", outcome: "passed", expected: "equals 1", actual: "1 record(s)", value: 1 },
+        { index: 2, label: "data.Name exists", type: "field", severity: "error", outcome: "passed", expected: "exists", actual: "1 of 1 record(s) meet it", checked: 1, failing: 0 },
+      ],
+    }, test!.definitions);
+    assert.deepEqual(checks.map((c) => [c.name, c.criterion, c.value]), [["one record holds the key", "record count equals 1", "1"], [null, "data.Name exists", "1 record"]]);
+  });
+
   it("says how many checks do not hold until the result is at hand, and why an assertion has none", () => {
     const tests = fromBoard(boardOf({
       set: null,

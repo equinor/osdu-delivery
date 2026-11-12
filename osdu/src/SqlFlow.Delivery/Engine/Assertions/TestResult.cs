@@ -25,6 +25,64 @@ public sealed record AssertionExample(string? Id, string? Value, string Reason, 
 /// <param name="Values">The flow's parameter values the rows were read under: the assertion's, then the flow's defaults.</param>
 public sealed record StagedScope(string Flow, string? Interface, IReadOnlyDictionary<string, string> Values);
 
+/// <summary>
+/// One value an assertion read and held to what it expects (osdu/docs/reference/flow/assertion-sets.md, What a check keeps): what
+/// it is, what was found there, and whether that holds. An assertion keeps the values it read whether it holds or not, so a
+/// result shows what was verified and not only that it was; values that are alike are kept once, with how many hold them.
+/// </summary>
+/// <param name="What">What was read: a record path (<c>data.WellboreID</c>), a measure (<c>record count</c>), a proof value's label.</param>
+/// <param name="Holds">Whether what was found meets what the assertion expects of it.</param>
+/// <param name="Found">What was found there, clipped to <see cref="TestResults.MaxQuoted"/> characters; null for a value the assertion judged without keeping it.</param>
+/// <param name="Expected">What this value had to be, where each value has its own (a proof value); null takes the assertion's.</param>
+/// <param name="Id">The first record met that holds the value.</param>
+/// <param name="Of">What the value belongs to, where an assertion judges several things: the row of proof values that states it.</param>
+/// <param name="Count">How many records (references, rows) hold this value.</param>
+public sealed record AssertionReading(string What, bool Holds, string? Found = null, string? Expected = null, string? Id = null, string? Of = null, long Count = 1);
+
+/// <summary>
+/// The values an assertion reads while it is evaluated, kept as its outcome lists them: alike values once with how many
+/// hold them, the ones that do not hold first, then the most common, at most <see cref="TestResults.MaxReadings"/> of them.
+/// Used by one reader at a time.
+/// </summary>
+public sealed class ReadingLog
+{
+    private readonly Dictionary<(string What, bool Holds, string? Found, string? Expected, string? Of), (long Count, string? Id, int Met)> _seen = [];
+
+    /// <summary>True when more distinct values were read than a result keeps, so the list is the first of them.</summary>
+    public bool Trimmed { get; private set; }
+
+    public void Add(string what, bool holds, string? found, string? id = null, string? expected = null, string? of = null, long count = 1)
+    {
+        ArgumentNullException.ThrowIfNull(what);
+        var key = (what, holds, found is null ? null : TestResults.Quote(found), expected, of);
+        if (_seen.TryGetValue(key, out var seen))
+        {
+            _seen[key] = seen with { Count = seen.Count + count };
+        }
+        else if (_seen.Count < TestResults.MaxReadings)
+        {
+            _seen[key] = (count, id, _seen.Count);
+        }
+        else
+        {
+            Trimmed = true;
+        }
+    }
+
+    /// <summary>
+    /// The values read, as an outcome lists them. Where an assertion judges several things (<c>Of</c>), they stay in the order
+    /// they were read, a thing's values together; else the values that do not hold come first, then the most common.
+    /// </summary>
+    public IReadOnlyList<AssertionReading> List()
+    {
+        var grouped = _seen.Keys.Any(k => k.Of is not null);
+        var ordered = grouped
+            ? _seen.OrderBy(s => s.Value.Met)
+            : _seen.OrderBy(s => s.Key.Holds).ThenByDescending(s => s.Value.Count).ThenBy(s => s.Value.Met);
+        return ordered.Select(s => new AssertionReading(s.Key.What, s.Key.Holds, s.Key.Found, s.Key.Expected, s.Value.Id, s.Key.Of, s.Value.Count)).ToList();
+    }
+}
+
 /// <summary>How one assertion of a test came out: what it expected, what it found, and the records that failed it.</summary>
 public sealed record AssertionOutcome
 {
@@ -45,6 +103,15 @@ public sealed record AssertionOutcome
     public required string Outcome { get; init; }
 
     public required string Expected { get; init; }
+
+    /// <summary>
+    /// What the assertion tests, whole, as its document states it (<see cref="Model.TestAssertion.Criterion"/>):
+    /// <c>data.WellboreID resolves to a master-data--Wellbore</c>. Null in a result recorded before results kept it.
+    /// </summary>
+    public string? Criterion { get; init; }
+
+    /// <summary>True when <see cref="Label"/> is a name the document gives the assertion, rather than one read off what it tests.</summary>
+    public bool Named { get; init; }
 
     /// <summary>What the test found, in words; null when it did not get as far.</summary>
     public string? Actual { get; init; }
@@ -67,6 +134,12 @@ public sealed record AssertionOutcome
     /// <summary>True when the examples were cut back so the result stays within what a result keeps.</summary>
     public bool ExamplesTrimmed { get; init; }
 
+    /// <summary>The values the assertion read and held to what it expects, whether they hold or not; empty for one that keeps none.</summary>
+    public IReadOnlyList<AssertionReading> Readings { get; init; } = [];
+
+    /// <summary>True when the assertion read more distinct values than <see cref="Readings"/> lists.</summary>
+    public bool ReadingsTrimmed { get; init; }
+
     /// <summary>The staged rows the assertion read, for a staged delivered assertion; null for an assertion that reads OSDU alone.</summary>
     public StagedScope? Staged { get; init; }
 
@@ -79,6 +152,8 @@ public sealed record AssertionOutcome
         Severity = Model.AssertionText.Of(assertion.Severity),
         Outcome = TestOutcomes.Skipped,
         Expected = assertion.Expected,
+        Criterion = assertion.Criterion,
+        Named = assertion.IsNamed,
         Message = why,
     };
 
@@ -95,6 +170,8 @@ public sealed record AssertionOutcome
         Severity = Model.AssertionText.Of(Model.AssertionSeverity.Warning),
         Outcome = TestOutcomes.Failed,
         Expected = assertion.Expected + Model.AssertionActivity.Stated(asOf),
+        Criterion = assertion.Criterion,
+        Named = assertion.IsNamed,
         Actual = "not judged",
         Message = why,
     };
@@ -108,6 +185,8 @@ public sealed record AssertionOutcome
         Severity = Model.AssertionText.Of(assertion.Severity),
         Outcome = TestOutcomes.Errored,
         Expected = assertion.Expected,
+        Criterion = assertion.Criterion,
+        Named = assertion.IsNamed,
         Message = why,
     };
 }
@@ -177,7 +256,10 @@ public static class TestResults
     /// <summary>The longest value an example quotes.</summary>
     public const int MaxQuoted = 300;
 
-    /// <summary>The most characters one result's detail keeps; examples are cut back until it fits.</summary>
+    /// <summary>The most values an assertion keeps of what it read (<see cref="AssertionOutcome.Readings"/>).</summary>
+    public const int MaxReadings = 100;
+
+    /// <summary>The most characters one result's detail keeps; examples and the values read are cut back until it fits.</summary>
     public const int DetailBudget = 1_000_000;
 
     public static JsonSerializerOptions Json { get; } = new(JsonSerializerDefaults.Web)
@@ -210,14 +292,14 @@ public static class TestResults
     }
 
     /// <summary>
-    /// The result as the ledger keeps it: its JSON, within <see cref="DetailBudget"/>. A result whose examples take it past
-    /// the budget keeps fewer of them, the same share of each assertion's, each marked as cut back.
+    /// The result as the ledger keeps it: its JSON, within <see cref="DetailBudget"/>. A result whose examples and values read
+    /// take it past the budget keeps fewer of them, the same share of each assertion's, each marked as cut back.
     /// </summary>
     public static string Serialize(TestResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
         var json = JsonSerializer.Serialize(result, Json);
-        var keep = result.Assertions.Count == 0 ? 0 : result.Assertions.Max(a => a.Examples.Count);
+        var keep = result.Assertions.Count == 0 ? 0 : result.Assertions.Max(a => Math.Max(a.Examples.Count, a.Readings.Count));
         while (json.Length > DetailBudget && keep > 0)
         {
             keep /= 2;
@@ -226,6 +308,7 @@ public static class TestResults
             {
                 Assertions = result.Assertions
                     .Select(a => a.Examples.Count > cut ? a with { Examples = a.Examples.Take(cut).ToList(), ExamplesTrimmed = true } : a)
+                    .Select(a => a.Readings.Count > cut ? a with { Readings = a.Readings.Take(cut).ToList(), ReadingsTrimmed = true } : a)
                     .ToList(),
             };
             json = JsonSerializer.Serialize(result, Json);

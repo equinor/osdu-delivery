@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Info } from "lucide-react";
-import { evidenceGroups, figure, plain, plainProblem, shareLine, tilesOf, type Difference, type EvidenceGroup } from "./checkBrief";
+import { criterionOf, evidenceGroups, figure, plain, plainProblem, shareLine, tilesOf, type Difference, type EvidenceGroup, type ReadValue } from "./checkBrief";
 import { Gauge, Glyph, Tiles } from "./DashboardParts";
 import { checksOf, needsLook, type CheckOutcome, type DashCheck, type DashTest, type ResultFacts, type Standing } from "./dashboardModel";
 import { RESULT_STANDING, RESULT_WORDS, plural, when } from "./dashboardText";
@@ -8,8 +8,10 @@ import { RESULT_STANDING, RESULT_WORDS, plural, when } from "./dashboardText";
 // An open assertion (osdu/docs/reference/flow/assertion-sets.md, An open assertion): what it checks in the words of its
 // document, then each check that does not hold as a card: its figures in a row (what was expected, what was found, by
 // how much it missed), one bar that draws them, and, a click away, the records that fail it, gathered by why. The
-// checks that hold follow, a line each. What it is about, and how it was checked, stand beside them, so the reading
-// column keeps a width a line can be read at.
+// checks that hold follow, a line each: what the check tests, whole, beside its mark, and the value it found. Every
+// check opens on what it did: what it tested, how it found out, what it found, and the values it read. What the
+// assertion is about, and how it was checked, stand beside them, so the reading column keeps a width a line can be
+// read at.
 
 /** The reasons a check's failing records are gathered under that show before it offers the rest. */
 const FIRST_REASONS = 3;
@@ -22,6 +24,12 @@ const FIRST_HOLDS = 12;
 
 /** The checks that hold shown under the ones that do not, before they are folded behind one line. */
 const HOLDS_BESIDE_CARDS = 3;
+
+/** The values a check read that show before it offers the rest. */
+const FIRST_VALUES = 12;
+
+/** The types of check that keep the values they read, so a result without them was recorded before results kept them. */
+const KEEPS_VALUES = new Set(["count", "field", "aggregate", "unique", "groupBy", "knownValues", "legal", "indexed", "columns", "rowCount"]);
 
 /** Where an open assertion is among the ones listed with it, and how the reader steps to the next. */
 export interface BriefStep {
@@ -182,6 +190,104 @@ function qualifierWords(qualifier: string): string {
 }
 
 /**
+ * The values a check read, a line each: whether it holds, what it is, what it had to be where each value has its own,
+ * what was found, how many records hold it, and the first record that does. The values of rows of proof values stand
+ * under the row that states them.
+ */
+function Values({ values, trimmed }: { values: ReadValue[]; trimmed: boolean }) {
+  const [every, setEvery] = useState(false);
+  const shown = every ? values : values.slice(0, FIRST_VALUES);
+  // A column is there for what tells the values apart: what was read when they are of several things, what each had to
+  // be when each has its own, how many records hold it when some hold it more than once, and the record it was read
+  // from when they are from several. What they all share is said once, under the table.
+  const named = new Set(values.map((value) => value.what)).size > 1;
+  const own = values.some((value) => value.expected !== null);
+  const counted = values.some((value) => value.count > 1);
+  const records = new Set(values.map((value) => value.id));
+  const held = records.size > 1;
+  const one = records.size === 1 ? values[0]!.id : null;
+  const columns = `22px${named ? " minmax(6rem, 1.1fr)" : ""}${own ? " minmax(5rem, 1fr)" : ""} minmax(5rem, 1.4fr)${counted ? " max-content" : ""}${held ? " minmax(0, 1.4fr)" : ""}`;
+  return (
+    <div className="adb-values-wrap">
+      <div className="adb-values" role="table" aria-label="The values it read" style={{ gridTemplateColumns: columns }} data-testid="dashboard-values">
+        <div className="adb-values-head" role="row">
+          <span role="columnheader" aria-label="Holds" />
+          {named && <span role="columnheader">Read</span>}
+          {own && <span role="columnheader">Expected</span>}
+          <span role="columnheader">Found</span>
+          {counted && <span role="columnheader">Records</span>}
+          {held && <span role="columnheader">In</span>}
+        </div>
+        {shown.map((value, at) => (
+          <div key={`${value.of ?? ""}-${value.what}-${at}`} className="adb-value" role="row">
+            {value.of !== null && (at === 0 || shown[at - 1]!.of !== value.of) && <span role="cell" className="adb-value-of">{value.of}</span>}
+            <span role="cell" className="adb-value-mark" title={value.holds ? "Holds" : "Does not hold"}><Glyph standing={value.holds ? "passed" : "failed"} size={13} /></span>
+            {named && <span role="cell" className="adb-value-what">{value.what}</span>}
+            {own && <span role="cell" className="adb-value-expected">{value.expected ?? ""}</span>}
+            {value.found !== null
+              ? <span role="cell" className="adb-value-found">{value.found}</span>
+              : <span role="cell" className="adb-muted" title="What a curve measures is kept only where it differs from what was expected.">not kept</span>}
+            {counted && <span role="cell" className="adb-value-n">{figure(value.count)}</span>}
+            {held && <span role="cell" className="adb-value-id">{value.id ?? ""}</span>}
+          </div>
+        ))}
+      </div>
+      {one !== null && <p className="adb-fine">Read from <code className="adb-mono">{one}</code></p>}
+      {values.length > FIRST_VALUES && (
+        <button type="button" className="adb-link" onClick={() => setEvery((was) => !was)} data-testid="dashboard-values-toggle">
+          {every ? `Show the first ${FIRST_VALUES} only` : `Show all ${figure(values.length)} values`}
+        </button>
+      )}
+      {trimmed && <p className="adb-fine">It read more values than a result keeps: these are the first {figure(values.length)}.</p>}
+    </div>
+  );
+}
+
+/**
+ * What a check did, a click away from its line: what it tested, whole; how it found out; what it found, as its run
+ * recorded it; and the values it read, each beside whether it holds.
+ */
+function CheckDetail({ check }: { check: DashCheck }) {
+  const qualifiers = check.qualifiers.map(qualifierWords).join(" · ");
+  // One value read from no one record (a count, a measure over all of them) is what it found, which is said already.
+  const listed = check.values.length > 1 || check.values.some((value) => value.id !== null || value.of !== null);
+  return (
+    <dl className="adb-did" data-testid="dashboard-check-detail">
+      <dt>It tested</dt>
+      <dd>
+        <span className="adb-criterion">{check.criterion}</span>
+        {qualifiers !== "" && <span className="adb-fine">{qualifiers}</span>}
+        {check.description !== null && <span className="adb-fine">{check.description}</span>}
+      </dd>
+      {check.did !== "" && (
+        <>
+          <dt>How</dt>
+          <dd>{check.did}</dd>
+        </>
+      )}
+      {check.recorded !== "" && (
+        <>
+          <dt>It found</dt>
+          <dd>{check.recorded}</dd>
+        </>
+      )}
+      {listed && (
+        <>
+          <dt>Values read</dt>
+          <dd><Values values={check.values} trimmed={check.valuesTrimmed} /></dd>
+        </>
+      )}
+      {check.values.length === 0 && !check.keepsValues && KEEPS_VALUES.has(check.type) && check.result !== "disabled" && (
+        <>
+          <dt>Values read</dt>
+          <dd className="adb-fine">This result was recorded before a check kept the values it read. Run the assertion again to see them.</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
+/**
  * A check that does not hold, as a card: what it claims and the question that is, its figures in a row with the one
  * that is the news in its tone, the bar that draws them, what is left to say in a line, and the records that fail it.
  */
@@ -189,10 +295,10 @@ function CheckCard({ check, actions, openProofs }: { check: DashCheck; actions: 
   const standing = RESULT_STANDING[check.result];
   const measure = check.measure;
   const tiles = measure === null ? [] : tilesOf(measure, check.result);
-  const about = check.description ?? check.asks;
-  // A number against its range says what it expected among its figures; any other check says it in words above them,
-  // unless its title already does (a check named by what it expects: `columns exactly MD, GR, RD`).
-  const worded = measure !== null && measure.form === "share" && !check.label.toLowerCase().includes(check.expected.toLowerCase());
+  const [did, setDid] = useState(false);
+  // Under its title: what it tests, whole, when the title is a name its document gives it; and what it is for, in its
+  // document's words or as the question its type asks.
+  const about = check.description ?? (check.name === null ? check.asks : "");
   // What was left out is said once, by the finding that counts it.
   const counted = check.foundNotes.some((note) => note.includes("left out"));
   const fine = [
@@ -206,12 +312,12 @@ function CheckCard({ check, actions, openProofs }: { check: DashCheck; actions: 
         <Glyph standing={standing} size={16} />
         <div className="adb-check-titles">
           <h4>{check.label}</h4>
+          {check.name !== null && <p className="adb-criterion">{check.criterion}</p>}
           {about !== "" && <p>{about}</p>}
         </div>
         <span className="adb-check-word">{RESULT_WORDS[check.result]}</span>
       </header>
       <div className="adb-check-body">
-        {worded && <p className="adb-expected"><span className="adb-cap">Expected</span>{check.expected}</p>}
         {measure !== null && tiles.length > 0 && (
           <div className="adb-measure" style={{ "--adb-tiles": tiles.length } as CSSProperties}>
             <Tiles tiles={tiles} />
@@ -235,20 +341,37 @@ function CheckCard({ check, actions, openProofs }: { check: DashCheck; actions: 
         {check.why !== null && <p className="adb-check-why">{check.why}</p>}
         {check.whyWritten !== null && <Written text={check.whyWritten} />}
         <Proofs check={check} initiallyOpen={openProofs} />
+        <div className="adb-proofs">
+          <button type="button" className="adb-proofs-head" aria-expanded={did} onClick={() => setDid((was) => !was)} data-testid="dashboard-check-did">
+            {did ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+            What the check did
+          </button>
+          {did && <CheckDetail check={check} />}
+        </div>
         {actions}
       </div>
     </article>
   );
 }
 
-/** A check that needs no look, in a line: that it holds, what it expected, and what it found. */
+/**
+ * A check that needs no look, in a line: its mark, what it tests, whole (under the name its document gives it, when it
+ * gives one), and the value it found. The mark says that it holds, so the line does not say it again. It opens on what
+ * the check did.
+ */
 function HoldLine({ check }: { check: DashCheck }) {
+  const [open, setOpen] = useState(false);
+  const found = check.result === "disabled" ? `Disabled${check.why === null ? "" : `: ${check.why}`}` : check.value;
   return (
-    <li className="adb-hold" data-testid="dashboard-hold">
-      <Glyph standing={RESULT_STANDING[check.result]} size={14} />
-      <span className="adb-hold-label" title={check.description ?? (check.asks === "" ? undefined : check.asks)}>{check.label}</span>
-      <span className="adb-hold-expected">{check.expected}</span>
-      <span className="adb-hold-found">{check.result === "disabled" ? `Disabled${check.why === null ? "" : `: ${check.why}`}` : check.gist}</span>
+    <li className="adb-hold-item" data-testid="dashboard-hold">
+      <button type="button" className={`adb-hold${check.name === null ? " adb-hold-plain" : ""}`} aria-expanded={open} onClick={() => setOpen((was) => !was)} title="What the check did">
+        <Glyph standing={RESULT_STANDING[check.result]} size={14} />
+        {check.name !== null && <span className="adb-hold-label">{check.name}</span>}
+        <span className="adb-hold-criterion">{check.criterion}</span>
+        <span className="adb-hold-found" title={found}>{found}</span>
+        {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+      </button>
+      {open && <CheckDetail check={check} />}
     </li>
   );
 }
@@ -356,7 +479,7 @@ export function AssertionBrief({ test, result, failure, loading, actions, checkA
   checkActions: ((test: DashTest, check: CheckOutcome) => ReactNode) | undefined;
   step?: BriefStep;
 }) {
-  const checks = result === undefined ? null : checksOf(result);
+  const checks = result === undefined ? null : checksOf(result, test.definitions);
   const waiting = checks === null && test.resultId !== null && failure === undefined && loading;
   const named = test.dimensions.filter((d) => d.name !== "Set" && d.name !== "Type" && d.name !== "Check");
   const derived = test.dimensions.filter((d) => d.name === "Set" || d.name === "Type" || d.name === "Check");
@@ -395,13 +518,18 @@ export function AssertionBrief({ test, result, failure, loading, actions, checkA
               <h3>{test.standing === "disabled" ? "What it would check" : test.standing === "notRun" ? "What it will check" : "What it checks"}</h3>
             </div>
             <ul className="adb-holds">
-              {test.definitions.map((definition, at) => (
-                <li key={`${definition.label}-${at}`} className="adb-hold adb-hold-stated">
-                  <Glyph standing="notRun" size={14} />
-                  <span className="adb-hold-label">{plain(definition.label)}</span>
-                  <span className="adb-hold-expected">{plain(definition.expected)}</span>
-                </li>
-              ))}
+              {test.definitions.map((definition, at) => {
+                const { name, criterion } = criterionOf(definition);
+                return (
+                  <li key={`${definition.label}-${at}`} className="adb-hold-item">
+                    <div className={`adb-hold adb-hold-stated${name === null ? " adb-hold-plain" : ""}`}>
+                      <Glyph standing="notRun" size={14} />
+                      {name !== null && <span className="adb-hold-label">{name}</span>}
+                      <span className="adb-hold-criterion">{criterion}</span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}

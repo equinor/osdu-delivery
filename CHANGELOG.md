@@ -630,6 +630,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checked stand beside them with a step to the next, and the downloaded dashboard reads the same
   ([the dashboard](osdu/docs/reference/flow/assertion-sets.md#the-dashboard),
   [an open assertion](osdu/docs/reference/flow/assertion-sets.md#an-open-assertion)).
+- **A check shows what it tested and the values it read, in place of saying in words that it holds.** A check's line is
+  its mark, what it tests, whole (`data.WellboreID resolves to a master-data--Wellbore`, `record count equals 1`), under
+  the name its document gives it, and the value it found (`STAT_COMP`, `m (3), gAPI (2), g/cm3, +5 more`), where it read
+  a name, a fragment of the rule and `The record passes`. Any check opens on what it did: what it tested, how it found
+  out, what it found, and the values it read, each beside whether it holds. A check's outcome keeps its `criterion` and
+  its `readings` (the values of a field, the references looked up, the legal tags, the groups, each proof value of a
+  row with what it had to be and what the record holds), in the API and in a JSON report; a result recorded before a
+  run kept them shows how many it judged until the assertion runs again
+  ([what a check keeps](osdu/docs/reference/flow/assertion-sets.md#what-a-check-keeps)).
 - **The Mappings and Templates grids fit the window and say what is wrong first.** The rows of several repositories are
   listed under a heading for each, with its count and when its sync last saw it, in place of a repository and a synced
   column on every row; a mapping that does not load, or a file that holds no template, says why in its row, and a line

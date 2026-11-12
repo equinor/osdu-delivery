@@ -31,6 +31,12 @@ keywords:
   - off by
   - failing records of a check
   - as it was written
+  - criterion
+  - what a check tested
+  - what the check did
+  - values read
+  - readings
+  - which values were verified
   - changed since its last result
   - run a set
   - assertion-results route
@@ -51,6 +57,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/AssertionDimensions.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionSetReport.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Assertions/Evaluators.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs
   - osdu/gui/src/features/delivery/assertions/dashboard/dashboardModel.ts
@@ -193,17 +201,24 @@ line reads at, with what it is about beside it:
 - **What it checks**: its `description`; why it stands where it does when no result says so (disabled, not yet checked,
   could not be checked); and what its result notes, such as that a sample of the records was evaluated.
 - **How many of its checks hold**, with one square per check in the order the document states them.
-- **A card for each check that does not hold**: its label, and under it its `description`, else the question its type
-  asks (`Does OSDU hold exactly what was delivered?`); its figures in a row, as wide as each other, the one that is the
-  news in its tone under a label that says what it is; one bar that draws them; in one line what is left to say (what
-  was measured, that a miss within a band only warns, the day the number was stated); and why, where that adds to them.
+- **A card for each check that does not hold**: what it is called (the `name` its document gives it, else what it
+  tests), and under that what it tests, whole, when the title is a name, and its `description`, else the question its
+  type asks (`Does OSDU hold exactly what was delivered?`); its figures in a row, as wide as each other, the one that is
+  the news in its tone under a label that says what it is; one bar that draws them; in one line what is left to say
+  (what was measured, that a miss within a band only warns, the day the number was stated); and why, where that adds to
+  them.
 - **Where it does not hold**, a line under the card's figures that opens the records or rows that fail it. It is open
   when the assertion has one card, and a click away when it has several. The records are gathered by why: a reason many share
   is said once, with how many records share it and the first 5 of them under it, and the first 3 reasons show. A record
   whose reason lists the proof values it differs in has a table of them, one value a line: **Expected**
   (`60 ± 0.0001`), **Found** (`53.1875`, with the row it was read from) and **Off by** (`-6.8125`).
-- **The checks that hold**, a line each: the label, what it expected and what it found. With more than 3 of them under
-  cards they are folded behind one line.
+- **The checks that hold**, a line each: the mark that says it holds, what the check tests, whole
+  (`data.WellboreID resolves to a master-data--Wellbore`, `record count equals 1`), under the `name` its document gives
+  it when it gives one, and the value it found (`STAT_COMP`, `m (3), gAPI (2), g/cm3, +5 more`, `6 proof values`). The
+  line never says in words that the check holds: its mark does. With more than 3 of them under cards they are folded
+  behind one line.
+- **What the check did**, a click on a check's line, or the line of that name on a card
+  ([what a check keeps](#what-a-check-keeps)).
 - **Beside them**: the assertion's dimensions, the records read, when it was checked, the day its values were stated
   and the day they hold until, and its flow; under **How it was checked** its name, kind, query, template and report;
   then **Run again**, its report and its flow, and a step to the assertion before and after it in its group.
@@ -227,6 +242,40 @@ service that kept a check or an assertion from being made is said by the service
 recorded it (the address and the correlation id) under **As it was written**. A check that accounts for a delivery
 flow's staged rows also offers **Show the rows in SQL** under its failing records: the T-SQL that reads them from the flow's own tables
 ([the rows in the source](staged-accounting.md#the-rows-in-the-source)).
+
+### What a check keeps
+
+A check keeps what it tested and the values it read, whether it holds or not, so an assertion shows what was verified
+and not only that it was. A check opens on four things:
+
+| Line | What it says |
+| --- | --- |
+| **It tested** | The criterion, whole: what the check reads and what that has to be, as the document states it, with what qualifies it (a warning band, the day the value was stated) and its `description`. |
+| **How** | What a check of its type does to find out: `Read the references the records hold at the property, and looked each one up in storage.` |
+| **It found** | What the run recorded, in plain words: `8 distinct references in 11 values of 1 record; 0 do not resolve`. |
+| **Values read** | The values, a line each: the mark of whether it holds, what was read where the values are of several things, what it had to be where each value has its own, what was found, how many records hold it, and the record it was read from (said once under the table when they are all from one). The first 12 show. |
+
+The criterion is `criterion` in a check's outcome and on the board (`named` says whether its label is a `name` the
+document gives it), and the values are the outcome's `readings`, each with `what`, `holds`, `found`, `expected`, `id`,
+`of` and `count`. Values that are alike are kept once, with how many records hold them and the first record that does;
+the ones that do not hold come first, then the most common. An outcome keeps at most 100, and says so (`readingsTrimmed`)
+when it read more.
+
+| Check | The values it keeps |
+| --- | --- |
+| `count`, an `aggregate` of the records | The number it came to. |
+| `field` | What each record holds at the path. |
+| `field` with `resolves` | Each distinct reference, with how many values carry it; one no record answers to does not hold. |
+| `unique` | The values of its fields: one more than one record shares does not hold. |
+| `groupBy` | Each group, with how many records are in it. |
+| `legal` | Each legal tag, with how many records carry it. |
+| `indexed` | The index status of the records: `200`, and each status above it. |
+| `knownValues` | Each proof value of a row that finds its one record, under its row: what it had to be and what the record holds there. A curve proof value is kept without what was measured, which its difference says when it does not hold. |
+| `rowCount`, `columns`, an `aggregate` of a column | What each record's bulk data came to: its row count, its columns, the aggregate. |
+| `conforms`, `mapping`, `delivered`, `recordSet`, a `column` condition, `monotonic` | None: they judge a record whole, or row by row, and their failing records say what is wrong. |
+
+A result recorded before checks kept these shows the criterion from the flow as it is now, how many it judged
+(`8 references`) in place of the values, and a line saying that a new run will show them.
 
 ### Download the dashboard
 

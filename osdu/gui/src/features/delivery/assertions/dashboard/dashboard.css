@@ -1303,21 +1303,6 @@ html.adb-standalone #root {
   color: var(--muted-foreground);
 }
 
-.adb-expected {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 10px;
-  max-width: 54rem;
-  font-size: 13px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.adb-expected .adb-cap {
-  flex-shrink: 0;
-}
-
 /* A check that makes no measure: what it expected beside what it found, in words, as wide as each other. */
 .adb-ledger {
   display: grid;
@@ -1561,38 +1546,178 @@ html.adb-standalone #root {
   border-top: 0;
 }
 
+/*
+ * A check in a line: its mark, the name its document gives it (when it gives one), what it tests, whole, and the value
+ * it found. The mark says whether it holds, so the line never says it in words. A click opens what the check did.
+ */
 .adb-hold {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) 14px;
   align-items: baseline;
   gap: 2px 10px;
+  width: 100%;
   padding: 6px 12px;
+  border: 0;
+  background: transparent;
   font-size: 12.5px;
   line-height: 1.4;
+  text-align: left;
 }
 
-.adb-hold > .adb-glyph {
+button.adb-hold {
+  cursor: pointer;
+}
+
+button.adb-hold:hover,
+button.adb-hold[aria-expanded="true"] {
+  background: color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+.adb-hold > svg {
   align-self: center;
 }
 
-.adb-hold-label {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.adb-hold-expected,
-.adb-hold-found {
+.adb-hold > svg:last-child {
   color: var(--muted-foreground);
+}
+
+.adb-hold-label {
+  font-weight: 550;
   overflow-wrap: anywhere;
 }
 
+.adb-hold-criterion {
+  overflow-wrap: anywhere;
+}
+
+/* A check its document does not name is called by what it tests, across the room a name and a criterion take. */
+.adb-hold-plain .adb-hold-criterion {
+  grid-column: 2 / span 2;
+  font-weight: 500;
+}
+
 .adb-hold-found {
+  overflow: hidden;
   text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
 
 .adb-hold-stated {
   grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.4fr);
+}
+
+/*
+ * What a check did, under its line: what it tested, how it found out, what it found, and the values it read, each
+ * beside whether it holds.
+ */
+.adb-did {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  padding: 8px 12px 12px 36px;
+  border-top: 1px dashed var(--border);
+  background: color-mix(in oklab, var(--muted) 40%, var(--card));
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.adb-did dt {
+  color: var(--muted-foreground);
+}
+
+.adb-did dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.adb-did .adb-criterion {
+  font-weight: 550;
+}
+
+.adb-check .adb-did {
+  padding: 0 0 0 20px;
+  border-top: 0;
+  background: none;
+}
+
+.adb-check-titles .adb-criterion {
+  color: var(--foreground);
+}
+
+.adb-values-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.adb-values {
+  display: grid;
+  max-width: 62rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.adb-values-head,
+.adb-value {
+  display: contents;
+}
+
+.adb-values-head > span {
+  padding: 4px 8px;
+  background: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.adb-value > span {
+  min-width: 0;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.adb-value > .adb-value-of {
+  grid-column: 1 / -1;
+  background: color-mix(in oklab, var(--muted) 50%, var(--card));
+  font-weight: 550;
+}
+
+.adb-value > .adb-value-mark {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-right: 0;
+}
+
+.adb-value-what {
+  font-weight: 500;
+}
+
+.adb-value-found,
+.adb-value-n {
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-value > .adb-value-n {
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+.adb-value > .adb-value-id {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
 }
 
 /* While an open assertion's result is read. */
@@ -1829,6 +1954,97 @@ html.adb-standalone #root {
   }
 }
 
+/* Narrower than its values fit a line each, a check's line stacks and its values wrap. */
+@media (max-width: 760px) {
+  .adb-hold {
+    grid-template-columns: 14px minmax(0, 1fr) 14px;
+  }
+
+  .adb-hold-stated {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .adb-hold > svg:first-child {
+    grid-row: 1;
+  }
+
+  .adb-hold > svg:last-child {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .adb-hold-label,
+  .adb-hold-criterion,
+  .adb-hold-plain .adb-hold-criterion,
+  .adb-hold-found {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .adb-did {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    padding-left: 12px;
+  }
+
+  .adb-did dd {
+    margin-bottom: 6px;
+  }
+
+  /* A value a line gives way to a value a block: what holds it wraps under what it is. */
+  .adb-values {
+    display: block;
+  }
+
+  .adb-values-head {
+    display: none;
+  }
+
+  .adb-value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 5px 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .adb-value:nth-child(2) {
+    border-top: 0;
+  }
+
+  .adb-value > span {
+    padding: 0;
+    border-top: 0;
+  }
+
+  .adb-value > .adb-value-of {
+    flex: 0 0 100%;
+    background: none;
+  }
+
+  /* Out of their columns, what was expected, what was found and how many records hold it each say what they are. */
+  .adb-value > .adb-value-expected:not(:empty)::before {
+    content: "expected ";
+    color: var(--muted-foreground);
+  }
+
+  .adb-value > .adb-value-expected + .adb-value-found::before,
+  .adb-value > .adb-value-expected + .adb-muted::before {
+    content: "found ";
+    color: var(--muted-foreground);
+  }
+
+  .adb-value > .adb-value-n::before {
+    content: "in ";
+  }
+
+  .adb-value > .adb-value-n::after {
+    content: " records";
+  }
+}
+
 @media (max-width: 640px) {
   .adb-summary {
     grid-template-columns: minmax(0, 1fr);
@@ -1883,17 +2099,6 @@ html.adb-standalone #root {
 
   .adb-proof-list {
     padding-left: 0;
-  }
-
-  .adb-hold,
-  .adb-hold-stated {
-    grid-template-columns: 14px minmax(0, 1fr);
-  }
-
-  .adb-hold-expected,
-  .adb-hold-found {
-    grid-column: 2;
-    text-align: left;
   }
 
   /* A value a line gives way to a value a block: its name, then what was expected and found, each said. */

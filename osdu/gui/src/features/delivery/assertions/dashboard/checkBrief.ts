@@ -17,8 +17,21 @@ export interface CheckExample {
   key?: string[] | null;
 }
 
+/** One value a check read and held to what it expects (DeliveryAssertionReading). */
+export interface ReadingFacts {
+  what: string;
+  holds: boolean;
+  found?: string | null;
+  expected?: string | null;
+  id?: string | null;
+  of?: string | null;
+  count?: number;
+}
+
 /** What a brief reads of a check's outcome (DeliveryAssertionOutcome). */
 export interface BriefFacts extends CheckFacts {
+  /** The check's position in its assertion, which its document's statement of it is found by. */
+  index?: number;
   label: string;
   description?: string | null;
   severity: string;
@@ -26,6 +39,22 @@ export interface BriefFacts extends CheckFacts {
   failing?: number | null;
   examples?: CheckExample[];
   examplesTrimmed?: boolean;
+  /** What it tests, whole; absent in a result recorded before results kept it. */
+  criterion?: string | null;
+  /** True when its label is a name its document gives it. */
+  named?: boolean;
+  readings?: ReadingFacts[];
+  readingsTrimmed?: boolean;
+  staged?: { flow: string; interface?: string | null; values: Record<string, string> } | null;
+}
+
+/** A check as its document states it now (DeliveryAssertionDefinition): what a result recorded earlier is read with. */
+export interface CheckStated {
+  index?: number;
+  label: string;
+  expected: string;
+  criterion?: string | null;
+  named?: boolean;
 }
 
 /** The words a document's keys are spelled out as, wherever a text names one outside a quoted value. */
@@ -703,9 +732,150 @@ export function plainProblem(text: string): { said: string; written: string | nu
   return { said, written: text };
 }
 
+/** One value a check read, as the brief shows it: a number as a figure, what it had to be in a reader's words. */
+export interface ReadValue {
+  what: string;
+  holds: boolean;
+  /** What was found; null for a value the check judged without keeping it. */
+  found: string | null;
+  /** What this value had to be, where each value has its own; null takes the check's criterion. */
+  expected: string | null;
+  /** The first record that holds it. */
+  id: string | null;
+  /** What it belongs to: the row of proof values that states it. */
+  of: string | null;
+  /** How many records (references, rows) hold it. */
+  count: number;
+}
+
+/** What each type of check does to find out, in a sentence. */
+const DID: Record<string, string> = {
+  count: "Counted the records the assertion's query matches.",
+  field: "Read the property from each record, and held what it holds to the condition.",
+  aggregate: "Took the measure over the values every record holds at the property.",
+  unique: "Compared the values of the properties across the records, looking for two records that share them.",
+  groupBy: "Asked the search to group the records by the property, and counted each group.",
+  recordSet: "Laid the records out as rows of the properties named, and compared them with the rows stated.",
+  knownValues: "Found the record each row names, and compared each proof value the row states with what that record holds.",
+  conforms: "Checked each record, whole, against the schema of its type.",
+  mapping: "Held each record to what its mapping asserts of the values a record carries.",
+  legal: "Gathered the legal tags the records carry, and asked the legal service whether each is valid.",
+  delivered: "Compared the records the delivery flow's ledger holds as delivered with the records the query matches.",
+  indexed: "Searched for records the indexer could not index whole: an index status above 200.",
+  columns: "Read which columns each record's bulk data holds.",
+  rowCount: "Read how many rows each record's bulk data holds.",
+  column: "Read the column from each record's bulk data, row by row, and held each value to the condition.",
+  monotonic: "Read the column from each record's bulk data, and compared each value with the one before it.",
+};
+
+/** What a check did to find out, in a sentence; empty for a type the dashboard does not know. */
+export function didOf(check: Pick<BriefFacts, "type" | "expected" | "actual" | "staged">): string {
+  if (check.type === "field" && check.expected.startsWith("resolves to ")) {
+    return "Read the references the records hold at the property, and looked each one up in storage.";
+  }
+
+  if (check.type === "aggregate" && PER_RECORD.test(check.actual ?? "")) {
+    return "Took the measure over the column of each record's bulk data, record by record.";
+  }
+
+  if (check.type === "delivered" && check.staged !== null && check.staged !== undefined) {
+    return "Compared the rows the delivery flow stages with the records the query matches, and asked its ledger about each row that is not one.";
+  }
+
+  return DID[check.type] ?? "";
+}
+
+/**
+ * What a check tests, whole, in plain words, and the name its document gives it, if it gives one: read from its
+ * statement. One stated with no criterion (a result recorded before results kept it, read without its document) is
+ * taken by its label: a label that says what the check expects is read off what it tests, so it is the criterion; any
+ * other is a name its document gave it, and what it expects is all of the criterion there is to show.
+ */
+export function criterionOf(stated: CheckStated): { name: string | null; criterion: string } {
+  const label = plain(stated.label);
+  const expected = plain(stated.expected);
+  if (stated.criterion !== null && stated.criterion !== undefined) {
+    return { name: stated.named === true ? label : null, criterion: plain(stated.criterion) };
+  }
+
+  return label.toLowerCase().includes(expected.toLowerCase()) ? { name: null, criterion: label } : { name: label, criterion: expected };
+}
+
+const WHOLE_NUMBER = new RegExp(`^${NUMBER}$`);
+
+/** A value a check read as the brief shows it. */
+function readValueOf(reading: ReadingFacts): ReadValue {
+  const found = reading.found ?? null;
+  return {
+    what: reading.what,
+    holds: reading.holds,
+    found: found !== null && WHOLE_NUMBER.test(found) ? figure(Number(found)) : found,
+    expected: reading.expected === null || reading.expected === undefined ? null : expectedWords(reading.expected).said,
+    id: reading.id ?? null,
+    of: reading.of ?? null,
+    count: reading.count ?? 1,
+  };
+}
+
+/** The values a line names before it counts the rest. */
+const VALUES_NAMED = 3;
+
+/** An id's own part as people read it: its percent escapes undone (`g%2Fcm3` is `g/cm3`), or as it is when they are not escapes. */
+function unescaped(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
+/**
+ * What a check found, in values, for its line: the values it read (`"MD"`, `m, ft, g/cm3, +5 more`, a value many records
+ * hold with how many), how many proof values it read, or, for a result that keeps no values, the number it measured or
+ * how many it judged (`8 references`). Never that it holds: the mark beside it says so.
+ */
+function valueLine(check: BriefFacts, values: readonly ReadValue[], measure: Measure | null, found: string): string {
+  if (values.some((value) => value.of !== null)) {
+    return `${figure(values.length)} proof ${values.length === 1 ? "value" : "values"}`;
+  }
+
+  const kept = values.filter((value) => value.found !== null);
+  if (kept.length > 0) {
+    // A reference is named by its own part: the criterion beside it already says which type of record it leads to.
+    const type = check.type === "field" ? /^resolves to an? (\S+)$/.exec(check.expected)?.[1] : undefined;
+    const said = (found: string) => (type !== undefined && found.includes(`:${type}:`) ? unescaped(found.slice(found.indexOf(`:${type}:`) + type.length + 2)) : found);
+    const named = kept.slice(0, VALUES_NAMED).map((value) => (value.count > 1 && kept.length > 1 ? `${said(value.found!)} (${figure(value.count)})` : said(value.found!)));
+    return `${named.join(", ")}${kept.length > VALUES_NAMED ? `, +${figure(kept.length - VALUES_NAMED)} more` : ""}`;
+  }
+
+  if (measure !== null) {
+    return measure.form === "target" ? figure(measure.found) : `${figure(measure.whole)} ${measure.unit[measure.whole === 1 ? 0 : 1]}`;
+  }
+
+  return check.actual === null || check.actual === undefined ? "" : found;
+}
+
 /** One check as the dashboard reads it. */
 export interface CheckBrief {
+  /** What the check is called: the name its document gives it, else what it tests. */
   label: string;
+  /** The name its document gives it; null when it gives none, and its criterion is what it is called. */
+  name: string | null;
+  /** What it tests, whole, in plain words: what it reads and what that has to be. */
+  criterion: string;
+  /** Its type as documents name it: count, field, aggregate, knownValues, ... */
+  type: string;
+  /** What it did to find out, in a sentence. */
+  did: string;
+  /** What it found as its run recorded it, in plain words; empty when it did not get as far. */
+  recorded: string;
+  /** The values it read and held to its criterion, whether they hold or not; empty for a check that keeps none. */
+  values: ReadValue[];
+  valuesTrimmed: boolean;
+  /** True for a result of a run that keeps the values a check reads; false for one recorded before runs did. */
+  keepsValues: boolean;
+  /** What it found, in values, for its line: never that it holds, which its mark says. */
+  value: string;
   /** What the document says the check is for, when it says. */
   description: string | null;
   result: CheckResult;
@@ -764,7 +934,7 @@ function notesOf(check: BriefFacts, measure: Measure): string[] {
 }
 
 /** A check as the dashboard reads it, from what its run recorded. */
-export function briefOf(check: BriefFacts): CheckBrief {
+export function briefOf(check: BriefFacts, stated?: CheckStated): CheckBrief {
   const reading = checkReading(check);
   const result: CheckResult = check.outcome === "failed"
     ? (check.severity === "warning" ? "warned" : check.severity === "info" ? "noted" : "failed")
@@ -784,8 +954,26 @@ export function briefOf(check: BriefFacts): CheckBrief {
     : measure.form === "share" ? offLine(measure)
       : measure.gap === null ? gist
         : measure.counts && measure.found === 0 ? `Nothing found, ${wanted}` : measure.gap;
+
+  // What it tests, whole: as its result kept it, else as its document states it now.
+  const { name, criterion } = criterionOf({
+    label: check.label,
+    expected: reading.expected,
+    criterion: check.criterion ?? stated?.criterion,
+    named: check.named ?? stated?.named,
+  });
+  const values = (check.readings ?? []).map(readValueOf);
   return {
-    label: plain(check.label),
+    label: name ?? criterion,
+    name,
+    criterion,
+    type: check.type,
+    did: didOf(check),
+    recorded: check.actual === null || check.actual === undefined ? "" : plain(check.actual),
+    values,
+    valuesTrimmed: check.readingsTrimmed === true,
+    keepsValues: check.criterion !== null && check.criterion !== undefined,
+    value: valueLine(check, values, measure, found),
     description: check.description ?? null,
     result,
     asks: asksOf(check),

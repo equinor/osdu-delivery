@@ -244,6 +244,28 @@ public sealed class KnownValuesRunTests : IDisposable
         Assert.Equal("dev:work-product-component--WellLog:comp", bs.Id);
         Assert.Contains("hold no item of data.Curves with data.Curves.CurveID \"BS\"", bs.Reason, StringComparison.Ordinal);
 
+        // Each proof value of a row that finds its record is kept as a value read, a row's values together in the order the
+        // rows are stated: what it is, what it had to be, what the record holds there, and whether that holds. A disabled
+        // proof value is not read, and a row that finds no record has none.
+        Assert.True(curves.Named);
+        Assert.Equal(curves.Expected, curves.Criterion);
+        Assert.Equal(
+            [
+                ("A/1-F-11 / NORTH / COMPOSITE / DT", "data.SamplingStart", "204.6", true),
+                ("A/1-F-11 / NORTH / COMPOSITE / DT", "data.Curves.CurveUnit", "\"dev:reference-data--UnitOfMeasure:us%2Fft:\"", true),
+                ("A/1-F-11 / NORTH / COMPOSITE / DT", "data.Curves.TopDepth", "1021.5", true),
+                ("A/1-F-11 / NORTH / COMPOSITE / GR", "data.SamplingStart", "204.6", true),
+                ("A/1-F-11 / NORTH / COMPOSITE / GR", "data.Curves.CurveUnit", "\"dev:reference-data--UnitOfMeasure:API:\"", false),
+            ],
+            curves.Readings.Select(r => (r.Of!, r.What, r.Found!, r.Holds)));
+        Assert.All(curves.Readings, r => Assert.Equal("dev:work-product-component--WellLog:comp", r.Id));
+        Assert.Equal("equals 1021.5", curves.Readings[2].Expected);
+        Assert.Equal("equals \"dev:reference-data--UnitOfMeasure:gAPI:\"", curves.Readings[4].Expected);
+
+        // An aggregate a proof value takes over a path is kept as what it came to.
+        var counted = results["logs"].Assertions[0].Readings;
+        Assert.Contains(counted, r => r is { What: "count(data.Curves.CurveID)", Found: "1", Holds: true });
+
         // The wellbore was found by its exact name among the wellbores, the logs by the reference naming it, whatever its
         // version, and narrowed by the rest of what the rows are located by.
         Assert.Contains(_platform.Calls, c => c.Body?.Contains("\"kind\":\"*:*:master-data--Wellbore:*\"", StringComparison.Ordinal) == true

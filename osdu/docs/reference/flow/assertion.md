@@ -674,7 +674,7 @@ it does not mark the test as changed.
 
 | Level | Outcomes |
 | --- | --- |
-| Assertion | `passed`, `failed`, `errored` (it could not find out: a refused query, an unreachable service, a limit passed, more records matched than the test reads) or `skipped`. A failed one keeps what it expected, what it found, how many it checked and failed, and the first failing records (`examples`), each with its id, value and reason. |
+| Assertion | `passed`, `failed`, `errored` (it could not find out: a refused query, an unreachable service, a limit passed, more records matched than the test reads) or `skipped`. Each keeps what it tests, whole (`criterion`), what it expected, what it found, how many it checked and failed, and, whether it holds or not, the values it read (`readings`, [what a check keeps](assertion-sets.md#what-a-check-keeps)). A failed one also keeps the first failing records (`examples`), each with its id, value and reason. |
 | Test | `errored` when an assertion errored or the test does not fit its template; else `failed` when an `error` assertion failed; `warned` when only `warning` ones did; `passed` otherwise (a failed `info` assertion is reported and changes nothing; an assertion past the day its values hold until is a `warning` that needs new proof values); `skipped` when it does not run in the partition, the index has not settled, or it is disabled. |
 | Run | `failed` when a test failed, else `errored` when one errored, else `passed`; `cancelled` when stopped, and `errored` when the run itself could not go on. A run whose tests failed or errored keeps, as its reason, how many did and which; a run that stopped keeps why, and records fewer results than tests. A run with no test to judge in its partition asks OSDU nothing and completes `passed`, its tests skipped. |
 
@@ -726,7 +726,8 @@ The run's `result` names the report (`assertionRunId`), `partition`, `status`, t
 
 Each run keeps one `osdu.AssertionRun` row and one `osdu.AssertionResult` row per test, written the moment the test
 finishes, so a long run shows its progress and a stopped one keeps what it found. A result keeps the whole of what each
-assertion found, up to 1,000,000 characters; past that it keeps fewer examples, marked as cut back. Each result carries
+assertion found, up to 1,000,000 characters; past that it keeps fewer examples and fewer of the values read, marked as
+cut back. Each result carries
 its test's definition hash, so a result that answers an earlier definition of the test is history: the test stands as not
 yet checked until a run judges it as it is now. A run that completes removes its flow's earlier runs its latest status no
 longer needs ([only the latest status is kept](assertion-sets.md#only-the-latest-status-is-kept)). See

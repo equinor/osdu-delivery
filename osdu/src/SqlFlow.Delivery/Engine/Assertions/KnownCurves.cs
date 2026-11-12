@@ -320,6 +320,20 @@ internal static class KnownCurves
         return differences;
     }
 
+    /// <summary>
+    /// Whether a record's bulk data holds one curve proof value: its curves were measured, the curve is among them, its
+    /// index gives the value where the measure reads it there, and what was measured meets the proof value.
+    /// </summary>
+    public static bool Holds(CurveCheck check, CurveReading reading)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        ArgumentNullException.ThrowIfNull(reading);
+        return reading.Failure is null
+            && reading.Curves.TryGetValue(check.Curve, out var tally)
+            && !(CurveProofValues.ReadsIndex(check.Measure) && reading.IndexFailure is not null)
+            && Why(check, tally, reading) is null;
+    }
+
     /// <summary>Why a curve's measure does not meet its proof value, and whether it misses only within its warning band; null when it meets it.</summary>
     internal static (string Why, bool WithinBand)? Why(CurveCheck check, CurveTally tally, CurveReading reading)
     {

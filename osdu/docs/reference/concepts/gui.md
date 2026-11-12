@@ -290,8 +290,10 @@ picked records, and the removal runs that wrote to its ledger.
   not hold first. A row says what does not hold of the assertion (`172 short of 812 (21.2%)`), the check that is of, and
   the measure, drawn. One opens at a time on [its brief](../flow/assertion-sets.md#an-open-assertion): each check that
   does not hold as a card with its figures in a row (**Expected**, **Found**, **Short by**), the bar that draws them and,
-  under **Where it does not hold**, the records that fail it gathered by why; the checks that hold a line each; and
-  beside them its dimensions, how it was checked, its report, its flow and **Run again**. Disabled assertions are left
+  under **Where it does not hold**, the records that fail it gathered by why; the checks that hold a line each, the
+  mark beside what the check tests, whole, and the value it found; a click on any check opening what it did (what it
+  tested, how, what it found and the values it read); and beside them its dimensions, how it was checked, its report,
+  its flow and **Run again**. Disabled assertions are left
   out until **Include disabled**, then listed with the reason their document gives;
   one changed since its last result is not yet checked, and one whose proof values are past their day warns. **Present**
   shows it full screen, and **Download** saves it as one HTML page that works offline, and with a set picked the set's
