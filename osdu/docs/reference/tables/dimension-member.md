@@ -26,7 +26,8 @@ sourceRefs:
 
 One member of a [dimension](dimension.md): a clean value, with how many records hold any of its originals (keys,
 [`osdu.DimensionValue`](dimension-value.md)), and the search filter that finds them. A member a build no longer finds is
-marked removed and kept, so its id stays its own if it comes back. A build writes a row only when something of it changed
+marked removed, and the next build's write deletes it once no key is under it
+([What a build keeps](../flow/dimension.md#what-a-build-keeps)). A build writes a row only when something of it changed
 ([The tables a dimension keeps](../concepts/dimension-tables.md)).
 
 ## Columns
@@ -45,7 +46,7 @@ marked removed and kept, so its id stays its own if it comes back. A build write
 | `FilterParts` | `int` | no | How many queries the filter takes: `1` when `Filter` holds it, more when its originals pass one query's clauses, `0` with none filterable. |
 | `FirstSeenRunId` | `bigint` | no | The build that first found it ([`osdu.DimensionRun`](dimension-run.md)). |
 | `FirstSeenUtc` | `datetime2` | no | When that build ran. |
-| `RemovedRunId` | `bigint` | yes | The build that no longer found it, or null while it is there. |
+| `RemovedRunId` | `bigint` | yes | The build that no longer found it, or null while it is there. The next build's write deletes a row that has one once no key is under it. |
 | `RemovedUtc` | `datetime2` | yes | When that build ran. |
 
 ## Keys and indexes
@@ -62,5 +63,6 @@ marked removed and kept, so its id stays its own if it comes back. A build write
 
 - **Written** by a build's merge, which adds, rewrites, marks removed and brings back members in one transaction under the
   dimension's lock (`SqlServerDimensionStore.cs`).
+- **Deleted** when removed and no key is under it, by the next build's write (`SqlServerDimensionStore.Purge.cs`).
 - **Read** by the dimension's values page, `sqlflow dimensions`, a composed search, a cache flow capturing the dimension,
   and the build that lays out the dimension's table.

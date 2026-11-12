@@ -40,10 +40,11 @@ public sealed partial class OsduLedger : ILedger
     private const string FailedStatus = "failed";
 
     /// <summary>
-    /// Cache sets this ledger has already resolved, by hash. A run stages hundreds of thousands of records across
-    /// a handful of distinct dependency sets, so this turns the trail into a few queries rather than one per record.
+    /// Cache sets this ledger has already resolved, by hash, each with when it was last checked against the database. Records
+    /// that read the same values share a set, so this spares a query per record of a run; an entry older than
+    /// <see cref="CacheSetKeeping.RecheckAfter"/> is checked again, so a set the sweep removed is never handed out.
     /// </summary>
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _cacheSets = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, KnownCacheSet> _cacheSets = new(StringComparer.Ordinal);
 
     private const int MaxLogLength = 200_000;
 
@@ -2921,28 +2922,45 @@ public sealed partial class OsduLedger : ILedger
         ArgumentNullException.ThrowIfNull(usages);
         var entries = Canonical(usages);
         var hash = SetHash(scope, entries);
-        if (_cacheSets.TryGetValue(hash, out var known))
+        if (_cacheSets.TryGetValue(hash, out var known) && Now - known.CheckedUtc < CacheSetKeeping.RecheckAfter)
         {
-            return known;
+            return known.SetId;
         }
 
         for (var attempt = 1; ; attempt++)
         {
             var now = Now;
             await using var db = Open();
-            var existing = await db.DeliveryCacheSets.FirstOrDefaultAsync(c => c.SetHash == hash, ct).ConfigureAwait(false);
-            if (existing is not null)
+            var existing = await db.DeliveryCacheSets.AsNoTracking()
+                .Where(c => c.SetHash == hash)
+                .Select(c => (long?)c.SetId)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (existing is { } found)
             {
-                existing.LastSeenUtc = now;
-                await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                _cacheSets[hash] = existing.SetId;
-                return existing.SetId;
+                // Marking the set used is what keeps the sweep off it until the render's record points at it. A set the sweep
+                // removed between the read and the mark is gone with its hash, and the next attempt mints it again.
+                var marked = await db.DeliveryCacheSets
+                    .Where(c => c.SetId == found)
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.LastSeenUtc, now), ct).ConfigureAwait(false);
+                if (marked == 1)
+                {
+                    _cacheSets[hash] = new KnownCacheSet(found, now);
+                    return found;
+                }
+
+                if (attempt >= 3)
+                {
+                    throw new DeliveryException(
+                        $"Cache set {found} of partition '{scope}' was removed by the render-context sweep each of {attempt} times it was about to be used; run the delivery again.");
+                }
+
+                continue;
             }
 
             try
             {
                 var setId = await MintCacheSetAsync(db, scope, hash, entries, now, ct).ConfigureAwait(false);
-                _cacheSets[hash] = setId;
+                _cacheSets[hash] = new KnownCacheSet(setId, now);
                 return setId;
             }
             catch (DbUpdateException ex) when (attempt < 3 && IsDuplicate(ex))
@@ -2997,6 +3015,41 @@ public sealed partial class OsduLedger : ILedger
             return set.SetId;
         }).ConfigureAwait(false);
     }
+
+    public Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, CancellationToken ct = default)
+        => SweepCacheSetsAsync(unusedSinceUtc, CacheSetKeeping.SetsPerRound, CacheSetKeeping.EntriesPerRound, ct);
+
+    /// <summary>
+    /// <see cref="SweepCacheSetsAsync(DateTime, CancellationToken)"/> in rounds of at most <paramref name="setsPerRound"/>
+    /// sets and <paramref name="entriesPerRound"/> values, each its own short transaction, walking the sets in key order
+    /// until none is left past the last one looked at.
+    /// </summary>
+    internal async Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, int setsPerRound, int entriesPerRound, CancellationToken ct)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(setsPerRound, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(entriesPerRound, 1);
+        long sets = 0;
+        long values = 0;
+        var after = long.MinValue;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            await using var db = Open();
+            var round = await SqlServerLedgerBulk.SweepCacheSetsAsync(db, unusedSinceUtc, after, setsPerRound, entriesPerRound, ct)
+                .ConfigureAwait(false);
+            sets += round.Sets;
+            values += round.Entries;
+            if (round.Last is not { } last)
+            {
+                return new CacheSetSweep(sets, values);
+            }
+
+            after = last;
+        }
+    }
+
+    /// <summary>A cache set this ledger resolved, and when it last checked the set against the database.</summary>
+    private readonly record struct KnownCacheSet(long SetId, DateTime CheckedUtc);
 
     public async Task<IReadOnlyList<CacheUse>> ListCacheSetAsync(long setId, CancellationToken ct = default)
     {

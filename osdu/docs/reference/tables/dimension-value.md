@@ -29,8 +29,8 @@ One original of a [dimension](dimension.md): a key exactly as the index holds it
 [`osdu.DimensionMember`](dimension-member.md)) it belongs to or why it belongs to none, and how many records (or objects
 of a nested array) hold it. The tables keep the names they were made with: an original is a key. A row of the dimension's
 table is a key the dimension holds now under its value, and its `key_id` is this row's `ValueId`
-([The tables a dimension keeps](../concepts/dimension-tables.md)). A key no build finds is marked removed and keeps its
-number should it come back.
+([The tables a dimension keeps](../concepts/dimension-tables.md)). A key a build no longer finds is marked removed, and
+the next build's write deletes it with its attributes, elements and records ([What a build keeps](../flow/dimension.md#what-a-build-keeps)).
 
 ## Columns
 
@@ -51,7 +51,7 @@ number should it come back.
 | `Filterable` | `bit` | no | Whether a query can carry it, so its member's filter finds its records. |
 | `FirstSeenRunId` | `bigint` | no | The build that first found it. |
 | `FirstSeenUtc` | `datetime2` | no | When that build ran. |
-| `RemovedRunId` | `bigint` | yes | The build that no longer found it, or null while it is there. |
+| `RemovedRunId` | `bigint` | yes | The build that no longer found it, or null while it is there. The next build's write deletes a row that has one. |
 | `RemovedUtc` | `datetime2` | yes | When that build ran. |
 | `MemberSinceRunId` | `bigint` | no | The build since which it belongs to its member, or to none. |
 
@@ -68,5 +68,7 @@ number should it come back.
 ## Written and read by
 
 - **Written** by a build's merge, in one transaction under the dimension's lock (`SqlServerDimensionStore.cs`).
+- **Deleted** when removed, by the next build's write, a few keys a round with everything naming them
+  (`SqlServerDimensionStore.Purge.cs`).
 - **Read** by the dimension's keys page, `sqlflow dimensions`, a composed search, a cache flow capturing the dimension,
   an incremental load, and the build that lays out the dimension's table.

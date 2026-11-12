@@ -39,9 +39,9 @@ RecordHash=87EDAC84EB2AA1E0BB75138D32BF0D48EE1466F641BFE7C66F507AB72BD4267D | Va
 RecordHash=B3F673BDF6B469AD36391B7ED7E4DACE0D8CBCFD94B3043707E9A0FD25B06554 | ValueId=key "dev:master-data--Wellbore:C:"
 RecordHash=F7DA68AA058CF4A3724F990866F82ECF80DA53324E0D62AFAD639396B4856618 | ValueId=key "dev:master-data--Wellbore:D:"
 ## DimensionChange (3)
-DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:B:" | Change="removed" | FromMemberId=value "B-1" | ToMemberId=null | ChangedUtc=2026-09-07T13:00:00.0000000
-DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:C:" | Change="added" | FromMemberId=null | ToMemberId=value "C-1" | ChangedUtc=2026-09-07T13:00:00.0000000
-DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:D:" | Change="moved" | FromMemberId=value "D-1" | ToMemberId=value "D-1 renamed" | ChangedUtc=2026-09-07T13:00:00.0000000
+DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:B:" | Change="removed" | FromMemberId=value "B-1" | ToMemberId=null | ChangedUtc=2026-09-07T13:00:00.0000000 | FromValue="B-1" | Original="dev:master-data--Wellbore:B:" | ToValue=null
+DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:C:" | Change="added" | FromMemberId=null | ToMemberId=value "C-1" | ChangedUtc=2026-09-07T13:00:00.0000000 | FromValue=null | Original="dev:master-data--Wellbore:C:" | ToValue="C-1"
+DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:D:" | Change="moved" | FromMemberId=value "D-1" | ToMemberId=value "D-1 renamed" | ChangedUtc=2026-09-07T13:00:00.0000000 | FromValue="D-1" | Original="dev:master-data--Wellbore:D:" | ToValue="D-1 renamed"
 ## dim table dim_Wellbore (3)
 row #1 | partition="dev" | key_id=key "dev:master-data--Wellbore:A:" | WellboreID="dev:master-data--Wellbore:A:" | FacilityName="A-1" | records=2 | filter="data.WellboreID.keyword:\"dev:master-data--Wellbore:A:\"" | key_hash=B92059B2554FACE637AA293D83114D630C1CA8E28871A80B9F38B614F969D610 | Country="Norway"
 row #2 | partition="dev" | key_id=key "dev:master-data--Wellbore:D:" | WellboreID="dev:master-data--Wellbore:D:" | FacilityName="D-1 renamed" | records=2 | filter="data.WellboreID.keyword:\"dev:master-data--Wellbore:D:\"" | key_hash=A32A3086AC4A5161E1C634BBB598AD8DA759B78512D229A99CD4D344CF550F66 | Country="United Mexican States"
@@ -86,8 +86,8 @@ RecordHash=87EDAC84EB2AA1E0BB75138D32BF0D48EE1466F641BFE7C66F507AB72BD4267D | Va
 RecordHash=B3F673BDF6B469AD36391B7ED7E4DACE0D8CBCFD94B3043707E9A0FD25B06554 | ValueId=key "dev:master-data--Wellbore:C:"
 RecordHash=F7DA68AA058CF4A3724F990866F82ECF80DA53324E0D62AFAD639396B4856618 | ValueId=key "dev:master-data--Wellbore:D:"
 ## DimensionChange (2)
-DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:B:" | Change="removed" | FromMemberId=value "B" | ToMemberId=null | ChangedUtc=2026-09-07T13:00:00.0000000
-DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:C:" | Change="added" | FromMemberId=null | ToMemberId=value "C" | ChangedUtc=2026-09-07T13:00:00.0000000
+DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:B:" | Change="removed" | FromMemberId=value "B" | ToMemberId=null | ChangedUtc=2026-09-07T13:00:00.0000000 | FromValue="B" | Original="dev:master-data--Wellbore:B:" | ToValue=null
+DimensionRunId=build 2 | ValueId=key "dev:master-data--Wellbore:C:" | Change="added" | FromMemberId=null | ToMemberId=value "C" | ChangedUtc=2026-09-07T13:00:00.0000000 | FromValue=null | Original="dev:master-data--Wellbore:C:" | ToValue="C"
 ## dim table dim_WellboreSources (5)
 row #1 | partition="dev" | key_id=key "dev:master-data--Wellbore:A:" | WellboreID="dev:master-data--Wellbore:A:" | WellboreSources="A" | records=1 | filter="data.WellboreID.keyword:\"dev:master-data--Wellbore:A:\"" | key_hash=B92059B2554FACE637AA293D83114D630C1CA8E28871A80B9F38B614F969D610 | Source="WL"
 row #2 | partition="dev" | key_id=key "dev:master-data--Wellbore:D:" | WellboreID="dev:master-data--Wellbore:D:" | WellboreSources="D" | records=1 | filter="data.WellboreID.keyword:\"dev:master-data--Wellbore:D:\"" | key_hash=A32A3086AC4A5161E1C634BBB598AD8DA759B78512D229A99CD4D344CF550F66 | Source="MWD"
@@ -139,7 +139,7 @@ RecordHash=87EDAC84EB2AA1E0BB75138D32BF0D48EE1466F641BFE7C66F507AB72BD4267D | Va
 RecordHash=B3F673BDF6B469AD36391B7ED7E4DACE0D8CBCFD94B3043707E9A0FD25B06554 | ValueId=key "dev:work-product-component--WellLog:3"
 RecordHash=F7DA68AA058CF4A3724F990866F82ECF80DA53324E0D62AFAD639396B4856618 | ValueId=key "dev:work-product-component--WellLog:5"
 ## DimensionChange (1)
-DimensionRunId=build 2 | ValueId=key "dev:work-product-component--WellLog:6" | Change="added" | FromMemberId=null | ToMemberId=value "6" | ChangedUtc=2026-09-07T13:00:00.0000000
+DimensionRunId=build 2 | ValueId=key "dev:work-product-component--WellLog:6" | Change="added" | FromMemberId=null | ToMemberId=value "6" | ChangedUtc=2026-09-07T13:00:00.0000000 | FromValue=null | Original="dev:work-product-component--WellLog:6" | ToValue="6"
 ## dim table dim_LogCurve (10)
 row #1 | partition="dev" | key_id=key "dev:work-product-component--WellLog:1" | WellLogID="dev:work-product-component--WellLog:1" | LogCurve="1" | records=1 | filter="id:\"dev:work-product-component--WellLog:1\"" | key_hash=83B757057437F85314271E7E43B018981E93096B2C0E61AFD9CB26E98E8B5CF8 | element=1 | Mnemonic="GR1-new"
 row #2 | partition="dev" | key_id=key "dev:work-product-component--WellLog:2" | WellLogID="dev:work-product-component--WellLog:2" | LogCurve="2" | records=1 | filter="id:\"dev:work-product-component--WellLog:2\"" | key_hash=8732E7F9631EB1B80189AFD25E01A81CC86562265BEF5D4F5A24072469BF7B52 | element=1 | Mnemonic="GR2"

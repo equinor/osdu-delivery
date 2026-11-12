@@ -1222,8 +1222,24 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("FromMemberId")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("FromValue")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Original")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<long?>("ToMemberId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("ToValue")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");

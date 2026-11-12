@@ -291,8 +291,10 @@ With `--json`: `dimension` and `builds`, each with `build`, `runId`, `status`, `
 
 ## changes
 
-The change log, newest first: keys that arrived (`added`), left (`removed`), came back (`restored`) or moved to another
-value (`moved`). `--build <n>` narrows it to one build, `--value <value>` to one value, `--change` to one kind.
+The change log, newest first: keys that arrived (`added`), left (`removed`), came back before the next build deleted them
+(`restored`) or moved to another value (`moved`). A change names its key and values as they read when it was made, so a
+removed key the next build deleted is still named. `--build <n>` narrows it to one build, `--value <value>` to one value,
+`--change` to one kind.
 
 ```text
 Wellbore: 1 change(s)

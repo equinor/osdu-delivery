@@ -31,7 +31,7 @@ namespace SqlFlow.Delivery.Ledger;
 /// How the tables are keyed) and every statement names its dimension, joins included, so a write reads and locks its own
 /// rows alone.
 /// </summary>
-internal static class SqlServerDimensionStore
+internal static partial class SqlServerDimensionStore
 {
     /// <summary>How long one statement reading a dimension's table, or making it ready, may run.</summary>
     private const int CommandTimeoutSeconds = 900;
@@ -556,9 +556,15 @@ internal static class SqlServerDimensionStore
         END;
 
         -- The first build's originals are its arrivals, told by the build that first found each; a later build logs its own.
-        INSERT INTO [osdu].[DimensionChange] ([PartitionId], [DimensionId], [DimensionRunId], [ValueId], [Change], [FromMemberId], [ToMemberId], [ChangedUtc])
-        SELECT @p, @d, @run, c.[ValueId], c.[Change], c.[FromMemberId], c.[ToMemberId], @now
+        -- Each change keeps the original and its values as they read now, so it still says what it was once the next build
+        -- has deleted a removed original and its value.
+        INSERT INTO [osdu].[DimensionChange] ([PartitionId], [DimensionId], [DimensionRunId], [ValueId], [Change], [FromMemberId], [ToMemberId],
+            [Original], [FromValue], [ToValue], [ChangedUtc])
+        SELECT @p, @d, @run, c.[ValueId], c.[Change], c.[FromMemberId], c.[ToMemberId], v.[Original], fm.[Value], tm.[Value], @now
         FROM #DimChange AS c
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = c.[ValueId]
+        LEFT JOIN [osdu].[DimensionMember] AS fm WITH (FORCESEEK) ON fm.[PartitionId] = @p AND fm.[DimensionId] = @d AND fm.[MemberId] = c.[FromMemberId]
+        LEFT JOIN [osdu].[DimensionMember] AS tm WITH (FORCESEEK) ON tm.[PartitionId] = @p AND tm.[DimensionId] = @d AND tm.[MemberId] = c.[ToMemberId]
         WHERE c.[Change] <> N'added' OR @firstBuild = 0;
 
         DECLARE @members bigint = (SELECT COUNT_BIG(*) FROM [osdu].[DimensionMember] WITH (FORCESEEK) WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL);

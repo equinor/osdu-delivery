@@ -260,11 +260,10 @@ public sealed class OsduStorageContributor : IStorageContributor
                 Group = Cache,
                 Title = "Render context of delivered records",
                 Verdict = StorageVerdict.Keep,
-                Holds = "The cached values each delivered record was rendered with, each distinct set stored once, and every cache change that reached delivered records with its decision and rollout.",
-                Reason = "A delivered record's render is reconstructible from them after its cache version is gone, and why records moved after a cache change is answered from them.",
-                Brief = "Never removed",
-                Lifecycle = "Never removed.",
-                Grows = true,
+                Holds = "The cached values each delivered record's current render read, each distinct set stored once, and every cache change that reached delivered records with its decision and rollout.",
+                Reason = "A delivered record's render is reconstructible from its set after its cache version is gone, and a cache change finds the records it reaches through the sets. Only a record's current set is read, so a set no record points at is removed.",
+                Brief = "Unused sets removed hourly",
+                Lifecycle = "Every hour, a set no record points at that no render has used for a day is removed with its values; every set a record points at, and the change log, stay.",
                 Tables = [T("CacheSet"), T("CacheSetEntry"), T("UpdateTag")],
             },
             new()
@@ -276,7 +275,7 @@ public sealed class OsduStorageContributor : IStorageContributor
                 Holds = "Each dimension's members and the original values behind them, their attributes and nested elements, the records each key was read from, the views declared over them, and each dimension's own table (osdu.dim_*).",
                 Reason = "This is what the dimension flows publish, as it stands now: each build rewrites it, so its size is the size of the dimensions, not of their history.",
                 Brief = "Rewritten by each build",
-                Lifecycle = "A build rewrites it. A dimension its flow no longer declares is removed, with its table, on the Dimensions page.",
+                Lifecycle = "A build rewrites it, and first deletes what the build before it removed, with its attributes and elements; the change log keeps their text. A dimension its flow no longer declares is removed, with its table, on the Dimensions page.",
                 Tables =
                 [
                     T("Dimension"), T("DimensionMember"), T("DimensionValue"), T("DimensionAttribute"), T("DimensionAttributeName"),

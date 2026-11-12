@@ -174,20 +174,54 @@ public sealed class DimensionStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_member_and_an_original_that_come_back_are_restored_under_the_ids_they_had()
+    public async Task A_member_and_an_original_that_come_back_after_their_removal_was_deleted_arrive_again_under_new_ids()
     {
+        // A dimension keeps only its latest state: the build after the one that removed them deleted them, so coming back
+        // is an arrival, and the change that removed them still names them.
         var ledger = await LedgerAsync();
         var (dimension, _) = await BuildAsync(ledger, Original("DT", "DT"), Original("GR", "GR"));
         var dt = (await MembersAsync(ledger, dimension.DimensionId)).Single(m => m.Value == "DT").MemberId;
-        await BuildAsync(ledger, Original("GR", "GR"));
+        var (_, removal) = await BuildAsync(ledger, Original("GR", "GR"));
 
         var (_, run) = await BuildAsync(ledger, Original("DT", "DT"), Original("GR", "GR"));
 
-        Assert.Equal((1L, 1L), (run.Changes.MembersRestored, run.Changes.OriginalsRestored));
-        var restored = (await MembersAsync(ledger, dimension.DimensionId)).Single(m => m.Value == "DT");
-        Assert.Equal(dt, restored.MemberId);
-        Assert.Null(restored.RemovedRunId);
-        Assert.Contains(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(run.DimensionRunId, null, null, null, null, 100)), c => c.Change == DimensionChangeKinds.Restored && c.Original == "DT");
+        Assert.Equal(new DimensionChangeCounts(MembersAdded: 1, MembersRemoved: 0, MembersRestored: 0, OriginalsAdded: 1, OriginalsRemoved: 0, OriginalsMoved: 0, OriginalsRestored: 0), run.Changes);
+        var back = (await MembersAsync(ledger, dimension.DimensionId, includeRemoved: true)).Single(m => m.Value == "DT");
+        Assert.NotEqual(dt, back.MemberId);
+        Assert.Null(back.RemovedRunId);
+        var removed = Assert.Single(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(removal.DimensionRunId, null, null, null, null, 100)));
+        Assert.Equal(("DT", DimensionChangeKinds.Removed, "DT", (string?)null), (removed.Original, removed.Change, removed.FromValue, removed.ToValue));
+        Assert.Contains("1 key(s) and 1 value(s) an earlier build removed were deleted", Assert.Single(run.Read.Notes, n => n.Contains("earlier build", StringComparison.Ordinal)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_build_after_a_removal_deletes_the_removed_key_with_its_attributes_and_keeps_its_change()
+    {
+        var ledger = await LedgerAsync();
+        var attributes = new[] { new DimensionAttributeState("Country", "Norway", "dev:master-data--GeoPoliticalEntity:NO") };
+        var (dimension, _) = await BuildAsync(ledger,
+            Original("DT", "DT") with { Attributes = attributes }, Original("GR", "GR") with { Attributes = attributes });
+        var (_, removal) = await BuildAsync(ledger, Original("GR", "GR") with { Attributes = attributes });
+
+        // Until the next build the removal stays as it was made: the key and its value marked removed, attributes and all.
+        await using (var db = _db.CreateDbContext())
+        {
+            var dt = await db.DeliveryDimensionValues.AsNoTracking().SingleAsync(v => v.DimensionId == dimension.DimensionId && v.Original == "DT");
+            Assert.Equal(removal.DimensionRunId, dt.RemovedRunId);
+            Assert.Equal(1, await db.DeliveryDimensionAttributeValues.AsNoTracking().CountAsync(a => a.DimensionId == dimension.DimensionId && a.ValueId == dt.ValueId));
+        }
+
+        await BuildAsync(ledger, Original("GR", "GR") with { Attributes = attributes });
+
+        await using (var db = _db.CreateDbContext())
+        {
+            Assert.Equal(["GR"], await db.DeliveryDimensionValues.AsNoTracking().Where(v => v.DimensionId == dimension.DimensionId).Select(v => v.Original).ToListAsync());
+            Assert.Equal(["GR"], await db.DeliveryDimensionMembers.AsNoTracking().Where(m => m.DimensionId == dimension.DimensionId).Select(m => m.Value).ToListAsync());
+            Assert.Equal(1, await db.DeliveryDimensionAttributeValues.AsNoTracking().CountAsync(a => a.DimensionId == dimension.DimensionId));
+        }
+
+        var change = Assert.Single(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, DimensionChangeKinds.Removed, null, 100)));
+        Assert.Equal(("DT", "DT", removal.DimensionRunId), (change.Original, change.FromValue, change.DimensionRunId));
     }
 
     [Fact]

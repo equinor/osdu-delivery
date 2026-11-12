@@ -35,9 +35,13 @@ referenceRefs:
   - concept-maintenance
 related:
   - delivery-wiki-0005-ledger-retention
-updated: 2026-10-25
+  - delivery-wiki-0053-render-context-keeps-what-records-point-at
+updated: 2026-11-12
 ---
 # 0029: One Maintenance page accounts for the whole database, each part kept, safe to remove or optional
+
+> **Narrowed by [0053](0053-render-context-keeps-what-records-point-at.md).** The render context keeps only the sets a
+> record points at: a set no record points at, unused for a day, is removed every hour.
 
 Status: accepted. Documented in [What the osdu schema stores](../../reference/concepts/storage-and-retention.md) and,
 for the page and its contract, in SQLFlow's [Maintenance](../../../../sqlflow/docs/reference/concepts/maintenance.md).

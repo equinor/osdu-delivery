@@ -3520,6 +3520,9 @@
         "osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/CacheSetSweepService.cs",
         "osdu/tests/SqlFlow.Delivery.ControlPlane.Tests/OsduStorageAreasTests.cs",
         "sqlflow/src/SqlFlow.ControlPlane/Maintenance/StorageArea.cs"
       ]
@@ -8495,7 +8498,9 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/CacheSetSweepService.cs"
       ]
     },
     {
@@ -8523,6 +8528,7 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs"
       ]
@@ -10467,7 +10473,8 @@
       ],
       "related": [
         "delivery-wiki-0018-template-folders",
-        "delivery-wiki-0030-dimension-rows-one-range"
+        "delivery-wiki-0030-dimension-rows-one-range",
+        "delivery-wiki-0054-dimensions-keep-only-their-latest-state"
       ],
       "sourceRefs": []
     },
@@ -11035,7 +11042,8 @@
         "statistics"
       ],
       "related": [
-        "delivery-wiki-0005-ledger-retention"
+        "delivery-wiki-0005-ledger-retention",
+        "delivery-wiki-0053-render-context-keeps-what-records-point-at"
       ],
       "sourceRefs": [
         "sqlflow/src/SqlFlow.ControlPlane/Maintenance/StorageArea.cs",
@@ -11766,6 +11774,60 @@
         "osdu/src/SqlFlow.Delivery/Engine/Search/SchemaServiceReader.cs",
         "osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs",
         "osdu/specs/core/INTEGRATION.md"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0053-render-context-keeps-what-records-point-at",
+      "corpus": "wiki",
+      "path": "decisions/0053-render-context-keeps-what-records-point-at.md",
+      "title": "Decision 0053: the render context keeps only the sets of cached values a record points at",
+      "type": "decision",
+      "summary": "Why an hourly sweep removes each cache set no record points at once unused for a day, and why a ledger checks a set it remembers every hour.",
+      "keywords": [
+        "render context",
+        "cache set",
+        "CacheSetEntry",
+        "sweep",
+        "storage",
+        "change detection"
+      ],
+      "related": [
+        "delivery-wiki-0029-storage-maintenance"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/CacheSetSweepService.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0054-dimensions-keep-only-their-latest-state",
+      "corpus": "wiki",
+      "path": "decisions/0054-dimensions-keep-only-their-latest-state.md",
+      "title": "Decision 0054: a dimension keeps only its latest state, and its change log keeps what left",
+      "type": "decision",
+      "summary": "Why the next build deletes what a build removed, a few keys at a time before it merges, and why each change keeps its key's and values' text.",
+      "keywords": [
+        "dimension",
+        "removed keys",
+        "latest state",
+        "purge",
+        "change log",
+        "storage",
+        "DimensionElement"
+      ],
+      "related": [
+        "delivery-wiki-0011-dimension-flows",
+        "delivery-wiki-0030-dimension-rows-one-range"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Purge.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs"
       ]
     },
     {

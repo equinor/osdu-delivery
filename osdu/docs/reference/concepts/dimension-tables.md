@@ -75,8 +75,11 @@ keys and values are copied into the write's own tables in the database and merge
 give each attribute its number, rewrite the attributes, elements and records read through of the keys it found, log every
 change, and bring the dimension's own table to the same rows, then close the build with its counts. The tables keep each
 dimension's rows together ([How the tables are keyed](database.md#how-the-tables-are-keyed)), so every statement of the
-write reads and locks its own dimension's rows alone, and a build of another dimension writes beside it. Nothing is deleted:
-a value or key no build finds is marked removed and keeps its number should it come back. A failed build writes nothing
+write reads and locks its own dimension's rows alone, and a build of another dimension writes beside it. A dimension keeps
+only its latest state: a value or key the build no longer finds is marked removed, which takes it out of the dimension's
+table in the same transaction, and the next build's write deletes it first, with its attributes, elements and records,
+a few keys at a time under the same lock; the change that removed it keeps its text
+([What a build keeps](../flow/dimension.md#what-a-build-keeps)). A failed build writes nothing
 but its build row, and drops its staging as every build does. The views and their checks are written after the dimensions, each view in a transaction of its own.
 [Removing a dimension](../flow/dimension.md#removing-a-dimension) deletes every row of it in its partition, in batches under the same lock,
 drops the staging tables of its builds, and drops its table with the last partition writing it; removing a view deletes its record and its checks.

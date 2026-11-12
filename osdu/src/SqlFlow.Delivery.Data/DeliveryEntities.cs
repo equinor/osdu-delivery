@@ -2457,10 +2457,10 @@ public sealed class DeliveryCacheMember
 
 /// <summary>
 /// One distinct combination of cached values that records were built from: the set of (type, cached record, path,
-/// value) a render consumed. Records share sets heavily (every log that resolved metres and the same wellbore
-/// shares one), so the estate's dependency trail is a few thousand sets rather than a row per record per value.
-/// A record points at its set; a cache change finds the sets that hold the changed value and, through them, the
-/// records to update.
+/// value) a render consumed. Records that read the same values share a set; a record whose render reads other values
+/// points at another. A record points at its set; a cache change finds the sets that hold the changed value and, through
+/// them, the records to update. A set no record points at is read by nothing, and the render-context sweep removes it
+/// once no render has used it for a day (<c>CacheSetKeeping</c>).
 /// </summary>
 public sealed class DeliveryCacheSet
 {
@@ -3425,7 +3425,9 @@ public sealed class DeliveryDimensionRecord
 
 /// <summary>
 /// A change a build made to one original: it arrived (after the dimension's first build), left, came back, or moved from one
-/// member to another. The first build's originals are its arrivals, told by their first build.
+/// member to another. The first build's originals are its arrivals, told by their first build. A dimension keeps only its
+/// latest state, so the original and the values it left and went to are kept here as they read when the change was made:
+/// the change still says what it was once the next build has deleted a removed original and its value.
 /// </summary>
 public sealed class DeliveryDimensionChange
 {
@@ -3445,6 +3447,15 @@ public sealed class DeliveryDimensionChange
     public long? FromMemberId { get; set; }
 
     public long? ToMemberId { get; set; }
+
+    /// <summary>The original, as the index held it when the change was made.</summary>
+    public string Original { get; set; } = string.Empty;
+
+    /// <summary>The value the original was under before the change, as it read then; null when it was under none.</summary>
+    public string? FromValue { get; set; }
+
+    /// <summary>The value the original is under after the change, as it read then; null when it is under none.</summary>
+    public string? ToValue { get; set; }
 
     public DateTime ChangedUtc { get; set; }
 }
@@ -5068,6 +5079,9 @@ public static class DeliveryModel
             e.HasKey(c => new { c.PartitionId, c.DimensionId, c.ChangeId });
             e.Property(c => c.ChangeId).ValueGeneratedOnAdd();
             e.Property(c => c.Change).HasMaxLength(16).IsRequired();
+            ExactText(e.Property(c => c.Original)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
+            OptionalOsduId(e.Property(c => c.FromValue)).HasMaxLength(256);
+            OptionalOsduId(e.Property(c => c.ToValue)).HasMaxLength(256);
             e.HasIndex(c => c.ChangeId).IsUnique();
             // An original's history, and a build's changes.
             e.HasIndex(c => new { c.PartitionId, c.DimensionId, c.ValueId, c.ChangeId });

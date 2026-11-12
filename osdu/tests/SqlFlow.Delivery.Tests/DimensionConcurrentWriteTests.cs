@@ -14,7 +14,7 @@ namespace SqlFlow.Delivery.Tests;
 /// A flow's dimensions building at once (osdu/docs/reference/concepts/database.md, How the tables are keyed): the dimension
 /// tables keep each dimension's rows together and every statement of a build names its dimension, so a write reads and
 /// locks its own rows alone. A dozen dimensions building at once, writing new keys, then changed, removed and new ones
-/// beside the removal of a dimension the flow no longer declares, then restored ones, all complete; and no statement any
+/// beside the removal of a dimension the flow no longer declares, then the removed ones back as new keys, all complete; and no statement any
 /// of them ran reached a dimension table's rows but through one dimension or the rows it names, which is what keeps one
 /// build from waiting on, and deadlocking with, another's rows. A dimension's own table holds every partition it is built
 /// in, and keeps each partition's rows together (osdu/docs/reference/flow/dimension-table.md): the flow built in two
@@ -140,7 +140,8 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         Assert.Equal([13, 12, 12], builds.Select(b => b.Built));
         Assert.All(builds.SelectMany(b => b.Dimensions), d => Assert.Equal(DimensionRunStatus.Completed, d.Status));
 
-        // What each build wrote is what it read: the renamed wellbores, the logs that left, the new ones and those back.
+        // What each build wrote is what it read: the renamed wellbores, the logs that left, the new ones and those back,
+        // which arrive again since the build after their removal deleted them.
         var ledger = _db.Ledger(_clock);
         var flow = Flow(retired: false);
         var names = (await ledger.FindDimensionAsync(flow.LedgerId, "WellboreName"))!;
@@ -149,7 +150,7 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         var logs = (await ledger.FindDimensionAsync(flow.LedgerId, "Log"))!;
         Assert.Equal(Logs + 6L, logs.Originals);
         Assert.Equal(
-            [((long)Logs, 0L, 0L), (6L, 6L, 0L), (0L, 0L, 6L)],
+            [((long)Logs, 0L, 0L), (6L, 6L, 0L), (6L, 0L, 0L)],
             builds.Select(b => b.Dimensions.Single(d => d.Dimension == "Log").Changes).Select(c => (c.KeysAdded, c.KeysRemoved, c.KeysRestored)));
         Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "Retired"));
     }

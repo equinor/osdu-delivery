@@ -37,6 +37,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/CacheSetSweepService.cs
   - osdu/tests/SqlFlow.Delivery.ControlPlane.Tests/OsduStorageAreasTests.cs
   - sqlflow/src/SqlFlow.ControlPlane/Maintenance/StorageArea.cs
 ---
@@ -52,8 +55,9 @@ the module's areas are and why each verdict is what it is.
 
 Every verdict follows the product's rule: **every delivered record stays reconstructible from the ledger alone**, from
 the source row it came from to the OSDU id and version it landed as, every operator action with who and when. So the
-records, their submissions, their render context and every audit row are kept; work in progress and working sets clean
-themselves; and three areas may be removed at a cost each states, never until an admin sets how long they stay.
+records, their submissions, the render context they point at and every audit row are kept; work in progress, working
+sets and render context no record points at clean themselves; and three areas may be removed at a cost each states,
+never until an admin sets how long they stay.
 
 ## What may be removed, and what it costs
 
@@ -82,8 +86,8 @@ calls for it, and choose it in years rather than months: statistics and trends r
 | Ledger directory | `Ledger`, `LedgerPartition`, `LedgerFlow`, `Interface` | Never removed; a flow that leaves its repository is marked inactive |
 | Activities and reversals | `Activity`, `ActivityRecord`, `Reversal`, `ReversalItem` | Activities never; reversals with the flow's ledger |
 | Partition cache | `CacheVersion`, `CacheItem`, `CacheMember`, `CacheDefinition` | Every refresh prunes replaced versions' records after the cache flow's `retentionDays` (7 by default), keeping the current version, the one it replaced and every pinned version ([Retention](partition-cache.md#retention)) |
-| Render context of delivered records | `CacheSet`, `CacheSetEntry`, `UpdateTag` | Never removed |
-| Dimensions | `Dimension`, `DimensionMember`, `DimensionValue`, `DimensionAttribute`, `DimensionAttributeName`, `DimensionElement`, `DimensionCollectedText`, `DimensionKeyRecord`, `DimensionRecord`, `DimensionView`, and every `dim_*` table | Rewritten by each build; a dimension its flow no longer declares is removed with its table on the Dimensions page |
+| Render context of delivered records | `CacheSet`, `CacheSetEntry`, `UpdateTag` | A set no record points at is removed once no render has used it for a day ([The render context](#the-render-context)); the change log is never removed |
+| Dimensions | `Dimension`, `DimensionMember`, `DimensionValue`, `DimensionAttribute`, `DimensionAttributeName`, `DimensionElement`, `DimensionCollectedText`, `DimensionKeyRecord`, `DimensionRecord`, `DimensionView`, and every `dim_*` table | Rewritten by each build, which first deletes what the build before removed ([What a build keeps](../flow/dimension.md#what-a-build-keeps)); a dimension its flow no longer declares is removed with its table on the Dimensions page |
 | Dimension builds and changes | `DimensionRun`, `DimensionChange` | Removed with the dimension |
 | Inventories | `Inventory`, `InventoryRecord`, `InventoryVersion` | Rewritten by each build; gone ids stay until an operator removes them from the inventory |
 | Inventory builds and removals | `InventoryRun`, `InventoryRemoval`, `InventoryRemovalItem` | Never removed |
@@ -96,7 +100,7 @@ calls for it, and choose it in years rather than months: statistics and trends r
 | Partitions and configuration | `Partition`, `AccessRestriction`, `ConfigProperty`, `SchemaVersion`, `__EFMigrationsHistory` | Managed on the Partitions and Access restrictions pages and by the configuration; an access restriction goes only once no record carries it |
 
 The page flags the kept areas that grow with use and that nothing removes (submissions, objects created in OSDU, purged
-records, activities, the render context, dimension builds, inventory builds and removals, removal runs, retrievals,
+records, activities, dimension builds, inventory builds and removals, removal runs, retrievals,
 download runs), so
 their growth is visible even though nothing should remove them.
 
@@ -116,6 +120,24 @@ own retention, and its current version is as large as the reference data the cac
 | Removal staging | `RemovalKey` | Cleared when the run closes, or by the next run of the removal |
 | Download staging | `DownloadScan` | Cleared when the run merges its listing or fails, or by the next run of the download |
 | Dimension build staging | Every `dimstage_*` table, seven a build | Dropped when the build ends, written or not; what a build whose worker stopped left, by the next build of the same dimension once the stopped build is closed or has run for 48 hours; every build's, when the dimension is removed ([A dimension build's staging](../flow/dimension-staging.md)) |
+
+## The render context
+
+A render hands the ledger the cached values it read, and the record points at the set holding exactly those values
+([`osdu.CacheSet`](../tables/cache-set.md) and its [entries](../tables/cache-set-entry.md)). Records that read the same
+values share a set, but a record whose render reads other values (a changed unit name, another curve) moves to another
+set, and the one it left is read by nothing: a record's page, a cache change's impact, and holding and releasing a
+record all start from the set a record points at now, and no attempt or other history names a set. Left alone, those
+sets come to outweigh everything else the ledger holds, since a set holds every value a render read.
+
+So every hour the control plane removes each set no record points at (as its set, or as the one it is held on) that no
+render has used for a day, with its values (`CacheSetSweepService`). A round looks at the next 200 sets in key order and
+removes at most 2,000 values, set row and values in one short transaction, judging each set again under the delete's
+own locks, so a pass of any size never holds the tables a render writes to. A ledger marks a set used whenever it hands
+it to a render and checks a set it remembers against the database at least every hour, so no set a render was given is
+removed before its record points at it, and a set removed while a ledger remembered it is minted again the next time
+a render needs it. The change log ([`osdu.UpdateTag`](../tables/update-tag.md)) stays: what changed, when, how many
+records it reached and what was decided ([decision 0053](../../wiki/decisions/0053-render-context-keeps-what-records-point-at.md)).
 
 ## Outside the database
 

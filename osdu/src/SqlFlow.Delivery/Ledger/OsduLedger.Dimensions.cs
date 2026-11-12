@@ -166,6 +166,10 @@ public sealed partial class OsduLedger
         var partitionName = await PartitionNameAsync(stage.PartitionId, ct).ConfigureAwait(false) ?? string.Empty;
 
         await using var db = Open();
+
+        // A dimension keeps only its latest state: what the build before removed goes first, with everything naming it, and
+        // the changes that removed it still say what it was.
+        var purged = await SqlServerDimensionStore.PurgeRemovedAsync(db, stage.PartitionId, stage.DimensionId, ct).ConfigureAwait(false);
         DeliveryDimensionRun? closed = null;
         await SqlServerDimensionStore.WriteAsync(db, partitionName, stage, write, (written, run) =>
         {
@@ -183,10 +187,22 @@ public sealed partial class OsduLedger
             run.OriginalsRemoved = written.Changes.OriginalsRemoved;
             run.OriginalsMoved = written.Changes.OriginalsMoved;
             run.OriginalsRestored = written.Changes.OriginalsRestored;
+            var added = new List<string>();
+            if (purged.Keys + purged.Values > 0)
+            {
+                added.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"{purged.Keys} key(s) and {purged.Values} value(s) an earlier build removed were deleted, with their attributes and elements; the changes that removed them still name them."));
+            }
+
             if (written.AttributesChanged > 0)
             {
+                added.Add(string.Create(CultureInfo.InvariantCulture, $"{written.AttributesChanged} attribute value(s) of keys were added, rewritten or dropped."));
+            }
+
+            if (added.Count > 0)
+            {
                 var notes = run.Notes is null ? [] : JsonSerializer.Deserialize<List<string>>(run.Notes) ?? [];
-                notes.Add(string.Create(CultureInfo.InvariantCulture, $"{written.AttributesChanged} attribute value(s) of keys were added, rewritten or dropped."));
+                notes.AddRange(added);
                 run.Notes = JsonSerializer.Serialize(notes.Take(MaxDimensionNotes).ToList());
             }
 
@@ -1212,25 +1228,15 @@ public sealed partial class OsduLedger
                     changes = changes.Where(c => c.ChangeId < cursor);
                 }
 
+                // A change keeps the original and its values as they read when it was made: the next build deletes what a
+                // build removed, and its change still says what it was.
                 return changes.OrderByDescending(c => c.ChangeId).Take(take)
-                    .Select(c => new
-                    {
-                        c.ChangeId,
-                        c.DimensionRunId,
-                        c.ValueId,
-                        Original = db.DeliveryDimensionValues.Where(v => v.PartitionId == c.PartitionId && v.ValueId == c.ValueId).Select(v => v.Original).FirstOrDefault(),
-                        c.Change,
-                        c.FromMemberId,
-                        FromValue = db.DeliveryDimensionMembers.Where(m => m.PartitionId == c.PartitionId && m.MemberId == c.FromMemberId).Select(m => m.Value).FirstOrDefault(),
-                        c.ToMemberId,
-                        ToValue = db.DeliveryDimensionMembers.Where(m => m.PartitionId == c.PartitionId && m.MemberId == c.ToMemberId).Select(m => m.Value).FirstOrDefault(),
-                        c.ChangedUtc,
-                    })
+                    .Select(c => new { c.ChangeId, c.DimensionRunId, c.ValueId, c.Original, c.Change, c.FromMemberId, c.FromValue, c.ToMemberId, c.ToValue, c.ChangedUtc })
                     .ToListAsync(ct);
             },
             ct).ConfigureAwait(false);
         return rows.Select(r => new DimensionChangeState(
-            r.ChangeId, r.DimensionRunId, r.ValueId, r.Original ?? string.Empty, r.Change, r.FromMemberId, r.FromValue, r.ToMemberId, r.ToValue,
+            r.ChangeId, r.DimensionRunId, r.ValueId, r.Original, r.Change, r.FromMemberId, r.FromValue, r.ToMemberId, r.ToValue,
             DateTime.SpecifyKind(r.ChangedUtc, DateTimeKind.Utc))).ToList();
     }
 

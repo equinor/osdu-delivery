@@ -15,11 +15,16 @@ referenceRefs:
 related:
   - delivery-wiki-0018-template-folders
   - delivery-wiki-0030-dimension-rows-one-range
-updated: 2026-10-25
+  - delivery-wiki-0054-dimensions-keep-only-their-latest-state
+updated: 2026-11-12
 ---
 # 0011: Dimension flows read every distinct value by ranges, and keep each key beside the value a person picks
 
 Status: proposed. Documented in [dimension flow](../../reference/flow/dimension.md).
+
+> **Amended by [0054](0054-dimensions-keep-only-their-latest-state.md).** A key no build finds is still marked removed,
+> but the next build deletes it with its attributes and elements; it is no longer kept with its id should it come back,
+> and the change log keeps its text.
 
 > **Amended by [0018](0018-template-folders.md).** How the index stores a path is read from the template of each kind
 > that the template folders on the flow's path hold, not from the saved templates.

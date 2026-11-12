@@ -3327,10 +3327,18 @@ public interface ILedger
 
     /// <summary>
     /// The id of the cache set holding exactly these values of <paramref name="scope"/>, creating it the first time it
-    /// is seen. A render hands over what it consumed and gets back one number to put on the record, so no matter how many
-    /// records a run stages, the dependency trail costs one row per distinct combination rather than one per record.
+    /// is seen. A render hands over what it consumed and gets back one number to put on the record, so records that read
+    /// the same values cost one set between them. The set is marked used, so the render-context sweep
+    /// (<see cref="SweepCacheSetsAsync"/>) leaves it until the record points at it.
     /// </summary>
     Task<long> EnsureCacheSetAsync(string scope, IReadOnlyList<Snapshots.CacheUsage> usages, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes every set no record points at (as its current set or the set it is held on) that no render has used since
+    /// <paramref name="unusedSinceUtc"/>, with the values it holds, a short transaction of a few thousand values at a time
+    /// (<see cref="CacheSetKeeping"/>). Safe to interrupt, to repeat and to run beside renders and other sweeps.
+    /// </summary>
+    Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, CancellationToken ct = default);
 
     /// <summary>The values behind one set, for a record's history page.</summary>
     Task<IReadOnlyList<CacheUse>> ListCacheSetAsync(long setId, CancellationToken ct = default);

@@ -611,6 +611,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The render context keeps only the sets of cached values a record points at.** Every hour the control plane removes
+  each set no record points at, as its set or the one it is held on, that no render has used for a day, with its values
+  (`osdu.CacheSet`, `osdu.CacheSetEntry`). A record's set is replaced whenever a render reads other values, and nothing
+  reads the sets it left, which on a working estate had come to hold half the database. The change log
+  (`osdu.UpdateTag`) stays ([The render context](osdu/docs/reference/concepts/storage-and-retention.md#the-render-context)).
+- **A dimension keeps only its latest state.** A key or value a build no longer finds is still marked removed by that
+  build, and the next build's write now deletes it before it merges, with its attributes, elements and records, 25 keys
+  a round under the dimension's lock; a key that comes back is a new arrival with a new id. Each change in the log keeps
+  its key's and values' text (`osdu.DimensionChange` `Original`, `FromValue`, `ToValue`, migration DimensionChangeTexts,
+  module version 1.69.0), so it still names what left ([What a build keeps](osdu/docs/reference/flow/dimension.md#what-a-build-keeps)).
 - **An inventory's export has a `name` column after `id`**, so a script reading its columns by position reads one column
   further along from `kind` on ([export](osdu/docs/reference/cli/inventory.md#export)).
 - **An inventory's storage read (`read: storage`) and its missing checks read records by id, 100 to a request.** They read

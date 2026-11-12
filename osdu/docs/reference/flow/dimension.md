@@ -348,6 +348,22 @@ How a dimension is built, from each line of its YAML to the columns it fills, is
 a dimension's keys, values, attributes, builds and change log, and how its `dim_` table and `v_dim_` views are laid
 out from them, are on [the tables a dimension keeps](../concepts/dimension-tables.md).
 
+## What a build keeps
+
+A dimension keeps only its latest state: what its last build found, and the change log of every build. A key or value a
+build no longer finds is marked removed, which takes it out of the dimension's table in the same transaction, and stays
+listed as removed until the next build. That build's write deletes it before it merges, with the key's attributes,
+elements and the records it was read through, a few keys at a time, each its own short transaction under the dimension's
+lock, and its notes say how many keys and values it deleted. A key that comes back after that is a new arrival, with a new
+number (`added`); `restored` is told only of one back before the delete, which two builds of a dimension writing one after
+the other can see.
+
+The change log keeps the key and the values it left and went to as they read when the change was made
+([`osdu.DimensionChange`](../tables/dimension-change.md)), so a change still says what it was once its key and values are
+gone. A dimension's history is that log and its builds' counts, not its earlier rows: keeping every key a build ever found,
+with its attributes and elements, made a dimension over well logs whose ids were replaced hold three times the rows it
+publishes ([decision 0054](../../wiki/decisions/0054-dimensions-keep-only-their-latest-state.md)).
+
 ## Removing a dimension
 
 A dimension taken out of the flow is built no more and keeps what its last build wrote; declaring it again brings its

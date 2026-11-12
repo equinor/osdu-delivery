@@ -169,6 +169,7 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         // The duplicate checks of every partition are settled and retired on a clock, so a check's table in the module's database
         // goes when its week is up even in a partition where nobody asks for another check.
         services.AddHostedService<InventoryDuplicateSweepService>();
+        services.AddHostedService<CacheSetSweepService>();
 
         // A ledger move that had to wait (for work in flight on either ledger, or for a sync or takeover stopped half way) is
         // taken up again within seconds; the sync and a takeover make theirs at once, and a run that comes first finishes it.

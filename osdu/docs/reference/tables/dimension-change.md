@@ -41,6 +41,9 @@ not by a row here ([The tables a dimension keeps](../concepts/dimension-tables.m
 | `Change` | `nvarchar(16)` | no | `added`, `removed`, `moved` or `restored`. |
 | `FromMemberId` | `bigint` | yes | The member it was under before; null when it was under none. |
 | `ToMemberId` | `bigint` | yes | The member it is under after; null when it is under none. |
+| `Original` | `nvarchar(1024)` | no | Collation `Latin1_General_100_BIN2`. The original as the index held it when the change was made: what the change names once the next build has deleted a removed original. |
+| `FromValue` | `nvarchar(256)` | yes | Collation `Latin1_General_100_BIN2`. The member's value it was under before, as it read then; null when it was under none. |
+| `ToValue` | `nvarchar(256)` | yes | Collation `Latin1_General_100_BIN2`. The member's value it is under after, as it read then; null when it is under none. |
 | `ChangedUtc` | `datetime2` | no | When the build made it. |
 
 ## Keys and indexes
@@ -54,5 +57,8 @@ not by a row here ([The tables a dimension keeps](../concepts/dimension-tables.m
 
 ## Written and read by
 
-- **Written** by a build's merge, which logs every change it makes (`SqlServerDimensionStore.cs`).
+- **Written** by a build's merge, which logs every change it makes with the original's and the values' text as they read
+  then (`SqlServerDimensionStore.cs`), so a change still says what it was once the next build has deleted what it removed
+  ([What a build keeps](../flow/dimension.md#what-a-build-keeps)). Migration `DimensionChangeTexts` gave the changes written before it
+  the text of the rows they name.
 - **Read** by the dimension's changes page, `sqlflow dimensions` and the delivery API.
