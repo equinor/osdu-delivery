@@ -207,7 +207,7 @@ public sealed class KnownValuesRunTests : IDisposable
                   check: { '[data.WellboreID, data.CurrentOperatorID, data.Name]': A/1-F }
         """;
 
-    private async Task<(AssertionRunner Runner, OsduLedger Ledger)> RunnerAsync()
+    private (AssertionRunner Runner, OsduLedger Ledger) Runner()
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -218,7 +218,7 @@ public sealed class KnownValuesRunTests : IDisposable
     private async Task<IReadOnlyDictionary<string, TestResult>> RunAsync()
     {
         Estate();
-        var (runner, ledger) = await RunnerAsync();
+        var (runner, ledger) = Runner();
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
         return (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
     }

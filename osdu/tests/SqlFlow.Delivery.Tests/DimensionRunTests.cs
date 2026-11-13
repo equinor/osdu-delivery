@@ -47,7 +47,7 @@ public sealed class DimensionRunTests : IDisposable
         _platform.Dispose();
     }
 
-    private async Task<(DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow)> RunnerAsync(string yaml, string source = "flows/dims.yaml")
+    private (DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow) Runner(string yaml, string source = "flows/dims.yaml")
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -97,7 +97,7 @@ public sealed class DimensionRunTests : IDisposable
     {
         // More logs than one cursor page, so the first cut-off range is split rather than scanned.
         Logs(logs: 3_000, curvesPerLog: 3, mnemonics: 1_500);
-        var (runner, ledger, flow) = await RunnerAsync(Head + $$"""
+        var (runner, ledger, flow) = Runner(Head + $$"""
             dimensions:
               - name: CurveMnemonic
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -147,7 +147,7 @@ public sealed class DimensionRunTests : IDisposable
                 kind: "osdu:wks:work-product-component--WellLog:*"
                 path: data.Curves.Mnemonic
             """;
-        var (runner, ledger, flow) = await RunnerAsync(yaml);
+        var (runner, ledger, flow) = Runner(yaml);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         _platform.Records.RemoveAll(r => r["data"]!["Curves"]!.AsArray().Any(c => c!["Mnemonic"]!.GetValue<string>() is "M0000" or "m0000"));
@@ -186,7 +186,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, new JsonObject { ["WellboreID"] = $"dev:master-data--Wellbore:{wellbore}:" });
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -295,7 +295,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, new JsonObject { ["WellboreID"] = $"dev:master-data--Wellbore:{wellbore}:" });
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -404,7 +404,7 @@ public sealed class DimensionRunTests : IDisposable
                 Context("dev:master-data--GeoPoliticalEntity:GONE", Block)),
         });
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: WellboreContext
                 kind: "osdu:wks:master-data--Wellbore:*"
@@ -489,7 +489,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, data);
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -653,7 +653,7 @@ public sealed class DimensionRunTests : IDisposable
             });
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: JoinedLog
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -713,7 +713,7 @@ public sealed class DimensionRunTests : IDisposable
         _platform.Add("dev:work-product-component--WellLog:2", WellLog, new JsonObject { ["Name"] = "LOG-2", ["Curves"] = new JsonArray(Curve("MD", "m")) });
         _platform.Add("dev:work-product-component--WellLog:3", WellLog, new JsonObject { ["Name"] = "LOG-3" });
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: TestCurve
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -812,7 +812,7 @@ public sealed class DimensionRunTests : IDisposable
 
             """;
         const string Table = "dim_Wellbore";
-        var (runner, ledger, flow) = await RunnerAsync(Head + Declared);
+        var (runner, ledger, flow) = Runner(Head + Declared);
 
         // The first build makes the table: the dimension as one table, named after the dimension, keyed by an identity,
         // its rows kept by partition and key, with a column for each attribute it declares. Any SQL client reads it and
@@ -873,7 +873,7 @@ public sealed class DimensionRunTests : IDisposable
 
         // The flow declares more: the table gains a column for each new attribute on the next build, with no migration.
         // The attribute it collects makes a row for each value a key holds, so the rows are written again.
-        (runner, ledger, flow) = await RunnerAsync(Head + Declared + """
+        (runner, ledger, flow) = Runner(Head + Declared + """
                   UUID: data.FacilityID
                   Source: { collect: data.Source }
             """);
@@ -901,7 +901,7 @@ public sealed class DimensionRunTests : IDisposable
         // somebody added to the table is theirs and is left as it is. The page shows what the dimension declares.
         await SqlAsync($"ALTER TABLE [osdu].[{Table}] ADD [Notes] nvarchar(100) NULL;");
         await SqlAsync($"UPDATE [osdu].[{Table}] SET [Notes] = N'mine';");
-        (runner, ledger, flow) = await RunnerAsync(Head + Declared + """
+        (runner, ledger, flow) = Runner(Head + Declared + """
                   Source: { collect: data.Source }
             """);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
@@ -964,7 +964,7 @@ public sealed class DimensionRunTests : IDisposable
         }
 
         const string Table = "dim_Wellbore";
-        var (runner, _, _) = await RunnerAsync(Head + """
+        var (runner, _, _) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1040,7 +1040,7 @@ public sealed class DimensionRunTests : IDisposable
         string[] Columns(string key, string value, params string[] more) => ["id", "partition", "key_id", key, value, "records", "filter", "key_hash", .. more];
 
         // The columns are named after what the dimension reads: the property its path ends with, and its label's.
-        var (runner, ledger, flow) = await RunnerAsync(Head + Declared);
+        var (runner, ledger, flow) = Runner(Head + Declared);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(("WellboreID", "FacilityName"), (wellbores.KeyColumn, wellbores.ValueColumn));
@@ -1074,7 +1074,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(rows, await SqlAsync(Rows("WellboreID", "FacilityName")));
 
         // The document names them: a name that changes only in case is a rename too, and the rows stay.
-        (runner, ledger, flow) = await RunnerAsync(Head + Declared + "    columns: { key: WellboreId, value: Wellbore }\n");
+        (runner, ledger, flow) = Runner(Head + Declared + "    columns: { key: WellboreId, value: Wellbore }\n");
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(Columns("WellboreId", "Wellbore"), await ColumnsAsync(Table));
         Assert.Equal(rows, await SqlAsync(Rows("WellboreId", "Wellbore")));
@@ -1097,7 +1097,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Contains("has no column 'FacilityName' to order by; it has Wellbore, WellboreId, records, id", noColumn.Message, StringComparison.Ordinal);
 
         // Each takes the other's name: neither name is free while the other column holds it, so both pass through another.
-        (runner, ledger, flow) = await RunnerAsync(Head + Declared + "    columns: { key: Wellbore, value: WellboreId }\n");
+        (runner, ledger, flow) = Runner(Head + Declared + "    columns: { key: Wellbore, value: WellboreId }\n");
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(Columns("Wellbore", "WellboreId"), await ColumnsAsync(Table));
         Assert.Equal(rows, await SqlAsync(Rows("Wellbore", "WellboreId")));
@@ -1105,7 +1105,7 @@ public sealed class DimensionRunTests : IDisposable
 
         // A name another column of the table holds is not taken from it: the build fails saying so, and nothing is renamed.
         await SqlAsync($"ALTER TABLE [osdu].[{Table}] ADD [Name] nvarchar(10) NULL;");
-        (runner, ledger, flow) = await RunnerAsync(Head + Declared + "    columns: { value: Name }\n");
+        (runner, ledger, flow) = Runner(Head + Declared + "    columns: { value: Name }\n");
         var taken = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
         Assert.Contains(
             "The dimension's table osdu.dim_Wellbore has a column Name already (an attribute the dimension declared before, or a column added by hand), so its value column WellboreId cannot be renamed to it, and nothing was written. Drop that column, or name the value's column otherwise in the flow: columns: { value: <name> }.",
@@ -1139,7 +1139,7 @@ public sealed class DimensionRunTests : IDisposable
                 kind: "osdu:wks:work-product-component--WellLog:*"
                 path: data.Source
             """;
-        var (runner, ledger, flow) = await RunnerAsync(Head + Declared);
+        var (runner, ledger, flow) = Runner(Head + Declared);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // The dimension is named after the property it reads: its value's column keeps the name, and its key's takes Key.
@@ -1147,7 +1147,7 @@ public sealed class DimensionRunTests : IDisposable
 
         // A table is named after its dimension alone, so a dimension's name is unique among flows: another flow declaring
         // one of the same name would write the first one's table.
-        var (other, _, _) = await RunnerAsync(Head.Replace("name: wells-dimensions", "name: log-dimensions", StringComparison.Ordinal) + Declared, "flows/other.yaml");
+        var (other, _, _) = Runner(Head.Replace("name: wells-dimensions", "name: log-dimensions", StringComparison.Ordinal) + Declared, "flows/other.yaml");
         var refused = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => other.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
         Assert.Contains(
             "Dimension Source of log-dimensions would write a table named dim_Source, which dimension Source of wells-dimensions writes: a dimension's table is named after the dimension alone, so a dimension's name is unique among the module's dimension flows, wherever their targets keep their tables. Rename one of them.",
@@ -1198,7 +1198,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, data);
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1239,7 +1239,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, data);
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1286,7 +1286,7 @@ public sealed class DimensionRunTests : IDisposable
             expected[(wellbore, source)] = expected.GetValueOrDefault((wellbore, source)) + 1;
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1337,7 +1337,7 @@ public sealed class DimensionRunTests : IDisposable
             expected[(wellbore, source)] = expected.GetValueOrDefault((wellbore, source)) + 1;
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1376,7 +1376,7 @@ public sealed class DimensionRunTests : IDisposable
                 new JsonObject { ["WellboreID"] = $"dev:master-data--Wellbore:W{log % 300:D3}:", ["Source"] = $"S{(log * 7) % 600:D3}" });
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1444,7 +1444,7 @@ public sealed class DimensionRunTests : IDisposable
         }
 
         _platform.Latency = TimeSpan.FromMilliseconds(3);
-        var (runner, ledger, flow) = await RunnerAsync(Head.Replace("recordsAtOnce: 2", "recordsAtOnce: 6", StringComparison.Ordinal) + """
+        var (runner, ledger, flow) = Runner(Head.Replace("recordsAtOnce: 2", "recordsAtOnce: 6", StringComparison.Ordinal) + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1504,7 +1504,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, new JsonObject { ["WellboreID"] = $"dev:master-data--Wellbore:{wellbore}:", ["Source"] = source });
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -1588,7 +1588,7 @@ public sealed class DimensionRunTests : IDisposable
         _platform.Add("dev:master-data--Wellbore:1", Wellbore, new JsonObject(), legalTags: ["dev-a", "dev-b"]);
         _platform.Add("dev:master-data--Wellbore:2", Wellbore, new JsonObject(), legalTags: ["dev-a"]);
         _platform.Add("dev:master-data--Wellbore:3", Wellbore, new JsonObject(), legalTags: ["DEV-A", "dev-b"]);
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: LegalTag
                 kind: "osdu:wks:master-data--Wellbore:*"
@@ -1615,7 +1615,7 @@ public sealed class DimensionRunTests : IDisposable
     {
         _platform.Add("dev:master-data--Wellbore:1", Wellbore, new JsonObject { ["FacilityName"] = "A" });
         _platform.Add("dev:master-data--Field:1", "osdu:wks:master-data--Field:1.0.0", new JsonObject { ["FieldName"] = "Field A" });
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: WellboreName
                 kind: "osdu:wks:master-data--Wellbore:*"
@@ -1641,7 +1641,7 @@ public sealed class DimensionRunTests : IDisposable
     [Fact]
     public async Task A_kind_the_partition_holds_no_record_of_builds_a_dimension_with_no_value_and_says_so()
     {
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: WellboreName
                 kind: "osdu:wks:master-data--Wellbore:*"
@@ -1675,7 +1675,7 @@ public sealed class DimensionRunTests : IDisposable
             _platform.Add($"dev:master-data--Wellbore:{id}", Wellbore, new JsonObject { ["FacilityName"] = name });
         }
 
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Operator
                 kind: "osdu:wks:master-data--Wellbore:*"
@@ -1702,7 +1702,7 @@ public sealed class DimensionRunTests : IDisposable
         _platform.Add("dev:master-data--Wellbore:1", Wellbore, new JsonObject()).AsObject()["version"] = 11;
         _platform.Add("dev:master-data--Wellbore:2", Wellbore, new JsonObject()).AsObject()["version"] = 12;
         _platform.Add("dev:master-data--Wellbore:3", Wellbore, new JsonObject()).AsObject()["version"] = 12;
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - name: Version
                 kind: "osdu:wks:master-data--Wellbore:*"
@@ -1722,7 +1722,7 @@ public sealed class DimensionRunTests : IDisposable
     public async Task A_run_builds_only_the_dimensions_it_names()
     {
         _platform.Add("dev:master-data--Wellbore:1", Wellbore, new JsonObject { ["FacilityName"] = "A" });
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - { name: Names, kind: "osdu:wks:master-data--Wellbore:*", path: data.FacilityName }
               - { name: Kinds, kind: "osdu:wks:*:*", path: kind }
@@ -1738,7 +1738,7 @@ public sealed class DimensionRunTests : IDisposable
     public async Task A_plan_settles_each_field_and_counts_each_dimensions_records_and_keeps_nothing()
     {
         Logs(logs: 5, curvesPerLog: 2, mnemonics: 4);
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - { name: CurveMnemonic, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Curves.Mnemonic }
               - { name: FieldName, kind: "osdu:wks:master-data--Field:*", path: data.FieldName }
@@ -1760,7 +1760,7 @@ public sealed class DimensionRunTests : IDisposable
     public async Task A_platform_that_fails_part_way_fails_the_dimension_and_writes_none_of_it()
     {
         Logs(logs: 100, curvesPerLog: 4, mnemonics: 300);
-        var (runner, ledger, flow) = await RunnerAsync(Head + """
+        var (runner, ledger, flow) = Runner(Head + """
             dimensions:
               - { name: CurveMnemonic, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Curves.Mnemonic }
             """);

@@ -155,7 +155,7 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
         _platform.Add("dev:work-product-component--WellLog:L5", WellLog, new JsonObject { ["Name"] = "L5", ["TechnicalAssurances"] = many });
     }
 
-    private async Task<(DimensionRunner Runner, OsduLedger Ledger)> RunnerAsync(string yaml, string partition = "dev")
+    private (DimensionRunner Runner, OsduLedger Ledger) Runner(string yaml, string partition = "dev")
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -167,7 +167,7 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
     public async Task A_grouped_view_writes_a_JSON_array_per_group_and_a_view_joining_it_meets_one_row_of_each_key()
     {
         Estate();
-        var (runner, ledger) = await RunnerAsync(Flow());
+        var (runner, ledger) = Runner(Flow());
 
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
@@ -223,8 +223,8 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
     public async Task Each_partition_is_grouped_apart_and_a_join_to_a_view_meets_its_own_partition_s_row()
     {
         Estate();
-        var (dev, _) = await RunnerAsync(Flow());
-        var (test, _) = await RunnerAsync(Flow(), "test");
+        var (dev, _) = Runner(Flow());
+        var (test, _) = Runner(Flow(), "test");
 
         Assert.Equal(0, (await dev.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Failed);
         Assert.Equal(0, (await test.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Failed);
@@ -248,7 +248,7 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
         await SqlAsync("CREATE TABLE [osdu].[v_dim_edge_assurances] ([x] int NULL); SELECT 1;");
         try
         {
-            var (runner, _) = await RunnerAsync(Flow());
+            var (runner, _) = Runner(Flow());
 
             // A view that cannot be written fails the run, so the pipelines ordered after the flow do not read it.
             var refused = (await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None))).Outcome;
@@ -276,16 +276,16 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
     public async Task A_view_is_written_again_when_a_view_it_joins_changes_and_left_alone_when_nothing_did()
     {
         Estate();
-        var (first, _) = await RunnerAsync(Flow());
+        var (first, _) = Runner(Flow());
         Assert.Equal(0, (await first.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Failed);
 
-        var (again, _) = await RunnerAsync(Flow());
+        var (again, _) = Runner(Flow());
         var unchanged = await again.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.All(unchanged.Views, v => Assert.Equal(DimensionViewWriteStatus.Unchanged, v.Status));
 
         // A column added to the joined view leaves the joining view's statement as it was, and both are written again, so
         // SQL Server reads the columns of the view joined anew.
-        var (changed, _) = await RunnerAsync(Flow("Distinct: COUNT(DISTINCT TypeID)"));
+        var (changed, _) = Runner(Flow("Distinct: COUNT(DISTINCT TypeID)"));
         var rewritten = await changed.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.All(rewritten.Views, v => Assert.Equal(DimensionViewWriteStatus.Written, v.Status));
         Assert.Equal(["4"], await SqlAsync("SELECT a.[Distinct] FROM [osdu].[v_dim_edge_assurances] AS a WHERE a.[partition] = N'dev' AND a.[WellLogID] LIKE N'%:L1';"));

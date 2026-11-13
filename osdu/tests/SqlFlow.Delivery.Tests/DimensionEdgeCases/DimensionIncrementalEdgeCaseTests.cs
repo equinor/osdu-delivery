@@ -57,7 +57,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
             {{lookupKinds}}
         """;
 
-    private async Task<(DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow)> RunnerAsync(string yaml)
+    private (DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow) Runner(string yaml)
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -92,7 +92,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
     public async Task A_record_that_left_the_index_loads_the_dimension_in_full_when_the_flow_asks_and_removes_the_keys_only_it_held()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Flow("fullLoadWhenRecordsLeave: true"));
+        var (runner, ledger, flow) = Runner(Flow("fullLoadWhenRecordsLeave: true"));
         Assert.Equal(DimensionRunModes.Full, Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions).Load);
 
         // An hour on, no record changed: the build loads incrementally, as no record left either.
@@ -117,7 +117,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
     public async Task Without_the_setting_a_record_that_left_the_index_stays_until_the_next_full_load_and_is_said_so()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Flow(string.Empty));
+        var (runner, ledger, flow) = Runner(Flow(string.Empty));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         _platform.Records.RemoveAll(r => r["id"]!.GetValue<string>() == "dev:work-product-component--WellLog:3");
@@ -134,7 +134,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
     public async Task A_key_is_read_again_for_a_changed_record_of_the_kind_its_type_is_looked_up_in_and_not_another()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Flow(string.Empty, "lookupKinds: [osdu:wks:master-data--GeoPoliticalEntity:1.0.0]"));
+        var (runner, ledger, flow) = Runner(Flow(string.Empty, "lookupKinds: [osdu:wks:master-data--GeoPoliticalEntity:1.0.0]"));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
         var first = await KeysAsync(ledger, dimension.DimensionId);

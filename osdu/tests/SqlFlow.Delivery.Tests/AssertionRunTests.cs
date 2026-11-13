@@ -168,7 +168,7 @@ public sealed class AssertionRunTests : IDisposable
         }
     }
 
-    private async Task<(AssertionRunner Runner, OsduLedger Ledger, AssertionFlowDefinition Flow)> RunnerAsync(string yaml = Flow, string partition = "dev")
+    private (AssertionRunner Runner, OsduLedger Ledger, AssertionFlowDefinition Flow) Runner(string yaml = Flow, string partition = "dev")
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -213,7 +213,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task A_test_of_records_delivered_moments_ago_is_skipped_until_the_index_has_had_time_to_list_them()
     {
         Estate();
-        var (runner, ledger, _) = await RunnerAsync(Settling);
+        var (runner, ledger, _) = Runner(Settling);
         await DeliveredAsync(ledger);
         var delivered = _clock.GetUtcNow().UtcDateTime;
         _clock.Advance(TimeSpan.FromSeconds(30));
@@ -254,7 +254,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task A_test_that_does_not_fit_its_template_is_reported_as_such_whatever_changed()
     {
         Estate();
-        var (runner, ledger, _) = await RunnerAsync($$"""
+        var (runner, ledger, _) = Runner($$"""
             flowType: assertion
             name: settle-misfit
             partitions: [dev]
@@ -279,7 +279,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task Every_kind_of_assertion_is_held_to_what_the_platform_holds_and_the_report_is_kept()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync();
+        var (runner, ledger, flow) = Runner();
         await DeliveredAsync(ledger);
 
         // The run comes once the search index has had the time its settle window gives it to list what was delivered.
@@ -399,7 +399,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task Every_check_keeps_what_it_tests_whole_and_the_values_it_read()
     {
         Estate();
-        var (runner, ledger, _) = await RunnerAsync();
+        var (runner, ledger, _) = Runner();
         await DeliveredAsync(ledger);
         _clock.Advance(TimeSpan.FromMinutes(10));
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
@@ -532,7 +532,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task The_report_renders_every_result_in_every_format()
     {
         Estate();
-        var (runner, ledger, _) = await RunnerAsync();
+        var (runner, ledger, _) = Runner();
         await DeliveredAsync(ledger);
 
         // The run comes once the search index has had the time its settle window gives it to list what was delivered.
@@ -577,7 +577,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task A_run_names_its_tests_and_the_board_reads_each_ones_latest_result()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync();
+        var (runner, ledger, flow) = Runner();
         var first = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
         _clock.Advance(TimeSpan.FromMinutes(5));
         var second = await runner.TestAsync(["names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
@@ -623,14 +623,14 @@ public sealed class AssertionRunTests : IDisposable
     public async Task A_run_keeps_no_earlier_run_for_a_result_of_a_test_since_disabled()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync();
+        var (runner, ledger, flow) = Runner();
         var first = await runner.TestAsync(["names", "wellbores"], [], Guid.NewGuid(), "tests", CancellationToken.None);
         _clock.Advance(TimeSpan.FromMinutes(5));
 
         // With wellbores disabled, a run of names replaces the first run's every result the latest status needs.
         var disabled = Flow.Replace("  - name: wellbores\n", "  - name: wellbores\n    disabled: Not delivered in this estate yet.\n", StringComparison.Ordinal);
         Assert.NotEqual(Flow, disabled);
-        var (later, _, _) = await RunnerAsync(disabled);
+        var (later, _, _) = Runner(disabled);
         var second = await later.TestAsync(["names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal([second.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
         Assert.Empty(await ledger.ListAssertionResultsAsync(first.AssertionRunId));
@@ -649,7 +649,7 @@ public sealed class AssertionRunTests : IDisposable
         _platform.Fail = request => request.RequestUri!.AbsolutePath.EndsWith("/ddms/v3/welllogs/dev:work-product-component--WellLog:l2/data", StringComparison.Ordinal)
             ? HttpStatusCode.InternalServerError
             : null;
-        var (runner, ledger, _) = await RunnerAsync();
+        var (runner, ledger, _) = Runner();
         var outcome = await runner.TestAsync(["logs", "names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
         var results = (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
         Assert.Equal(TestOutcomes.Errored, results["logs"].Outcome);
@@ -663,7 +663,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task A_plan_checks_and_counts_every_test_and_records_nothing()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync();
+        var (runner, ledger, flow) = Runner();
         var plan = await runner.PlanAsync([], [], CancellationToken.None);
         var tests = plan.Tests.ToDictionary(t => t.Test);
         Assert.Equal(4, tests["wellbores"].Matched);
@@ -681,7 +681,7 @@ public sealed class AssertionRunTests : IDisposable
     public async Task A_run_fails_as_the_flow_says()
     {
         Estate();
-        var (runner, _, flow) = await RunnerAsync();
+        var (runner, _, flow) = Runner();
         var outcome = await runner.TestAsync(["logs"], [], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(1, outcome.Warned);
         Assert.False(AssertionExecutor.FailsRun(flow with { FailRunOn = FailRunOn.Error }, outcome));

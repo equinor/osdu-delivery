@@ -159,7 +159,7 @@ public sealed class DimensionViewRunTests : IDisposable
         _platform.Add("dev:work-product-component--WellLog:3", WellLog, new JsonObject { ["Name"] = "LOG-3" });
     }
 
-    private async Task<(DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow)> RunnerAsync(string yaml)
+    private (DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow) Runner(string yaml)
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -171,7 +171,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_grouped_view_is_a_row_per_key_and_a_view_joining_it_meets_one_row_of_each()
     {
         Logs();
-        var (runner, _, _) = await RunnerAsync(Flow("""
+        var (runner, _, _) = Runner(Flow("""
             views:
               - name: TestCurveCounts
                 from: TestCurve
@@ -207,7 +207,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_view_joins_its_dimensions_exactly_converts_without_failing_and_is_checked()
     {
         Logs();
-        var (runner, ledger, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, ledger, _) = Runner(Flow(CurveView));
 
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
@@ -256,7 +256,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_view_whose_tables_hold_what_they_held_at_its_last_check_keeps_that_check_and_one_whose_table_changed_is_read_again()
     {
         Logs();
-        var (runner, ledger, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, ledger, _) = Runner(Flow(CurveView));
         var first = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var read = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0];
         Assert.Null(read.ReusedFrom);
@@ -280,7 +280,7 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal(["API", "m"], await SqlAsync("SELECT DISTINCT [Unit] FROM [osdu].[v_dim_TestCurveView] WHERE [Unit] IS NOT NULL ORDER BY [Unit];"));
 
         // A view written anew reads its rows, though its tables hold what they did.
-        var (renaming, renamedLedger, _) = await RunnerAsync(Flow(CurveView.Replace("Log.LogName", "Log.LogTitle", StringComparison.Ordinal), logValue: "LogTitle"));
+        var (renaming, renamedLedger, _) = Runner(Flow(CurveView.Replace("Log.LogName", "Log.LogTitle", StringComparison.Ordinal), logValue: "LogTitle"));
         await renaming.BuildAsync(["TestLog"], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Null((await renamedLedger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
     }
@@ -294,7 +294,7 @@ public sealed class DimensionViewRunTests : IDisposable
             record["createTime"] = OsduSearch.LuceneTime(_clock.GetUtcNow().UtcDateTime.AddHours(-2));
         }
 
-        var (runner, ledger, _) = await RunnerAsync(Flow(CurveView).Replace("dimensions:\n", "incremental:\n  keyColumns: [id]\ndimensions:\n", StringComparison.Ordinal));
+        var (runner, ledger, _) = Runner(Flow(CurveView).Replace("dimensions:\n", "incremental:\n  keyColumns: [id]\ndimensions:\n", StringComparison.Ordinal));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var read = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0];
         var rows = await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];");
@@ -325,7 +325,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_view_is_written_again_only_when_its_document_changed_and_after_a_build_renames_a_column_it_reads()
     {
         Logs();
-        var (runner, _, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, _, _) = Runner(Flow(CurveView));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var first = await SqlAsync("SELECT OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');");
 
@@ -336,7 +336,7 @@ public sealed class DimensionViewRunTests : IDisposable
 
         // The log's value column renamed by its document: the build that renames it drops the view in the same
         // transaction, so the view never reads the column under its old name, and the run's view step writes it again.
-        var (renaming, ledger, _) = await RunnerAsync(Flow(CurveView.Replace("Log.LogName", "Log.LogTitle", StringComparison.Ordinal), logValue: "LogTitle"));
+        var (renaming, ledger, _) = Runner(Flow(CurveView.Replace("Log.LogName", "Log.LogTitle", StringComparison.Ordinal), logValue: "LogTitle"));
         var renamed = await renaming.BuildAsync(["TestLog"], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal((DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed), (renamed.Views[0].Status, renamed.Views[0].Check));
         Assert.NotEqual(first, await SqlAsync("SELECT OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
@@ -348,7 +348,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_view_its_flow_no_longer_declares_is_dropped_and_a_dimension_a_view_reads_is_not_removed()
     {
         Logs();
-        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView));
+        var (runner, ledger, flow) = Runner(Flow(CurveView));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // A dimension a view reads is not removed: the view would read a table that is gone.
@@ -356,7 +356,7 @@ public sealed class DimensionViewRunTests : IDisposable
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, unit, "user:admin", _clock, CancellationToken.None));
         Assert.Contains("is read by view TestCurveView, so it is not removed", refused.Message, StringComparison.Ordinal);
 
-        var (without, _, _) = await RunnerAsync(Flow(string.Empty));
+        var (without, _, _) = Runner(Flow(string.Empty));
         var outcome = await without.BuildAsync(["TestUnit"], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(["TestCurveView"], outcome.ViewsDropped);
         Assert.Equal(["(null)"], await SqlAsync("SELECT OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
@@ -368,7 +368,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_view_name_another_flow_holds_or_an_object_no_build_made_is_refused_and_written_over_by_none()
     {
         Logs();
-        var (runner, _, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, _, _) = Runner(Flow(CurveView));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // Another flow declaring a view of the same name: its build fails, and the first flow's view is as it was.
@@ -379,7 +379,7 @@ public sealed class DimensionViewRunTests : IDisposable
             .Replace("- name: TestCurve\n", "- name: OtherCurve\n", StringComparison.Ordinal)
             .Replace("- name: TestLog\n", "- name: OtherLog\n", StringComparison.Ordinal)
             .Replace("- name: TestUnit\n", "- name: OtherUnit2\n", StringComparison.Ordinal);
-        var (second, _, _) = await RunnerAsync(other);
+        var (second, _, _) = Runner(other);
         var failed = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => second.BuildAsync(["OtherUnit"], Guid.NewGuid(), "tests", CancellationToken.None));
         var view = Assert.Single(failed.Outcome.Views);
         Assert.Equal(DimensionViewWriteStatus.Failed, view.Status);
@@ -388,7 +388,7 @@ public sealed class DimensionViewRunTests : IDisposable
 
         // A view a person made in the schema is not written over.
         await SqlAsync("CREATE VIEW [osdu].[v_dim_Hand] AS SELECT 1 AS [x];");
-        var (hand, _, _) = await RunnerAsync(Flow("views:\n  - name: Hand\n    from: TestUnit"));
+        var (hand, _, _) = Runner(Flow("views:\n  - name: Hand\n    from: TestUnit"));
         var handFailed = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => hand.BuildAsync(["TestUnit"], Guid.NewGuid(), "tests", CancellationToken.None));
         Assert.Contains("osdu.v_dim_Hand is in the database, and no build of a dimension flow made it", handFailed.Outcome.Views.Single(v => v.View == "Hand").Error, StringComparison.Ordinal);
         Assert.Equal(["1"], await SqlAsync("SELECT [x] FROM [osdu].[v_dim_Hand];"));
@@ -398,7 +398,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_value_no_expression_could_be_written_around_fails_the_build_naming_the_column()
     {
         Logs();
-        var (runner, _, _) = await RunnerAsync(Flow(CurveView.Replace(
+        var (runner, _, _) = Runner(Flow(CurveView.Replace(
             "      Created: { expression: Log.Created, dataType: datetime2(0) }",
             "      Created: { expression: Log.Created, dataType: datetime2(0) }\n      Huge: TRY_CAST(BaseDepth AS int) * 2147483647",
             StringComparison.Ordinal)));
@@ -418,7 +418,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task Rows_written_before_tables_kept_their_key_s_hash_are_given_it_and_joined()
     {
         Logs();
-        var (runner, _, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, _, _) = Runner(Flow(CurveView));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         await SqlAsync("UPDATE [osdu].[dim_TestUnit] SET [key_hash] = NULL;");
         Assert.Equal(["(null)", "(null)", "(null)", "(null)"], await SqlAsync("SELECT [Unit] FROM [osdu].[v_dim_TestCurveView] ORDER BY [Unit];"));
@@ -433,7 +433,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_view_a_build_wrote_under_the_former_prefix_moves_to_its_name_now()
     {
         Logs();
-        var (runner, ledger, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, ledger, _) = Runner(Flow(CurveView));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // As a build before views were named v_dim_ left it: the view and its record under dimv_.
@@ -455,7 +455,7 @@ public sealed class DimensionViewRunTests : IDisposable
     {
         Logs();
         var view = CurveView.ReplaceLineEndings("\n").Replace("  - name: TestCurveView\n", "  - name: TestCurveView\n    where: element IS NOT NULL\n", StringComparison.Ordinal);
-        var (runner, ledger, _) = await RunnerAsync(Flow(view));
+        var (runner, ledger, _) = Runner(Flow(view));
 
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
@@ -490,7 +490,7 @@ public sealed class DimensionViewRunTests : IDisposable
         await OtherAsync();
         Logs();
         var elsewhere = DimensionTableTarget.Of(null, OtherDatabase, OtherSchema);
-        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
+        var (runner, ledger, flow) = Runner(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
 
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
@@ -512,12 +512,12 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal(elsewhere, (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.TableTarget);
 
         // A build that finds nothing changed writes nothing there again.
-        var (same, _, _) = await RunnerAsync(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
+        var (same, _, _) = Runner(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
         Assert.Equal(DimensionViewWriteStatus.Unchanged, Assert.Single((await same.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Views).Status);
 
         // Moved back to the module's database, the next build lays the tables out whole there, writes the view beside them,
         // and leaves nothing where they were.
-        var (back, _, _) = await RunnerAsync(Flow(CurveView));
+        var (back, _, _) = Runner(Flow(CurveView));
         var again = await back.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((3, 0), (again.Built, again.Failed));
@@ -532,7 +532,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_target_whose_database_cannot_be_opened_stops_the_build_before_anything_is_built()
     {
         Logs();
-        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: ModuleTarget + "\n  database: OsduDeliveryNoSuchDatabase"));
+        var (runner, ledger, flow) = Runner(Flow(CurveView, target: ModuleTarget + "\n  database: OsduDeliveryNoSuchDatabase"));
 
         // The open is tried as often as a database that is failing over is (4060 is such an error), and then given up.
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
@@ -546,7 +546,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_target_whose_reference_does_not_resolve_stops_the_build_before_anything_is_built_and_the_plan_says_so()
     {
         Logs();
-        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: "target:\n  connection: ${env:OSDU_VIEW_TESTS_NO_SUCH_DB}"));
+        var (runner, ledger, flow) = Runner(Flow(CurveView, target: "target:\n  connection: ${env:OSDU_VIEW_TESTS_NO_SUCH_DB}"));
 
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
@@ -564,7 +564,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_target_reaching_the_module_s_database_with_another_schema_is_refused_before_anything_is_built()
     {
         Logs();
-        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: ModuleTarget + $"\n  schema: {OtherSchema}"));
+        var (runner, ledger, flow) = Runner(Flow(CurveView, target: ModuleTarget + $"\n  schema: {OtherSchema}"));
 
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
@@ -577,7 +577,7 @@ public sealed class DimensionViewRunTests : IDisposable
     public async Task A_plan_says_what_a_build_will_do_with_each_view()
     {
         Logs();
-        var (runner, _, _) = await RunnerAsync(Flow(CurveView));
+        var (runner, _, _) = Runner(Flow(CurveView));
 
         var plan = await runner.PlanAsync([], CancellationToken.None);
 

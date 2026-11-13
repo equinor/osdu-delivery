@@ -308,7 +308,8 @@ public sealed class SearchTermCatalogTests : IDisposable
         Assert.Equal((false, null), (run.Excluded, run.UpdatedBy));
         await using (var db = _module.CreateDbContext())
         {
-            Assert.False(await db.DeliverySearchTermRefinements.AnyAsync(r => r.TermId == IdOf("log_run") || r.TermId == IdOf("log_source")));
+            var (logRun, logSource) = (IdOf("log_run"), IdOf("log_source"));
+            Assert.False(await db.DeliverySearchTermRefinements.AnyAsync(r => r.TermId == logRun || r.TermId == logSource));
         }
 
         // Nothing named, or more than one change takes, is refused.

@@ -64,7 +64,7 @@ public sealed class DimensionIncrementalTests : IDisposable
 
     private static DateTime At(int hour, int minute = 0) => new(2026, 9, 7, hour, minute, 0, DateTimeKind.Utc);
 
-    private async Task<(DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow)> RunnerAsync(string yaml)
+    private (DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow) Runner(string yaml)
     {
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock);
@@ -120,7 +120,7 @@ public sealed class DimensionIncrementalTests : IDisposable
     public async Task The_first_build_loads_in_full_and_a_later_one_reads_again_only_the_keys_of_the_records_that_changed()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Head + Incremental + Wellbores);
+        var (runner, ledger, flow) = Runner(Head + Incremental + Wellbores);
 
         var first = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
 
@@ -179,7 +179,7 @@ public sealed class DimensionIncrementalTests : IDisposable
     public async Task A_key_whose_label_or_attribute_was_read_through_a_record_that_changed_is_read_again()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Head + Incremental + Wellbores);
+        var (runner, ledger, flow) = Runner(Head + Incremental + Wellbores);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // Wellbore A is renamed, and Norway, which B's attribute was read through, too: no log changed.
@@ -205,7 +205,7 @@ public sealed class DimensionIncrementalTests : IDisposable
     public async Task A_record_that_left_the_index_is_kept_until_a_full_load_which_a_run_asks_for_or_the_flow_s_age_says()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Head + Incremental.Replace("keyColumns: [id]", "keyColumns: [id]\n  fullLoadAfterHours: 24", StringComparison.Ordinal) + Wellbores);
+        var (runner, ledger, flow) = Runner(Head + Incremental.Replace("keyColumns: [id]", "keyColumns: [id]\n  fullLoadAfterHours: 24", StringComparison.Ordinal) + Wellbores);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // Logs 2 and 3 are deleted: the search no longer holds them, and nothing in the index says they were.
@@ -238,7 +238,7 @@ public sealed class DimensionIncrementalTests : IDisposable
     public async Task A_backfill_window_reads_what_changed_in_it_the_watermark_never_moves_back_and_a_flow_loading_in_full_refuses_one()
     {
         Estate();
-        var (runner, ledger, flow) = await RunnerAsync(Head + Incremental + Wellbores);
+        var (runner, ledger, flow) = Runner(Head + Incremental + Wellbores);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Log("4", "C", At(12, 30));
         _clock.Advance(TimeSpan.FromHours(1));
@@ -260,7 +260,7 @@ public sealed class DimensionIncrementalTests : IDisposable
         await runner.BuildAsync([], new DimensionLoadRequest(From: At(12), To: At(12, 20)), Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(At(12, 55), await ledger.DimensionReadUpToAsync(dimension.DimensionId));
 
-        var (fullOnly, _, _) = await RunnerAsync(Head + Wellbores);
+        var (fullOnly, _, _) = Runner(Head + Wellbores);
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => fullOnly.BuildAsync([], new DimensionLoadRequest(From: At(12)), Guid.NewGuid(), "tests", CancellationToken.None));
         Assert.Contains("declares no incremental block", refused.Message, StringComparison.Ordinal);
     }
@@ -273,7 +273,7 @@ public sealed class DimensionIncrementalTests : IDisposable
             Log(i.ToString(System.Globalization.CultureInfo.InvariantCulture), "W" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), At(11));
         }
 
-        var (runner, _, _) = await RunnerAsync(Head + Incremental + """
+        var (runner, _, _) = Runner(Head + Incremental + """
             dimensions:
               - name: WellboreKey
                 kind: "osdu:wks:work-product-component--WellLog:*"
@@ -300,13 +300,13 @@ public sealed class DimensionIncrementalTests : IDisposable
     public async Task A_full_load_of_a_flow_that_loads_in_full_keeps_no_records_so_declaring_incremental_loads_in_full_once_more()
     {
         Estate();
-        var (fullOnly, ledger, flow) = await RunnerAsync(Head + Wellbores);
+        var (fullOnly, ledger, flow) = Runner(Head + Wellbores);
         var first = Assert.Single((await fullOnly.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
         Assert.Equal(DimensionRunModes.Full, first.Load);
         Assert.DoesNotContain(first.Notes, n => n.StartsWith("Loaded in full", StringComparison.Ordinal));
 
         _clock.Advance(TimeSpan.FromHours(1));
-        var (runner, _, _) = await RunnerAsync(Head + Incremental + Wellbores);
+        var (runner, _, _) = Runner(Head + Incremental + Wellbores);
         var second = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
 
         Assert.Equal(DimensionRunModes.Full, second.Load);

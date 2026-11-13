@@ -79,7 +79,7 @@ public sealed class AssertionRunReasonTests : IDisposable
               - { field: data.FacilityNam, exists: true }
         """;
 
-    private async Task<(AssertionRunner Runner, OsduLedger Ledger)> RunnerAsync(string yaml = Flow)
+    private (AssertionRunner Runner, OsduLedger Ledger) Runner(string yaml = Flow)
     {
         _platform.Add("dev:master-data--Wellbore:WB-0001", Wellbore, new JsonObject { ["FacilityName"] = "Wellbore A-1" });
         _platform.Add("dev:master-data--Wellbore:WB-0002", Wellbore, new JsonObject { ["FacilityName"] = "Wellbore A-2" });
@@ -95,7 +95,7 @@ public sealed class AssertionRunReasonTests : IDisposable
     [Fact]
     public async Task A_run_whose_tests_errored_completes_with_how_many_errored_and_which_and_records_every_test()
     {
-        var (runner, ledger) = await RunnerAsync(Erroring());
+        var (runner, ledger) = Runner(Erroring());
 
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
@@ -109,7 +109,7 @@ public sealed class AssertionRunReasonTests : IDisposable
     public async Task A_run_that_stops_part_way_keeps_why_and_leaves_tests_unrecorded_which_tells_it_from_a_run_whose_tests_errored()
     {
         // The endpoint names a variable this node does not set: the run cannot reach OSDU, so it stops before judging a test.
-        var (runner, ledger) = await RunnerAsync(Erroring("${env:OSDU_DELIVERY_TESTS_UNSET_ENDPOINT}"));
+        var (runner, ledger) = Runner(Erroring("${env:OSDU_DELIVERY_TESTS_UNSET_ENDPOINT}"));
 
         await Assert.ThrowsAnyAsync<Exception>(() => runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None));
 
@@ -123,7 +123,7 @@ public sealed class AssertionRunReasonTests : IDisposable
     public async Task A_run_with_no_test_to_judge_in_its_partition_asks_OSDU_nothing_and_completes()
     {
         // Every test runs only in 'test'; the endpoint could not be reached from here, and is never asked.
-        var (runner, ledger) = await RunnerAsync(Erroring("${env:OSDU_DELIVERY_TESTS_UNSET_ENDPOINT}", "partitions: [test]"));
+        var (runner, ledger) = Runner(Erroring("${env:OSDU_DELIVERY_TESTS_UNSET_ENDPOINT}", "partitions: [test]"));
 
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
@@ -136,7 +136,7 @@ public sealed class AssertionRunReasonTests : IDisposable
     [Fact]
     public async Task A_run_its_tests_failed_keeps_how_many_failed_and_the_severity_that_failed_them_and_a_run_that_passed_keeps_no_reason()
     {
-        var (runner, ledger) = await RunnerAsync();
+        var (runner, ledger) = Runner();
 
         var failed = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
