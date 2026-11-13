@@ -586,6 +586,29 @@ public sealed class OsduCacheStore : ICacheStore
         }
     }
 
+    public async Task<int> VersionsKeptAsync(string scope, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        await using var db = _factory();
+        return await VersionsKeptAsync(db, scope, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// How many versions of the partition's cache keep their records, read through an open context: the partition's row
+    /// (<c>osdu.Partition.CacheVersionsKept</c>) brought into the range an admin may set, or
+    /// <see cref="CacheRetention.DefaultVersions"/> for a partition that is not registered.
+    /// </summary>
+    public static async Task<int> VersionsKeptAsync(OsduDbContext db, string scope, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        var kept = await db.DeliveryPartitions.AsNoTracking()
+            .Where(p => p.Name == scope)
+            .Select(p => (int?)p.CacheVersionsKept)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        return kept is { } versions ? CacheRetention.BoundedVersions(versions) : CacheRetention.DefaultVersions;
+    }
+
     /// <summary>
     /// One attempt of a retention, on one connection at a low deadlock priority, restored before the connection goes back to
     /// the pool.
@@ -620,6 +643,8 @@ public sealed class OsduCacheStore : ICacheStore
         var days = request.FlowName is { } flowName
             ? (await DeclarationAsync(db, scope, ct).ConfigureAwait(false)).RetentionFor(flowName, request.Days)
             : request.Days;
+        // A refresh or an import keeps the number the partition keeps; a purge or its preview may name another.
+        var versionsKept = request.VersionsKept ?? await VersionsKeptAsync(db, scope, ct).ConfigureAwait(false);
         var rows = await db.DeliveryCacheVersions.AsNoTracking()
             .Where(v => v.Scope == scope)
             .Select(v => new { v.Sequence, v.Version, v.CapturedUtc, v.Current, v.PrunedUtc, Counted = v.ChangesJson != null })
@@ -629,17 +654,19 @@ public sealed class OsduCacheStore : ICacheStore
         if (pins.Unrecorded.Count > 0)
         {
             return new CacheRetentionOutcome(
-                days, held, [.. progress.Pruned], progress.RowsRemoved, Deferred: Unrecorded(pins.Unrecorded), DryRun: request.DryRun);
+                days, held, [.. progress.Pruned], progress.RowsRemoved, Deferred: Unrecorded(pins.Unrecorded), DryRun: request.DryRun,
+                VersionsKept: versionsKept);
         }
 
         var pinned = pins.Pinned;
 
         var plan = CacheRetention.Plan(
             rows.Select(v => new CacheVersionSpan(v.Sequence, v.Version, Utc(v.CapturedUtc), v.Current, v.PrunedUtc is not null)).ToList(),
-            days, now.UtcDateTime, pinned);
+            days, now.UtcDateTime, pinned, versionsKept);
         if (plan.Current == 0)
         {
-            return new CacheRetentionOutcome(days, held, [.. progress.Pruned], progress.RowsRemoved, DryRun: request.DryRun);
+            return new CacheRetentionOutcome(
+                days, held, [.. progress.Pruned], progress.RowsRemoved, DryRun: request.DryRun, VersionsKept: versionsKept);
         }
 
         if (request.DryRun)
@@ -648,7 +675,8 @@ public sealed class OsduCacheStore : ICacheStore
             var wouldRemove = plan.Pruned.Count > 0 || rows.Any(v => v.PrunedUtc is not null)
                 ? await CountUnkeptRowsAsync(db, scope, plan, ct).ConfigureAwait(false)
                 : 0;
-            return new CacheRetentionOutcome(days, plan.Kept.Count, plan.Pruned.Select(v => v.Version).ToList(), wouldRemove, DryRun: true);
+            return new CacheRetentionOutcome(
+                days, plan.Kept.Count, plan.Pruned.Select(v => v.Version).ToList(), wouldRemove, DryRun: true, VersionsKept: versionsKept);
         }
 
         // What each version changed is recorded before any row it was counted from goes, so the history reads the same after.
@@ -685,7 +713,7 @@ public sealed class OsduCacheStore : ICacheStore
             await RemoveUnkeptRowsAsync(db, scope, plan, progress, ct).ConfigureAwait(false);
         }
 
-        return new CacheRetentionOutcome(days, plan.Kept.Count, [.. progress.Pruned], progress.RowsRemoved);
+        return new CacheRetentionOutcome(days, plan.Kept.Count, [.. progress.Pruned], progress.RowsRemoved, VersionsKept: versionsKept);
     }
 
     /// <summary>

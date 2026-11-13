@@ -3636,6 +3636,15 @@ public sealed class DeliveryPartition
     /// </summary>
     public bool IsConfigured { get; set; }
 
+    /// <summary>
+    /// How many versions of the partition's cache keep their records, newest first, the current one counted
+    /// (osdu/docs/reference/concepts/partition-cache.md, Retention): every refresh prunes the records of the older ones, except
+    /// a version a delivery flow pins. 3 unless an admin sets another number, from 2 to 1000; the configuration never sets
+    /// it, so it may be changed on a partition the configuration names. <see cref="UpdatedUtc"/> and
+    /// <see cref="UpdatedBy"/> say when and by whom it was last set.
+    /// </summary>
+    public int CacheVersionsKept { get; set; } = 3;
+
     public DateTime CreatedUtc { get; set; }
 
     public string CreatedBy { get; set; } = string.Empty;
@@ -5353,6 +5362,7 @@ public static class DeliveryModel
             e.Property(p => p.Description).HasMaxLength(DeliveryPartition.MaxDescriptionLength);
             e.Property(p => p.CreatedBy).HasMaxLength(200).IsRequired();
             e.Property(p => p.UpdatedBy).HasMaxLength(200).IsRequired();
+            e.Property(p => p.CacheVersionsKept).HasDefaultValue(3);
             // At most one partition is the default.
             e.HasIndex(p => p.IsDefault).IsUnique().HasFilter("[IsDefault] = 1");
         });

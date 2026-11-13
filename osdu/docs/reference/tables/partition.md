@@ -2,8 +2,10 @@
 id: delivery-table-partition
 title: "osdu.Partition: the partition registry, the OSDU partitions registered with the catalog and the default one"
 type: table
-summary: "One row per OSDU data partition registered with the catalog: what it is for, whether it is the default, whether the configuration names it, and who changed it."
+summary: "One row per OSDU partition registered with the catalog: what it is for, whether it is the default or configured, and how many cache versions it keeps."
 keywords:
+  - CacheVersionsKept
+  - cache versions kept
   - osdu.Partition
   - partition table
   - partition registry
@@ -17,12 +19,16 @@ related:
   - delivery-cli-partition
   - delivery-table-config-property
   - delivery-table-ledger-partition
+  - delivery-concept-partition-cache
+  - delivery-table-cache-version
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs
   - osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs
   - osdu/src/SqlFlow.Delivery/Model/RegisteredPartitions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs
 ---
 
 # osdu.Partition: the partition registry, the OSDU partitions registered with the catalog and the default one
@@ -46,6 +52,7 @@ partition deletes nothing kept under it.
 | `Description` | `nvarchar(400)` | yes | What the partition is for (the environment, the platform), in the words of whoever registered it. |
 | `IsDefault` | `bit` | no | Set for the one partition a run that names none runs in. |
 | `IsConfigured` | `bit` | no | Set while the control plane's configuration (`Osdu:Partitions`) names the partition: the control plane registered it from there, and only the configuration describes it, makes it the default or takes it out. A partition the configuration stops naming stays registered with this cleared. |
+| `CacheVersionsKept` | `int` | no | Default `3`. How many versions of the partition's cache keep their records, the current one counted; every refresh prunes the older ones, except a version a delivery flow pins. An admin sets it, from 2 to 1000, on a configured partition too ([How many versions are kept](../concepts/partition-cache.md#how-many-versions-are-kept)). |
 | `CreatedUtc` | `datetime2` | no | When it was registered. |
 | `CreatedBy` | `nvarchar(200)` | no | Who registered it. |
 | `UpdatedUtc` | `datetime2` | no | When it was last changed. |
@@ -63,5 +70,7 @@ partition deletes nothing kept under it.
 - **Written** by the control plane's start from its configuration (`ConfiguredPartitions.cs`), by `sqlflow partition`, and
   by the Partitions page through the partition API (`POST /api/v1/delivery/partitions`, `PUT` and `DELETE
   /api/v1/delivery/partitions/{name}`, `POST /api/v1/delivery/partitions/{name}/default`) (`DeliveryPartitionRegistry.cs`,
-  `DeliveryPartitionEndpoints.cs`).
-- **Read** by every run that resolves its partition, the repository sync, the Partitions page and the partition API.
+  `DeliveryPartitionEndpoints.cs`). `CacheVersionsKept` is written by **Set versions kept** on the Cache page,
+  `PUT /api/v1/delivery/cache/retention` and `sqlflow cache keep` (`DeliveryCachePruneEndpoints.cs`).
+- **Read** by every run that resolves its partition, the repository sync, the Partitions page and the partition API;
+  `CacheVersionsKept` by every retention of the partition's cache and the cache listing (`OsduCacheStore.cs`).

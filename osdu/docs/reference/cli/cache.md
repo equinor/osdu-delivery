@@ -1,8 +1,8 @@
 ---
 id: delivery-cli-cache
-title: "sqlflow cache: list a partition's cache versions, import cached types for work without OSDU, or purge the cache's history"
+title: "sqlflow cache: list a partition's cache versions, import cached types for work without OSDU, purge its history, or set the versions it keeps"
 type: cli-command
-summary: "sqlflow cache list shows a partition cache's versions; cache import loads OSDU type files where no platform is reachable; cache prune purges its history."
+summary: "cache list shows a partition cache's versions; import loads type files without OSDU; prune purges its history; keep sets how many versions it keeps."
 keywords:
   - sqlflow cache
   - cache list
@@ -18,6 +18,9 @@ keywords:
   - cache prune
   - purge cache history
   - keep-days
+  - cache keep
+  - keep-versions
+  - versions kept
 cliCommand: cache
 related:
   - delivery-concept-partition-cache
@@ -37,18 +40,20 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs
   - osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs
   - sqlflow/src/SqlFlow.Core/Runs/RunActors.cs
 ---
 
-# sqlflow cache: list a partition's cache versions, import cached types for work without OSDU, or purge the cache's history
+# sqlflow cache: list a partition's cache versions, import cached types for work without OSDU, purge its history, or set the versions it keeps
 
 ## Synopsis
 
 ```bash
 sqlflow cache list <partition | cache.yaml> [--partition <id>] [--db <conn-ref>] [--json]
 sqlflow cache import <cache.yaml> --from-dir <dir> [--partition <id>] [--db <conn-ref>] [--json]
-sqlflow cache prune <partition> [--keep-days <n>] [--dry-run] [--db <conn-ref>] [--json]
+sqlflow cache prune <partition> [--keep-days <n>] [--keep-versions <n>] [--dry-run] [--db <conn-ref>] [--json]
+sqlflow cache keep <partition> --versions <n> [--dry-run] [--db <conn-ref>] [--json]
 ```
 
 ## Description
@@ -80,6 +85,7 @@ Every subcommand needs the module's database, which is the catalog's database, n
 | `list <cache.yaml>` | one of the two | A cache flow file: lists the cache of each partition the flow builds (every one for a flow that names its partitions or serves the registry, unless `--partition` names one), or of the partition its header names. |
 | `import <cache.yaml>` | yes | The cache flow whose capture the files stand in for. |
 | `prune <partition>` | yes | A partition id or a reference resolving to one, whose cache history to purge. |
+| `keep <partition>` | yes | A registered partition, by its id or a reference resolving to one, whose cache keeps the number `--versions` names. |
 
 ## Options
 
@@ -88,7 +94,9 @@ Every subcommand needs the module's database, which is the catalog's database, n
 | `--partition <id>` | both, with a cache flow file | The partition to list or import into, settled as a refresh settles it. With `import`, a flow that builds several partitions needs it when the registry's default is not one of them. A flow whose partition is its header's refuses it. |
 | `--from-dir <dir>` | `import` | The directory of type files. Required: `name the directory the type files are in with --from-dir.` |
 | `--keep-days <n>` | `prune` | How many days of replaced versions keep their records, a whole number from 0 to 36500; the partition's retention when left out. |
-| `--dry-run` | `prune` | Say what the purge would prune, and change nothing. |
+| `--keep-versions <n>` | `prune` | The most versions that keep their records, the current one counted, a whole number from 2 to 1000; the number the partition keeps when left out. |
+| `--versions <n>` | `keep` | How many versions the partition's cache keeps from now on, the current one counted, a whole number from 2 to 1000. Required. |
+| `--dry-run` | `prune`, `keep` | Say what the purge, or the number, would prune, and change nothing. |
 | `--db <conn-ref>` | all | The catalog connection reference, which the `osdu` schema is read and written through. |
 | `--json` | all | Print JSON instead of text. |
 
@@ -102,7 +110,7 @@ unchanged`), or `no type changed`. Then the current version's system properties:
 the service took it from, and why it is unknown.
 
 ```text
-partition dev: the records of a replaced version are kept 7 day(s) after it was replaced, then pruned; a pruned version is listed with what it was
+partition dev: the newest 3 versions keep their records, a replaced one for 7 day(s) after it was replaced; older ones are pruned, and a pruned version is listed with what it was
 20261009T012000Z  current  4210 record(s) in 4 type(s), written by cache flow welldb-lookups-00-cache at 2026-10-09 01:20:00Z for <who asked> in run <run id>
   types moved: UnitAlias (changed); 3 unchanged
 20261008T012000Z           4209 record(s) in 4 type(s), written by cache flow osdu-reference-00-cache at 2026-10-08 01:20:00Z for <who asked> in run <run id>
@@ -120,7 +128,7 @@ capture one`; one whose current version read no system properties prints `system
 cache flow of partition dev to read them` (a flow of lookup tables alone reaches no platform and reads none).
 
 With `--json`, the output is one array of versions, each with `partition`, `flow`, `version`, `sequence`, `current`,
-`prunedUtc` (null while its records are kept), `retentionDays` (the partition's), `capturedUtc`, `capturedBy`, `runId`,
+`prunedUtc` (null while its records are kept), `retentionDays` and `versionsKept` (the partition's), `capturedUtc`, `capturedBy`, `runId`,
 `origin`, `previousVersion`, `records`, `types` (each `name`, `entityType`, `records`, `hash`, `change`, `since`; the last
 three null for a version written before types were hashed) and `systemProperties` (each `service`, `name`, `state`,
 `source`, `detail`).
@@ -151,7 +159,7 @@ recorded as written by the cache flow, captured by `cli:<user>@<machine>` with n
 
 ```text
 cache of partition dev: version 20261009T094512Z written from cache flow osdu-reference-00-cache, holding 7 type(s) and 312 record(s), now current; types moved: UnitOfMeasure
-retention of partition dev: 7 day(s), pruned 2 version(s) and 318 stored row(s); 3 version(s) keep their records
+retention of partition dev: 3 version(s), 7 day(s), pruned 2 version(s) and 318 stored row(s); 3 version(s) keep their records
 ```
 
 Files that add nothing write nothing: `cache of partition dev: the files add nothing version <version> does not already
@@ -159,8 +167,8 @@ hold, so nothing was written`. Either way the import then applies the partition'
 second line says what it pruned: `nothing to prune`; `nothing pruned yet: <what it waits for>`, after an upgrade until
 the repository sync has recorded which versions delivery flows pin; or `not applied (<why>); the next refresh or import
 applies it` when it failed, which leaves the import standing. With `--json`, an import reports `partition`, `flow`,
-`version`, `written`, `types`, `records`, `typesMoved`, `typesRemoved` and `retention` (`retentionDays`, `kept`,
-`pruned`, `rowsRemoved`, `failure`, `deferred`).
+`version`, `written`, `types`, `records`, `typesMoved`, `typesRemoved` and `retention` (`retentionDays`, `versionsKept`,
+`kept`, `pruned`, `rowsRemoved`, `failure`, `deferred`).
 
 Records imported this way are not the platform's: a record delivered against them carries references to whatever the
 files say. Fill the cache of a partition that delivers for real by refreshing its cache flow.
@@ -169,8 +177,9 @@ files say. Fill the cache of a partition that delivers for real by refreshing it
 
 Purges the history of a partition's cache now, rather than at its next refresh: the same pass every refresh applies
 ([retention](../concepts/partition-cache.md#retention)), keeping the days `--keep-days` names in place of the partition's
-retention, whatever its cache flows declare. The current version, the one it replaced and every version a delivery flow
-pins keep their records whatever the days; `--keep-days 0` keeps those alone. Every version it prunes stays listed by
+retention, whatever its cache flows declare, and at most the versions `--keep-versions` names in place of the number the
+partition keeps. The current version, the one it replaced and every version a delivery flow pins keep their records
+whatever the days; `--keep-days 0` keeps those alone. Every version it prunes stays listed by
 `cache list`, and records the account the command runs as (`cli:<user>@<machine>`) and when.
 
 ```text
@@ -185,11 +194,34 @@ cache of partition dev: Pruned the records of 2 version(s), keeping only the cur
   pruned  20260921T050000Z
 ```
 
-Nothing to prune prints `Nothing to prune keeping <n> day(s) of history; <k> version(s) keep their records.`. After an
-upgrade, until the control plane has started once (or a repository sync has run) and recorded which versions delivery
-flows pin, it prunes nothing and names the flows it waits on. With
-`--json` it prints `partition`, `dryRun`, `retentionDays` (the days kept), `kept`, `pruned`, `rowsRemoved`, `failure`
-and `deferred`. The Cache page's History tab offers the same purge to an admin.
+Nothing to prune prints `Nothing to prune keeping the newest <v> version(s), none replaced over <n> day(s) ago; <k>
+version(s) keep their records.`. After an upgrade, until the control plane has started once (or a repository sync has
+run) and recorded which versions delivery flows pin, it prunes nothing and names the flows it waits on. With `--json` it
+prints `partition`, `dryRun`, `retentionDays` (the days kept), `versionsKept`, `kept`, `pruned`, `rowsRemoved`,
+`failure` and `deferred`. The Cache page's History tab offers the same purge to an admin.
+
+## cache keep
+
+Sets how many versions of a partition's cache keep their records, the current one counted
+([How many versions are kept](../concepts/partition-cache.md#how-many-versions-are-kept)): a whole number from 2 to 1000,
+3 until it is set. The number is saved for the partition, as the account the command runs as, and applied at once with the
+partition's retention days, so the versions past it lose their records now; every refresh applies it from then on.
+`--dry-run` says what it would prune and saves nothing. A partition the configuration names takes it too; one that is not
+registered is refused, naming how to register it.
+
+```text
+$ sqlflow cache keep dev --versions 2 --dry-run
+cache of partition dev, keeping 2 versions (nothing saved): Pruning, keeping the newest 2 version(s), none replaced over 7 day(s) ago, removes the records of 1 version(s), 5402 stored row(s); 2 version(s) keep theirs.
+  would prune  20261113T080000Z
+
+$ sqlflow cache keep dev --versions 2
+cache of partition dev keeps 2 versions from now on: Pruned the records of 1 version(s), keeping the newest 2 version(s), none replaced over 7 day(s) ago, and removed 5402 stored row(s); 2 version(s) keep theirs.
+  pruned  20261113T080000Z
+```
+
+A partition whose cache holds no version yet saves the number and prints `...; it holds no version yet, so nothing is
+pruned`. With `--json` it prints what `cache prune --json` prints. The Cache page's Setup tab offers the same to an
+admin as **Set versions kept**, and the API as `PUT /api/v1/delivery/cache/retention`.
 
 ## Errors and exit codes
 
@@ -202,6 +234,10 @@ and `deferred`. The Cache page's History tab offers the same purge to an admin.
 | `The directory '<dir>' holds no cached type files ({Name}.json), so there is nothing to import.` | An empty directory. |
 | `the cache flow builds a cache for dev, test; name the one the files belong to with --partition.` | `import` with `--partition '*'`. |
 | `--keep-days is a whole number of days from 0 to 36500, not '<value>'.` | `prune` with days out of range, or a value that is not a number. |
+| `--keep-versions is a whole number of versions from 2 to 1000, not '<value>'.` | `prune` with a number of versions out of range, or a value that is not a number. |
+| `name how many versions the partition's cache keeps with --versions <n>, from 2 to 1000.` | `keep` without `--versions`. |
+| `--versions is a whole number of versions from 2 to 1000, not '<value>'.` | `keep` with a number out of range, or a value that is not a number. |
+| `Partition '<p>' is not registered ...` | `keep` of a partition the registry does not hold. |
 | `The cache of partition '<p>' holds no version, so it has no history to prune.` | `prune` of a partition whose cache has no version. |
 
 The command exits 0 on success, 1 on a usage error or a failure (printed as `ERROR  <message>`, with the usage text
@@ -222,6 +258,10 @@ sqlflow cache import reference/osdu-reference-00-cache.yaml --from-dir cache-rec
 # see what keeping a day of history would prune, then prune it
 sqlflow cache prune dev --keep-days 1 --dry-run
 sqlflow cache prune dev --keep-days 1
+
+# keep five versions of the dev partition's cache from now on, after seeing what that prunes
+sqlflow cache keep dev --versions 5 --dry-run
+sqlflow cache keep dev --versions 5
 ```
 
 ## Related

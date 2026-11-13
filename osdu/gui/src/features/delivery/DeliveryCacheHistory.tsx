@@ -27,6 +27,7 @@ import { parseUtc } from "@/lib/time";
 import { cachedFieldsText, cachedText } from "./cacheFormat";
 import { CachedRecordId } from "./DeliveryCacheRecords";
 import { CachePruneButton } from "./CachePruneButton";
+import { versionsText } from "./cacheVersionsKept";
 import { ChangeBadge, ChangeCount } from "./ChangeMark";
 import { isPruned, shortHash, typeVersions, type CacheTypeVersion } from "./cacheTypeVersions";
 import { shortId } from "./idTail";
@@ -556,11 +557,13 @@ function VersionLabel({ label, current, note }: { label: string; current: boolea
  * content hash moved, each compared with the version of the type before it. It covers the whole cache, where Approvals
  * covers only the changes that reach records already delivered.
  */
-export function DeliveryCacheHistory({ scope, type, retentionDays }: {
+export function DeliveryCacheHistory({ scope, type, retentionDays, versionsKept }: {
   scope: string;
   type: string | null;
   /** The partition's retention; given, an admin can purge the history from the list, starting from it. */
   retentionDays?: number;
+  /** How many versions the partition keeps, the current one counted; given, the list says it. */
+  versionsKept?: number;
 }) {
   const history = useQuery({
     queryKey: ["delivery", "cache", "history", scope, type],
@@ -591,7 +594,13 @@ export function DeliveryCacheHistory({ scope, type, retentionDays }: {
   }
 
   return type === null
-    ? <CacheVersionList entries={history.data} prune={retentionDays === undefined ? null : <CachePruneButton scope={scope} retentionDays={retentionDays} />} />
+    ? (
+      <CacheVersionList
+        entries={history.data}
+        keeps={versionsKept}
+        prune={retentionDays === undefined ? null : <CachePruneButton scope={scope} retentionDays={retentionDays} versionsKept={versionsKept} />}
+      />
+    )
     : <TypeVersionList scope={scope} type={type} entries={history.data} />;
 }
 
@@ -626,10 +635,10 @@ function usePickedPanel<T>(rows: T[], keyOf: (row: T) => string, content: (row: 
 }
 
 /**
- * Every version of the cache, with the types each moved and what it changed against the version before it, and the purge of
- * the history beside the count, for an admin.
+ * Every version of the cache, with the types each moved and what it changed against the version before it, how many the
+ * cache keeps, and the purge of the history beside the count, for an admin.
  */
-function CacheVersionList({ entries, prune }: { entries: DeliveryCacheHistoryEntry[]; prune: ReactNode }) {
+function CacheVersionList({ entries, keeps, prune }: { entries: DeliveryCacheHistoryEntry[]; keeps?: number; prune: ReactNode }) {
   const content = useCallback((entry: DeliveryCacheHistoryEntry) => ({
     title: `Changes · ${entry.version.version}`,
     body: <VersionChanges entry={entry} />,
@@ -664,9 +673,10 @@ function CacheVersionList({ entries, prune }: { entries: DeliveryCacheHistoryEnt
   return (
     <div className="flex flex-col gap-2" data-testid="delivery-cache-history">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground" data-testid="delivery-cache-history-count">
           {entries.length.toLocaleString()} version{entries.length === 1 ? "" : "s"}
-          {pruned > 0 && `, ${pruned.toLocaleString()} of them pruned by the cache's retention`}; pick one to see what it changed.
+          {pruned > 0 && `, ${pruned.toLocaleString()} of them pruned by the cache's retention`}
+          {keeps !== undefined && `; the cache keeps the newest ${versionsText(keeps)}`}. Pick one to see what it changed.
         </span>
         {prune}
       </div>

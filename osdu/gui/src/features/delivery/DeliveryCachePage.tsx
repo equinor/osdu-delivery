@@ -28,6 +28,7 @@ import { DeliveryCacheApprovals } from "./DeliveryCacheApprovals";
 import { DeliveryCacheSetup } from "./DeliveryCacheSetup";
 import { parseSetupNode, type SetupNode } from "./cacheSetupNode";
 import { CacheCompareDialog, DeliveryCacheHistory } from "./DeliveryCacheHistory";
+import { DEFAULT_VERSIONS_KEPT } from "./cacheVersionsKept";
 import { DeliveryCacheRecords } from "./DeliveryCacheRecords";
 
 /**
@@ -576,7 +577,12 @@ function CacheWorkbench({ cache, tab, section, node, onNode, type, onTab, onType
         </TabsContent>
 
         <TabsContent value="history">
-          <DeliveryCacheHistory scope={cache.scope} type={scoped?.name ?? null} retentionDays={cache.retentionDays ?? 7} />
+          <DeliveryCacheHistory
+            scope={cache.scope}
+            type={scoped?.name ?? null}
+            retentionDays={cache.retentionDays ?? 7}
+            versionsKept={cache.versionsKept ?? DEFAULT_VERSIONS_KEPT}
+          />
         </TabsContent>
 
         <TabsContent value="deliveries">

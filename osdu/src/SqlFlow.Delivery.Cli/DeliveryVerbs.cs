@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using SqlFlow.Cli.Hosting;
 using SqlFlow.Core;
 using SqlFlow.Core.Runs;
+using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Engine.Planning;
 using SqlFlow.Delivery.Engine.Snapshots;
@@ -479,19 +480,20 @@ internal static class DeliveryVerbs
                     scopes.Add(await ResolvedScopeAsync(engine, target, "sqlflow cache list", ct).ConfigureAwait(false));
                 }
 
-                var listed = new List<(string Scope, IReadOnlyList<CacheVersionInfo> Versions, int RetentionDays)>();
+                var listed = new List<(string Scope, IReadOnlyList<CacheVersionInfo> Versions, int RetentionDays, int VersionsKept)>();
                 foreach (var scope in scopes)
                 {
                     listed.Add((
                         scope,
                         await store.ListVersionsAsync(scope, ct).ConfigureAwait(false),
-                        (await store.DeclarationAsync(scope, ct).ConfigureAwait(false)).RetentionDays));
+                        (await store.DeclarationAsync(scope, ct).ConfigureAwait(false)).RetentionDays,
+                        await store.VersionsKeptAsync(scope, ct).ConfigureAwait(false)));
                 }
 
                 if (context.Json)
                 {
                     context.Out.WriteLine(CanonicalJson.Pretty(new JsonArray(
-                        listed.SelectMany(l => l.Versions.Select(v => (JsonNode)Describe(v, l.RetentionDays))).ToArray())));
+                        listed.SelectMany(l => l.Versions.Select(v => (JsonNode)Describe(v, l.RetentionDays, l.VersionsKept))).ToArray())));
                     return 0;
                 }
 
@@ -502,7 +504,7 @@ internal static class DeliveryVerbs
                         context.Out.WriteLine();
                     }
 
-                    WriteVersions(context, listed[i].Scope, listed[i].Versions, listed[i].RetentionDays);
+                    WriteVersions(context, listed[i].Scope, listed[i].Versions, listed[i].RetentionDays, listed[i].VersionsKept);
                 }
 
                 return 0;
@@ -564,15 +566,92 @@ internal static class DeliveryVerbs
             case "prune":
                 return await CachePruneAsync(ModuleCommand.Of(context), target).ConfigureAwait(false);
 
+            case "keep":
+                return await CacheKeepAsync(ModuleCommand.Of(context), target).ConfigureAwait(false);
+
             default:
                 return context.UsageError($"'{verb}' is not a cache subcommand.");
         }
     }
 
     /// <summary>
+    /// <c>sqlflow cache keep</c>: sets how many versions of a partition's cache keep their records, the current one counted
+    /// (<c>--versions</c>, from 2 to 1000), for the partition, and applies it at once, as the account the command runs as;
+    /// every refresh applies it from then on. <c>--dry-run</c> says what it would prune and saves nothing.
+    /// </summary>
+    internal static async Task<int> CacheKeepAsync(ModuleCommand command, string target)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        var ct = command.CancellationToken;
+        var engine = command.Services.GetRequiredService<EngineContext>();
+        var store = engine.Cache
+            ?? throw new FlowValidationException("Caches live in the module's database. Run 'sqlflow cache' with --db <conn-ref>, or set the catalog variable.");
+        if (!command.Arguments.HasFlag("--versions"))
+        {
+            return command.UsageError(
+                $"name how many versions the partition's cache keeps with --versions <n>, from {CacheRetention.MinVersions} to {CacheRetention.MaxVersions}.");
+        }
+
+        if (WholeNumber(command.Arguments, "--versions", CacheRetention.MaxVersions) is not { } versions || !CacheRetention.KeepsVersions(versions))
+        {
+            return command.UsageError(
+                $"--versions is a whole number of versions from {CacheRetention.MinVersions} to {CacheRetention.MaxVersions}{Given(command.Arguments, "--versions")}.");
+        }
+
+        var registry = command.Services.GetRequiredService<DeliveryPartitionRegistry>();
+        if (!registry.Available)
+        {
+            throw new FlowValidationException(
+                "How many versions a partition's cache keeps is set in the partition registry, in the module's database. Run 'sqlflow cache keep' with --db <conn-ref>, or set the catalog variable.");
+        }
+
+        var scope = await ResolvedScopeAsync(engine, target, "sqlflow cache keep", ct).ConfigureAwait(false);
+        var dryRun = command.Arguments.HasFlag("--dry-run");
+        var actor = RunActors.LocalAccount();
+        var now = engine.Time.GetUtcNow();
+        if (dryRun)
+        {
+            // Nothing is saved, so the partition is looked up rather than written: a dry run refuses what the change would.
+            var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
+            if (registered.Find(scope) is null)
+            {
+                throw new PartitionNotRegisteredException(registered.NotRegistered(scope));
+            }
+        }
+        else
+        {
+            await registry.KeepCacheVersionsAsync(scope, versions, actor, now.UtcDateTime, ct).ConfigureAwait(false);
+        }
+
+        var said = dryRun
+            ? $"cache of partition {scope}, keeping {versions} versions (nothing saved)"
+            : $"cache of partition {scope} keeps {versions} versions from now on";
+        if (await store.CurrentVersionAsync(scope, ct).ConfigureAwait(false) is null)
+        {
+            if (command.Json)
+            {
+                command.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
+                {
+                    ["partition"] = scope, ["versionsKept"] = versions, ["dryRun"] = dryRun, ["pruned"] = new JsonArray(),
+                }));
+                return 0;
+            }
+
+            command.Out.WriteLine($"{said}; it holds no version yet, so nothing is pruned");
+            return 0;
+        }
+
+        var days = (await store.DeclarationAsync(scope, ct).ConfigureAwait(false)).RetentionDays;
+        var outcome = await store.ApplyRetentionAsync(
+            CacheRetentionRequest.Purge(scope, days, now, actor, dryRun, versions), ct).ConfigureAwait(false);
+        return WritePurge(command, scope, said, outcome);
+    }
+
+    /// <summary>
     /// <c>sqlflow cache prune</c>: an operator's purge of a partition cache's history, through the retention every refresh
-    /// applies, keeping <c>--keep-days</c> (the partition's own retention when left out). The pruned versions record the
-    /// account the command runs as. <c>--dry-run</c> says what it would prune and changes nothing.
+    /// applies, keeping <c>--keep-days</c> and at most <c>--keep-versions</c> (the partition's own when left out). The pruned
+    /// versions record the account the command runs as. <c>--dry-run</c> says what it would prune and changes nothing.
     /// </summary>
     internal static async Task<int> CachePruneAsync(ModuleCommand command, string target)
     {
@@ -584,19 +663,28 @@ internal static class DeliveryVerbs
             ?? throw new FlowValidationException("Caches live in the module's database. Run 'sqlflow cache' with --db <conn-ref>, or set the catalog variable.");
 
         // The option given without a value it takes (none, or a token that reads as an option, such as -1) is refused as one
-        // given a value out of range: a purge never falls back to other days than the ones asked for.
+        // given a value out of range: a purge never falls back to other days or versions than the ones asked for.
         int? keepDays = null;
         if (command.Arguments.HasFlag("--keep-days"))
         {
-            var text = command.Arguments.GetOption("--keep-days");
-            if (text is null || !int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed > CacheRetention.MaxDays)
+            if (WholeNumber(command.Arguments, "--keep-days", CacheRetention.MaxDays) is not { } parsed)
             {
-                var given = text ?? FollowingToken(command.Arguments, "--keep-days");
-                return command.UsageError(
-                    $"--keep-days is a whole number of days from 0 to {CacheRetention.MaxDays}{(given is null ? ", and none was given" : $", not '{given}'")}.");
+                return command.UsageError($"--keep-days is a whole number of days from 0 to {CacheRetention.MaxDays}{Given(command.Arguments, "--keep-days")}.");
             }
 
             keepDays = parsed;
+        }
+
+        int? keepVersions = null;
+        if (command.Arguments.HasFlag("--keep-versions"))
+        {
+            if (WholeNumber(command.Arguments, "--keep-versions", CacheRetention.MaxVersions) is not { } parsed || !CacheRetention.KeepsVersions(parsed))
+            {
+                return command.UsageError(
+                    $"--keep-versions is a whole number of versions from {CacheRetention.MinVersions} to {CacheRetention.MaxVersions}{Given(command.Arguments, "--keep-versions")}.");
+            }
+
+            keepVersions = parsed;
         }
 
         var scope = await ResolvedScopeAsync(engine, target, "sqlflow cache prune", ct).ConfigureAwait(false);
@@ -608,7 +696,13 @@ internal static class DeliveryVerbs
         var days = keepDays ?? (await store.DeclarationAsync(scope, ct).ConfigureAwait(false)).RetentionDays;
         var dryRun = command.Arguments.HasFlag("--dry-run");
         var outcome = await store.ApplyRetentionAsync(
-            CacheRetentionRequest.Purge(scope, days, engine.Time.GetUtcNow(), RunActors.LocalAccount(), dryRun), ct).ConfigureAwait(false);
+            CacheRetentionRequest.Purge(scope, days, engine.Time.GetUtcNow(), RunActors.LocalAccount(), dryRun, keepVersions), ct).ConfigureAwait(false);
+        return WritePurge(command, scope, $"cache of partition {scope}", outcome);
+    }
+
+    /// <summary>What a purge, or a change to the versions a partition keeps, did or would do: one line, then each version it prunes.</summary>
+    private static int WritePurge(ModuleCommand command, string scope, string said, CacheRetentionOutcome outcome)
+    {
         if (command.Json)
         {
             var json = DescribeRetention(outcome);
@@ -618,7 +712,7 @@ internal static class DeliveryVerbs
             return 0;
         }
 
-        command.Out.WriteLine($"cache of partition {scope}: {outcome.DescribePurge()}");
+        command.Out.WriteLine($"{said}: {outcome.DescribePurge()}");
         foreach (var version in outcome.Pruned)
         {
             command.Out.WriteLine($"  {(outcome.DryRun ? "would prune" : "pruned")}  {version}");
@@ -626,6 +720,19 @@ internal static class DeliveryVerbs
 
         return 0;
     }
+
+    /// <summary>
+    /// The whole number <paramref name="option"/> gives, from 0 to <paramref name="max"/>; null when it gives none, or another
+    /// value (a token that reads as an option, such as -1, is no value).
+    /// </summary>
+    private static int? WholeNumber(CliArguments arguments, string option, int max)
+        => arguments.GetOption(option) is { } text && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed <= max
+            ? parsed
+            : null;
+
+    /// <summary>What a refusal of <paramref name="option"/> says it was given: the value, or that none was.</summary>
+    private static string Given(CliArguments arguments, string option)
+        => (arguments.GetOption(option) ?? FollowingToken(arguments, option)) is { } given ? $", not '{given}'" : ", and none was given";
 
     /// <summary>The token right after <paramref name="option"/> on the command line, or null when it is the last one.</summary>
     private static string? FollowingToken(CliArguments arguments, string option)
@@ -659,17 +766,18 @@ internal static class DeliveryVerbs
 
         if (retention.Deferred is { } waiting)
         {
-            return $"retention of partition {scope}: {retention.RetentionDays} day(s), nothing pruned yet: {waiting}";
+            return $"retention of partition {scope}: {retention.Rule}, nothing pruned yet: {waiting}";
         }
 
         return retention.Pruned.Count == 0 && retention.RowsRemoved == 0
-            ? $"retention of partition {scope}: {retention.RetentionDays} day(s), nothing to prune; {retention.Kept} version(s) keep their records"
-            : $"retention of partition {scope}: {retention.RetentionDays} day(s), pruned {retention.Pruned.Count} version(s) and {retention.RowsRemoved} stored row(s); {retention.Kept} version(s) keep their records";
+            ? $"retention of partition {scope}: {retention.Rule}, nothing to prune; {retention.Kept} version(s) keep their records"
+            : $"retention of partition {scope}: {retention.Rule}, pruned {retention.Pruned.Count} version(s) and {retention.RowsRemoved} stored row(s); {retention.Kept} version(s) keep their records";
     }
 
     private static JsonObject DescribeRetention(CacheRetentionOutcome retention) => new()
     {
         ["retentionDays"] = retention.RetentionDays,
+        ["versionsKept"] = retention.VersionsKept,
         ["kept"] = retention.Kept,
         ["pruned"] = new JsonArray(retention.Pruned.Select(version => (JsonNode)JsonValue.Create(version)).ToArray()),
         ["rowsRemoved"] = retention.RowsRemoved,
@@ -681,7 +789,7 @@ internal static class DeliveryVerbs
     /// The versions of one partition's cache, newest first, each marked when its records are pruned, the partition's
     /// retention, and the system properties its current version holds.
     /// </summary>
-    private static void WriteVersions(CliVerbContext context, string scope, IReadOnlyList<CacheVersionInfo> versions, int retentionDays)
+    private static void WriteVersions(CliVerbContext context, string scope, IReadOnlyList<CacheVersionInfo> versions, int retentionDays, int versionsKept)
     {
         if (versions.Count == 0)
         {
@@ -690,7 +798,7 @@ internal static class DeliveryVerbs
         }
 
         context.Out.WriteLine(
-            $"partition {scope}: the records of a replaced version are kept {retentionDays} day(s) after it was replaced, then pruned; a pruned version is listed with what it was");
+            $"partition {scope}: the newest {versionsKept} versions keep their records, a replaced one for {retentionDays} day(s) after it was replaced; older ones are pruned, and a pruned version is listed with what it was");
         foreach (var v in versions)
         {
             var run = v.RunId is { } runId ? $" in run {runId:D}" : string.Empty;
@@ -737,7 +845,7 @@ internal static class DeliveryVerbs
         }
     }
 
-    private static JsonObject Describe(CacheVersionInfo v, int retentionDays) => new()
+    private static JsonObject Describe(CacheVersionInfo v, int retentionDays, int versionsKept) => new()
     {
         ["partition"] = v.Scope,
         ["flow"] = v.FlowName,
@@ -747,6 +855,7 @@ internal static class DeliveryVerbs
         ["prunedUtc"] = v.PrunedUtc?.ToString("O", CultureInfo.InvariantCulture),
         ["prunedBy"] = v.PrunedBy,
         ["retentionDays"] = retentionDays,
+        ["versionsKept"] = versionsKept,
         ["capturedUtc"] = v.CapturedUtc.ToString("O", CultureInfo.InvariantCulture),
         ["capturedBy"] = v.CapturedBy,
         ["runId"] = v.RunId?.ToString("D"),

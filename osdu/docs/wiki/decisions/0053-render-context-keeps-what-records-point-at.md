@@ -23,7 +23,8 @@ referenceRefs:
   - delivery-concept-partition-cache
 related:
   - delivery-wiki-0029-storage-maintenance
-updated: 2026-11-12
+  - delivery-wiki-0056-cache-keeps-its-newest-versions
+updated: 2026-11-13
 ---
 # 0053: The render context keeps only the sets of cached values a record points at
 

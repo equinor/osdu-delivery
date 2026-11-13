@@ -176,7 +176,7 @@ key never passes silently.
 | `source` | map | yes | none | Where the types come from: `endpoint`, `auth` and `headers` for OSDU types, `connection` for table types. Required even when empty (`source: {}` for a flow of dictionaries or dimensions only); missing, it fails with `'source' is required.` |
 | `types` | list | yes | none | The types the flow caches, at least one, each from one origin. |
 | `onChange` | `auto` or `approve` | no | `auto` | What a changed cached value does to the records already built from it; a type may override it. See [onChange](#onchange). |
-| `retentionDays` | integer, 1 to 36500 | no | `7` | How many days the partition's cache keeps the records of a version after a newer one replaced it; every refresh and import prunes the rest. See [retentionDays](#retentiondays). |
+| `retentionDays` | integer, 1 to 36500 | no | `7` | How many days the partition's cache keeps the records of a version after a newer one replaced it, among the newest versions the partition keeps (3 by default); every refresh and import prunes the rest. See [retentionDays](#retentiondays). |
 | `reliability` | map | no | defaults | The HTTP settings of the OSDU searches, written as on a [delivery flow](delivery.md): timeout, retry, rate limit, TLS, URL allowlist and response size. A cache flow has no `parallelism` block, and refuses a parallelism setting written under `reliability` (`reliability.concurrency is not a setting here any more: a delivery flow writes it as parallelism.recordsAtOnce, and a cache flow has no use for it. Remove it.`). |
 | `schedule`, `mode`, `lifecycle` | | no | none | SQLFlow's envelope, as on every flow ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md)); a fire runs a refresh. |
 
@@ -272,6 +272,10 @@ retentionDays: 30
   with `render.cacheVersion`.
 - **The longest wins.** When several cache flows fill one partition, the partition keeps the longest retention any of
   them declares, so no project's history is pruned sooner than it asked for.
+- **The partition keeps at most its newest versions.** However long the days, a version older than the newest 3, the
+  current one counted, is pruned; an admin sets another number for the partition, from 2 to 1000
+  ([How many versions are kept](../concepts/partition-cache.md#how-many-versions-are-kept)). A flow refreshed once a week
+  keeps three weeks of versions only when `retentionDays` asks for that many days.
 - **Nothing a delivered record needs is pruned.** A record keeps the cached values its render read in the ledger, and a
   pruned version stays listed with who captured it, when and what it changed. Only its records go: it can no longer be
   browsed, compared, or rendered against.

@@ -4,7 +4,6 @@ import {
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
 import type { Column } from "@/components/DataTable";
-import { TruncatedText } from "@/components/TruncatedText";
 import { lazyRoute } from "@/lib/lazyRoute";
 import type { FlowKindContribution, GuiModule, RunDetailContribution } from "@/modules/registry";
 import { Deferred } from "./features/delivery/Deferred";
@@ -169,9 +168,10 @@ const HIDDEN_PIPELINE_TABS = ["transforms", "files", "definition"];
 /** SQLFlow's run tabs that describe its own runs' work (files, SQL statements, keys, assertions, health metrics). */
 const HIDDEN_RUN_TABS = ["files", "statements", "surrogate-keys", "assertions", "health-metrics"];
 
+// Who started a run is the runs board's own Started by column, for every kind; the module adds only what its kinds' runs
+// carry besides.
 const runColumns: Column<RunSummary>[] = [
   { id: "operation", header: "Operation", render: (row) => <span className="font-mono text-[12px]">{row.operation ?? "-"}</span> },
-  { id: "requested-by", header: "Requested by", render: (row) => <TruncatedText text={row.requestedBy} mono maxWidth={200} /> },
 ];
 
 function runPanels(extra: Omit<RunDetailContribution, "card" | "hiddenTabs">): RunDetailContribution {

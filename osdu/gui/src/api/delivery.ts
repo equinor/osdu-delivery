@@ -747,6 +747,11 @@ export interface DeliveryCache {
    * partition's cache flows declares.
    */
   retentionDays?: number;
+  /**
+   * How many versions keep their records at most, the current one counted (3 until an admin sets another number); every
+   * refresh prunes the records of the older ones, except a version a delivery flow pins. Absent from an older control plane.
+   */
+  versionsKept?: number;
 }
 
 /** One cached record: its OSDU id and the values captured at the declared paths, in whatever shape they came. */
@@ -840,10 +845,20 @@ export interface DeliveryCacheVersion {
   prunedBy?: string | null;
 }
 
-/** A purge of a partition cache's history: the days of replaced versions that keep their records, 0 to 36500. */
+/**
+ * A purge of a partition cache's history: the days of replaced versions that keep their records, 0 to 36500, and the most
+ * versions that keep them, 2 to 1000; each left out, the partition's own.
+ */
 export interface DeliveryCachePruneRequest {
   scope: string;
-  keepDays: number;
+  keepDays?: number;
+  versionsKept?: number;
+}
+
+/** How many versions of a partition's cache keep their records, the current one counted, as an admin sets it: 2 to 1000. */
+export interface DeliveryCacheRetentionRequest {
+  scope: string;
+  versionsKept: number;
 }
 
 /**
@@ -854,6 +869,8 @@ export interface DeliveryCachePruneRequest {
 export interface DeliveryCachePruneResult {
   scope: string;
   keepDays: number;
+  /** The most versions that keep their records, the current one counted. Absent from an older control plane. */
+  versionsKept?: number;
   preview: boolean;
   kept: number;
   pruned: string[];
@@ -4665,6 +4682,12 @@ export const deliveryApi = {
   /** Purges the partition cache's history, keeping `keepDays`, as the signed-in admin. */
   cachePrune: (request: DeliveryCachePruneRequest) =>
     post<DeliveryCachePruneResult>("/api/v1/delivery/cache/prune", request),
+  /**
+   * Sets how many versions of the partition's cache keep their records, as the signed-in admin, and applies it at once: what
+   * it pruned comes back. `cachePrunePreview` with `versionsKept` says what it would prune first.
+   */
+  cacheKeepVersions: (request: DeliveryCacheRetentionRequest) =>
+    put<DeliveryCachePruneResult>("/api/v1/delivery/cache/retention", request),
   /** The cache changes delivered records were built from, by status (pending, approved, rolling, rejected, applied) and partition. */
   updateTags: (query: PageQuery & { status?: string; scope?: string }) =>
     get<PagedResult<DeliveryUpdateTag>>("/api/v1/delivery/cache/tags", query as QueryParams),

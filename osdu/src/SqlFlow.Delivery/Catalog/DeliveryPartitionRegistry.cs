@@ -3,6 +3,7 @@ using SqlFlow.Core;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Snapshots;
 
 namespace SqlFlow.Delivery.Catalog;
 
@@ -13,7 +14,8 @@ namespace SqlFlow.Delivery.Catalog;
 /// (<see cref="ConfiguredPartitions"/>), the Partitions page, the API and <c>sqlflow partition</c>. At most one
 /// partition is the default; the first one registered becomes it, so a registry that holds partitions always has one to
 /// run in until someone removes it. A partition the configuration names is the configuration's: it is not described,
-/// made or unmade the default, or removed here (<see cref="SetByConfigurationException"/>).
+/// made or unmade the default, or removed here (<see cref="SetByConfigurationException"/>). How many versions its cache
+/// keeps is an admin's, on every partition, since the configuration never sets it.
 /// </summary>
 public sealed class DeliveryPartitionRegistry : IPartitionRegistry
 {
@@ -116,6 +118,35 @@ public sealed class DeliveryPartitionRegistry : IPartitionRegistry
         row.UpdatedUtc = nowUtc;
         row.UpdatedBy = Clip(actor);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return row;
+    }
+
+    /// <summary>
+    /// Sets how many versions of <paramref name="name"/>'s cache keep their records, the current one counted
+    /// (<see cref="DeliveryPartition.CacheVersionsKept"/>); the next retention of the cache applies it. A partition the
+    /// configuration names takes it too: the configuration never sets it.
+    /// </summary>
+    /// <exception cref="PartitionNotRegisteredException">The partition is not registered.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The number is outside what a partition may keep.</exception>
+    public async Task<DeliveryPartition> KeepCacheVersionsAsync(string name, int versions, string actor, DateTime nowUtc, CancellationToken ct = default)
+    {
+        if (!CacheRetention.KeepsVersions(versions))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(versions), versions, CacheRetention.VersionsOutOfRange(versions.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        await using var db = Open();
+        var row = await FindAsync(db, name, ct).ConfigureAwait(false);
+        if (row.CacheVersionsKept != versions)
+        {
+            row.CacheVersionsKept = versions;
+            row.UpdatedUtc = nowUtc;
+            row.UpdatedBy = Clip(actor);
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+
         return row;
     }
 

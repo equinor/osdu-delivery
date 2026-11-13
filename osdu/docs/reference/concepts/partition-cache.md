@@ -10,6 +10,9 @@ keywords:
   - cache refresh
   - cache retention
   - retentiondays
+  - versions kept
+  - cache versions kept
+  - set versions kept
   - pruned version
   - purge cache history
   - prune history
@@ -54,6 +57,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs
   - osdu/gui/src/features/delivery/CachePruneButton.tsx
+  - osdu/gui/src/features/delivery/CacheVersionsKeptButton.tsx
+  - osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Engine/CacheExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheRefresh.cs
@@ -143,11 +148,15 @@ longer needs. It keeps the records of:
 - **the version the current one replaced,** which a run that resolved the current version just before it moved may still
   load, and which the latest change is compared with;
 - **every version a delivery flow pins** with `render.cacheVersion`;
-- **every version replaced less than the retention ago.** A version stops being current when the next one is captured,
-  and its retention runs from that instant.
+- **every other version among the newest the partition keeps that was replaced less than the retention ago.** A
+  version stops being current when the next one is captured, and its retention runs from that instant.
 
 The retention is the cache flow's `retentionDays` ([cache flow](../flow/cache.md#retentiondays)), 7 days when it declares
-none. When several cache flows fill one partition, the partition keeps the longest any of them declares.
+none. When several cache flows fill one partition, the partition keeps the longest any of them declares. How many
+versions keep their records is the partition's: its newest 3, the current one counted, unless an admin sets another
+number ([How many versions are kept](#how-many-versions-are-kept)). A version older than that many is pruned however
+recently it was replaced, and one among them is pruned once it was replaced longer ago than the retention, so the number
+is the most the partition keeps.
 
 Pruning a version removes only the stored rows no kept version shares: a record that did not change since is one row,
 kept for the versions that still hold it. Before any row goes, the version's changes (how many records of each type
@@ -171,23 +180,44 @@ control plane also makes inactive the interfaces of a repository the catalog hol
 repository removed from the catalog leaves nothing to wait on. A retention that fails is logged and reported in the
 run's result; the refresh itself stands, and the next one applies the retention again.
 
+### How many versions are kept
+
+A partition's cache keeps the records of its newest 3 versions, the current one counted, unless an admin sets another
+number for the partition: **Set versions kept** on the **History kept** line of the Cache page's Setup tab,
+`PUT /cache/retention` ([the API](api.md)), or `sqlflow cache keep` ([the CLI](../cli/cache.md)). The number is from 2 to
+1000, since the current version and the one it replaced always keep their records. It is saved for the partition and
+applied at once, so the versions past it lose their records then rather than at the next refresh, and every refresh
+applies it from then on. Before anything is saved, the page shows what the number prunes (the versions, and how many
+stored rows), as `POST /cache/prune/preview` with `versionsKept` and `sqlflow cache keep --dry-run` do. Keeping more
+versions brings back nothing already pruned.
+
+The number is set for a partition the control plane's configuration names as well, since the configuration never sets
+it, and it records who set it and when (`UpdatedBy`, `UpdatedUtc`). A cache whose partition is not registered keeps 3.
+A version a delivery flow pins keeps its records whatever the number, and takes none of the newest versions' places.
+
+The History tab counts the pruned versions and names the number the partition keeps: `15 versions, 12 of them pruned by
+the cache's retention; the cache keeps the newest 3 versions.` The version picker on the Records tab offers only the
+versions that keep their records, and counts the rest.
+
 ### Purging the history by hand
 
 An admin can purge a partition cache's history now, rather than wait for its next refresh: **Prune history** on the
 Cache page's History tab, `POST /cache/prune` ([the API](api.md)), or `sqlflow cache prune` ([the CLI](../cli/cache.md)).
 It is the same pass, with the days the admin names in place of the partition's retention, whatever its cache flows
-declare: the current version, the one it replaced and every pinned version keep their records whatever the days, and 0
-keeps those alone. The page starts from the partition's retention and shows what the days chosen prune (the versions,
+declare, and at most the versions the partition keeps (or the number a purge names: `versionsKept`, `--keep-versions`):
+the current version, the one it replaced and every pinned version keep their records whatever the days, and 0 keeps those
+alone. The page starts from the partition's retention and shows what the days chosen prune (the versions,
 and how many stored rows) before anything goes; `POST /cache/prune/preview` and `--dry-run` say the same. The purge is
 an admin's, since what it removes cannot be brought back; a preview is anyone's who may operate.
 
 Every pruned version records when and by whom: the requester of the refresh, the account of the import, or the admin who
 purged. History shows it on the version's `pruned` mark, `sqlflow cache list` beside it, and the API as `prunedBy`.
 
-In the database, `osdu.CacheDefinition.RetentionDays` holds what each flow declares, `osdu.CacheVersion.PrunedUtc` and
-`PrunedBy` when and by whom a version was pruned and `ChangesJson` what it changed, and `osdu.Interface.CacheVersion` the
-version each delivery interface renders against (migrations `CacheRetention`, module version 1.40.0, and
-`CachePruneActor`, module version 1.41.0).
+In the database, `osdu.CacheDefinition.RetentionDays` holds what each flow declares, `osdu.Partition.CacheVersionsKept`
+how many versions each partition keeps, `osdu.CacheVersion.PrunedUtc` and `PrunedBy` when and by whom a version was
+pruned and `ChangesJson` what it changed, and `osdu.Interface.CacheVersion` the version each delivery interface renders
+against (migrations `CacheRetention`, module version 1.40.0, `CachePruneActor`, module version 1.41.0, and
+`CacheVersionsKept`, module version 1.71.0).
 
 ## Several cache flows, one cache
 

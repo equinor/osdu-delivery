@@ -273,6 +273,9 @@ other packages adopt the same contract.
 - [0055: a dimension flow keeps its tables and views where its target says, written after the merge](decisions/0055-dimension-tables-kept-where-the-flow-says.md):
   why a dimension's `dim_` table and its flow's views may live on another connection, database or schema while the
   dimension stays in the catalog, why the table is a second step after the merge, and why a moved target leaves nothing.
+- [0056: a partition's cache keeps its newest three versions, and an admin sets another number](decisions/0056-cache-keeps-its-newest-versions.md):
+  why a count limits the cache's history beside `retentionDays`, why the number is the partition's and set by an admin
+  on the Cache page rather than in YAML or configuration, and why it runs by default.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

@@ -129,7 +129,10 @@ sqlflow pipelines list --repo welldb --kind cache
 
 - `--kind` filters by flow kind. The kinds OSDU Delivery adds are `delivery`, `retrieval`, `cache`, `assertion`,
   `dimension`, `inventory`, `removal` and `download`, beside the `pre` and `ing` flows that feed them.
-- `runs show` prints SQLFlow's run header. The kind's own part of a run is in the `--json` form: `operation`,
+- `runs show` prints SQLFlow's run header, which opens with what started the run (`started by:`, and for a run a chained
+  schedule fired, each fire behind it); `runs list --started-by user` keeps the runs a person or client asked for
+  ([SQLFlow: what started a run](../../../../sqlflow/docs/reference/concepts/what-started-a-run.md)). The kind's own part
+  of a run is in the `--json` form: `operation`,
   `requestedBy`, `values`, `payload` (including the central configuration the control plane attached, as `references` and
   `partitionReferences`) and `resultJson`, the result the kind recorded (for a delivery run, what it planned and
   delivered; see [Running an OSDU flow](run.md)). What happened to each record is in the ledger:

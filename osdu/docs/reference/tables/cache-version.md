@@ -33,8 +33,8 @@ every record built against the cache. A version's content never changes once wri
 [`osdu.CacheItem`](cache-item.md) ranges, counted in `Sequence`. Not a ledger table: `Scope` names the partition.
 
 Never deleted: a record's render context names the cache version it was rendered against. The cache's retention removes
-an old version's records after `retentionDays` and marks the version pruned; its row still describes it
-([Retention](../concepts/partition-cache.md#retention)).
+the records of a version older than the newest the partition keeps (3 by default) or replaced more than `retentionDays`
+ago, and marks the version pruned; its row still describes it ([Retention](../concepts/partition-cache.md#retention)).
 
 ## Columns
 

@@ -284,7 +284,7 @@
       "path": "retentionDays",
       "type": "integer",
       "required": false,
-      "description": "How many days the partition's cache keeps the records of a version after a newer version replaced it, a whole number from 1 to 36500. Every refresh and import of the partition then prunes the records of the versions past it: the current version, the one it replaced and every version a delivery flow pins (`render.cacheVersion`) are always kept, and a pruned version stays listed with who captured it, when and what it changed. Delivered records keep the cached values they were built from, so pruning never touches the ledger. Several cache flows of one partition keep the longest any of them declares.",
+      "description": "How many days the partition's cache keeps the records of a version after a newer version replaced it, a whole number from 1 to 36500. Every refresh and import of the partition then prunes the records of the versions past it: the current version, the one it replaced and every version a delivery flow pins (`render.cacheVersion`) are always kept, and a pruned version stays listed with who captured it, when and what it changed. Delivered records keep the cached values they were built from, so pruning never touches the ledger. Several cache flows of one partition keep the longest any of them declares. Whatever the days, the partition keeps at most its newest versions: 3, the current one counted, unless an admin sets another number.",
       "default": "7",
       "validation": "Load time: a value outside 1 to 36500 is refused (\"<source>: retentionDays is <n>, and it is the number of days ... a whole number from 1 to 36500. Leave it out to keep them 7 days.\"); a value that is not a number fails as invalid YAML."
     },

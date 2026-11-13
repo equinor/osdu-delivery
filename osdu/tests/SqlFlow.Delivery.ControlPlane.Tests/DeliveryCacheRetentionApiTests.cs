@@ -19,7 +19,8 @@ namespace SqlFlow.ControlPlane.Tests;
 /// The partition cache's retention as the control plane serves it (osdu/docs/reference/concepts/partition-cache.md,
 /// Retention): a pruned version stays listed with when it was pruned and its counts, its records and a comparison with it
 /// answer 410 Gone, and the cache listing says the retention each cache flow declares and the one the partition keeps,
-/// where each type's values are read from, and how many rows a table type's capture takes.
+/// where each type's values are read from, and how many rows a table type's capture takes. An admin purges the history and
+/// sets how many versions a partition's cache keeps, which applies at once.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -155,6 +156,8 @@ public sealed class DeliveryCacheRetentionApiTests
             // records are read whole from storage, by the type and by the flow asking for it.
             var cache = Assert.Single((await JsonAsync(client, token, "/api/v1/delivery/caches")).EnumerateArray(), c => c.GetProperty("scope").GetString() == scope);
             Assert.Equal(2, cache.GetProperty("retentionDays").GetInt32());
+            // A partition that is not registered keeps the module's number of versions.
+            Assert.Equal(CacheRetention.DefaultVersions, cache.GetProperty("versionsKept").GetInt32());
             Assert.Equal(2, Assert.Single(cache.GetProperty("flows").EnumerateArray()).GetProperty("retentionDays").GetInt32());
             var types = cache.GetProperty("types").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!, t => t);
             Assert.Equal(["CurveAlias", "UnitAlias", "UnitOfMeasure"], types.Keys.Order(StringComparer.Ordinal));
@@ -277,6 +280,119 @@ public sealed class DeliveryCacheRetentionApiTests
             await db.DeliveryCacheMembers.Where(m => m.Scope == scope).ExecuteDeleteAsync();
             await db.DeliveryCacheVersions.Where(v => v.Scope == scope).ExecuteDeleteAsync();
         }
+    }
+
+    [Fact]
+    public async Task An_admin_sets_how_many_versions_the_cache_keeps_after_a_preview_and_it_applies_at_once()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+        var scope = "cp-keep-" + Guid.NewGuid().ToString("N")[..8];
+        var store = new OsduCacheStore(() => SampleEstate.Context(cs));
+
+        try
+        {
+            // Five versions captured within the last hours, which the seven days a partition keeps by default all cover, so
+            // the number of versions alone decides.
+            var start = DateTimeOffset.UtcNow.AddHours(-6);
+            var labels = new List<string>();
+            for (var hour = 0; hour < 5; hour++)
+            {
+                var write = await store.MergeAsync(
+                    scope, Flow,
+                    [new ReferenceType("UnitOfMeasure", "reference-data--UnitOfMeasure", [ReferenceItem.FromText(scope + ":reference-data--UnitOfMeasure:m", new Dictionary<string, string> { ["Name"] = "metre-" + hour })])],
+                    new CacheCapture(null, "tests", "seeded"), start.AddHours(hour));
+                labels.Add(write.Snapshot.Version);
+            }
+
+            await new DeliveryPartitionRegistry(() => SampleEstate.Context(cs)).AddAsync(scope, null, makeDefault: false, "tests", start.UtcDateTime);
+
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var operate = await TokenAsync(client, ["read", "operate"]);
+            var admin = await TokenAsync(client, ["admin"]);
+
+            // An operator sees what keeping four would prune, with the partition's own days, and nothing goes by looking.
+            using (var preview = await PostAsync(client, operate, "/api/v1/delivery/cache/prune/preview", new DeliveryCachePruneRequest(scope, null, 4)))
+            {
+                var text = await preview.Content.ReadAsStringAsync();
+                Assert.True(preview.StatusCode == HttpStatusCode.OK, text);
+                var result = JsonDocument.Parse(text).RootElement;
+                Assert.Equal((4, CacheRetention.DefaultDays), (result.GetProperty("versionsKept").GetInt32(), result.GetProperty("keepDays").GetInt32()));
+                Assert.Equal([labels[0]], result.GetProperty("pruned").EnumerateArray().Select(v => v.GetString()));
+            }
+
+            Assert.DoesNotContain(await store.ListVersionsAsync(scope), v => v.Pruned);
+
+            // Setting the number is an admin's; it is saved for the partition and prunes what it no longer keeps at once.
+            using (var refused = await PutAsync(client, operate, "/api/v1/delivery/cache/retention", new DeliveryCacheRetentionRequest(scope, 4)))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            }
+
+            using (var four = await PutAsync(client, admin, "/api/v1/delivery/cache/retention", new DeliveryCacheRetentionRequest(scope, 4)))
+            {
+                var text = await four.Content.ReadAsStringAsync();
+                Assert.True(four.StatusCode == HttpStatusCode.OK, text);
+                var result = JsonDocument.Parse(text).RootElement;
+                Assert.Equal((4, 4), (result.GetProperty("versionsKept").GetInt32(), result.GetProperty("kept").GetInt32()));
+                Assert.Equal([labels[0]], result.GetProperty("pruned").EnumerateArray().Select(v => v.GetString()));
+                Assert.StartsWith($"The cache of partition '{scope}' keeps 4 versions from now on. Pruned the records of 1 version(s)", result.GetProperty("summary").GetString(), StringComparison.Ordinal);
+            }
+
+            using (var two = await PutAsync(client, admin, "/api/v1/delivery/cache/retention", new DeliveryCacheRetentionRequest(scope, 2)))
+            {
+                Assert.Equal(HttpStatusCode.OK, two.StatusCode);
+            }
+
+            // Two kept: the first three versions are pruned.
+            Assert.Equal(labels.Take(3), (await store.ListVersionsAsync(scope)).Where(v => v.Pruned).Select(v => v.Version).Order(StringComparer.Ordinal));
+            await using (var db = SampleEstate.Context(cs))
+            {
+                var row = await db.DeliveryPartitions.AsNoTracking().SingleAsync(p => p.Name == scope);
+                Assert.Equal(2, row.CacheVersionsKept);
+                Assert.False(string.IsNullOrWhiteSpace(row.UpdatedBy));
+            }
+
+            Assert.Equal(2, await store.VersionsKeptAsync(scope));
+
+            // A number out of range, and a partition that is not registered, are refused; so is one a purge names.
+            using (var one = await PutAsync(client, admin, "/api/v1/delivery/cache/retention", new DeliveryCacheRetentionRequest(scope, 1)))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, one.StatusCode);
+                Assert.Contains("from 2 to 1000 versions", await one.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            }
+
+            using (var nowhere = await PutAsync(client, admin, "/api/v1/delivery/cache/retention", new DeliveryCacheRetentionRequest("cp-keep-nowhere", 3)))
+            {
+                Assert.Equal(HttpStatusCode.NotFound, nowhere.StatusCode);
+            }
+
+            using (var tooMany = await PostAsync(client, operate, "/api/v1/delivery/cache/prune/preview", new DeliveryCachePruneRequest(scope, null, 1001)))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
+            }
+        }
+        finally
+        {
+            await using var db = SampleEstate.Context(cs);
+            await db.DeliveryCacheItems.Where(i => i.Scope == scope).ExecuteDeleteAsync();
+            await db.DeliveryCacheMembers.Where(m => m.Scope == scope).ExecuteDeleteAsync();
+            await db.DeliveryCacheVersions.Where(v => v.Scope == scope).ExecuteDeleteAsync();
+            await db.DeliveryPartitions.Where(p => p.Name == scope).ExecuteDeleteAsync();
+        }
+    }
+
+    private static async Task<HttpResponseMessage> PutAsync(HttpClient client, string token, string path, object body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(path, UriKind.Relative)) { Content = JsonContent.Create(body) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return await client.SendAsync(request);
     }
 
     private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string token, string path, object body)

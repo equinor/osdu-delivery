@@ -763,3 +763,13 @@ connection and database, as a second step after the dimension is built, the cata
 Added decision 0055 and `delivery-flow-dimension-target`; updated `delivery-flow-dimension`,
 `delivery-flow-dimension-views`, `delivery-flow-dimension-errors`, `delivery-concept-lineage`,
 `delivery-concept-storage-and-retention`, `delivery-table-dimension` and `delivery-table-dimension-view`.
+
+## [2026-11-13] ingest | The cache keeps its newest versions
+
+Source: the owner's report that the Cache page still offered many versions after the cleanup of the render context, and
+the direction that a cache keeps at most three versions by default, tunable in an admin section, the older ones removed
+automatically.
+
+Added decision 0056; updated `delivery-concept-partition-cache`, `delivery-flow-cache`, `delivery-cli-cache`,
+`delivery-concept-api`, `delivery-concept-storage-and-retention`, `delivery-guide-reference-data-cache` and the
+partition, cache version and cache definition table pages.

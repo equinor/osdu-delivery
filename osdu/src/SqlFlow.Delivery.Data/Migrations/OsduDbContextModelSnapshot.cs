@@ -3403,6 +3403,11 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("CacheVersionsKept")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(3);
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)

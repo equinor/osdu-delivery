@@ -94,9 +94,9 @@
       "id": "delivery-cli-cache",
       "corpus": "reference",
       "path": "cli/cache.md",
-      "title": "sqlflow cache: list a partition's cache versions, import cached types for work without OSDU, or purge the cache's history",
+      "title": "sqlflow cache: list a partition's cache versions, import cached types for work without OSDU, purge its history, or set the versions it keeps",
       "type": "cli-command",
-      "summary": "sqlflow cache list shows a partition cache's versions; cache import loads OSDU type files where no platform is reachable; cache prune purges its history.",
+      "summary": "cache list shows a partition cache's versions; import loads type files without OSDU; prune purges its history; keep sets how many versions it keeps.",
       "keywords": [
         "sqlflow cache",
         "cache list",
@@ -111,7 +111,10 @@
         "pruned version",
         "cache prune",
         "purge cache history",
-        "keep-days"
+        "keep-days",
+        "cache keep",
+        "keep-versions",
+        "versions kept"
       ],
       "cliCommand": "cache",
       "related": [
@@ -133,6 +136,7 @@
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs",
         "osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs",
         "sqlflow/src/SqlFlow.Core/Runs/RunActors.cs"
       ]
@@ -2758,6 +2762,9 @@
         "cache refresh",
         "cache retention",
         "retentiondays",
+        "versions kept",
+        "cache versions kept",
+        "set versions kept",
         "pruned version",
         "purge cache history",
         "prune history",
@@ -2804,6 +2811,8 @@
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
         "osdu/gui/src/features/delivery/CachePruneButton.tsx",
+        "osdu/gui/src/features/delivery/CacheVersionsKeptButton.tsx",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/Engine/CacheExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheRefresh.cs",
@@ -9669,8 +9678,10 @@
       "path": "tables/partition.md",
       "title": "osdu.Partition: the partition registry, the OSDU partitions registered with the catalog and the default one",
       "type": "table",
-      "summary": "One row per OSDU data partition registered with the catalog: what it is for, whether it is the default, whether the configuration names it, and who changed it.",
+      "summary": "One row per OSDU partition registered with the catalog: what it is for, whether it is the default or configured, and how many cache versions it keeps.",
       "keywords": [
+        "CacheVersionsKept",
+        "cache versions kept",
         "osdu.Partition",
         "partition table",
         "partition registry",
@@ -9684,14 +9695,18 @@
         "delivery-concept-partitions",
         "delivery-cli-partition",
         "delivery-table-config-property",
-        "delivery-table-ledger-partition"
+        "delivery-table-ledger-partition",
+        "delivery-concept-partition-cache",
+        "delivery-table-cache-version"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs",
         "osdu/src/SqlFlow.Delivery/Model/RegisteredPartitions.cs",
-        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs"
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs"
       ]
     },
     {
@@ -11837,7 +11852,8 @@
         "change detection"
       ],
       "related": [
-        "delivery-wiki-0029-storage-maintenance"
+        "delivery-wiki-0029-storage-maintenance",
+        "delivery-wiki-0056-cache-keeps-its-newest-versions"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs",
@@ -11906,6 +11922,34 @@
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0056-cache-keeps-its-newest-versions",
+      "corpus": "wiki",
+      "path": "decisions/0056-cache-keeps-its-newest-versions.md",
+      "title": "Decision 0056: a partition's cache keeps its newest three versions, and an admin sets another number",
+      "type": "decision",
+      "summary": "Why a partition's cache keeps the records of its newest 3 versions by default, beside retentionDays, and why the number is the partition's, set by an admin.",
+      "keywords": [
+        "partition cache",
+        "cache retention",
+        "versions kept",
+        "CacheVersionsKept",
+        "retentionDays",
+        "storage"
+      ],
+      "related": [
+        "delivery-wiki-0029-storage-maintenance",
+        "delivery-wiki-0053-render-context-keeps-what-records-point-at"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/gui/src/features/delivery/CacheVersionsKeptButton.tsx"
       ]
     },
     {

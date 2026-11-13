@@ -120,8 +120,12 @@ public sealed class FixedCacheStore : ICacheStore
         ArgumentNullException.ThrowIfNull(request);
         var declaration = request.Scope == _scope ? _declaration : CacheDeclaration.None(request.Scope);
         var days = request.FlowName is { } flow ? declaration.RetentionFor(flow, request.Days) : request.Days;
-        return Task.FromResult(new CacheRetentionOutcome(days, request.Scope == _scope ? 1 : 0, [], 0, DryRun: request.DryRun));
+        return Task.FromResult(new CacheRetentionOutcome(
+            days, request.Scope == _scope ? 1 : 0, [], 0, DryRun: request.DryRun, VersionsKept: request.VersionsKept ?? CacheRetention.DefaultVersions));
     }
+
+    /// <summary>A fixed cache is never set to keep another number of versions than the module's default.</summary>
+    public Task<int> VersionsKeptAsync(string scope, CancellationToken ct = default) => Task.FromResult(CacheRetention.DefaultVersions);
 }
 
 /// <summary>

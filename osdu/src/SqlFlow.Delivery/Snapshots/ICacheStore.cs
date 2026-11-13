@@ -192,6 +192,12 @@ public interface ICacheStore
     Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default);
 
     /// <summary>
+    /// How many versions of the partition's cache keep their records, the current one counted: the number an admin set for
+    /// the partition, or <see cref="CacheRetention.DefaultVersions"/> for one that is not registered or never had one set.
+    /// </summary>
+    Task<int> VersionsKeptAsync(string scope, CancellationToken ct = default);
+
+    /// <summary>
     /// What one statement of a finding's proof reads of a version of the partition's cache (osdu/docs/reference/concepts/value-proof.md):
     /// the statement a person copies, its values bound as parameters, at most <see cref="CacheProofQuery.Limit"/> rows of it.
     /// A version that is gone, or whose records the retention pruned, is refused, so an empty answer is always one about

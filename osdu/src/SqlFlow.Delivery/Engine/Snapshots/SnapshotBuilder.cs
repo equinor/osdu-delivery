@@ -259,19 +259,19 @@ public sealed partial class SnapshotBuilder
             if (outcome.Deferred is { } waiting)
             {
                 _logger.LogInformation(
-                    "Cache of partition {Scope}: retention of {Days} day(s) pruned nothing yet: {Waiting}.", _scope, outcome.RetentionDays, waiting);
+                    "Cache of partition {Scope}: retention of {Rule} pruned nothing yet: {Waiting}.", _scope, outcome.Rule, waiting);
             }
             else if (outcome.Pruned.Count > 0 || outcome.RowsRemoved > 0)
             {
                 _logger.LogInformation(
-                    "Cache of partition {Scope}: retention of {Days} day(s) pruned {Pruned} version(s) ({Versions}) and removed {Rows} stored row(s); {Kept} version(s) keep their records.",
-                    _scope, outcome.RetentionDays, outcome.Pruned.Count, Listed(outcome.Pruned), outcome.RowsRemoved, outcome.Kept);
+                    "Cache of partition {Scope}: retention of {Rule} pruned {Pruned} version(s) ({Versions}) and removed {Rows} stored row(s); {Kept} version(s) keep their records.",
+                    _scope, outcome.Rule, outcome.Pruned.Count, Listed(outcome.Pruned), outcome.RowsRemoved, outcome.Kept);
             }
             else
             {
                 _logger.LogInformation(
-                    "Cache of partition {Scope}: retention of {Days} day(s) pruned nothing; {Kept} version(s) keep their records.",
-                    _scope, outcome.RetentionDays, outcome.Kept);
+                    "Cache of partition {Scope}: retention of {Rule} pruned nothing; {Kept} version(s) keep their records.",
+                    _scope, outcome.Rule, outcome.Kept);
             }
 
             return outcome;

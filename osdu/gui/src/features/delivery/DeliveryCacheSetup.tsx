@@ -11,6 +11,8 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { RichTooltip } from "@/components/RichTooltip";
 import { StatePill } from "@/components/StatusBadge";
 import { CacheMappingGuide, Snippet } from "./CacheMappingReference";
+import { CacheVersionsKeptButton } from "./CacheVersionsKeptButton";
+import { DEFAULT_VERSIONS_KEPT, historyKeptText } from "./cacheVersionsKept";
 import { DeliveryCacheFlags } from "./DeliveryCacheFlags";
 import { KindText } from "./KindText";
 import {
@@ -380,17 +382,24 @@ function SetupOverview({ cache, types, version, onNode }: {
             Written whenever a refresh of any of its flows changes what the cache holds, and current from then on.
           </Fact>
           <Fact label="History kept" testId="delivery-cache-setup-fact-retention">
-            A replaced version&apos;s records for{" "}
-            <span className="font-mono text-[12.5px]">{days(cache.retentionDays ?? DEFAULT_RETENTION_DAYS)}</span>, then pruned by the next refresh;
-            the version stays listed with what it changed.{" "}
-            <RichTooltip
-              title="Retention"
-              body={"The longest retentionDays any cache flow of the partition declares (7 when none does). The current version, the one it replaced and every version a delivery flow pins keep their records whatever their age. A delivered record keeps the cached values it was built from, so pruning never touches what was delivered."}
-            >
-              <span className="inline-flex align-[-2px] text-muted-foreground">
-                <Info className="size-3.5" aria-label="How the retention works" />
+            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span>
+                {historyKeptText(cache.versionsKept ?? DEFAULT_VERSIONS_KEPT, cache.retentionDays ?? DEFAULT_RETENTION_DAYS)}{" "}
+                <RichTooltip
+                  title="Retention"
+                  body={"How many versions keep their records, the current one counted, is the partition's: 3 until an admin sets another number. A replaced version also loses them once it was replaced longer ago than the longest retentionDays any cache flow of the partition declares (7 when none does). The current version, the one it replaced and every version a delivery flow pins keep their records whatever the number and the days. A delivered record keeps the cached values it was built from, so pruning never touches what was delivered."}
+                >
+                  <span className="inline-flex align-[-2px] text-muted-foreground">
+                    <Info className="size-3.5" aria-label="How the retention works" />
+                  </span>
+                </RichTooltip>
               </span>
-            </RichTooltip>
+              <CacheVersionsKeptButton
+                scope={cache.scope}
+                versionsKept={cache.versionsKept ?? DEFAULT_VERSIONS_KEPT}
+                retentionDays={cache.retentionDays ?? DEFAULT_RETENTION_DAYS}
+              />
+            </span>
           </Fact>
           <Fact label="OSDU feature flags">
             {version === null

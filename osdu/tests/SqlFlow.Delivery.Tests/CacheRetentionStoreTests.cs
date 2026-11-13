@@ -173,8 +173,69 @@ public sealed class CacheRetentionStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task A_refresh_keeps_only_the_newest_versions_the_partition_keeps()
+    {
+        var labels = new List<string>();
+        for (var day = 0; day < 6; day++)
+        {
+            labels.Add(await CaptureAsync(day, Uom("m", "metre-" + day), Uom("km", "kilometre")));
+        }
+
+        // Every version was replaced within the flow's thirty days. A partition nobody set keeps three versions, the
+        // current one counted, and a partition that is not registered is no different.
+        var store = _catalog.Caches();
+        Assert.Equal(CacheRetention.DefaultVersions, await store.VersionsKeptAsync(Scope));
+        var three = await store.ApplyRetentionAsync(CacheRetentionRequest.ForFlow(Scope, Flow, 30, Start.AddDays(6), "schedule:nightly"));
+        Assert.Equal((3, 3, 30), (three.VersionsKept, three.Kept, three.RetentionDays));
+        Assert.Equal(labels.Take(3), three.Pruned);
+        // The kilometre is one row every version shares; the metre of each of the three versions kept stays.
+        Assert.Equal(4, await RowCountAsync());
+
+        // An admin keeps two: the next refresh prunes one more. Keeping more brings back nothing pruned.
+        await RegisterAsync(CacheRetention.MinVersions);
+        Assert.Equal(CacheRetention.MinVersions, await store.VersionsKeptAsync(Scope));
+        var two = await store.ApplyRetentionAsync(CacheRetentionRequest.ForFlow(Scope, Flow, 30, Start.AddDays(6), "schedule:nightly"));
+        Assert.Equal([labels[3]], two.Pruned);
+        Assert.Equal(2, two.Kept);
+
+        await RegisterAsync(10);
+        var ten = await store.ApplyRetentionAsync(CacheRetentionRequest.ForFlow(Scope, Flow, 30, Start.AddDays(6), "schedule:nightly"));
+        Assert.Equal((10, 2), (ten.VersionsKept, ten.Kept));
+        Assert.Empty(ten.Pruned);
+        await Assert.ThrowsAsync<CacheVersionPrunedException>(() => store.LoadAsync(Scope, labels[3]));
+    }
+
+    [Fact]
+    public async Task A_purge_may_name_the_versions_it_keeps_and_a_row_edited_by_hand_still_keeps_two()
+    {
+        var labels = new List<string>();
+        for (var day = 0; day < 6; day++)
+        {
+            labels.Add(await CaptureAsync(day, Uom("m", "metre-" + day)));
+        }
+
+        await RegisterAsync(CacheRetention.MaxVersions);
+        var store = _catalog.Caches();
+        var preview = await store.ApplyRetentionAsync(CacheRetentionRequest.Purge(Scope, 30, Start.AddDays(6), "tahir", dryRun: true, versionsKept: 4));
+        Assert.Equal((4, 4), (preview.VersionsKept, preview.Kept));
+        Assert.Equal(labels.Take(2), preview.Pruned);
+        Assert.DoesNotContain(await store.ListVersionsAsync(Scope), v => v.Pruned);
+
+        await using (var db = _catalog.CreateDbContext())
+        {
+            await db.DeliveryPartitions.Where(p => p.Name == Scope).ExecuteUpdateAsync(set => set.SetProperty(p => p.CacheVersionsKept, 0));
+        }
+
+        Assert.Equal(CacheRetention.MinVersions, await store.VersionsKeptAsync(Scope));
+        var applied = await store.ApplyRetentionAsync(CacheRetentionRequest.ForFlow(Scope, Flow, 30, Start.AddDays(6), "tests"));
+        Assert.Equal(labels.Take(4), applied.Pruned);
+    }
+
+    [Fact]
     public async Task The_partition_keeps_the_longest_retention_any_of_its_cache_flows_declares()
     {
+        // The partition keeps every version, so the days alone decide.
+        await RegisterAsync(CacheRetention.MaxVersions);
         for (var day = 0; day < 6; day++)
         {
             await CaptureAsync(day, Uom("m", "metre-" + day));
@@ -199,6 +260,8 @@ public sealed class CacheRetentionStoreTests : IDisposable
     [Fact]
     public async Task An_operator_purge_keeps_exactly_the_days_it_names_and_its_dry_run_says_what_it_would_do()
     {
+        // The partition keeps every version, so the days alone decide.
+        await RegisterAsync(CacheRetention.MaxVersions);
         var labels = new List<string>();
         for (var day = 0; day < 6; day++)
         {
@@ -372,6 +435,22 @@ public sealed class CacheRetentionStoreTests : IDisposable
     }
 
     /// <summary>Merges one capture of every type <paramref name="items"/> hold, captured <paramref name="day"/> days after <see cref="Start"/>.</summary>
+    /// <summary>
+    /// Registers the partition, when it is not yet, and keeps <paramref name="versions"/> versions of its cache, through the
+    /// registry, as an admin does.
+    /// </summary>
+    private async Task RegisterAsync(int versions)
+    {
+        var registry = new DeliveryPartitionRegistry(_catalog.CreateDbContext);
+        var now = Start.UtcDateTime;
+        if ((await registry.ReadAsync()).Find(Scope) is null)
+        {
+            await registry.AddAsync(Scope, null, makeDefault: true, "tests", now);
+        }
+
+        await registry.KeepCacheVersionsAsync(Scope, versions, "tahir", now);
+    }
+
     private async Task<string> CaptureAsync(int day, params Item[] items)
     {
         var write = await _catalog.Caches().MergeAsync(Scope, Flow, Types(items), Capture, Start.AddDays(day));
@@ -472,6 +551,8 @@ public sealed class CacheRetentionStoreTests : IDisposable
             => inner.MergeAsync(scope, flowName, captured, capture, capturedUtc, readings, ct);
 
         public Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default) => inner.ReadProofAsync(query, ct);
+
+        public Task<int> VersionsKeptAsync(string scope, CancellationToken ct = default) => inner.VersionsKeptAsync(scope, ct);
 
         public Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default)
             => cancel

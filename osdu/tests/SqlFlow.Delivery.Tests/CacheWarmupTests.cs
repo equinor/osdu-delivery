@@ -274,6 +274,9 @@ public class CacheWarmupTests
         public Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default)
             => throw new InvalidOperationException("The warm-up reads the cache; it never prunes it.");
 
+        public Task<int> VersionsKeptAsync(string scope, CancellationToken ct = default)
+            => throw new InvalidOperationException("The warm-up reads the cache; it never weighs its retention.");
+
         public Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default)
             => throw new InvalidOperationException("The warm-up loads versions; it never reads a proof.");
 

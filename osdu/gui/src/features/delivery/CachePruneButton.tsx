@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/auth/AuthContext";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { deliveryApi } from "../../api/delivery";
+import { daysText, versionsText } from "./cacheVersionsKept";
 import { problemText } from "./problemText";
 
 /** The longest a purge keeps, in days, as the module bounds it. */
@@ -38,13 +39,16 @@ function keepDaysOf(text: string): number | null {
 /**
  * Purges the history of a partition's cache now, rather than at the next refresh: an admin names how many days of replaced
  * versions keep their records (the partition's retention to start with), sees what that prunes, and confirms. It is the
- * retention every refresh applies, so the current version, the one it replaced and every pinned version keep theirs
- * whatever the days, a pruned version stays listed with what it changed, and it records who pruned it.
+ * retention every refresh applies, with the number of versions the partition keeps, so the current version, the one it
+ * replaced and every pinned version keep theirs whatever the days, a pruned version stays listed with what it changed, and
+ * it records who pruned it.
  */
-export function CachePruneButton({ scope, retentionDays }: {
+export function CachePruneButton({ scope, retentionDays, versionsKept }: {
   scope: string;
   /** The retention the partition keeps: what the field starts at. */
   retentionDays: number;
+  /** How many versions the partition keeps, which the purge keeps at most too; unknown to an older control plane. */
+  versionsKept?: number;
 }) {
   const { hasScope } = useAuth();
   const queryClient = useQueryClient();
@@ -106,9 +110,10 @@ export function CachePruneButton({ scope, retentionDays }: {
               Prune the cache history of <span className="font-mono">{scope}</span>?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Removes the records of every version replaced longer ago than the days below. The current version, the one it
-              replaced and every version a delivery flow pins keep theirs. A pruned version stays listed with what it changed,
-              and its records cannot be brought back; delivered records are not touched.
+              Removes the records of every version replaced longer ago than the days below
+              {versionsKept === undefined ? "" : `, and of every version older than the newest ${versionsText(versionsKept)} the partition keeps`}.
+              The current version, the one it replaced and every version a delivery flow pins keep theirs. A pruned version
+              stays listed with what it changed, and its records cannot be brought back; delivered records are not touched.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -128,8 +133,7 @@ export function CachePruneButton({ scope, retentionDays }: {
               days
             </label>
             <span className="text-[12px] text-muted-foreground">
-              The partition keeps {retentionDays.toLocaleString()} day{retentionDays === 1 ? "" : "s"} after each refresh; 0 keeps only
-              the versions that are always kept.
+              Every refresh keeps a replaced version {daysText(retentionDays)}; 0 keeps only the versions that are always kept.
             </span>
             <div className="min-h-10 rounded-md border border-border bg-muted/40 px-3 py-2 text-[12.5px]" role="status" data-testid="delivery-cache-prune-preview">
               {keepDays === null

@@ -264,7 +264,7 @@ Every cache route but `GET /caches` names one partition's cache with `scope` (or
 
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
-| `GET /caches` | read | `repoId` | Every partition cache: the cache flows filling it (each with the `retentionDays` it declares), the types they declare, the current version, and the partition's `retentionDays`. |
+| `GET /caches` | read | `repoId` | Every partition cache: the cache flows filling it (each with the `retentionDays` it declares), the types they declare, the current version, the partition's `retentionDays`, and how many versions it keeps (`versionsKept`). |
 | `GET /cache/streams` | read | `partition` (required) | Where each cached type comes from (the flows upstream of its cache flow), which delivery flows read it, and its state. |
 | `GET /cache/items` | read | `scope`, `type`, `search`, `version`, `page`, `pageSize` | The cached records of one version (the current one by default). |
 | `GET /cache/items/sql` | read | `scope`, `type`, `search`, `version`, `pageSize` | The T-SQL that reads in SSMS on the catalog database the first page `GET /cache/items` lists of the type with the same values, a column per field: `scope`, `version`, `typeName`, `sql` ([the SQL of a table's rows](mapping-overview-sql.md)). Nothing is run. |
@@ -273,14 +273,17 @@ Every cache route but `GET /caches` names one partition's cache with `scope` (or
 | `GET /cache/diff` | read | `scope`, `from`, `to`, `type`, `change`, `search`, `page`, `pageSize` | What changed between two versions (`to` defaults to the current one). |
 | `GET /cache/tags` | read | `status` (`pending`, `approved`, `rolling`, `delivering`, `rejected`, `applied`), `scope`, `page`, `pageSize` | The cache changes delivered records were built from, and what each reaches. |
 | `GET /cache/gaps` | read | `scope`, `type`, `empty`, `page`, `pageSize` | What delivered records were built without, most records first. |
-| `POST /cache/prune/preview` | operate | body `scope`, `keepDays` | What purging the cache's history, keeping `keepDays` (0 to 36500; the partition's retention when left out), would prune: `kept`, `pruned`, `rows`, `summary`. Changes nothing. |
-| `POST /cache/prune` | admin | body `scope`, `keepDays` | Purges the cache's history as the preview says, and records the admin and the time on every version it prunes. |
+| `POST /cache/prune/preview` | operate | body `scope`, `keepDays`, `versionsKept` | What purging the cache's history, keeping `keepDays` (0 to 36500) and at most `versionsKept` versions (2 to 1000), each the partition's own when left out, would prune: `keepDays`, `versionsKept`, `kept`, `pruned`, `rows`, `summary`. Changes nothing. |
+| `POST /cache/prune` | admin | body `scope`, `keepDays`, `versionsKept` | Purges the cache's history as the preview says, and records the admin and the time on every version it prunes. |
+| `PUT /cache/retention` | admin | body `scope`, `versionsKept` | Sets how many versions of the partition's cache keep their records (2 to 1000, the current one counted) and applies it at once, answering what it pruned as a purge does, its `summary` starting `The cache of partition '<p>' keeps <n> versions from now on.` ([How many versions are kept](partition-cache.md#how-many-versions-are-kept)). |
 
 A version whose records the partition's [retention](partition-cache.md#retention) pruned stays listed by
 `/cache/versions` and `/cache/history`, its counts unchanged. `GET /cache/items` naming it, and `GET /cache/diff` naming
 it on either side, answer `410 Gone` (`Version <v> of the cache of partition '<p>' was pruned at <time> by the cache's
 retention: ...`), which a client tells apart from `404` for a version the cache never held. A purge answers `400` for days
-out of range and `404` for a partition whose cache holds no version.
+or versions out of range and `404` for a partition whose cache holds no version; `PUT /cache/retention` answers `400` for
+a number out of range (`A partition's cache keeps from 2 to 1000 versions, the current one counted, not <n>: ...`) and
+`404` for a partition that is not registered.
 
 See [the partition cache](partition-cache.md).
 

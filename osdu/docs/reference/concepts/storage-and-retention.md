@@ -85,7 +85,7 @@ calls for it, and choose it in years rather than months: statistics and trends r
 | Keys the source let go of | `RemovedKey` | Lifted when the source holds the key again, a newer delivery comes, or an operator lifts it |
 | Ledger directory | `Ledger`, `LedgerPartition`, `LedgerFlow`, `Interface` | Never removed; a flow that leaves its repository is marked inactive |
 | Activities and reversals | `Activity`, `ActivityRecord`, `Reversal`, `ReversalItem` | Activities never; reversals with the flow's ledger |
-| Partition cache | `CacheVersion`, `CacheItem`, `CacheMember`, `CacheDefinition` | Every refresh prunes replaced versions' records after the cache flow's `retentionDays` (7 by default), keeping the current version, the one it replaced and every pinned version ([Retention](partition-cache.md#retention)) |
+| Partition cache | `CacheVersion`, `CacheItem`, `CacheMember`, `CacheDefinition` | Every refresh prunes the records of the versions older than the newest the partition keeps (3 by default, an admin's number) or replaced longer ago than the cache flow's `retentionDays` (7 by default), keeping the current version, the one it replaced and every pinned version ([Retention](partition-cache.md#retention)) |
 | Render context of delivered records | `CacheSet`, `CacheSetEntry`, `UpdateTag` | A set no record points at is removed once no render has used it for a day ([The render context](#the-render-context)); the change log is never removed |
 | Dimensions | `Dimension`, `DimensionMember`, `DimensionValue`, `DimensionAttribute`, `DimensionAttributeName`, `DimensionElement`, `DimensionCollectedText`, `DimensionKeyRecord`, `DimensionRecord`, `DimensionView`, and every `dim_*` table | Rewritten by each build, which first deletes what the build before removed ([What a build keeps](../flow/dimension.md#what-a-build-keeps)); a dimension its flow no longer declares is removed with its table on the Dimensions page |
 | Dimension builds and changes | `DimensionRun`, `DimensionChange` | Removed with the dimension |
@@ -109,8 +109,8 @@ the schema: the dimensions are what the dimension flows publish as they stand no
 cache is the reference data the deliveries render against. Neither shrinks by a cleanup. A dimension shrinks when its
 flow declares less, and goes, with its table, when the flow no longer declares it; a flow can keep its `dim_` tables and
 views in another database by its [target](../flow/dimension-target.md), leaving only the dimensions' record here. The
-cache's history is pruned by its own retention, and its current version is as large as the reference data the cache flows
-capture.
+cache's history is pruned by its own retention, which keeps its newest 3 versions unless an admin sets another number,
+and its current version is as large as the reference data the cache flows capture.
 
 ## What cleans itself
 

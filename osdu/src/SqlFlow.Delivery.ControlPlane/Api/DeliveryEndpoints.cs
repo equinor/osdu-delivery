@@ -275,12 +275,13 @@ public sealed record DeliveryCacheFlowDto(
 /// <summary>
 /// The cache of one OSDU partition: every cache flow that fills it, the types it holds as those flows together declare them,
 /// its current version with the flow and run that wrote it, how many versions it has, and its retention: how many days the
-/// records of a replaced version are kept, the longest any of its cache flows declares. Every delivery flow that delivers to
-/// the partition reads it.
+/// records of a replaced version are kept, the longest any of its cache flows declares, and how many versions keep them at
+/// most, the current one counted, as an admin set it for the partition. Every delivery flow that delivers to the partition
+/// reads it.
 /// </summary>
 public sealed record DeliveryCacheDto(
     string Scope, IReadOnlyList<DeliveryCacheFlowDto> Flows, IReadOnlyList<DeliveryCacheTypeDto> Types, DeliveryCacheVersionDto? Current, int Versions,
-    int RetentionDays = CacheRetention.DefaultDays);
+    int RetentionDays = CacheRetention.DefaultDays, int VersionsKept = CacheRetention.DefaultVersions);
 
 /// <summary>
 /// One cache change and what happens about it: the partition, the cached record and path that moved, the value before and
@@ -1689,6 +1690,10 @@ public static class DeliveryEndpoints
             .GroupBy(v => v.Scope)
             .Select(g => new { Scope = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Scope, g => g.Count, StringComparer.Ordinal, ct).ConfigureAwait(false);
+        var versionsKept = await osdu.DeliveryPartitions.AsNoTracking()
+            .Where(p => scopes.Contains(p.Name))
+            .Select(p => new { p.Name, p.CacheVersionsKept })
+            .ToDictionaryAsync(p => p.Name, p => CacheRetention.BoundedVersions(p.CacheVersionsKept), StringComparer.OrdinalIgnoreCase, ct).ConfigureAwait(false);
 
         var caches = definitions
             .GroupBy(d => d.Scope, StringComparer.Ordinal)
@@ -1769,7 +1774,8 @@ public static class DeliveryEndpoints
 
                 return new DeliveryCacheDto(
                     scope, flows, types, current is null ? null : ToVersionDto(current), versionCounts.GetValueOrDefault(scope),
-                    CacheRetention.OfPartition(group.Select(d => d.RetentionDays)));
+                    CacheRetention.OfPartition(group.Select(d => d.RetentionDays)),
+                    versionsKept.GetValueOrDefault(scope, CacheRetention.DefaultVersions));
             })
             .ToList();
         return TypedResults.Ok<IReadOnlyList<DeliveryCacheDto>>(caches);

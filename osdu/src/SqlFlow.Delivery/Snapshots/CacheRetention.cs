@@ -15,7 +15,8 @@ namespace SqlFlow.Delivery.Snapshots;
 /// <item>the version the current one replaced, which a run that resolved the current version just before it moved may still
 /// load, and which the latest change is compared with;</item>
 /// <item>every version a delivery flow pins with <c>render.cacheVersion</c>;</item>
-/// <item>every version a newer one replaced less than the retention ago.</item>
+/// <item>every other version among the partition's newest (<see cref="DefaultVersions"/> unless an admin sets another
+/// number) that a newer one replaced less than the retention ago.</item>
 /// </list>
 /// A pruned version's row is never removed: it keeps saying who captured the version, when, from where, and what it changed.
 /// </summary>
@@ -23,6 +24,32 @@ public static class CacheRetention
 {
     /// <summary>The retention of a cache flow that declares none, in days.</summary>
     public const int DefaultDays = 7;
+
+    /// <summary>How many versions of a partition's cache keep their records, the current one counted, unless an admin sets another number.</summary>
+    public const int DefaultVersions = 3;
+
+    /// <summary>
+    /// The fewest versions a partition may keep: the current one and the one it replaced, which are always kept.
+    /// </summary>
+    public const int MinVersions = 2;
+
+    /// <summary>The most versions a partition may keep.</summary>
+    public const int MaxVersions = 1_000;
+
+    /// <summary>Whether <paramref name="versions"/> is a number of versions a partition may keep.</summary>
+    public static bool KeepsVersions(int versions) => versions is >= MinVersions and <= MaxVersions;
+
+    /// <summary>Why <paramref name="given"/> is refused as the number of versions a partition keeps, as the API and the CLI say it.</summary>
+    public static string VersionsOutOfRange(string given)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"A partition's cache keeps from {MinVersions} to {MaxVersions} versions, the current one counted, not {given}: the current version and the one it replaced always keep their records.");
+
+    /// <summary>
+    /// The versions a partition keeps as its row says it, brought into the range an admin may set, so a row edited by hand
+    /// cannot stop a retention or keep the versions that are always kept from being kept.
+    /// </summary>
+    public static int BoundedVersions(int versions) => Math.Clamp(versions, MinVersions, MaxVersions);
 
     /// <summary>The longest retention a cache flow may declare, in days: a hundred years, longer than any estate keeps a ledger.</summary>
     public const int MaxDays = 36_500;
@@ -74,9 +101,11 @@ public static class CacheRetention
 
     /// <summary>
     /// Which versions of a partition's cache keep their records at <paramref name="nowUtc"/>, which are pruned now, and which
-    /// have their changes recorded first (<see cref="CacheRetentionPlan"/>). A version stopped being current when the version
-    /// after it was captured, so that is the instant its retention runs from. Versions already pruned stay pruned: their
-    /// records are gone, whatever a pin or a longer retention says now.
+    /// have their changes recorded first (<see cref="CacheRetentionPlan"/>). A version keeps them while it is among the
+    /// newest <paramref name="versionsKept"/>, counted back from the current one, and was replaced less than
+    /// <paramref name="retentionDays"/> ago: it stopped being current when the version after it was captured, so that is the
+    /// instant its retention runs from. Versions already pruned stay pruned: their records are gone, whatever a pin or a
+    /// longer retention says now.
     /// </summary>
     /// <param name="versions">Every version of the partition's cache, in any order.</param>
     /// <param name="retentionDays">
@@ -85,19 +114,29 @@ public static class CacheRetention
     /// </param>
     /// <param name="nowUtc">The instant the retention is applied at.</param>
     /// <param name="pinned">The version labels active delivery flows pin.</param>
-    public static CacheRetentionPlan Plan(IReadOnlyList<CacheVersionSpan> versions, int retentionDays, DateTime nowUtc, IReadOnlySet<string> pinned)
+    /// <param name="versionsKept">
+    /// How many versions keep their records, the current one counted, from <see cref="MinVersions"/> to
+    /// <see cref="MaxVersions"/>: a version older than that many is pruned whatever its days, unless a delivery flow pins it.
+    /// </param>
+    public static CacheRetentionPlan Plan(
+        IReadOnlyList<CacheVersionSpan> versions, int retentionDays, DateTime nowUtc, IReadOnlySet<string> pinned, int versionsKept)
     {
         ArgumentNullException.ThrowIfNull(versions);
         ArgumentNullException.ThrowIfNull(pinned);
         ArgumentOutOfRangeException.ThrowIfNegative(retentionDays);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(retentionDays, MaxDays);
+        ArgumentOutOfRangeException.ThrowIfLessThan(versionsKept, MinVersions);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(versionsKept, MaxVersions);
 
         var ordered = versions.OrderBy(v => v.Sequence).ToList();
-        if (ordered.LastOrDefault(v => v.Current) is not { } current)
+        var currentAt = ordered.FindLastIndex(v => v.Current);
+        if (currentAt < 0)
         {
             // A cache with no current version has nothing a delivery renders against, so nothing to measure the rest by.
             return CacheRetentionPlan.Nothing;
         }
+
+        var current = ordered[currentAt];
 
         var cutoff = DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc) - TimeSpan.FromDays(retentionDays);
         var kept = new List<int>();
@@ -122,7 +161,9 @@ public static class CacheRetention
 
             var next = ordered[i + 1];
             var replacedCurrent = next.Sequence == current.Sequence;
-            var withinRetention = next.CapturedUtc >= cutoff;
+            // The current version is the newest of those counted, the one it replaced the second, and so on back; a version
+            // already pruned still takes its place, since it was one of them.
+            var withinRetention = next.CapturedUtc >= cutoff && currentAt - i + 1 <= versionsKept;
             var isPinned = pinned.Contains(version.Version);
             if (replacedCurrent || withinRetention || isPinned)
             {
@@ -161,17 +202,24 @@ public static class CacheRetention
 /// </summary>
 public sealed record CacheRetentionRequest
 {
-    private CacheRetentionRequest(string scope, string? flowName, int days, DateTimeOffset now, string actor, bool dryRun)
+    private CacheRetentionRequest(string scope, string? flowName, int days, DateTimeOffset now, string actor, bool dryRun, int? versionsKept)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scope);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(days, CacheRetention.MaxDays);
+        if (versionsKept is { } versions && !CacheRetention.KeepsVersions(versions))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(versionsKept), versions, CacheRetention.VersionsOutOfRange(versions.ToString(CultureInfo.InvariantCulture)));
+        }
+
         Scope = scope;
         FlowName = flowName;
         Days = days;
         Now = now;
         Actor = actor;
         DryRun = dryRun;
+        VersionsKept = versionsKept;
     }
 
     /// <summary>The partition whose cache the retention applies to.</summary>
@@ -202,6 +250,12 @@ public sealed record CacheRetentionRequest
     public bool DryRun { get; }
 
     /// <summary>
+    /// How many versions keep their records in place of the number the partition keeps; null, as for every refresh and
+    /// import, for the partition's own (<see cref="CacheRetention.DefaultVersions"/> unless an admin set another).
+    /// </summary>
+    public int? VersionsKept { get; }
+
+    /// <summary>
     /// The retention a refresh or an import by <paramref name="flowName"/> applies once its merge is written:
     /// <paramref name="declaredDays"/> is what the flow declares, from 1 to <see cref="CacheRetention.MaxDays"/>.
     /// </summary>
@@ -209,17 +263,18 @@ public sealed record CacheRetentionRequest
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(flowName);
         ArgumentOutOfRangeException.ThrowIfLessThan(declaredDays, 1);
-        return new CacheRetentionRequest(scope, flowName, declaredDays, now, actor, dryRun: false);
+        return new CacheRetentionRequest(scope, flowName, declaredDays, now, actor, dryRun: false, versionsKept: null);
     }
 
     /// <summary>
-    /// An operator's purge of the partition's cache history: it keeps the records of every version replaced less than
-    /// <paramref name="keepDays"/> ago, and of the versions that are always kept; 0 keeps those alone.
+    /// An operator's purge of the partition's cache history: it keeps the records of every version among the newest
+    /// <paramref name="versionsKept"/> (the partition's own number when null) replaced less than <paramref name="keepDays"/>
+    /// ago, and of the versions that are always kept; 0 days keeps those alone.
     /// </summary>
-    public static CacheRetentionRequest Purge(string scope, int keepDays, DateTimeOffset now, string actor, bool dryRun)
+    public static CacheRetentionRequest Purge(string scope, int keepDays, DateTimeOffset now, string actor, bool dryRun, int? versionsKept = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(keepDays);
-        return new CacheRetentionRequest(scope, null, keepDays, now, actor, dryRun);
+        return new CacheRetentionRequest(scope, null, keepDays, now, actor, dryRun, versionsKept);
     }
 }
 
@@ -283,15 +338,20 @@ public sealed record CacheRetentionPlan(
 /// refresh or import after that applies it.
 /// </param>
 /// <param name="DryRun">True when the pass only said what it would prune, and pruned nothing.</param>
+/// <param name="VersionsKept">The most versions the pass let keep their records, the current one counted, pinned versions aside.</param>
 public sealed record CacheRetentionOutcome(
-    int RetentionDays, int Kept, IReadOnlyList<string> Pruned, long RowsRemoved, string? Failure = null, string? Deferred = null, bool DryRun = false)
+    int RetentionDays, int Kept, IReadOnlyList<string> Pruned, long RowsRemoved, string? Failure = null, string? Deferred = null, bool DryRun = false,
+    int VersionsKept = CacheRetention.DefaultVersions)
 {
+    /// <summary>The retention applied in a few words, as a log line and the CLI name it: <c>3 version(s), 7 day(s)</c>.</summary>
+    public string Rule => string.Create(CultureInfo.InvariantCulture, $"{VersionsKept} version(s), {RetentionDays} day(s)");
+
     /// <summary>What an operator's purge did, or for a dry run would do, in one line: the Cache page, the API and the CLI say it alike.</summary>
     public string DescribePurge()
     {
         var window = RetentionDays == 0
             ? "keeping only the current version, the one it replaced and every pinned version"
-            : string.Create(CultureInfo.InvariantCulture, $"keeping {RetentionDays} day(s) of history");
+            : string.Create(CultureInfo.InvariantCulture, $"keeping the newest {VersionsKept} version(s), none replaced over {RetentionDays} day(s) ago");
         if (Deferred is { } waiting)
         {
             return $"Nothing can be pruned yet: {waiting}.";

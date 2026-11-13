@@ -3,6 +3,7 @@ using SqlFlow.Core;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Snapshots;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -85,6 +86,42 @@ public sealed class PartitionRegistryTests : IDisposable
         var tooLong = await Assert.ThrowsAsync<FlowValidationException>(
             () => registry.DescribeAsync("dev", new string('d', DeliveryPartition.MaxDescriptionLength + 1), "operator", Now));
         Assert.Contains($"at most {DeliveryPartition.MaxDescriptionLength} characters", tooLong.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_partition_keeps_three_cache_versions_until_an_admin_sets_another_number_and_says_who_set_it()
+    {
+        var registry = Registry();
+        var added = await registry.AddAsync("dev", null, makeDefault: false, "tester", Now);
+        Assert.Equal(CacheRetention.DefaultVersions, added.CacheVersionsKept);
+
+        var kept = await registry.KeepCacheVersionsAsync("DEV", 5, "admin", Now.AddHours(1));
+        Assert.Equal((5, "admin", Now.AddHours(1)), (kept.CacheVersionsKept, kept.UpdatedBy, kept.UpdatedUtc));
+
+        // Setting the number it keeps already changes nothing, not even who set it last.
+        var again = await registry.KeepCacheVersionsAsync("dev", 5, "someone", Now.AddHours(2));
+        Assert.Equal(("admin", Now.AddHours(1)), (again.UpdatedBy, again.UpdatedUtc));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => registry.KeepCacheVersionsAsync("dev", CacheRetention.MinVersions - 1, "admin", Now));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => registry.KeepCacheVersionsAsync("dev", CacheRetention.MaxVersions + 1, "admin", Now));
+        await Assert.ThrowsAsync<PartitionNotRegisteredException>(() => registry.KeepCacheVersionsAsync("prod", 5, "admin", Now));
+    }
+
+    [Fact]
+    public async Task A_partition_the_configuration_names_still_takes_the_number_of_cache_versions_it_keeps()
+    {
+        await using (var db = _module.CreateDbContext())
+        {
+            db.DeliveryPartitions.Add(new DeliveryPartition
+            {
+                Name = "dev", IsDefault = true, IsConfigured = true, CreatedUtc = Now, CreatedBy = "configuration", UpdatedUtc = Now, UpdatedBy = "configuration",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var registry = Registry();
+        await Assert.ThrowsAsync<SetByConfigurationException>(() => registry.DescribeAsync("dev", "x", "admin", Now));
+        Assert.Equal(4, (await registry.KeepCacheVersionsAsync("dev", 4, "admin", Now)).CacheVersionsKept);
     }
 
     [Fact]
