@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { RelativeTime } from "@/components/RelativeTime";
 import { cn } from "@/lib/utils";
 import type { ExplorerFieldInfo, ExplorerFields, ExplorerSearchRequest } from "../../../api/explorer";
-import { isRecordReference } from "../osduDocument";
+import { isRecordIdIn, isRecordReference } from "../osduDocument";
 import { idParts } from "../osduRecordModel";
 import { RecordName } from "../RecordName";
 import { ExplorerErrorText } from "./ExplorerProblem";
@@ -127,7 +127,8 @@ export function ExplorerSearchBar({ text, lucene, placeholder, label, onSearch, 
   const typed = draft.trim();
   // The attribute picked at the field's start: what is typed is a value of it, never an id to open.
   const scoped = scope?.target ?? null;
-  const opens = scoped === null && !asLucene && isRecordReference(typed);
+  // An id opens its record, one of a partition's own type naming no group among them (dev:site-note:3b9c...).
+  const opens = scoped === null && !asLucene && isRecordIdIn(typed, scope?.partition ?? null);
   // Under the field as text is typed: every property (Enter), each property offered, and another property to pick; or, with
   // an attribute picked, the value typed searched in it (Enter) and the values it holds.
   const [hasFocus, setHasFocus] = useState(false);

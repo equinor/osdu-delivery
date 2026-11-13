@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Boxes, ChevronDown, ChevronRight, Layers, Loader2, RefreshCw } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, Layers, Loader2, Puzzle, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IconAction } from "@/components/IconAction";
 import { SearchInput } from "@/components/SearchInput";
@@ -11,6 +11,9 @@ import { ReadingBar } from "./ReadingBar";
 
 /** A group with more types than this stays folded while a search is in view, so a partition's long reference lists do not bury the rest. */
 const OPEN_UP_TO = 24;
+
+/** The key the Custom row's folding is kept by; no group's name starts with a space. */
+const CUSTOM_KEY = " custom";
 
 /** No group opened or folded by the reader yet. */
 const UNDECIDED: ReadonlyMap<string, boolean> = new Map();
@@ -88,10 +91,11 @@ function withPlace(kinds: ExplorerKindCount[], scope: ExplorerScope | null): Exp
 }
 
 /**
- * The kinds of the records a search finds, as a list to pick from: every type, then each group (master-data,
- * reference-data, work-product-component, ...) with its types, then the partition's own types that name no group, each
- * namespace (`acme:wells`) a group of them; a type kept in several kinds (versions, authorities) with those kinds under
- * it, each with how many records the search finds there. With nothing typed the list holds every kind the partition's
+ * The kinds of the records a search finds, as a list to pick from: every type, then each group the OSDU data definitions
+ * name (master-data, reference-data, work-product-component, ...) with its types, then under Custom the partition's own:
+ * the groups OSDU does not name, and the types that name no group, each namespace (`acme:wells`) a group of them; a type
+ * kept in several kinds (versions, authorities) with those kinds under it, each with how many records the search finds
+ * there. With nothing typed the list holds every kind the partition's
  * Schema service lists, those holding no record the search can read among them, quiet, so a type registered and not yet
  * delivered is there to pick. Picking one narrows the records to it; the counts follow the text and the values typed, so
  * the list also says where else a search finds something. A filter finds a type among hundreds, by its name or any part of
@@ -144,6 +148,71 @@ export function ExplorerTypeRail({ types, loading, error, scope, searchKey, onSc
   });
   const schemas = types?.schemas ?? null;
 
+  // The partition's own groups sit under one Custom row, which only folds: no one pattern finds them all. It starts open
+  // when one of them would, and counts each of their kinds once (a namespace's own count takes in its named groups too).
+  const custom = shown.filter((group) => group.custom);
+  const customCount = custom.reduce((sum, group) => sum + group.types.reduce((typed, type) => typed + type.count, 0), 0);
+  const customStarts = custom.some(startsOpen);
+  const customOpen = isOpen(CUSTOM_KEY, customStarts);
+
+  /** A group's row, its types under it, and a type's kinds under the type, from `depth`. */
+  const groupRows = (group: GroupNode, depth: number) => {
+    const groupScope: ExplorerScope = { level: "group", group: group.group };
+    const groupStarts = startsOpen(group);
+    const open = isOpen(group.group, groupStarts);
+    return (
+      <div key={group.group}>
+        <Row
+          depth={depth}
+          icon={group.namespace ? <Boxes className="size-3.5 shrink-0 text-muted-foreground" aria-hidden /> : <GroupGlyph group={group.group} className="size-3.5" />}
+          label={group.group}
+          title={group.namespace ? `${group.group}: the types of authority ${group.group.split(":")[0]} and source ${group.group.split(":")[1]} that name no group` : group.group}
+          count={group.count}
+          selected={picked(groupScope)}
+          open={open}
+          onToggle={() => toggle(group.group, groupStarts)}
+          onSelect={() => onScope(groupScope)}
+          mono={group.namespace}
+          testId="explorer-type-group"
+        />
+        {open && group.types.map((type) => {
+          const versions = type.kinds.length > 1;
+          const typeKey = scopeKind(type.scope) ?? type.entityType;
+          const typeStarts = type.kinds.some((kind) => scope?.level === "kind" && kind.kind === scope.kind);
+          const typeOpen = versions && isOpen(typeKey, typeStarts);
+          return (
+            <div key={type.entityType}>
+              <Row
+                depth={depth + 1}
+                label={type.type}
+                title={versions ? type.entityType : kindTitle(type.kinds[0])}
+                count={type.count}
+                selected={picked(type.scope)}
+                open={versions ? typeOpen : undefined}
+                onToggle={versions ? () => toggle(typeKey, typeStarts) : undefined}
+                onSelect={() => onScope(type.scope)}
+                testId="explorer-type"
+              />
+              {typeOpen && type.kinds.map((kind) => (
+                <Row
+                  key={kind.kind}
+                  depth={depth + 2}
+                  label={`${kind.parts.version} ${kind.parts.authority}:${kind.parts.source}`}
+                  title={kindTitle(kind)}
+                  count={kind.count}
+                  selected={scope?.level === "kind" && scope.kind === kind.kind}
+                  onSelect={() => onScope({ level: "kind", kind: kind.kind })}
+                  mono
+                  testId="explorer-type-kind"
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="explorer-types">
       {loading && <ReadingBar label="Counting the types in OSDU" />}
@@ -176,62 +245,24 @@ export function ExplorerTypeRail({ types, loading, error, scope, searchKey, onSc
                 <Count value={types.total} quiet={scope?.level !== "all"} />
               </button>
             </div>
-            {shown.map((group) => {
-              const groupScope: ExplorerScope = { level: "group", group: group.group };
-              const groupStarts = startsOpen(group);
-              const open = isOpen(group.group, groupStarts);
-              return (
-                <div key={group.group}>
-                  <Row
-                    depth={0}
-                    icon={group.namespace ? <Boxes className="size-3.5 shrink-0 text-muted-foreground" aria-hidden /> : <GroupGlyph group={group.group} className="size-3.5" />}
-                    label={group.group}
-                    title={group.namespace ? `${group.group}: the types of authority ${group.group.split(":")[0]} and source ${group.group.split(":")[1]} that name no group` : group.group}
-                    count={group.count}
-                    selected={picked(groupScope)}
-                    open={open}
-                    onToggle={() => toggle(group.group, groupStarts)}
-                    onSelect={() => onScope(groupScope)}
-                    mono={group.namespace}
-                    testId="explorer-type-group"
-                  />
-                  {open && group.types.map((type) => {
-                    const versions = type.kinds.length > 1;
-                    const typeKey = scopeKind(type.scope) ?? type.entityType;
-                    const typeStarts = type.kinds.some((kind) => scope?.level === "kind" && kind.kind === scope.kind);
-                    const typeOpen = versions && isOpen(typeKey, typeStarts);
-                    return (
-                      <div key={type.entityType}>
-                        <Row
-                          depth={1}
-                          label={type.type}
-                          title={versions ? type.entityType : kindTitle(type.kinds[0])}
-                          count={type.count}
-                          selected={picked(type.scope)}
-                          open={versions ? typeOpen : undefined}
-                          onToggle={versions ? () => toggle(typeKey, typeStarts) : undefined}
-                          onSelect={() => onScope(type.scope)}
-                          testId="explorer-type"
-                        />
-                        {typeOpen && type.kinds.map((kind) => (
-                          <Row
-                            key={kind.kind}
-                            depth={2}
-                            label={`${kind.parts.version} ${kind.parts.authority}:${kind.parts.source}`}
-                            title={kindTitle(kind)}
-                            count={kind.count}
-                            selected={scope?.level === "kind" && scope.kind === kind.kind}
-                            onSelect={() => onScope({ level: "kind", kind: kind.kind })}
-                            mono
-                            testId="explorer-type-kind"
-                          />
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+            {shown.filter((group) => !group.custom).map((group) => groupRows(group, 0))}
+            {custom.length > 0 && (
+              <div data-testid="explorer-type-custom-group">
+                <Row
+                  depth={0}
+                  icon={<Puzzle className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
+                  label="Custom"
+                  title="The partition's own types: groups the OSDU data definitions do not name, and the types of an authority and source that name no group. A partition's own kind of an OSDU type stays under that type."
+                  count={customCount}
+                  selected={false}
+                  open={customOpen}
+                  onToggle={() => toggle(CUSTOM_KEY, customStarts)}
+                  onSelect={() => toggle(CUSTOM_KEY, customStarts)}
+                  testId="explorer-type-custom"
+                />
+                {customOpen && custom.map((group) => groupRows(group, 1))}
+              </div>
+            )}
             {shown.length === 0 && (
               <p className="px-2 py-3 text-[12px] text-muted-foreground" data-testid="explorer-types-none">
                 {term === "" ? "Nothing here holds what the search asks." : "No type matches the filter."}

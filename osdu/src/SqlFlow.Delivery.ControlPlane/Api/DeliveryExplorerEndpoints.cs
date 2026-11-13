@@ -185,7 +185,7 @@ public static partial class DeliveryExplorerEndpoints
         DeliveryReadRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
         ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
-        if (DeliveryEndpoints.TargetProblem(body, out var asked) is { } invalid)
+        if (DeliveryEndpoints.TargetProblem(body, out var asked, anyStorageId: true) is { } invalid)
         {
             return invalid;
         }

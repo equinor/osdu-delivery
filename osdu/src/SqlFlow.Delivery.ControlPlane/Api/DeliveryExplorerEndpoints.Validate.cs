@@ -116,7 +116,7 @@ public static partial class DeliveryExplorerEndpoints
     {
         arguments = new Dictionary<string, string>(StringComparer.Ordinal);
         var read = new DeliveryReadRequest(body?.TargetId, body?.Version);
-        if (DeliveryEndpoints.TargetProblem(read, out var asked) is { } invalid)
+        if (DeliveryEndpoints.TargetProblem(read, out var asked, anyStorageId: true) is { } invalid)
         {
             return invalid;
         }

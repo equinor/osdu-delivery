@@ -68,10 +68,22 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
   });
   const partition = canOperate && connection.data?.available === true ? connection.data.partition : null;
   const [source, setSource] = useState<BrowseSource>("definitions");
-  const picker = partition === null ? null : <BrowseSourcePicker value={source} onChange={setSource} partition={partition} />;
+  // Asked from the standard schemas' summary, the partition opens on its custom schemas alone; picked, on all of them.
+  const [customFirst, setCustomFirst] = useState(false);
+  const pick = (next: BrowseSource) => {
+    setCustomFirst(false);
+    setSource(next);
+  };
+  const picker = partition === null ? null : <BrowseSourcePicker value={source} onChange={pick} partition={partition} />;
   return partition !== null && source === "partition"
-    ? <PartitionSchemaBrowse key={partition} partition={partition} sourcePicker={picker} />
-    : <DefinitionsBrowse canOperate={canOperate} sourcePicker={picker} />;
+    ? <PartitionSchemaBrowse key={partition} partition={partition} sourcePicker={picker} customOnlyAtFirst={customFirst} />
+    : (
+      <DefinitionsBrowse
+        canOperate={canOperate}
+        sourcePicker={picker}
+        customIn={partition === null ? null : { partition, show: () => { setCustomFirst(true); setSource("partition"); } }}
+      />
+    );
 }
 
 /**
@@ -79,9 +91,14 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
  * kind. Pick a release (the newest by default), find a kind with one search, look at it laid out as a template, and
  * download it as the file a repository's template folder keeps: committed beside the documents that fill it, the
  * repository's next sync records it. The control plane reads the repository; the schemas are public, so no flow,
- * credential or node is involved, and nothing is kept.
+ * credential or node is involved, and nothing is kept. A partition's custom schemas are in no release: where the partition
+ * in the title bar can be read, the summary says so and shows them (`customIn`).
  */
-function DefinitionsBrowse({ canOperate, sourcePicker }: { canOperate: boolean; sourcePicker: ReactNode }) {
+function DefinitionsBrowse({ canOperate, sourcePicker, customIn }: {
+  canOperate: boolean;
+  sourcePicker: ReactNode;
+  customIn: { partition: string; show: () => void } | null;
+}) {
   const queryClient = useQueryClient();
   const [pickedRelease, setPickedRelease] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -346,6 +363,15 @@ function DefinitionsBrowse({ canOperate, sourcePicker }: { canOperate: boolean; 
                   .
                 </span>
                 <RepositoryLink href={listed.webUrl} testId="templates-browse-repository-link">Open in the repository</RepositoryLink>
+                {customIn !== null && (
+                  <span className="inline-flex items-center gap-x-1.5" data-testid="templates-browse-custom-hint">
+                    <span aria-hidden>·</span>
+                    Custom schemas are in no release:
+                    <Button variant="link" size="sm" className="h-auto px-0" onClick={customIn.show} data-testid="templates-browse-show-custom">
+                      {`see those registered in ${customIn.partition}`}
+                    </Button>
+                  </span>
+                )}
               </>
             )}
         </p>

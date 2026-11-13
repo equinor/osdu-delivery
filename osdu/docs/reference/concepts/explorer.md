@@ -187,11 +187,14 @@ picked reads its records, a search reads what it finds, and a record opened read
 Once asked, the page shows the partition's kinds beside the records of the place picked.
 
 - **The type list.** Every kind the partition holds ([where the types come from](#where-the-types-come-from)), grouped as
-  OSDU names them: the group (`master-data`, `reference-data`, `work-product-component`, `dataset`), the type, and under a
-  type kept in several kinds (versions, authorities) each kind. A partition's own kinds need not name a group
-  (`acme:wells:Completion:1.0.0`); those of one authority and source are a group of their own after the others, named
-  `acme:wells`. Groups start folded, but for the one holding the place picked, and while a search is in view the groups
-  it finds something in open (unless one holds more than 24 types). **Filter types** finds a type among hundreds, by its
+  OSDU names them: the group (`dataset`, `master-data`, `reference-data`, `work-product`, `work-product-component`), the
+  type, and under a type kept in several kinds (versions, authorities) each kind. The partition's own groups follow
+  under one **Custom** row, which folds and is not itself a place: the groups the OSDU data definitions do not name
+  (`data-governance`), then the kinds that name no group (`acme:wells:Completion:1.0.0`), those of one authority and
+  source a group of their own named `acme:wells`. A partition's own kind of an OSDU type
+  (`acme:custom:master-data--Wellbore:1.0.0`) stays under that type, beside the platform's kinds of it, as the type's
+  pattern finds them all. Groups start folded, but for the one holding the place picked, and while a search is in view
+  the groups it finds something in open (unless one holds more than 24 types). **Filter types** finds a type among hundreds, by its
   name or any part of its kind (`acme`); **All types** lists every record of the partition. Picking a group, a type or a
   kind narrows the records to it (`*:*:master-data--*:*`, `*:*:master-data--Wellbore:*`, `acme:wells:*:*`,
   `acme:wells:Completion:*`, or the kind). The counts follow the search and the conditions, so the list also says where
@@ -253,6 +256,7 @@ lists every record of the place again. A hint at the field's end says what Enter
 | --- | --- | --- |
 | nothing | every record of the place | none |
 | a whole id, `dev:master-data--Wellbore:abc123` (a trailing colon is dropped; with a version, it opens at that version) | opens the record | |
+| a whole id of the partition read whose type names no group, `dev:site-note:3b9c...`, as the storage service takes ids (`ValidationDoc.RECORD_ID_REGEX`, os-core-common `a4bbd34`) | opens the record | |
 | the start of an id, `dev:master-data--Wellbore:` or `master-data--Wellbore:WB-` (completed with the partition) | the ids starting with it | `id:dev\:master\-data\-\-Wellbore\:WB\-*` |
 | words, `Wellbore A 1` | a phrase anywhere in a record | `"Wellbore A 1"` |
 | one word of three or more characters with one type in view | the phrase, or the record of that type whose id is or starts with it | `"WB-0042" OR id:"dev:master-data--Wellbore:WB-0042" OR id:...*` |

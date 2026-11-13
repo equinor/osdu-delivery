@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Download, FlaskConical, Loader2, RefreshCw } from "lucide-react";
+import { Archive, Download, FlaskConical, Info, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,18 +51,18 @@ export function BrowseSourcePicker({ value, onChange, partition }: { value: Brow
       <ToggleGroupItem
         value="definitions"
         className="h-8 text-[13px]"
-        title="The OSDU data definitions: the Open Group's public repository of OSDU schemas, release by release"
+        title="The OSDU standard schemas: the OSDU data definitions, the Open Group's public repository, release by release. A partition's custom schemas are not here."
         data-testid="templates-browse-source-definitions"
       >
-        Data definitions
+        OSDU standard
       </ToggleGroupItem>
       <ToggleGroupItem
         value="partition"
         className="h-8 gap-1.5 text-[13px]"
-        title={`Every schema registered in partition ${partition}'s Schema service: the platform's, and the partition's own custom ones`}
+        title={`Every schema registered in partition ${partition}'s Schema service: the OSDU standard ones it holds, and its custom ones, which only a partition holds`}
         data-testid="templates-browse-source-partition"
       >
-        Partition <span className="font-mono">{partition}</span>
+        Registered in <span className="font-mono">{partition}</span>
       </ToggleGroupItem>
     </ToggleGroup>
   );
@@ -119,11 +119,16 @@ interface PartitionRow {
  * the file a repository's template folder keeps, as a release's does. The control plane keeps the listing of the
  * partition's schemas for ten minutes; List again reads it anew.
  */
-export function PartitionSchemaBrowse({ partition, sourcePicker }: { partition: string; sourcePicker: ReactNode }) {
+export function PartitionSchemaBrowse({ partition, sourcePicker, customOnlyAtFirst = false }: {
+  partition: string;
+  sourcePicker: ReactNode;
+  /** Opens on the custom schemas alone: asked for from the standard schemas' summary. */
+  customOnlyAtFirst?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [allVersions, setAllVersions] = useState(false);
-  const [customOnly, setCustomOnly] = useState(false);
+  const [customOnly, setCustomOnly] = useState(customOnlyAtFirst);
   const [viewing, setViewing] = useState<string | null>(null);
   const term = useDeferredValue(search);
 
@@ -273,6 +278,15 @@ export function PartitionSchemaBrowse({ partition, sourcePicker }: { partition: 
 
   const shownRows = rows?.slice(0, MAX_ROWS);
   const read = file.data?.answer;
+  // What the file says other than the service's text: the kind it names in place of the one the schema named.
+  if (problem === null && read !== undefined && read.notes.length > 0) {
+    problem = (
+      <div className="flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] text-muted-foreground" data-testid="templates-partition-notes">
+        <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <div className="flex flex-col gap-1">{read.notes.map((note) => <p key={note}>{note}</p>)}</div>
+      </div>
+    );
+  }
   const reading = answer?.state === "reading" || (listing.data === undefined && listing.isFetching);
 
   return (
@@ -288,9 +302,9 @@ export function PartitionSchemaBrowse({ partition, sourcePicker }: { partition: 
             testId="templates-browse-search"
           />
           {sourcePicker}
-          <Label className="flex items-center gap-2 text-[13px] font-normal" title="Only the kinds of an authority other than osdu: the partition's own schemas">
+          <Label className="flex items-center gap-2 text-[13px] font-normal" title={`Only the schemas of an authority other than osdu: those registered for ${partition} alone, published in no OSDU release`}>
             <Switch checked={customOnly} onCheckedChange={setCustomOnly} data-testid="templates-partition-custom" />
-            Custom only
+            Custom schemas only
           </Label>
           <Label className="flex items-center gap-2 text-[13px] font-normal">
             <Switch checked={allVersions} onCheckedChange={setAllVersions} data-testid="templates-browse-all-versions" />
@@ -317,17 +331,19 @@ export function PartitionSchemaBrowse({ partition, sourcePicker }: { partition: 
         </FilterBar>
         <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" data-testid="templates-partition-summary">
           {answer === undefined || answer.state !== "ready"
-            ? `The schemas registered in partition ${partition}'s Schema service: the platform's, and the partition's own.`
+            ? `The schemas registered in partition ${partition}'s Schema service: the OSDU standard ones it holds, and its custom ones.`
             : (
               <span>
-                <span className="font-mono tabular-nums text-foreground">{counts.size.toLocaleString()}</span>
-                {` record type${counts.size === 1 ? "" : "s"} and `}
                 <span className="font-mono tabular-nums text-foreground">{ordered.length.toLocaleString()}</span>
-                {` schema${ordered.length === 1 ? "" : "s"} registered in partition `}
+                {` schema${ordered.length === 1 ? "" : "s"} (`}
+                <span className="font-mono tabular-nums text-foreground">{counts.size.toLocaleString()}</span>
+                {` record type${counts.size === 1 ? "" : "s"}) registered in partition `}
                 <span className="font-mono text-foreground">{partition}</span>
-                {", "}
+                {": "}
                 <span className="font-mono tabular-nums text-foreground">{customCount.toLocaleString()}</span>
-                {` of them custom (an authority other than ${OSDU_AUTHORITY}).`}
+                {` custom (an authority other than ${OSDU_AUTHORITY}, in no OSDU release) and `}
+                <span className="font-mono tabular-nums text-foreground">{(ordered.length - customCount).toLocaleString()}</span>
+                {" OSDU standard."}
               </span>
             )}
         </p>

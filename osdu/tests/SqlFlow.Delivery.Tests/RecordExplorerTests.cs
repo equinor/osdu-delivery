@@ -84,6 +84,35 @@ public class RecordExplorerTests
     }
 
     [Fact]
+    public void An_id_of_a_type_naming_no_group_is_read_as_an_id_in_the_partition_read_and_its_mentions_can_be_asked()
+    {
+        // A partition's own kind need not name a group, and the storage service takes its ids as they are.
+        const string Rule = "dev:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25";
+        var reading = Read(Rule + ":1712345678901234");
+        Assert.Equal("id", reading.Reading);
+        Assert.StartsWith($"id:\"{Rule}\" OR id:dev\\:site\\-note\\:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25*", reading.Query, StringComparison.Ordinal);
+
+        // Outside the partition read, three colon-separated parts are the start of an id, as before.
+        Assert.Equal("idPrefix", Read("prod:site-note:3b9c").Reading);
+
+        Assert.Null(new ExplorerSearch { Mentions = Rule }.Problem());
+        Assert.Contains("is not an OSDU record id", new ExplorerSearch { Mentions = "dev:site note:3b9c" }.Problem(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("dev:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25", true)]
+    [InlineData("osdu:well:123456789", true)]
+    [InlineData("dev:master-data--Wellbore:WB-1:1712345678901234", true)]
+    [InlineData("dev:reference-data--UnitOfMeasure:m%2Fs", true)]
+    [InlineData("dev:site-note", false)]
+    [InlineData("dev:site note:3b9c", false)]
+    [InlineData("dev::3b9c", false)]
+    [InlineData("dev:site-note:3b9c\n", false)]
+    [InlineData("dév:site-note:3b9c", false)]
+    public void An_id_the_storage_service_takes_names_a_partition_a_middle_part_and_a_unique_part(string id, bool taken)
+        => Assert.Equal(taken, TargetId.IsStorageId(id));
+
+    [Fact]
     public void A_value_with_an_angle_bracket_is_asked_as_a_phrase_since_no_escape_carries_it()
     {
         Assert.Equal(new ExplorerReading("text", "\"dev:x--Y<1\""), Read("dev:x--Y<1"));

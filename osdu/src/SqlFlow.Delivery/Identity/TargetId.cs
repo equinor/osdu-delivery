@@ -207,4 +207,23 @@ public static class TargetId
             && parts[1].IndexOf("--", StringComparison.Ordinal) is > 0 and var at && at < parts[1].Length - 2
             && parts[2].Length > 0;
     }
+
+    /// <summary>
+    /// Whether <paramref name="value"/> is an id the storage service takes for a record, with or without its version: what
+    /// a record OSDU holds may be read by. The storage service asks a partition, a middle part and a unique part
+    /// (<c>ValidationDoc.RECORD_ID_REGEX</c>, os-core-common <c>a4bbd34</c>, <c>ValidationDoc.java:30</c>), and nothing of
+    /// the middle part: a partition's own kinds name types of no group (<c>dev:site-note:3b9c...</c>), and the
+    /// service's own example is <c>osdu:well:123456789</c>. <see cref="IsRecordReference"/> stays the stricter test, since
+    /// it tells a reference in a record's values apart from other text holding colons.
+    /// </summary>
+    public static bool IsStorageId(string? value)
+        => value is { Length: > 0 } && StorageIdPattern.IsMatch(value);
+
+    /// <summary>
+    /// The storage service's record id, <c>^[\w\-\.]+:[\w\-\.]+:[\w\-\.\:\%]+$</c>: Java's <c>\w</c> is ASCII, and the end
+    /// is the text's end, not a line's.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex StorageIdPattern = new(
+        @"^[A-Za-z0-9_\-.]+:[A-Za-z0-9_\-.]+:[A-Za-z0-9_\-.:%]+\z",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 }

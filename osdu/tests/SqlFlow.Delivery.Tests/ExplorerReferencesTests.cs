@@ -143,6 +143,29 @@ public sealed class ExplorerReferencesTests : IDisposable
     }
 
     [Fact]
+    public void A_partitions_schema_downloads_naming_the_kind_the_service_holds_it_under_whatever_it_names_itself()
+    {
+        const string Registered = "acme:wells:Completion:1.0.0";
+        var schema = Kind(data: Data(("WellboreID", Rel("master-data", "Wellbore"))));
+        schema["x-osdu-schema-source"] = "acme:wells--Completion:1.0.0";
+        var listed = new SchemaListing(Registered, "acme", "wells", "Completion", "1.0.0", "DEVELOPMENT", "INTERNAL");
+
+        var file = ExplorerSchemaFile.Of(Registered, listed, new SchemaServiceRead(new SchemaSnapshot(Registered, schema, DateTimeOffset.UnixEpoch), [Registered], []));
+
+        // The file is filed by what it names, so it names the registered id, and says what the schema named.
+        Assert.Equal(Registered, JsonNode.Parse(file.File)!["x-osdu-schema-source"]!.GetValue<string>());
+        Assert.Contains("'acme:wells--Completion:1.0.0'", Assert.Single(file.Notes), StringComparison.Ordinal);
+        Assert.Equal(("DEVELOPMENT", "INTERNAL"), (file.Status, file.Scope));
+        Assert.Equal("acme:wells--Completion:1.0.0", schema["x-osdu-schema-source"]!.GetValue<string>());
+
+        // A schema naming its own id is written as it is, with nothing to say.
+        schema["x-osdu-schema-source"] = Registered;
+        var same = ExplorerSchemaFile.Of(Registered, null, new SchemaServiceRead(new SchemaSnapshot(Registered, schema, DateTimeOffset.UnixEpoch), [Registered], []));
+        Assert.Empty(same.Notes);
+        Assert.Equal(((string?)null, (string?)null), (same.Status, same.Scope));
+    }
+
+    [Fact]
     public async Task A_listing_of_the_kinds_the_service_refuses_says_why_and_is_not_retried_by_every_ask()
     {
         Partition();

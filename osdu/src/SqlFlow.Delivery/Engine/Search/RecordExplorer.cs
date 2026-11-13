@@ -272,9 +272,9 @@ public sealed record ExplorerSearch
             }
 
             var id = mentioned.Trim();
-            if (id.Length > MaxIdLength || !TargetId.IsRecordReference(id) || id.Any(char.IsControl))
+            if (id.Length > MaxIdLength || !TargetId.IsStorageId(id))
             {
-                return $"'{Clip(id)}' is not an OSDU record id: a partition, an entity type such as master-data--Wellbore, and a unique part, separated by colons.";
+                return $"'{Clip(id)}' is not an OSDU record id: a partition, a type and a unique part, separated by colons.";
             }
         }
 
@@ -683,7 +683,10 @@ public sealed partial class RecordExplorer
 
         var phrase = LuceneText.Phrase(text);
         var spaced = text.Any(char.IsWhiteSpace);
-        if (!spaced && TargetId.IsRecordReference(text))
+        // An id of a type naming no group (dev:site-note:3b9c...) is one only in the partition read: elsewhere text
+        // of three colon-separated parts may be anything.
+        var ownId = partition is not null && text.StartsWith(partition + ":", StringComparison.OrdinalIgnoreCase) && TargetId.IsStorageId(text);
+        if (!spaced && (TargetId.IsRecordReference(text) || ownId))
         {
             var id = TargetId.WithoutVersion(text);
             var exact = $"id:{LuceneText.Phrase(id)}";

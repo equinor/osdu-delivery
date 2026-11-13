@@ -12,7 +12,6 @@ using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 using SqlFlow.Delivery.Search;
 using SqlFlow.Delivery.Snapshots;
-using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Engine.Operations;
 
@@ -331,7 +330,7 @@ public sealed class ExploreOperation : DeliveryOperation
 
         SchemaListing? listed = null;
         context.SchemaIndexes?.For(client.Endpoint, partition ?? client.Header(CacheScope.PartitionHeader)).KindsView().Last?.Kinds.TryGetValue(kind, out listed);
-        return new ExplorerSchemaFile(kind, listed?.Status, listed?.Scope, TemplateSources.FileText(read.Schema), read.Read, read.Unresolved);
+        return ExplorerSchemaFile.Of(kind, listed, read);
     }
 
     /// <summary>A connection to the target of the pass's own, held until the pass ends: the one the engine keeps for the target, or one of its own.</summary>

@@ -3227,9 +3227,12 @@ public static class DeliveryEndpoints
 
     /// <summary>
     /// Why a read by OSDU id cannot be asked (no id, one too long, text that is no record id, a version that is no version),
-    /// or null with the id as asked in <paramref name="asked"/>. Every read of a record by its id checks it this way.
+    /// or null with the id as asked in <paramref name="asked"/>. Every read of a record by its id checks it this way: a
+    /// delivery's records by the id a delivery writes (<c>partition:group--Type:unique</c>), and with
+    /// <paramref name="anyStorageId"/> (the explorer's reads of what OSDU holds) by any id the storage service takes, a
+    /// partition's own kinds naming types of no group among them (<see cref="TargetId.IsStorageId"/>).
     /// </summary>
-    internal static ProblemHttpResult? TargetProblem(DeliveryReadRequest? request, out string asked)
+    internal static ProblemHttpResult? TargetProblem(DeliveryReadRequest? request, out string asked, bool anyStorageId = false)
     {
         asked = request?.TargetId?.Trim() ?? string.Empty;
         if (asked.Length == 0)
@@ -3242,9 +3245,11 @@ public static class DeliveryEndpoints
             return Invalid($"The id is {asked.Length} characters long; an OSDU id is at most {MaxTargetIdLength}.");
         }
 
-        if (!TargetId.IsRecordReference(asked) || asked.Any(char.IsControl))
+        if (anyStorageId ? !TargetId.IsStorageId(asked) : !TargetId.IsRecordReference(asked) || asked.Any(char.IsControl))
         {
-            return Invalid($"'{asked}' is not an OSDU record id: a partition, an entity type such as master-data--Wellbore, and a unique part, separated by colons.");
+            return Invalid(anyStorageId
+                ? $"'{asked}' is not an OSDU record id: a partition, a type and a unique part, separated by colons, each of letters, digits, _, - and . (the unique part also : and %)."
+                : $"'{asked}' is not an OSDU record id: a partition, an entity type such as master-data--Wellbore, and a unique part, separated by colons.");
         }
 
         return InvalidVersion(request);

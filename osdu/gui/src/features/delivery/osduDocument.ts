@@ -163,6 +163,22 @@ export function isRecordReference(value: unknown): value is string {
   return parts.length >= 3 && parts[0].length > 0 && at > 0 && at < parts[1].length - 2 && parts[2].length > 0;
 }
 
+/** The storage service's record id (os-core-common ValidationDoc.RECORD_ID_REGEX): no group asked of the middle part. */
+const STORAGE_ID = /^[A-Za-z0-9_\-.]+:[A-Za-z0-9_\-.]+:[A-Za-z0-9_\-.:%]+$/;
+
+/**
+ * Whether a text names a record to open in `partition`: a reference as {@link isRecordReference} reads one, or any id the
+ * storage service takes that starts with the partition, so a record of a partition's own type naming no group
+ * (dev:site-note:3b9c...) opens as well. Elsewhere three colon-separated parts may be any text.
+ */
+export function isRecordIdIn(value: unknown, partition: string | null): value is string {
+  if (isRecordReference(value)) {
+    return true;
+  }
+
+  return typeof value === "string" && partition !== null && value.toLowerCase().startsWith(`${partition.toLowerCase()}:`) && STORAGE_ID.test(value);
+}
+
 /** A reference without its version: p:t:k: and p:t:k:123 become p:t:k, as the control plane reads it. */
 export function withoutVersion(reference: string): string {
   const last = reference.lastIndexOf(":");

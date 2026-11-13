@@ -216,6 +216,14 @@ public sealed class DeliveryExplorerApiTests
             Assert.Equal((ExploreOperation.ReadAction, named, named), (read.Argument(ExploreOperation.ActionArgument), read.SourceRef, read.Argument(DeliveryOperation.PartitionArgument)));
             Assert.Equal(($"{named}:master-data--Wellbore:Wellbore-B", "1712345678901234"), (read.Argument("targetId"), read.Argument("version")));
 
+            // A record of a partition's own type naming no group is read and checked by the id the storage service takes.
+            var own = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/read?partition={named}", new { targetId = $"{named}:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25" });
+            Assert.Equal($"{named}:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25", own.Argument("targetId"));
+            var ownChecked = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/validate?partition={named}", new { targetId = $"{named}:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25" });
+            Assert.Equal((ExploreOperation.ValidateAction, $"{named}:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25"), (ownChecked.Argument(ExploreOperation.ActionArgument), ownChecked.Argument("targetId")));
+            var ownMentions = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/search?partition={named}", new { mentions = $"{named}:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25" });
+            Assert.Equal($"{named}:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25", ExplorerSearch.Parse(ownMentions.Argument(ExploreOperation.SearchArgument)).Mentions);
+
             var search400 = $"/api/v1/delivery/explorer/search?partition={named}";
             await RefusedAsync(client, token, search400, new { kind = "osdu:wks" }, HttpStatusCode.BadRequest, "is not a kind");
             await RefusedAsync(client, token, search400, new { sort = "newest" }, HttpStatusCode.BadRequest, "is not an order");
@@ -228,6 +236,7 @@ public sealed class DeliveryExplorerApiTests
             await RefusedAsync(client, token, search400, new { text = "a", mentions = "dev:master-data--Well:1" }, HttpStatusCode.BadRequest, "not both");
             await RefusedAsync(client, token, $"/api/v1/delivery/explorer/fields?partition={named}", new { kind = " " }, HttpStatusCode.BadRequest, "Name the kind");
             await RefusedAsync(client, token, "/api/v1/delivery/explorer/read?partition=" + named, new { targetId = "Wellbore B-2 B" }, HttpStatusCode.BadRequest, "is not an OSDU record id");
+            await RefusedAsync(client, token, "/api/v1/delivery/explorer/read?partition=" + named, new { targetId = $"{named}:site note:3b9c" }, HttpStatusCode.BadRequest, "is not an OSDU record id");
 
             // A partition with no connection is read through nothing: neither one whose values are unset, nor one not registered.
             await RefusedAsync(client, token, $"/api/v1/delivery/explorer/search?partition={bare}", new { text = "x" }, HttpStatusCode.Conflict, "through the platform and client its configuration names");

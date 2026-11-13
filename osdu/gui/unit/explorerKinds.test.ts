@@ -6,8 +6,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  groupOf, kindInScope, kindParts, kindTitle, sameScope, scopeKind, scopeLabel, scopeOf, typeScopeOf, typeTree, type ExplorerScope,
+  groupOf, isCustomGroup, kindInScope, kindParts, kindTitle, sameScope, scopeKind, scopeLabel, scopeOf, typeScopeOf, typeTree, type ExplorerScope,
 } from "../src/features/delivery/explorer/explorerKinds.ts";
+import { isRecordIdIn, isRecordReference } from "../src/features/delivery/osduDocument.ts";
 
 const kinds = [
   { kind: "osdu:wks:master-data--Wellbore:1.1.0", count: 40, status: "PUBLISHED", scope: "SHARED" },
@@ -19,23 +20,34 @@ const kinds = [
 ];
 
 describe("typeTree", () => {
-  it("groups the types naming no group by their namespace, after the groups the types name", () => {
-    const tree = typeTree(kinds);
-    assert.deepEqual(tree.map((g) => [g.group, g.namespace, g.count]), [
-      ["data-governance", false, 0],
-      ["master-data", false, 43],
-      ["acme:wells", true, 17],
+  it("lists OSDU's groups first, then the custom ones: the groups OSDU does not name, then the namespaces of types naming none", () => {
+    const tree = typeTree([...kinds, { kind: "osdu:wks:reference-data--UnitOfMeasure:1.0.0", count: 9 }]);
+    assert.deepEqual(tree.map((g) => [g.group, g.custom, g.namespace, g.count]), [
+      ["master-data", false, false, 43],
+      ["reference-data", false, false, 9],
+      ["data-governance", true, false, 0],
+      ["acme:wells", true, true, 17],
     ]);
 
-    const space = tree[2];
+    const space = tree[3];
     assert.deepEqual(space.types.map((t) => [t.type, t.count]), [["Completion", 12], ["StationReading", 0], ["SurveyRun", 5]]);
     assert.deepEqual(space.types[0].scope, { level: "type", entityType: "Completion", namespace: "acme:wells" });
     assert.equal(scopeKind(space.types[0].scope), "acme:wells:Completion:*");
     assert.equal(scopeKind({ level: "group", group: space.group }), "acme:wells:*:*");
 
     // A type naming a group is that type in every namespace, as before.
-    assert.deepEqual(tree[1].types[0].scope, { level: "type", entityType: "master-data--Wellbore" });
-    assert.deepEqual(tree[1].types[0].kinds.map((k) => k.kind), ["osdu:wks:master-data--Wellbore:1.0.0", "osdu:wks:master-data--Wellbore:1.1.0"]);
+    assert.deepEqual(tree[0].types[0].scope, { level: "type", entityType: "master-data--Wellbore" });
+    assert.deepEqual(tree[0].types[0].kinds.map((k) => k.kind), ["osdu:wks:master-data--Wellbore:1.0.0", "osdu:wks:master-data--Wellbore:1.1.0"]);
+  });
+
+  it("keeps a partition's own kind of an OSDU type under that type, not under Custom", () => {
+    const tree = typeTree([...kinds, { kind: "acme:custom:master-data--Wellbore:1.0.0", count: 2 }]);
+    const master = tree.find((g) => g.group === "master-data")!;
+    assert.equal(master.custom, false);
+    assert.deepEqual(master.types[0].kinds.map((k) => k.kind), [
+      "acme:custom:master-data--Wellbore:1.0.0", "osdu:wks:master-data--Wellbore:1.0.0", "osdu:wks:master-data--Wellbore:1.1.0",
+    ]);
+    assert.ok(!isCustomGroup("work-product") && !isCustomGroup("dataset") && isCustomGroup("data-governance-draft"));
   });
 
   it("counts a namespace by every kind of its authority and source, as its pattern finds them", () => {
@@ -109,5 +121,19 @@ describe("kindTitle", () => {
     assert.equal(
       kindTitle({ kind: "x:y:Z:1.0.0", count: 2, status: null, scope: null }),
       "x:y:Z:1.0.0\nNo schema of it is listed by the Schema service.");
+  });
+});
+
+describe("isRecordIdIn", () => {
+  it("opens an id of a type naming no group in the partition read, as the storage service takes it", () => {
+    assert.ok(isRecordIdIn("dev:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25", "dev"));
+    assert.ok(isRecordIdIn("dev:site-note:3b9c1f0e5a7d4e2b9c8f6a1d0e7b4c25:1712345678901234", "dev"));
+    assert.ok(isRecordIdIn("dev:master-data--Wellbore:WB-1", "other"));
+    // Elsewhere three colon-separated parts may be any text, and a reference inside a record stays as strict as before.
+    assert.ok(!isRecordIdIn("dev:site-note:3b9c", "prod"));
+    assert.ok(!isRecordIdIn("dev:site-note:3b9c", null));
+    assert.ok(!isRecordIdIn("dev:site note:3b9c", "dev"));
+    assert.ok(!isRecordIdIn("dev:site-note", "dev"));
+    assert.ok(!isRecordReference("dev:site-note:3b9c"));
   });
 });

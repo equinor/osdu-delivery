@@ -167,11 +167,26 @@ export interface GroupNode {
   types: TypeNode[];
   /** A namespace, `authority:source`, rather than a group the types name. */
   namespace: boolean;
+  /** A group of a partition's own types (see {@link isCustomGroup}), listed under Custom. */
+  custom: boolean;
+}
+
+/** The groups the OSDU data definitions name the types of records by. */
+export const OSDU_GROUPS: ReadonlySet<string> = new Set(["dataset", "master-data", "reference-data", "work-product", "work-product-component"]);
+
+/**
+ * Whether a group holds a partition's own types: a group the OSDU data definitions do not name (`data-governance`), or a
+ * namespace of types naming none (`acme:wells`). A partition's own kind of an OSDU type (`acme:custom:master-data--Wellbore`)
+ * stays under that type, beside the platform's kinds of it, as the type's pattern finds them all.
+ */
+export function isCustomGroup(group: string): boolean {
+  return !OSDU_GROUPS.has(group);
 }
 
 /**
- * The kinds a partition holds as groups of types, each in name order, with the counts summed upward: the groups the types
- * name first, then the namespaces of the types that name none.
+ * The kinds a partition holds as groups of types, each in name order, with the counts summed upward: OSDU's own groups
+ * first, then the custom ones (see {@link isCustomGroup}), the groups the types name before the namespaces of those that
+ * name none.
  */
 export function typeTree(kinds: KindCount[]): GroupNode[] {
   const groups = new Map<string, Map<string, KindNode[]>>();
@@ -189,7 +204,7 @@ export function typeTree(kinds: KindCount[]): GroupNode[] {
 
   const byName = (a: string, b: string) => a.localeCompare(b, "en", { sensitivity: "base" });
   return [...groups.entries()]
-    .sort(([a], [b]) => Number(isNamespace(a)) - Number(isNamespace(b)) || byName(a, b))
+    .sort(([a], [b]) => Number(isCustomGroup(a)) - Number(isCustomGroup(b)) || Number(isNamespace(a)) - Number(isNamespace(b)) || byName(a, b))
     .map(([group, types]) => {
       const namespace = isNamespace(group);
       const nodes = [...types.entries()]
@@ -202,7 +217,9 @@ export function typeTree(kinds: KindCount[]): GroupNode[] {
           scope: namespace ? { level: "type", entityType, namespace: group } : { level: "type", entityType },
         }))
         .sort((a, b) => byName(a.type, b.type));
-      return { group, count: namespace ? spaces.get(group) ?? 0 : nodes.reduce((sum, node) => sum + node.count, 0), types: nodes, namespace };
+      return {
+        group, count: namespace ? spaces.get(group) ?? 0 : nodes.reduce((sum, node) => sum + node.count, 0), types: nodes, namespace, custom: isCustomGroup(group),
+      };
     });
 }
 

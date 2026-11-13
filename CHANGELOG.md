@@ -639,6 +639,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The explorer's partition's own groups sit under one Custom row.** Groups the OSDU data definitions do not name, and
+  the namespaces of types naming no group, fold under **Custom** after OSDU's own groups; a partition's own kind of an
+  OSDU type stays under that type. Browse OSDU's choice reads **OSDU standard** and **Registered in** the partition, the
+  standard schemas' summary links to the partition's custom schemas, and **Custom only** is **Custom schemas only**.
 - **A schedule's Run now and an external trigger's fire are recorded as asked for.** Their runs carry the trigger source
   `manual` and name the person or trigger, where they read as the schedule firing on its own (`schedule`); past runs
   are corrected the same way when the control plane upgrades, and a schedule fired behind its parents records `chain`.
@@ -1075,6 +1079,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **The explorer opens a record of a partition's own type that names no group.** An id such as `dev:site-note:3b9c...`
+  was refused as no OSDU record id, though the search listed it: the explorer's reads, checks and mentions now take any
+  id the storage service takes (`ValidationDoc.RECORD_ID_REGEX`), and the search field opens one of the partition read.
+- **A partition's schema that names another kind than its registered id lays out as a template.** One registered as
+  `acme:wells:Completion:1.0.0` naming itself `acme:wells--Completion:1.0.0` was refused as no record schema; the file
+  Browse OSDU reads and downloads names the registered id, and the sheet says what the schema named.
 - **The Schedules page names the schedule a chained schedule fires behind.** It showed a bare dash, so a schedule that
   ran after another, whoever started that one, looked like it had no trigger; the timeline called it "manual". A cron
   whose date never comes now shows a next fire of "never" ([Schedules](sqlflow/docs/reference/flow/schedule.md)).

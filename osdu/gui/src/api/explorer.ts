@@ -173,6 +173,8 @@ export interface ExplorerSchemaFile {
   read: string[];
   /** The references left as they were, each with why. */
   unresolved: string[];
+  /** What the file holds other than the service's text: the kind named in place of the one the schema named. */
+  notes: string[];
 }
 
 /**
@@ -245,7 +247,7 @@ export const explorerApi = {
   /** One kind's schema as the partition's Schema service holds it, bundled, as the file a template folder keeps. */
   schema: async (partition: string | null, kind: string) => {
     const answered = await post<ExplorerAnswer<ExplorerSchemaFile>>(`/api/v1/delivery/explorer/schema${partitionQuery(partition)}`, { kind });
-    return { ...answered, answer: { ...answered.answer, read: answered.answer.read ?? [], unresolved: answered.answer.unresolved ?? [] } };
+    return { ...answered, answer: { ...answered.answer, read: answered.answer.read ?? [], unresolved: answered.answer.unresolved ?? [], notes: answered.answer.notes ?? [] } };
   },
   /** One page of the records a search finds. */
   search: (partition: string | null, request: ExplorerSearchRequest) =>

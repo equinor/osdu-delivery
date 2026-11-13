@@ -341,18 +341,24 @@ folder of a working copy ([template](../cli/template.md)).
 A partition's own schemas (a kind of another authority than `osdu`, such as `acme:wells:Completion:1.0.0` or
 `acme:governance:data-governance--AccessGroupMap:1.0.0`) are registered in its Schema service and published nowhere
 else, so no release of the data definitions holds them. When the title bar names a partition the control plane can read
-([the explorer's connection](explorer.md#how-it-reaches-osdu)), Browse OSDU offers it beside the data definitions, as
-**Partition** and its id:
+([the explorer's connection](explorer.md#how-it-reaches-osdu)), Browse OSDU offers it beside the data definitions: the
+choice reads **OSDU standard** (a release of the data definitions) and **Registered in** the partition's id. The standard
+schemas' summary says that custom schemas are in no release, with a link that opens the partition on them alone.
 
-1. **Lists every schema the partition's Schema service holds**: the platform's and the partition's own, every status
-   (published, in development, obsolete) and scope, whether or not any record is of them, the abstract building blocks
-   left out. **Custom only** keeps the kinds of an authority other than `osdu`; the summary says how many there are. The
-   control plane lists them once and keeps the listing for ten minutes (the explorer's type list reads the same one);
-   **List again** lists them anew, for a schema registered since.
+1. **Lists every schema the partition's Schema service holds**: the OSDU standard ones it holds and its custom ones,
+   every status (published, in development, obsolete) and scope, whether or not any record is of them, the abstract
+   building blocks left out. **Custom schemas only** keeps the kinds of an authority other than `osdu`; the summary says
+   how many are custom and how many standard. The control plane lists them once and keeps the listing for ten minutes
+   (the explorer's type list reads the same one); **List again** lists them anew, for a schema registered since.
 2. **Looks at a schema**: read from the Schema service, bundled with every schema it refers to
    (`POST /api/v1/delivery/explorer/schema`), and laid out as a template; the sheet says how many schemas were read and
    how many references could not be followed.
 3. **Downloads it** as the file a template folder keeps, under the kind's file name, as a release's download does.
+
+A template file is filed by the kind it names in `x-osdu-schema-source`, and a partition's own schema may name another
+kind there than the one the Schema service holds it under, or none (one registered as `acme:wells:Completion:1.0.0`
+naming itself `acme:wells--Completion:1.0.0`, which is no kind). The file then names the registered id, the kind the
+records carry, and the sheet says what the schema named.
 
 `sqlflow template register` goes the other way: it registers a template folder's custom schemas in a partition
 ([template register](../cli/template-register.md)).
