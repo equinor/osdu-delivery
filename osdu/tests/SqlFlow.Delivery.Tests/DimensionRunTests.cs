@@ -1150,7 +1150,7 @@ public sealed class DimensionRunTests : IDisposable
         var (other, _, _) = await RunnerAsync(Head.Replace("name: wells-dimensions", "name: log-dimensions", StringComparison.Ordinal) + Declared, "flows/other.yaml");
         var refused = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => other.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
         Assert.Contains(
-            "Dimension Source of log-dimensions would write the table osdu.dim_Source, which dimension Source of wells-dimensions writes: a dimension's table is named after the dimension alone, so a dimension's name is unique among the flows of a database. Rename one of them.",
+            "Dimension Source of log-dimensions would write a table named dim_Source, which dimension Source of wells-dimensions writes: a dimension's table is named after the dimension alone, so a dimension's name is unique among the module's dimension flows, wherever their targets keep their tables. Rename one of them.",
             refused.Message,
             StringComparison.Ordinal);
         var failed = (await ledger.ListDimensionsAsync(null, null)).Single(d => d.FlowName == "log-dimensions");

@@ -3696,11 +3696,23 @@ public interface ILedger
     /// </summary>
     Task<DimensionViewRemoved?> RemoveDimensionViewAsync(string name, CancellationToken ct = default);
 
-    /// <summary>What a build of flow <paramref name="flowName"/> would do with each of <paramref name="views"/>, writing nothing: what a plan says of them.</summary>
-    Task<IReadOnlyList<DimensionViewProbe>> ProbeDimensionViewsAsync(string flowName, IReadOnlyList<Model.DimensionViewSpec> views, CancellationToken ct = default);
+    /// <summary>
+    /// What a build of flow <paramref name="flowName"/> would do with each of <paramref name="views"/>, writing nothing: what a
+    /// plan says of them, looked at where <paramref name="target"/> keeps them (the module's database when null), its
+    /// reference resolved through <paramref name="secrets"/> (the run's; the host's when null).
+    /// </summary>
+    Task<IReadOnlyList<DimensionViewProbe>> ProbeDimensionViewsAsync(
+        string flowName, IReadOnlyList<Model.DimensionViewSpec> views, DimensionTableTarget? target = null, SqlFlow.Core.Secrets.ISecretResolver? secrets = null,
+        CancellationToken ct = default);
 
-    /// <summary>The module's database as its server names it, which a dimension flow's <c>target.connection</c> has to reach.</summary>
-    Task<DatabaseIdentity> DatabaseIdentityAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Where a dimension flow keeps its tables and views (osdu/docs/reference/flow/dimension-target.md): the module's
+    /// database when <paramref name="target"/> is null or reaches it, else the target, once this host has opened it, its
+    /// reference resolved through <paramref name="secrets"/> (the run's; the host's when null).
+    /// </summary>
+    /// <exception cref="DeliveryException">The target cannot be resolved or opened, or names the module's database with another schema.</exception>
+    Task<DimensionTableTarget> ResolveDimensionTargetAsync(
+        string flowName, Model.DimensionTarget? target, SqlFlow.Core.Secrets.ISecretResolver? secrets = null, CancellationToken ct = default);
 
     /// <summary>
     /// The texts a collected attribute's values stand for, as the dimension's last build that settled its field read them:

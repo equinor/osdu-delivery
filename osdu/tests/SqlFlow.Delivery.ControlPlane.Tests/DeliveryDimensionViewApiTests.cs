@@ -124,6 +124,7 @@ public sealed class DeliveryDimensionViewApiTests
             {
                 var listed = (await JsonAsync(client, token, path)).EnumerateArray().Single(v => v.GetProperty("name").GetString() == viewName);
                 Assert.Equal("v_dim_" + viewName, listed.GetProperty("viewName").GetString());
+                Assert.Equal("osdu", listed.GetProperty("kept").GetString());
                 Assert.Equal(flowName, listed.GetProperty("flowName").GetString());
                 Assert.Equal(pipelineId, listed.GetProperty("pipelineId").GetGuid());
                 Assert.True(listed.GetProperty("declared").GetBoolean());

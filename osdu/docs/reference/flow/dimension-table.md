@@ -15,6 +15,7 @@ keywords:
   - clustered by partition
 related:
   - delivery-flow-dimension
+  - delivery-flow-dimension-target
   - delivery-concept-dimension-tables
   - delivery-flow-dimension-views
   - concept-schema-evolution
@@ -27,9 +28,11 @@ sourceRefs:
 
 # The dimension's table: osdu.dim_<dimension>, its columns and names, and how it follows the document
 
-Each [dimension](dimension.md) is one table in the module's database, which its builds make and keep.
+Each [dimension](dimension.md) is one table, in the module's database unless its flow's [target](dimension-target.md)
+names another, which its builds make and keep.
 
-Each dimension is one table in the module's database, `osdu.dim_<dimension>` (`osdu.dim_Wellbore`): the dimension's
+Each dimension is one table, `dim_<dimension>` (`osdu.dim_Wellbore` in the module's database, or in the schema and
+database the flow's target names): the dimension's
 name with anything not a letter, digit or underscore made an underscore. It is what a report, a query, a cascade of
 drop-downs or a table of facts reads. A build makes it and keeps it; no line of the document asks for it, and no
 migration creates it.

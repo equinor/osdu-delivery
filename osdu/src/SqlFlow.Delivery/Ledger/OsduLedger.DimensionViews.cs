@@ -1,3 +1,6 @@
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Model;
 
 namespace SqlFlow.Delivery.Ledger;
@@ -14,7 +17,8 @@ public sealed partial class OsduLedger
         ArgumentNullException.ThrowIfNull(write);
         var partition = await WritePartitionAsync(write.FlowLedgerId, ct).ConfigureAwait(false);
         await using var db = Open();
-        return await SqlServerDimensionViewStore.WriteAsync(db, write, partition, ct).ConfigureAwait(false);
+        return await SqlServerDimensionViewStore.WriteAsync(
+            db, write, partition, (connection, target, opening) => OpenTableDatabaseAsync(db, connection, target, write.Flow, write.Secrets, opening), ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<DimensionViewState>> ListDimensionViewsAsync(string? flowName, CancellationToken ct = default)
@@ -41,10 +45,13 @@ public sealed partial class OsduLedger
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         await using var db = Open();
-        return await SqlServerDimensionViewStore.RemoveAsync(db, name.Trim(), ct).ConfigureAwait(false);
+        return await SqlServerDimensionViewStore.RemoveAsync(
+            db, name.Trim(), (connection, target, opening) => OpenTableDatabaseAsync(db, connection, target, $"view {name.Trim()}", null, opening), ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<DimensionViewProbe>> ProbeDimensionViewsAsync(string flowName, IReadOnlyList<DimensionViewSpec> views, CancellationToken ct = default)
+    public async Task<IReadOnlyList<DimensionViewProbe>> ProbeDimensionViewsAsync(
+        string flowName, IReadOnlyList<DimensionViewSpec> views, DimensionTableTarget? target = null, SqlFlow.Core.Secrets.ISecretResolver? secrets = null,
+        CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(flowName);
         ArgumentNullException.ThrowIfNull(views);
@@ -54,12 +61,45 @@ public sealed partial class OsduLedger
         }
 
         await using var db = Open();
-        return await SqlServerDimensionViewStore.ProbeAsync(db, flowName, views, ct).ConfigureAwait(false);
+        return await SqlServerDimensionViewStore.ProbeAsync(
+            db, flowName, views, target ?? DimensionTableTarget.Catalog,
+            (connection, kept, opening) => OpenTableDatabaseAsync(db, connection, kept, flowName, secrets, opening), ct).ConfigureAwait(false);
     }
 
-    public async Task<DatabaseIdentity> DatabaseIdentityAsync(CancellationToken ct = default)
+    public async Task<DimensionTableTarget> ResolveDimensionTargetAsync(
+        string flowName, DimensionTarget? target, SqlFlow.Core.Secrets.ISecretResolver? secrets = null, CancellationToken ct = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(flowName);
+        var declared = DimensionTableTarget.Of(target);
+        if (declared.InCatalog)
+        {
+            return declared;
+        }
+
         await using var db = Open();
-        return await SqlServerDimensionViewStore.IdentityAsync(db, ct).ConfigureAwait(false);
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var catalog = (SqlConnection)db.Database.GetDbConnection();
+            await using var home = await OpenTableDatabaseAsync(db, catalog, declared, flowName, secrets, ct).ConfigureAwait(false);
+            var module = await SqlServerDimensionViewStore.IdentityAsync(catalog, ct).ConfigureAwait(false);
+            var there = await SqlServerDimensionViewStore.IdentityAsync(home.Connection, ct).ConfigureAwait(false);
+            if (!module.SameAs(there))
+            {
+                return declared;
+            }
+
+            if (!string.Equals(declared.Schema, DeliveryModel.SchemaName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new DeliveryException(
+                    $"Flow {flowName}'s target ({declared.Named}) reaches the module's own database, with schema {declared.Schema}; in the module's database a dimension's table is kept in schema {DeliveryModel.SchemaName} only. Leave target.schema out, or name another database.");
+            }
+
+            return DimensionTableTarget.Catalog;
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
     }
 }

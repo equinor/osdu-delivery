@@ -253,9 +253,9 @@ public sealed record DimensionFlowDefinition
             }
         }
 
-        if (Target is { } target && IsReference(target.Connection))
+        if (Target is { Connection: { } connection } && IsReference(connection))
         {
-            yield return new("target.connection", target.Connection);
+            yield return new("target.connection", connection);
         }
     }
 

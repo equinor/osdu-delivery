@@ -73,12 +73,21 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>How many times a claim or lease statement runs when the database ends a deadlock by rolling it back.</summary>
     private const int DeadlockAttempts = 5;
 
-    public OsduLedger(Func<OsduDbContext> factory, TimeProvider? time = null)
+    /// <param name="factory">Makes a context on the module's database.</param>
+    /// <param name="time">The clock; the system's unless given.</param>
+    /// <param name="secrets">
+    /// Resolves the connection a dimension flow's <c>target.connection</c> names, so the ledger reaches a table kept in another
+    /// database; null on a host that resolves none, where such a table cannot be reached.
+    /// </param>
+    public OsduLedger(Func<OsduDbContext> factory, TimeProvider? time = null, SqlFlow.Core.Secrets.ISecretResolver? secrets = null)
     {
         ArgumentNullException.ThrowIfNull(factory);
         _factory = factory;
         _time = time ?? TimeProvider.System;
+        _secrets = secrets;
     }
+
+    private readonly SqlFlow.Core.Secrets.ISecretResolver? _secrets;
 
     private DateTime Now => _time.GetUtcNow().UtcDateTime;
 

@@ -29,6 +29,8 @@ keywords:
   - typed columns
   - "osdu.v_dim_"
   - target.connection
+  - target.database
+  - target.schema
   - datatype
   - key_hash
   - incremental load
@@ -246,7 +248,7 @@ type ...`).
 | `partitions` | list | none | The partitions the flow builds in, each a literal `data-partition-id`. See [Partitions](#partitions). |
 | `source` | map | required | The OSDU platform the dimensions are read from. See [source](#source). |
 | `dimensions` | list | required | The dimensions, at least 1 and at most 100, names unique ignoring case. |
-| `target` | map | none | `connection`: the module's database, as the pipelines reading the flow's tables and views name it. Required with `views`. See [Views](#views). |
+| `target` | map | the module's database | Where the flow's `dim_` tables and `v_dim_` views are kept: `connection`, `database` and `schema`, each optional. A build writes each table after the dimension's merge commits; the dimensions themselves stay in the module's database. See [Dimension target](dimension-target.md). |
 | `views` | list | none | Views over the flow's dimension tables, at most 50. See [Views](#views). |
 | `reliability` | map | delivery defaults | The HTTP settings a delivery flow takes ([delivery flow](delivery.md)): timeout, retry, rate limit, TLS, URL allowlist and response size. |
 | `parallelism` | map | defaults | `recordsAtOnce` (default 8, at least 1): how many dimensions build at once, and how many requests each asks of the search at once (value ranges, cursors, counts); the build as a whole asks at most `recordsAtOnce` × `recordsAtOnce` at once, and a dimension's label and attribute searches take as many of those as the build has free, so the last dimension building asks for them all ([What a build does](dimension-build.md#what-a-build-does)). It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. `nodes` (default 8, 1 to 64) and `minRecordsPerNode` (default 50000) spread a large build over nodes, a part per that many records, each building its share of the dimensions on a node of its own ([builds over nodes](dimension-nodes.md)). It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
@@ -337,9 +339,10 @@ what to read instead.
 ## Views
 
 A view puts dimensions of one flow side by side at the grain of one of them, so a pipeline, a report or a person reads
-one table instead of writing the joins. A build writes each as `osdu.v_dim_<name>` after the flow's dimensions, checks it,
-and drops a view the flow no longer declares. The `target` and `views` keys, how a view joins and types its columns, how
-it is written and checked, and what the templates say of its joins are on [Dimension views](dimension-views.md).
+one table instead of writing the joins. A build writes each as `v_dim_<name>` after the flow's dimensions, beside the
+tables it reads, checks it, and drops a view the flow no longer declares. The `views` keys, how a view joins and types its
+columns, how it is written and checked, and what the templates say of its joins are on [Dimension views](dimension-views.md);
+where the tables and views are kept is on [Dimension target](dimension-target.md).
 
 ## The blueprint and the tables behind a dimension
 
@@ -381,9 +384,9 @@ A view the flow no longer declares is dropped by its next build. One whose flow 
 
 - **Lineage.** A dimension flow reads each dimension's kind on its platform and partition, the dictionary files its
   `map` steps name, and writes each dimension. It is ordered after the delivery flows writing the kinds it reads, and a
-  cache flow holding one of its dimensions is ordered after it ([lineage](../concepts/lineage.md)). With
-  `target.connection` it also writes its tables and views on that connection ([Views](#views)), and its pipeline names
-  that connection as its target, as an ingestion flow's names the server it loads.
+  cache flow holding one of its dimensions is ordered after it ([lineage](../concepts/lineage.md)). With a `target` it
+  also writes its tables and views where the target keeps them ([Dimension target](dimension-target.md)), and its
+  pipeline names that connection as its target, as an ingestion flow's names the server it loads.
 - **The GUI.** A dimension flow's pipeline has a **Dimensions** tab. **OSDU**, **Dimensions** lists every
   dimension with the search builder; a dimension's page has the tabs Table, Values, Keys, Changes, Builds and
   Definition (the YAML beside a diagram of how each column is read: [The blueprint](../concepts/dimension-blueprint.md)).

@@ -35,7 +35,11 @@ internal static class DimensionViewMapper
     /// <summary>The settings a view's column takes beside its bare form.</summary>
     internal static IReadOnlyList<string> ColumnSettings { get; } = ["expression", "dataType", "description"];
 
-    /// <summary>The module's database as the document names it, checked as a delivery flow's source connection is: references only.</summary>
+    /// <summary>
+    /// Where the document writes its tables and views: a connection checked as a delivery flow's source connection is
+    /// (references only), a database on its server and a schema, each optional; a target naming none of them is refused,
+    /// since leaving <c>target</c> out says the same.
+    /// </summary>
     public static DimensionTarget? MapTarget(DimensionTargetYaml? declared, string source)
     {
         if (declared is null)
@@ -43,10 +47,59 @@ internal static class DimensionViewMapper
             return null;
         }
 
-        var connection = FlowMapper.Require(declared.Connection, "target.connection", source).Trim();
-        IngestionConnection.CheckDeclared(connection, source, "target.connection");
-        return new DimensionTarget(connection);
+        string? connection = null;
+        if (declared.Connection is not null)
+        {
+            connection = FlowMapper.Require(declared.Connection, "target.connection", source).Trim();
+            IngestionConnection.CheckDeclared(connection, source, "target.connection");
+        }
+
+        var database = DatabaseName(declared.Database, source);
+        var schema = SchemaName(declared.Schema, source);
+        if (connection is null && database is null && schema is null)
+        {
+            throw new FlowValidationException(
+                $"{source}: target names no connection, database or schema. Name one, or leave target out to keep the flow's tables and views in the module's database.");
+        }
+
+        return new DimensionTarget(connection, database, schema);
     }
+
+    /// <summary>A database name as SQL Server takes one: at most 128 characters, no control characters, not blank.</summary>
+    private static string? DatabaseName(string? declared, string source)
+    {
+        if (declared is null)
+        {
+            return null;
+        }
+
+        var name = declared.Trim();
+        return name.Length is > 0 and <= MaxNameLength && !name.Any(char.IsControl)
+            ? name
+            : throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture,
+                $"{source}: target.database '{declared}' is not a database name: at most {MaxNameLength} characters, none of them a control character."));
+    }
+
+    /// <summary>A schema name a statement writes without quoting: a letter or an underscore, then letters, digits and underscores, at most 128.</summary>
+    private static string? SchemaName(string? declared, string source)
+    {
+        if (declared is null)
+        {
+            return null;
+        }
+
+        var name = declared.Trim();
+        var plain = name.Length is > 0 and <= MaxNameLength
+            && (char.IsAsciiLetter(name[0]) || name[0] == '_')
+            && name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
+        return plain
+            ? name
+            : throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture,
+                $"{source}: target.schema '{declared}' is not a schema name a build writes: a letter or an underscore, then letters, digits and underscores, at most {MaxNameLength}."));
+    }
+
+    /// <summary>The longest database or schema name SQL Server takes.</summary>
+    private const int MaxNameLength = 128;
 
     public static IReadOnlyList<DimensionViewSpec> MapViews(
         List<DimensionViewYaml>? declared, DimensionTarget? target, string flow, IReadOnlyList<DimensionSpec> dimensions, string source)
@@ -54,12 +107,6 @@ internal static class DimensionViewMapper
         if (declared is null || declared.Count == 0)
         {
             return [];
-        }
-
-        if (target is null)
-        {
-            throw new FlowValidationException(
-                $"{source}: views needs target.connection: the module's database as the pipelines reading the views name it (target: {{ connection: ${{env:{OsduModuleDatabase.CatalogConnectionVariable}}} }}), so SQLFlow orders those pipelines after this flow, and a build checks it reaches the module's own database.");
         }
 
         if (declared.Count > DimensionViewSpec.MaxViews)
@@ -71,7 +118,7 @@ internal static class DimensionViewMapper
         var views = new List<MappedView>(declared.Count);
         for (var i = 0; i < declared.Count; i++)
         {
-            var view = MapView(declared[i], i, flow, dimensions, views, source);
+            var view = MapView(declared[i], i, flow, dimensions, views, DimensionTableTarget.Of(target), source);
             if (views.FirstOrDefault(v => string.Equals(v.Spec.Name, view.Spec.Name, StringComparison.OrdinalIgnoreCase)) is { } twice)
             {
                 throw new FlowValidationException(
@@ -85,7 +132,8 @@ internal static class DimensionViewMapper
     }
 
     private static MappedView MapView(
-        DimensionViewYaml? v, int index, string flow, IReadOnlyList<DimensionSpec> dimensions, IReadOnlyList<MappedView> earlier, string source)
+        DimensionViewYaml? v, int index, string flow, IReadOnlyList<DimensionSpec> dimensions, IReadOnlyList<MappedView> earlier, DimensionTableTarget kept,
+        string source)
     {
         var at = string.Create(CultureInfo.InvariantCulture, $"views[{index}]");
         if (v is null)
@@ -277,23 +325,23 @@ internal static class DimensionViewMapper
         DimensionViewDefinition definition;
         if (groupedBy.Count == 0)
         {
-            var fromSql = DimensionViews.FromSql(fromTable, joinSql, applies);
+            var fromSql = DimensionViews.FromSql(kept, fromTable, joinSql, applies);
             var all = new List<DimensionViewColumnDefinition>
             {
                 new("partition", "nvarchar(256)", $"[{DimensionViews.FromSqlAlias}].[partition]", null, null, "The partition the row was read in.", null),
                 new("id", "bigint", $"[{DimensionViews.FromSqlAlias}].[id]", null, null, $"The number of the row of {fromTable} the view's row stands for: the view's key.", null),
             };
             all.AddRange(columns);
-            var createSql = DimensionViews.CreateSql(flow, viewName, all, fromSql, whereSql);
+            var createSql = DimensionViews.CreateSql(kept, flow, viewName, all, fromSql, whereSql);
             definition = new DimensionViewDefinition(
                 viewName, tables, all, joinDefinitions, fromSql, createSql, DimensionViews.HashOf(createSql, joinedViews.Select(j => j.Spec.Definition.Hash)), whereSql,
-                viewsRead.Count == 0 ? null : viewsRead, CheckFromSql: DimensionViews.FromSql(fromTable, joinSql, applies, hashed: false));
+                viewsRead.Count == 0 ? null : viewsRead, CheckFromSql: DimensionViews.FromSql(kept, fromTable, joinSql, applies, hashed: false));
         }
         else
         {
             // The rows are grouped in a derived table, under the alias the from table has, so the check reads a grouped view
             // the way it reads any other: each column computed there once, then converted over it.
-            var rowsSql = DimensionViews.FromSql(fromTable, joinSql, []);
+            var rowsSql = DimensionViews.FromSql(kept, fromTable, joinSql, []);
             var all = new List<DimensionViewColumnDefinition>
             {
                 new("partition", "nvarchar(256)", $"[{DimensionViews.FromSqlAlias}].[partition]", null, null, "The partition the row was read in.", null),
@@ -301,8 +349,8 @@ internal static class DimensionViewMapper
             };
             all.AddRange(columns);
             var fromSql = DimensionViews.GroupedFromSql(rowsSql, whereSql, groupedBy.Select(g => g.Sql).ToList(), columns);
-            var createSql = DimensionViews.CreateSql(flow, viewName, all, fromSql, null);
-            var checkRowsSql = DimensionViews.FromSql(fromTable, joinSql, [], hashed: false);
+            var createSql = DimensionViews.CreateSql(kept, flow, viewName, all, fromSql, null);
+            var checkRowsSql = DimensionViews.FromSql(kept, fromTable, joinSql, [], hashed: false);
             definition = new DimensionViewDefinition(
                 viewName, tables, all, joinDefinitions, fromSql, createSql, DimensionViews.HashOf(createSql, joinedViews.Select(j => j.Spec.Definition.Hash)), null,
                 viewsRead.Count == 0 ? null : viewsRead, rowsSql, whereSql,
@@ -311,6 +359,7 @@ internal static class DimensionViewMapper
 
         var spec = new DimensionViewSpec
         {
+            Kept = kept,
             Name = name,
             Description = description,
             From = from.Name,

@@ -3665,8 +3665,16 @@ export interface DeliveryDimension {
   lastBuiltUtc: string | null;
   current: DeliveryDimensionBuild | null;
   latest: DeliveryDimensionBuild | null;
-  /** The dimension's own table in the database (`osdu.dim_<dimension>`); null until a build has written it. */
+  /**
+   * The dimension's own table where its flow's target keeps it (`osdu.dim_<dimension>`, or
+   * `<database>.<schema>.dim_<dimension>`); null until a build has written it.
+   */
   table: string | null;
+  /**
+   * Where the table is kept, or will be, as a person types it before its name: `osdu`, or `<database>.<schema>` when the
+   * flow's target names a database. Absent from an older control plane.
+   */
+  kept?: string;
   /**
    * What the dimension calls its key: the property its path ends with (`WellboreID`), with `Key` at its end where its value
    * has that name (`SourceKey`), unless the flow names it. The column of its table that holds each key is named so after
@@ -4272,8 +4280,13 @@ export interface DeliveryDimensionViewCheck {
  */
 export interface DeliveryDimensionView {
   name: string;
-  /** The view's name in the module's schema, without the schema (`v_dim_Curve`). */
+  /** The view's name, without its schema (`v_dim_Curve`). */
   viewName: string;
+  /**
+   * Where the view and the tables it reads are kept, as a person types it before their names: `osdu`, or
+   * `<database>.<schema>` when the flow's target names a database. Absent from an older control plane.
+   */
+  kept?: string;
   flowName: string;
   /** Null when the catalog holds no pipeline of the flow's name. */
   pipelineId?: string | null;
@@ -4349,6 +4362,8 @@ export interface DeliveryDimensionViewSuggestion {
 export interface DeliveryDimensionViewRemoved {
   name: string;
   viewName: string;
+  /** Where the view was kept, as a person types it before its name. */
+  kept?: string;
   flowName: string;
   dropped: boolean;
   checks: number;

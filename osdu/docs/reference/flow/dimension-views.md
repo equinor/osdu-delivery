@@ -15,7 +15,7 @@ keywords:
   - join a view
   - typed columns
   - "osdu.v_dim_"
-  - target.connection
+  - target
   - datatype
   - conversions
   - view check
@@ -26,6 +26,7 @@ keywords:
   - suggest joins
 related:
   - delivery-flow-dimension
+  - delivery-flow-dimension-target
   - delivery-concept-dimension-tables
   - delivery-cli-dimensions
   - delivery-guide-dimensions
@@ -49,12 +50,13 @@ sourceRefs:
 
 # Dimension views (views): dimensions of one flow joined into one table, typed, written and checked on every build
 A view puts dimensions of one flow side by side at the grain of one of them, so a pipeline, a report or a person reads
-one table instead of writing the joins. A build writes each as `osdu.v_dim_<name>` after the flow's dimensions, checks it,
-and drops a view the flow no longer declares.
+one table instead of writing the joins. A build writes each as `v_dim_<name>` after the flow's dimensions, beside the
+tables it reads (`osdu.v_dim_<name>` in the module's database, or where the flow's [target](dimension-target.md) keeps
+them), checks it, and drops a view the flow no longer declares.
 
 ```yaml
 target:
-  connection: ${env:SQLFLOW_CATALOG_DB}   # the module's database, the catalog's, named as the pipelines reading the views name it
+  connection: ${env:SQLFLOW_CATALOG_DB}   # optional: named as the pipelines reading the views name it, so lineage orders them
 views:
   - name: Curve                           # osdu.v_dim_Curve
     description: Every curve of every well log, with its log and the curve's unit.
@@ -79,7 +81,7 @@ views:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `target.connection` | required with `views` | The module's database, written as a delivery flow's `source.connection` is: a `${env:...}` or `${keyvault:...}` reference, or a connection string whose password is one. |
+| `target` | the module's database | Where the views and the tables they read are kept: `connection`, `database` and `schema` ([Dimension target](dimension-target.md)). |
 | `views[].name` | required | A letter, then letters, digits and underscores, at most 64; unique among the views of a database, ignoring case. |
 | `views[].description` | none | What the view holds, shown with it. |
 | `views[].from` | required | The dimension of the flow whose rows the view's rows are. |
@@ -165,12 +167,12 @@ the run writes them again at its end. A dimension a view reads is not removed un
 the view without it. Views are written in the order the flow declares them, so a view is written after the views it
 joins, and again whenever one of them is.
 
-**Lineage.** With `target.connection`, the flow declares that it writes each `osdu.dim_<dimension>` table and each
-`osdu.v_dim_<view>` view on that connection, so a pipeline reading them through the same reference is ordered after it.
-SQLFlow tells servers apart by the reference as written, so the two name it alike. A build and a plan ask the server
-which database the reference reaches and refuse one other than the module's own, naming the reference and never what it
-resolves to. A table of facts for analytical queries is an ingestion flow reading the view (keyed by `partition` and
-`id`) into a table with a clustered columnstore index:
+**Lineage.** With a `target`, the flow declares that it writes each `dim_<dimension>` table and each `v_dim_<view>` view
+on the target's connection, in its database and schema, so a pipeline reading them through the same reference is ordered
+after it. SQLFlow tells servers apart by the reference as written, so the two name it alike. A build and a plan open the
+target before anything is built, and stop where they cannot, naming the reference and never what it resolves to
+([Dimension target](dimension-target.md)). A table of facts for analytical queries is an ingestion flow reading the view
+(keyed by `partition` and `id`) into a table with a clustered columnstore index:
 
 ```yaml
 flowType: ing

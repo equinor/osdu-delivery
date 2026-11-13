@@ -197,16 +197,17 @@ public static class DimensionViews
     /// of a partition (the check) joins on the text alone rather than computing a hash for every row of every join, which
     /// only a statement seeking a few rows gains by.
     /// </summary>
-    public static string FromSql(string fromTable, IReadOnlyList<JoinSql> joins, IReadOnlyList<string> applies, bool hashed = true)
+    public static string FromSql(DimensionTableTarget kept, string fromTable, IReadOnlyList<JoinSql> joins, IReadOnlyList<string> applies, bool hashed = true)
     {
+        ArgumentNullException.ThrowIfNull(kept);
         ArgumentNullException.ThrowIfNull(fromTable);
         ArgumentNullException.ThrowIfNull(joins);
         ArgumentNullException.ThrowIfNull(applies);
         var sql = new StringBuilder();
-        sql.Append(CultureInfo.InvariantCulture, $"FROM {DimensionTables.Qualified(fromTable)} AS [{FromSqlAlias}]");
+        sql.Append(CultureInfo.InvariantCulture, $"FROM {kept.Qualified(fromTable)} AS [{FromSqlAlias}]");
         foreach (var join in joins)
         {
-            sql.Append(CultureInfo.InvariantCulture, $"\nLEFT JOIN {DimensionTables.Qualified(join.Table)} AS [{join.SqlAlias}]");
+            sql.Append(CultureInfo.InvariantCulture, $"\nLEFT JOIN {kept.Qualified(join.Table)} AS [{join.SqlAlias}]");
             sql.Append(CultureInfo.InvariantCulture, $"\n    ON [{join.SqlAlias}].[partition] = [{FromSqlAlias}].[partition]");
             if (!join.View && hashed)
             {
@@ -253,8 +254,10 @@ public static class DimensionViews
     /// <c>partition</c> and <c>id</c> first, and its <c>SELECT</c> over <paramref name="fromSql"/>, never <c>*</c>, keeping
     /// the rows <paramref name="whereSql"/> holds for when the document gives a condition.
     /// </summary>
-    public static string CreateSql(string flow, string viewName, IReadOnlyList<DimensionViewColumnDefinition> columns, string fromSql, string? whereSql)
+    public static string CreateSql(
+        DimensionTableTarget kept, string flow, string viewName, IReadOnlyList<DimensionViewColumnDefinition> columns, string fromSql, string? whereSql)
     {
+        ArgumentNullException.ThrowIfNull(kept);
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(columns);
         var names = string.Join(", ", columns.Select(c => DimensionViewExpressions.Quoted(c.Name)));
@@ -262,7 +265,7 @@ public static class DimensionViews
         var who = new string(flow.Where(c => !char.IsControl(c)).ToArray());
         var where = whereSql is null ? string.Empty : $"\nWHERE {whereSql}";
         return $"""
-            CREATE OR ALTER VIEW {DimensionTables.Qualified(viewName)} ({names})
+            CREATE OR ALTER VIEW {kept.Qualified(viewName)} ({names})
             AS
             -- Written by the builds of dimension flow '{who}' from its document; a change made here is undone by its next build.
             SELECT

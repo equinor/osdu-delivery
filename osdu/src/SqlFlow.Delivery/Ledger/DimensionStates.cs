@@ -151,6 +151,9 @@ public sealed record DimensionState
     /// <summary>The dimension's table in the module's schema (<see cref="DimensionTables"/>); null until a build has written it.</summary>
     public string? TableName { get; init; }
 
+    /// <summary>Where the dimension's table is kept: the module's database unless its flow's target names another.</summary>
+    public DimensionTableTarget TableTarget { get; init; } = DimensionTableTarget.Catalog;
+
     /// <summary>
     /// The column of the dimension's table that holds each key, as the table has it now
     /// (<see cref="Model.DimensionColumnNames"/>); null until the table has been made ready.
@@ -372,9 +375,12 @@ public sealed record DimensionRemoved(
     int DimensionId, string Name, string FlowName, string? Partition, long Values, long Keys, long Builds, long Changes, long Attributes, long Texts,
     string? TableDropped = null)
 {
+    /// <summary>Where the dropped table was kept: the module's database unless the dimension's flow names another.</summary>
+    public DimensionTableTarget TableTarget { get; init; } = DimensionTableTarget.Catalog;
+
     /// <summary>One line saying what went, for the audit trail and a terminal.</summary>
     public string Describe() => string.Create(CultureInfo.InvariantCulture,
-        $"Removed dimension {Name} of {FlowName}{(Partition is null ? string.Empty : $" in {Partition}")}: {Values} value(s), {Keys} key(s), {Attributes} attribute value(s), {Texts} collected text(s), {Changes} change(s) and {Builds} build(s){(TableDropped is null ? string.Empty : $"; dropped the table {DimensionTables.Shown(TableDropped)}")}.");
+        $"Removed dimension {Name} of {FlowName}{(Partition is null ? string.Empty : $" in {Partition}")}: {Values} value(s), {Keys} key(s), {Attributes} attribute value(s), {Texts} collected text(s), {Changes} change(s) and {Builds} build(s){(TableDropped is null ? string.Empty : $"; dropped the table {TableTarget.Shown(TableDropped)}")}.");
 }
 
 /// <summary>
@@ -445,6 +451,24 @@ public sealed class DimensionTableRenamedException : DeliveryException
     }
 }
 
+/// <summary>
+/// A build that wrote its dimension and could not write the dimension's table where its flow's target keeps it
+/// (osdu/docs/reference/flow/dimension-target.md): the dimension holds what the build found, and the table is behind it until
+/// the next build, which lays it out whole.
+/// </summary>
+public sealed class DimensionTableWriteException : DeliveryException
+{
+    public DimensionTableWriteException(string message)
+        : base(message)
+    {
+    }
+
+    public DimensionTableWriteException(string message, Exception inner)
+        : base(message, inner)
+    {
+    }
+}
+
 /// <summary>One member as a build made it: its clean value, its count, and its filter.</summary>
 public sealed record DimensionMemberWrite(string Value, long Records, bool RecordsExact, int Originals, int Unfilterable, string? Filter, int FilterParts);
 
@@ -477,6 +501,15 @@ public sealed record DimensionStagedWrite
     /// attribute it does not have, and brought to the rows the build found, in the write's transaction. Null writes no table.
     /// </summary>
     public DimensionTableSpec? Table { get; init; }
+
+    /// <summary>Where the table is kept: the module's database unless the flow's target names another, as the build checked it.</summary>
+    public DimensionTableTarget TableTarget { get; init; } = DimensionTableTarget.Catalog;
+
+    /// <summary>
+    /// Resolves the target's connection reference as the run resolves every other (the partition's supplied values over the
+    /// node's environment); the host's resolver when null.
+    /// </summary>
+    public SqlFlow.Core.Secrets.ISecretResolver? Secrets { get; init; }
 
     /// <summary>
     /// Whether the write keeps the keys records held, by each record's unique key: a full load's replace every row the
@@ -548,6 +581,15 @@ public sealed record DimensionWrite
     /// </summary>
     public DimensionTableSpec? Table { get; init; }
 
+    /// <summary>Where the table is kept: the module's database unless the flow's target names another, as the build checked it.</summary>
+    public DimensionTableTarget TableTarget { get; init; } = DimensionTableTarget.Catalog;
+
+    /// <summary>
+    /// Resolves the target's connection reference as the run resolves every other (the partition's supplied values over the
+    /// node's environment); the host's resolver when null.
+    /// </summary>
+    public SqlFlow.Core.Secrets.ISecretResolver? Secrets { get; init; }
+
     public required IReadOnlyList<DimensionOriginalWrite> Originals { get; init; }
 
     public required IReadOnlyList<DimensionMemberWrite> Members { get; init; }
@@ -563,6 +605,8 @@ public sealed record DimensionWrite
         Field = Field,
         CollectedJson = CollectedJson,
         Table = Table,
+        TableTarget = TableTarget,
+        Secrets = Secrets,
         KeepsRecords = Records is not null,
         Read = Read,
         CompletedUtc = CompletedUtc,

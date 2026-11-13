@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A dimension flow keeps its tables and views in another database.** `target` takes `connection`, `database` and
+  `schema`, each optional; a build merges each dimension in the catalog as before, then writes its `dim_` table where the
+  target says, and its views beside the tables. A table step that fails leaves the dimension written and the next build
+  lays the table out whole, and a flow whose target moves leaves nothing where its tables were. The GUI, the CLI and the
+  API name each table and view where it is kept (migration DimensionTableTargets, module version 1.70.0;
+  [Dimension target](osdu/docs/reference/flow/dimension-target.md)).
 - **An inventory names every id it lists by its record's name.** A build reads the first of `FacilityName`, `Name`,
   `ProjectName`, `Code` or a file's name each record holds, as the explorer names records, and keeps it in
   `osdu.InventoryRecord.Name` (migration InventoryRecordNames, module version 1.68.0). The Ids grid leads each row with
@@ -611,6 +617,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **Dimension views no longer need `target.connection`, and a target in another database is built there.** A flow
+  naming no target keeps its views beside its tables in the catalog; one whose `target.connection` reaches another
+  database than the module's, refused before, now keeps its tables and views in it
+  ([Dimension target](osdu/docs/reference/flow/dimension-target.md)).
 - **The render context keeps only the sets of cached values a record points at.** Every hour the control plane removes
   each set no record points at, as its set or the one it is held on, that no render has used for a day, with its values
   (`osdu.CacheSet`, `osdu.CacheSetEntry`). A record's set is replaced whenever a render reads other values, and nothing
@@ -1033,6 +1043,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A source or dimension table database that cannot be opened says so, after its retries.** An open that failed on an
+  error SQL Server raises while a database fails over (such as 4060) was tried four times and then surfaced as the
+  retry logic's own message, every attempt's error listed and none of it redacted; it now fails the run as one line,
+  naming the attempts and the last SQL error ([Dimension target](osdu/docs/reference/flow/dimension-target.md)).
 - An id storage asks twice to have read again (`retryRecords`) is no longer taken for one it does not hold. A storage
   listing fails whole rather than mark the record gone, a missing check leaves it unasked for the next build, and a
   removal skips it rather than record it gone

@@ -49,13 +49,15 @@ public sealed record DeliveryDimensionViewCheckDto(
 /// (<c>Declared</c>), as a build last wrote it (<c>Recorded</c>, with <c>Written</c> false when a build dropped it to
 /// write it again), and whether the two differ (<c>Changed</c>: the next build writes it again). <c>PipelineId</c> is
 /// the flow's pipeline, null when the catalog holds none of that name. A view a build wrote and no flow declares any
-/// more (its flow gone) is listed with <c>Declared</c> false, for an admin to remove.
+/// more (its flow gone) is listed with <c>Declared</c> false, for an admin to remove. <c>Kept</c> is where the view and the
+/// tables it reads are kept, as a person types it before their names: where a build wrote it, else where its flow's target
+/// keeps it (<c>osdu</c>, or <c>Dimensions.dim</c>; osdu/docs/reference/flow/dimension-target.md).
 /// </summary>
 public sealed record DeliveryDimensionViewDto(
     string Name, string ViewName, string FlowName, Guid? PipelineId, bool Declared, bool Recorded, bool Written, bool Changed, string? Description,
     string From, IReadOnlyList<DeliveryDimensionViewJoinDto> Joins, IReadOnlyList<DeliveryDimensionViewColumnDto> Columns, IReadOnlyList<string> Tables,
     string? Note, Guid? WrittenRunId, string? WrittenBy, DateTime? WrittenUtc, DeliveryDimensionViewCheckDto? LastCheck, string? Where,
-    IReadOnlyList<string> GroupBy);
+    IReadOnlyList<string> GroupBy, string Kept);
 
 /// <summary>
 /// A view with its newest checks, newest first, the statement a build last wrote it with (<c>Sql</c>), the one its flow's
@@ -72,8 +74,11 @@ public sealed record DeliveryDimensionViewDetailDto(
 /// </summary>
 public sealed record DeliveryDimensionViewSuggestionDto(string From, IReadOnlyList<DimensionViewJoinSuggestion> Joins, string Yaml);
 
-/// <summary>What removing a view took: the view from the database when it was there, and its record with its checks.</summary>
-public sealed record DeliveryDimensionViewRemovedDto(string Name, string ViewName, string FlowName, bool Dropped, long Checks, string Summary);
+/// <summary>
+/// What removing a view took: the view from the database when it was there, and its record with its checks. <c>Kept</c> is
+/// where the view was kept, as a person types it before its name (<c>osdu</c>, or <c>Dimensions.dim</c>).
+/// </summary>
+public sealed record DeliveryDimensionViewRemovedDto(string Name, string ViewName, string FlowName, bool Dropped, long Checks, string Summary, string Kept);
 
 /// <summary>
 /// The views dimension flows declare over their tables (osdu/docs/reference/flow/dimension-views.md): every view, a
@@ -234,7 +239,8 @@ public static class DeliveryDimensionViewEndpoints
         try
         {
             var removed = await DimensionViewRemoval.RemoveAsync(ledger, view, RequestActor.Label(user), clock, ct).ConfigureAwait(false);
-            return TypedResults.Ok(new DeliveryDimensionViewRemovedDto(removed.Name, removed.ViewName, removed.FlowName, removed.Dropped, removed.Checks, removed.Describe()));
+            return TypedResults.Ok(new DeliveryDimensionViewRemovedDto(
+                removed.Name, removed.ViewName, removed.FlowName, removed.Dropped, removed.Checks, removed.Describe(), view.TableTarget.Place));
         }
         catch (DeliveryException ex)
         {
@@ -375,7 +381,8 @@ public static class DeliveryDimensionViewEndpoints
             state?.WrittenUtc,
             detail?.Checks.Count > 0 ? ToDto(detail.Checks[0]) : null,
             declared is not null ? declared.Where : state?.Where,
-            declared is not null ? declared.GroupBy : state?.GroupBy ?? []);
+            declared is not null ? declared.GroupBy : state?.GroupBy ?? [],
+            (state?.TableTarget ?? declared?.Kept ?? DimensionTableTarget.Catalog).Place);
     }
 
     private static DeliveryDimensionViewCheckDto ToDto(DimensionViewCheckState c) => new(

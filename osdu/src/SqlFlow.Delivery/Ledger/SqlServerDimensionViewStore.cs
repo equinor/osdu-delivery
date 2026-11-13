@@ -13,8 +13,11 @@ namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
 /// Writes, checks, drops and reads the views dimension flows declare (osdu/docs/reference/flow/dimension-views.md). A
-/// view is written in one transaction under an application lock of its own: the rows of the tables it reads given their
-/// key's hash, the view written with its column list when its statement changed, and its record. A build writes only a
+/// view is written under an application lock of its own, in a transaction of the module's database: the rows of the
+/// tables it reads given their key's hash, the view written with its column list when its statement changed, and its
+/// record. The view and the tables it reads are kept where its flow's target keeps the flow's tables
+/// (osdu/docs/reference/flow/dimension-target.md); there, in the module's database, they are written in that transaction,
+/// and elsewhere on the target's own connection, while the record stays in the module's database. A build writes only a
 /// view it recorded, or a name no object of the schema holds, and drops only the views its flow made and no longer
 /// declares. The check reads the view's rows of the run's partition after the write, outside it.
 /// </summary>
@@ -47,22 +50,22 @@ internal static class SqlServerDimensionViewStore
     /// <summary>The application lock a view is written, dropped and renamed under, whichever build or removal holds it.</summary>
     internal static string LockResource(string name) => "osdu-dimension-view:" + name.ToUpperInvariant();
 
-    /// <summary>The view's name as a statement names it: <c>[osdu].[v_dim_...]</c>.</summary>
-    private static string Qualified(string viewName) => DimensionTables.Qualified(viewName);
-
     /// <summary>
     /// Writes the views <paramref name="write"/> carries and checks each in its partition (whose ledger number is
     /// <paramref name="partitionId"/>), then drops every view its flow made and no longer declares. A view that cannot be
     /// written keeps its last definition and says why; the others are still written.
     /// </summary>
-    public static async Task<DimensionViewsWritten> WriteAsync(OsduDbContext db, DimensionViewWrite write, short partitionId, CancellationToken ct)
+    public static async Task<DimensionViewsWritten> WriteAsync(
+        OsduDbContext db, DimensionViewWrite write, short partitionId, Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(write);
+        ArgumentNullException.ThrowIfNull(open);
         await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
         try
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
+            await using var home = await open(connection, write.TableTarget, ct).ConfigureAwait(false);
             var outcomes = new List<DimensionViewOutcome>(write.Views.Count);
             var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in write.Views)
@@ -75,12 +78,12 @@ internal static class SqlServerDimensionViewStore
                 {
                     failed.Add(item.View.ViewName);
                     outcomes.Add(new DimensionViewOutcome(item.View.Name, item.View.ViewName, DimensionViewWriteStatus.Failed,
-                        $"View {item.View.Name} joins {DimensionTables.Shown(waits)}, which this build could not write, so it was not written either and keeps its last definition; it is written once the view it joins is.",
+                        $"View {item.View.Name} joins {home.Target.Shown(waits)}, which this build could not write, so it was not written either and keeps its last definition; it is written once the view it joins is.",
                         null));
                     continue;
                 }
 
-                var outcome = await WriteOneAsync(connection, write, item, partitionId, ct).ConfigureAwait(false);
+                var outcome = await WriteOneAsync(connection, home, open, write, item, partitionId, ct).ConfigureAwait(false);
                 if (outcome.Status == DimensionViewWriteStatus.Failed)
                 {
                     failed.Add(item.View.ViewName);
@@ -89,7 +92,7 @@ internal static class SqlServerDimensionViewStore
                 outcomes.Add(outcome);
             }
 
-            var dropped = await RemoveUndeclaredAsync(connection, write.Flow, write.Views.Select(v => v.View.Name).ToList(), ct).ConfigureAwait(false);
+            var dropped = await RemoveUndeclaredAsync(connection, open, write.Flow, write.Views.Select(v => v.View.Name).ToList(), ct).ConfigureAwait(false);
             return new DimensionViewsWritten(outcomes, dropped);
         }
         finally
@@ -99,7 +102,8 @@ internal static class SqlServerDimensionViewStore
     }
 
     private static async Task<DimensionViewOutcome> WriteOneAsync(
-        SqlConnection connection, DimensionViewWrite write, DimensionViewToWrite item, short partitionId, CancellationToken ct)
+        SqlConnection connection, DimensionTableDatabase home, Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, DimensionViewWrite write, DimensionViewToWrite item,
+        short partitionId, CancellationToken ct)
     {
         var view = item.View;
         string status;
@@ -110,14 +114,14 @@ internal static class SqlServerDimensionViewStore
             // made empty, and one made before tables kept a key's hash is given the column.
             foreach (var table in item.Tables)
             {
-                await SqlServerDimensionStore.EnsureViewTableAsync(connection, table, ct).ConfigureAwait(false);
+                await SqlServerDimensionStore.EnsureViewTableAsync(connection, home, table, ct).ConfigureAwait(false);
             }
 
             for (var attempt = 1; ; attempt++)
             {
                 try
                 {
-                    (status, viewId) = await WriteViewAsync(connection, write, item, ct).ConfigureAwait(false);
+                    (status, viewId) = await WriteViewAsync(connection, home, open, write, item, ct).ConfigureAwait(false);
                     break;
                 }
                 catch (SqlException ex) when (attempt < DeadlockAttempts && SqlServerLedgerBulk.IsDeadlock(ex))
@@ -129,29 +133,43 @@ internal static class SqlServerDimensionViewStore
         catch (Exception ex) when (ex is DeliveryException or SqlException or InvalidOperationException)
         {
             var error = ex is SqlException sql
-                ? $"View {view.Name} could not be written as {DimensionTables.Shown(view.ViewName)}, and keeps its last definition: {SecretHygiene.RedactedMessage(sql.Message.Trim())}"
+                ? $"View {view.Name} could not be written as {home.Target.Shown(view.ViewName)}, and keeps its last definition: {SecretHygiene.RedactedMessage(sql.Message.Trim())}"
                 : SecretHygiene.RedactedMessage(ex);
             return new DimensionViewOutcome(view.Name, view.ViewName, DimensionViewWriteStatus.Failed, error, null);
         }
 
-        var check = await CheckAsync(connection, write, view, viewId, partitionId, ct).ConfigureAwait(false);
+        var check = await CheckAsync(connection, home, write, view, viewId, partitionId, ct).ConfigureAwait(false);
         return new DimensionViewOutcome(view.Name, view.ViewName, status, null, check);
     }
 
-    // The view's record, and the object of its name the schema holds now, with its type.
+    // The view's record, with where it is kept.
     private const string RecordSql = """
-        SELECT v.[ViewId], v.[Name], v.[FlowName], v.[SqlHash], v.[ViewName]
+        SELECT v.[ViewId], v.[Name], v.[FlowName], v.[SqlHash], v.[ViewName], v.[TableConnection], v.[TableDatabase], v.[TableSchema]
         FROM [osdu].[DimensionView] AS v
         WHERE UPPER(v.[Name]) = UPPER(@name);
-
-        SELECT o.[type] FROM sys.objects AS o WHERE o.[object_id] = OBJECT_ID(@view);
         """;
 
-    private static async Task<(string Status, int ViewId)> WriteViewAsync(SqlConnection connection, DimensionViewWrite write, DimensionViewToWrite item, CancellationToken ct)
+    // The object of the view's name the schema holds now, with its type, where the view is kept.
+    private const string ObjectSql = "SELECT o.[type] FROM sys.objects AS o WHERE o.[object_id] = OBJECT_ID(@view);";
+
+    // A view dropped where it is kept, when it is a view.
+    private const string TakeDownViewSql = """
+        DECLARE @dropped bit = 0;
+        IF OBJECT_ID(@view, N'V') IS NOT NULL
+        BEGIN
+            DECLARE @drop nvarchar(400) = N'DROP VIEW ' + @view + N';';
+            EXEC sys.sp_executesql @drop;
+            SET @dropped = 1;
+        END;
+        SELECT @dropped;
+        """;
+
+    private static async Task<(string Status, int ViewId)> WriteViewAsync(
+        SqlConnection connection, DimensionTableDatabase home, Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, DimensionViewWrite write, DimensionViewToWrite item, CancellationToken ct)
     {
         var view = item.View;
         var definition = view.Definition;
-        var shown = DimensionTables.Shown(view.ViewName);
+        var shown = home.Target.Shown(view.ViewName);
         var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
         await using (transaction.ConfigureAwait(false))
         {
@@ -161,11 +179,10 @@ internal static class SqlServerDimensionViewStore
             string? recordFlow = null;
             string? recordHash = null;
             string? recordViewName = null;
-            string? objectType = null;
+            DimensionTableTarget? recordTarget = null;
             await using (var read = Command(connection, transaction, RecordSql))
             {
                 read.Parameters.Add(new SqlParameter("@name", SqlDbType.NVarChar, DeliveryDimensionView.MaxNameLength) { Value = view.Name });
-                read.Parameters.Add(new SqlParameter("@view", SqlDbType.NVarChar, 300) { Value = Qualified(view.ViewName) });
                 await using var reader = await read.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
@@ -173,14 +190,25 @@ internal static class SqlServerDimensionViewStore
                     recordFlow = reader.GetString(2);
                     recordHash = await reader.IsDBNullAsync(3, ct).ConfigureAwait(false) ? null : reader.GetString(3);
                     recordViewName = reader.GetString(4);
-                }
-
-                await reader.NextResultAsync(ct).ConfigureAwait(false);
-                if (await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    objectType = reader.GetString(0).Trim();
+                    recordTarget = DimensionTableTarget.Of(
+                        await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5),
+                        await reader.IsDBNullAsync(6, ct).ConfigureAwait(false) ? null : reader.GetString(6),
+                        await reader.IsDBNullAsync(7, ct).ConfigureAwait(false) ? null : reader.GetString(7));
                 }
             }
+
+            string? objectType = null;
+            await using (var probe = Command(home.Connection, home.Joining(transaction), ObjectSql))
+            {
+                probe.Parameters.Add(new SqlParameter("@view", SqlDbType.NVarChar, 300) { Value = home.Target.Qualified(view.ViewName) });
+                if (await probe.ExecuteScalarAsync(ct).ConfigureAwait(false) is string type)
+                {
+                    objectType = type.Trim();
+                }
+            }
+
+            // A view whose flow now keeps its tables elsewhere was recorded where it was kept before.
+            var moved = recordTarget is not null && recordTarget != home.Target;
 
             if (recordFlow is not null && !string.Equals(recordFlow, write.Flow, StringComparison.OrdinalIgnoreCase))
             {
@@ -188,7 +216,7 @@ internal static class SqlServerDimensionViewStore
                     $"View {view.Name} is declared by dimension flow '{recordFlow}' as well, and a view's name is unique among the flows of a database, so {shown} was not written. Rename one of them, or remove the other flow's view (sqlflow dimensions remove-view {view.Name}) when that flow is gone.");
             }
 
-            if (objectType is not null && (recordId is null || objectType != "V"))
+            if (objectType is not null && (recordId is null || moved || objectType != "V"))
             {
                 throw new DeliveryException(recordId is null
                     ? $"{shown} is in the database, and no build of a dimension flow made it, so it is not written over. Drop it, or name the view otherwise."
@@ -197,25 +225,31 @@ internal static class SqlServerDimensionViewStore
 
             // The rows of the tables a view reads carry their key's hash, which its joins find them by; a table written
             // before tables kept one is given them, in every partition when the view is written anew, else in the run's.
-            var writes = recordId is null || recordHash != definition.Hash || objectType is null;
+            var writes = recordId is null || recordHash != definition.Hash || objectType is null || moved;
             foreach (var table in item.Tables)
             {
-                await using var fill = Command(connection, transaction, DimensionTables.FillKeyHashSql(table.Name, table.KeyColumn, onePartition: !writes));
+                await using var fill = Command(home.Connection, home.Joining(transaction), DimensionTables.FillKeyHashSql(table.Name, table.KeyColumn, onePartition: !writes, home.Target));
                 fill.Parameters.Add(new SqlParameter("@partition", SqlDbType.NVarChar, 256) { Value = write.Partition });
                 await fill.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             if (writes)
             {
-                // A view a build wrote under the module's former name for views moves to its name now, in the same transaction.
-                if (recordViewName is not null && !string.Equals(recordViewName, view.ViewName, StringComparison.OrdinalIgnoreCase))
+                if (moved && recordViewName is not null)
                 {
-                    var former = Qualified(recordViewName);
-                    await using var drop = Command(connection, transaction, $"IF OBJECT_ID(N'{former.Replace("'", "''", StringComparison.Ordinal)}', N'V') IS NOT NULL DROP VIEW {former};");
-                    await drop.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    // The view as it was kept before goes from where it was, so a reader of that place finds no stale view.
+                    await using var before = recordTarget!.InCatalog
+                        ? DimensionTableDatabase.OfCatalog(connection, recordTarget)
+                        : await open(connection, recordTarget, ct).ConfigureAwait(false);
+                    await TakeDownViewAsync(before, before.Joining(transaction), recordViewName, ct).ConfigureAwait(false);
+                }
+                else if (recordViewName is not null && !string.Equals(recordViewName, view.ViewName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // A view a build wrote under the module's former name for views moves to its name now.
+                    await TakeDownViewAsync(home, home.Joining(transaction), recordViewName, ct).ConfigureAwait(false);
                 }
 
-                await using var create = Command(connection, transaction, definition.CreateSql);
+                await using var create = Command(home.Connection, home.Joining(transaction), definition.CreateSql);
                 await create.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -229,14 +263,17 @@ internal static class SqlServerDimensionViewStore
             const string Upsert = """
                 IF @id IS NULL
                 BEGIN
-                    INSERT INTO [osdu].[DimensionView] ([Name], [ViewName], [FlowName], [LedgerId], [Description], [DeclarationJson], [Sql], [SqlHash], [TablesJson],
-                        [ColumnsJson], [Note], [WrittenRunId], [WrittenBy], [WrittenUtc], [CreatedUtc])
-                    VALUES (@name, @viewName, @flow, @ledger, @description, @declaration, @sql, @hash, @tables, @columns, NULL, @run, @actor, @now, @now);
+                    INSERT INTO [osdu].[DimensionView] ([Name], [ViewName], [FlowName], [TableConnection], [TableDatabase], [TableSchema], [LedgerId], [Description],
+                        [DeclarationJson], [Sql], [SqlHash], [TablesJson], [ColumnsJson], [Note], [WrittenRunId], [WrittenBy], [WrittenUtc], [CreatedUtc])
+                    VALUES (@name, @viewName, @flow, @tableConnection, @tableDatabase, NULLIF(@tableSchema, N'osdu'), @ledger, @description,
+                        @declaration, @sql, @hash, @tables, @columns, NULL, @run, @actor, @now, @now);
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                 END
                 ELSE
                 BEGIN
-                    UPDATE [osdu].[DimensionView] SET [Name] = @name, [ViewName] = @viewName, [FlowName] = @flow, [LedgerId] = @ledger, [Description] = @description, [DeclarationJson] = @declaration,
+                    UPDATE [osdu].[DimensionView] SET [Name] = @name, [ViewName] = @viewName, [FlowName] = @flow,
+                        [TableConnection] = @tableConnection, [TableDatabase] = @tableDatabase, [TableSchema] = NULLIF(@tableSchema, N'osdu'),
+                        [LedgerId] = @ledger, [Description] = @description, [DeclarationJson] = @declaration,
                         [Sql] = @sql, [SqlHash] = @hash, [TablesJson] = @tables, [ColumnsJson] = @columns, [Note] = NULL,
                         [WrittenRunId] = CASE WHEN @writes = 1 THEN @run ELSE [WrittenRunId] END,
                         [WrittenBy] = CASE WHEN @writes = 1 THEN @actor ELSE [WrittenBy] END,
@@ -263,6 +300,9 @@ internal static class SqlServerDimensionViewStore
                 upsert.Parameters.Add(new SqlParameter("@actor", SqlDbType.NVarChar, 200) { Value = OsduLedger.Truncate(write.Actor, 200) });
                 upsert.Parameters.Add(new SqlParameter("@now", SqlDbType.DateTime2) { Value = write.Now });
                 upsert.Parameters.Add(new SqlParameter("@writes", SqlDbType.Bit) { Value = writes });
+                upsert.Parameters.Add(new SqlParameter("@tableConnection", SqlDbType.NVarChar, 2000) { Value = (object?)home.Target.Connection ?? DBNull.Value });
+                upsert.Parameters.Add(new SqlParameter("@tableDatabase", SqlDbType.NVarChar, 128) { Value = (object?)home.Target.Database ?? DBNull.Value });
+                upsert.Parameters.Add(new SqlParameter("@tableSchema", SqlDbType.NVarChar, 128) { Value = home.Target.Schema });
                 viewId = Convert.ToInt32(await upsert.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
             }
 
@@ -283,9 +323,10 @@ internal static class SqlServerDimensionViewStore
     /// or through a view it joins, of the same version) is not read again: the check keeps that one's findings, and says so.
     /// </summary>
     private static async Task<DimensionViewCheckState> CheckAsync(
-        SqlConnection connection, DimensionViewWrite write, DimensionViewSpec view, int viewId, short partitionId, CancellationToken ct)
+        SqlConnection connection, DimensionTableDatabase home, DimensionViewWrite write, DimensionViewSpec view, int viewId, short partitionId, CancellationToken ct)
     {
         var definition = view.Definition;
+        var kept = home.Connection;
         var stopwatch = Stopwatch.StartNew();
         var readVersion = await ReadVersionAsync(connection, write, view, partitionId, ct).ConfigureAwait(false);
         if (await LastCheckAsync(connection, viewId, partitionId, ct).ConfigureAwait(false) is { Status: DimensionViewCheckStatus.Passed } last
@@ -303,7 +344,7 @@ internal static class SqlServerDimensionViewStore
         {
             var converted = definition.Columns.Where(c => c.InputSql is not null).ToList();
             var counts = new long[1 + (2 * definition.Joins.Count) + converted.Count + definition.Columns.Count];
-            await using (var command = new SqlCommand(DimensionViews.CheckSql(definition), connection) { CommandTimeout = CommandTimeoutSeconds })
+            await using (var command = new SqlCommand(DimensionViews.CheckSql(definition), kept) { CommandTimeout = CommandTimeoutSeconds })
             {
                 command.Parameters.Add(new SqlParameter("@partition", SqlDbType.NVarChar, 256) { Value = write.Partition });
                 await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -322,7 +363,7 @@ internal static class SqlServerDimensionViewStore
             {
                 var matched = counts[at++];
                 var unmatched = counts[at++];
-                var examples = unmatched > 0 ? await TextsAsync(connection, DimensionViews.UnmatchedSql(definition, join), write.Partition, ct).ConfigureAwait(false) : [];
+                var examples = unmatched > 0 ? await TextsAsync(kept, DimensionViews.UnmatchedSql(definition, join), write.Partition, ct).ConfigureAwait(false) : [];
                 joins.Add(new DimensionViewJoinCheck(join.Alias, join.To, join.On, matched, unmatched, examples));
             }
 
@@ -336,14 +377,14 @@ internal static class SqlServerDimensionViewStore
             {
                 var values = counts[at++];
                 long? failed = unconverted.TryGetValue(column.Name, out var n) ? n : null;
-                var examples = failed > 0 ? await ExamplesAsync(connection, DimensionViews.UnconvertedSql(definition, column), write.Partition, ct).ConfigureAwait(false) : [];
+                var examples = failed > 0 ? await ExamplesAsync(kept, DimensionViews.UnconvertedSql(definition, column), write.Partition, ct).ConfigureAwait(false) : [];
                 columns.Add(new DimensionViewColumnCheck(column.Name, values, failed, examples));
             }
         }
         catch (SqlException ex) when (!ct.IsCancellationRequested)
         {
             status = DimensionViewCheckStatus.Failed;
-            var failing = await FailingColumnAsync(connection, definition, write.Partition, ct).ConfigureAwait(false);
+            var failing = await FailingColumnAsync(kept, definition, write.Partition, ct).ConfigureAwait(false);
             var message = SecretHygiene.RedactedMessage(ex.Message.Trim());
             error = failing is null
                 ? $"View {view.Name} could not be read in partition '{write.Partition}': {message}"
@@ -577,11 +618,17 @@ internal static class SqlServerDimensionViewStore
         return examples;
     }
 
-    /// <summary>Drops every view <paramref name="flow"/> made and no longer declares, each under its lock, and its record with its checks.</summary>
-    private static async Task<IReadOnlyList<string>> RemoveUndeclaredAsync(SqlConnection connection, string flow, IReadOnlyList<string> declared, CancellationToken ct)
+    /// <summary>
+    /// Drops every view <paramref name="flow"/> made and no longer declares, each under its lock, from where it is kept, and
+    /// its record with its checks.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> RemoveUndeclaredAsync(
+        SqlConnection connection, Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, string flow, IReadOnlyList<string> declared, CancellationToken ct)
     {
-        var made = new List<(string Name, string ViewName)>();
-        await using (var read = new SqlCommand("SELECT [Name], [ViewName], [FlowName] FROM [osdu].[DimensionView];", connection) { CommandTimeout = CommandTimeoutSeconds })
+        var made = new List<(string Name, string ViewName, DimensionTableTarget Target)>();
+        await using (var read = new SqlCommand(
+            "SELECT [Name], [ViewName], [FlowName], [TableConnection], [TableDatabase], [TableSchema] FROM [osdu].[DimensionView];", connection)
+            { CommandTimeout = CommandTimeoutSeconds })
         {
             await using var reader = await read.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -589,54 +636,63 @@ internal static class SqlServerDimensionViewStore
                 if (string.Equals(reader.GetString(2), flow, StringComparison.OrdinalIgnoreCase)
                     && !declared.Contains(reader.GetString(0), StringComparer.OrdinalIgnoreCase))
                 {
-                    made.Add((reader.GetString(0), reader.GetString(1)));
+                    made.Add((reader.GetString(0), reader.GetString(1), DimensionTableTarget.Of(
+                        await reader.IsDBNullAsync(3, ct).ConfigureAwait(false) ? null : reader.GetString(3),
+                        await reader.IsDBNullAsync(4, ct).ConfigureAwait(false) ? null : reader.GetString(4),
+                        await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5))));
                 }
             }
         }
 
         var dropped = new List<string>(made.Count);
-        foreach (var (name, viewName) in made.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var (name, viewName, target) in made.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
         {
-            _ = await RemoveViewAsync(connection, name, viewName, flow, ct).ConfigureAwait(false);
+            await using var home = target.InCatalog ? DimensionTableDatabase.OfCatalog(connection, target) : await open(connection, target, ct).ConfigureAwait(false);
+            _ = await RemoveViewAsync(connection, home, name, viewName, flow, ct).ConfigureAwait(false);
             dropped.Add(name);
         }
 
         return dropped;
     }
 
-    // A view the module made, dropped with its record and checks; the object is dropped only when it is a view.
-    private const string RemoveViewSql = """
-        DECLARE @dropped bit = 0;
-        IF OBJECT_ID(@view, N'V') IS NOT NULL
-        BEGIN
-            DECLARE @drop nvarchar(400) = N'DROP VIEW ' + @view + N';';
-            EXEC sys.sp_executesql @drop;
-            SET @dropped = 1;
-        END;
-
+    // A view's record removed with its checks.
+    private const string DeleteRecordSql = """
         DECLARE @id int = (SELECT [ViewId] FROM [osdu].[DimensionView] WHERE UPPER([Name]) = UPPER(@name) AND UPPER([FlowName]) = UPPER(@flow));
         DELETE FROM [osdu].[DimensionViewCheck] WHERE [ViewId] = @id;
         DECLARE @checks bigint = @@ROWCOUNT;
         DELETE FROM [osdu].[DimensionView] WHERE [ViewId] = @id;
-        SELECT @dropped, @checks, CASE WHEN @id IS NULL THEN 0 ELSE 1 END;
+        SELECT @checks, CASE WHEN @id IS NULL THEN 0 ELSE 1 END;
         """;
 
-    private static async Task<(bool Dropped, long Checks, bool Found)> RemoveViewAsync(SqlConnection connection, string name, string viewName, string flow, CancellationToken ct)
+    /// <summary>Drops the view <paramref name="viewName"/> where <paramref name="home"/> keeps it, when it is a view there; says whether it did.</summary>
+    private static async Task<bool> TakeDownViewAsync(DimensionTableDatabase home, SqlTransaction? transaction, string viewName, CancellationToken ct)
+    {
+        await using var drop = Command(home.Connection, transaction, TakeDownViewSql);
+        drop.Parameters.Add(new SqlParameter("@view", SqlDbType.NVarChar, 300) { Value = home.Target.Qualified(viewName) });
+        return await drop.ExecuteScalarAsync(ct).ConfigureAwait(false) is true;
+    }
+
+    /// <summary>
+    /// A view the module made, dropped where <paramref name="home"/> keeps it (only when it is a view there) with its record
+    /// and checks, under its lock; the view in the record's transaction when it is kept in the module's database.
+    /// </summary>
+    private static async Task<(bool Dropped, long Checks, bool Found)> RemoveViewAsync(
+        SqlConnection connection, DimensionTableDatabase home, string name, string viewName, string flow, CancellationToken ct)
     {
         var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
         await using (transaction.ConfigureAwait(false))
         {
             await LockAsync(connection, transaction, name, $"while it dropped view {name}", ct).ConfigureAwait(false);
-            await using var command = Command(connection, transaction, RemoveViewSql);
-            command.Parameters.Add(new SqlParameter("@view", SqlDbType.NVarChar, 300) { Value = Qualified(viewName) });
+            var dropped = await TakeDownViewAsync(home, home.Joining(transaction), viewName, ct).ConfigureAwait(false);
+            await using var command = Command(connection, transaction, DeleteRecordSql);
             command.Parameters.Add(new SqlParameter("@name", SqlDbType.NVarChar, DeliveryDimensionView.MaxNameLength) { Value = name });
             command.Parameters.Add(new SqlParameter("@flow", SqlDbType.NVarChar, DeliveryLedger.MaxFlowNameLength) { Value = flow });
-            (bool, long, bool) result = (false, 0, false);
+            (bool, long, bool) result = (dropped, 0, false);
             await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
             {
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
-                    result = (reader.GetBoolean(0), reader.GetInt64(1), reader.GetInt32(2) == 1);
+                    result = (dropped, reader.GetInt64(0), reader.GetInt32(1) == 1);
                 }
             }
 
@@ -655,15 +711,20 @@ internal static class SqlServerDimensionViewStore
     /// </summary>
     /// <returns>The names of the views dropped.</returns>
     internal static async Task<IReadOnlyList<string>> ClearViewsReadingAsync(
-        SqlConnection connection, SqlTransaction transaction, string table, string note, CancellationToken ct)
+        SqlConnection connection, SqlTransaction transaction, DimensionTableDatabase home, string table, string note, CancellationToken ct)
     {
+        // A view reads the tables kept beside it, so the views reading the table are those kept where it is.
         var reading = new List<(string Name, string ViewName)>();
-        await using (var read = Command(connection, transaction, "SELECT [Name], [ViewName], [TablesJson] FROM [osdu].[DimensionView];"))
+        await using (var read = Command(connection, transaction, "SELECT [Name], [ViewName], [TablesJson], [TableConnection], [TableDatabase], [TableSchema] FROM [osdu].[DimensionView];"))
         {
             await using var reader = await read.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                if (TablesOf(reader.GetString(2)).Contains(table, StringComparer.OrdinalIgnoreCase))
+                var kept = DimensionTableTarget.Of(
+                    await reader.IsDBNullAsync(3, ct).ConfigureAwait(false) ? null : reader.GetString(3),
+                    await reader.IsDBNullAsync(4, ct).ConfigureAwait(false) ? null : reader.GetString(4),
+                    await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5));
+                if (kept == home.Target && TablesOf(reader.GetString(2)).Contains(table, StringComparer.OrdinalIgnoreCase))
                 {
                     reading.Add((reader.GetString(0), reader.GetString(1)));
                 }
@@ -672,31 +733,25 @@ internal static class SqlServerDimensionViewStore
 
         foreach (var (name, viewName) in reading.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
         {
-            await LockAsync(connection, transaction, name, $"while a build renamed a column of {DimensionTables.Shown(table)}", ct).ConfigureAwait(false);
-            await using var drop = Command(
-                connection, transaction,
-                """
-                IF OBJECT_ID(@view, N'V') IS NOT NULL
-                BEGIN
-                    DECLARE @drop nvarchar(400) = N'DROP VIEW ' + @view + N';';
-                    EXEC sys.sp_executesql @drop;
-                END;
-
-                UPDATE [osdu].[DimensionView] SET [SqlHash] = NULL, [Note] = @note WHERE UPPER([Name]) = UPPER(@name);
-                """);
-            drop.Parameters.Add(new SqlParameter("@view", SqlDbType.NVarChar, 300) { Value = Qualified(viewName) });
-            drop.Parameters.Add(new SqlParameter("@name", SqlDbType.NVarChar, DeliveryDimensionView.MaxNameLength) { Value = name });
-            drop.Parameters.Add(new SqlParameter("@note", SqlDbType.NVarChar, 1000) { Value = OsduLedger.Truncate(note, 1000) });
-            await drop.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            await LockAsync(connection, transaction, name, $"while a build renamed a column of {home.Target.Shown(table)}", ct).ConfigureAwait(false);
+            await TakeDownViewAsync(home, home.Joining(transaction), viewName, ct).ConfigureAwait(false);
+            await using var mark = Command(connection, transaction, "UPDATE [osdu].[DimensionView] SET [SqlHash] = NULL, [Note] = @note WHERE UPPER([Name]) = UPPER(@name);");
+            mark.Parameters.Add(new SqlParameter("@name", SqlDbType.NVarChar, DeliveryDimensionView.MaxNameLength) { Value = name });
+            mark.Parameters.Add(new SqlParameter("@note", SqlDbType.NVarChar, 1000) { Value = OsduLedger.Truncate(note, 1000) });
+            await mark.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
 
         return reading.Select(r => r.Name).ToList();
     }
 
-    /// <summary>Removes a view for good: the view from the database when it is there, and its record with its checks. Null when no view of the name is recorded.</summary>
-    public static async Task<DimensionViewRemoved?> RemoveAsync(OsduDbContext db, string name, CancellationToken ct)
+    /// <summary>
+    /// Removes a view for good: the view from where it is kept when it is there, and its record with its checks. Null when no
+    /// view of the name is recorded.
+    /// </summary>
+    public static async Task<DimensionViewRemoved?> RemoveAsync(OsduDbContext db, string name, Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(open);
         var records = await db.DeliveryDimensionViews.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         if (records.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } record)
         {
@@ -707,7 +762,9 @@ internal static class SqlServerDimensionViewStore
         try
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
-            var (dropped, checks, found) = await RemoveViewAsync(connection, record.Name, record.ViewName, record.FlowName, ct).ConfigureAwait(false);
+            var target = DimensionTableTarget.Of(record.TableConnection, record.TableDatabase, record.TableSchema);
+            await using var home = target.InCatalog ? DimensionTableDatabase.OfCatalog(connection, target) : await open(connection, target, ct).ConfigureAwait(false);
+            var (dropped, checks, found) = await RemoveViewAsync(connection, home, record.Name, record.ViewName, record.FlowName, ct).ConfigureAwait(false);
             return found ? new DimensionViewRemoved(record.Name, record.ViewName, record.FlowName, dropped, checks) : null;
         }
         finally
@@ -759,10 +816,13 @@ internal static class SqlServerDimensionViewStore
     /// What a build of <paramref name="flow"/> would do with each of <paramref name="views"/>, read and written nowhere: a name
     /// another flow's view holds, or an object no build made, stops it; a table no build has made yet is made empty.
     /// </summary>
-    public static async Task<IReadOnlyList<DimensionViewProbe>> ProbeAsync(OsduDbContext db, string flow, IReadOnlyList<DimensionViewSpec> views, CancellationToken ct)
+    public static async Task<IReadOnlyList<DimensionViewProbe>> ProbeAsync(
+        OsduDbContext db, string flow, IReadOnlyList<DimensionViewSpec> views, DimensionTableTarget target, Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(views);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(open);
         var records = await db.DeliveryDimensionViews.AsNoTracking().Select(v => new { v.Name, v.FlowName, v.SqlHash }).ToListAsync(ct).ConfigureAwait(false);
         var names = views.Select(v => v.ViewName).Concat(views.SelectMany(v => v.Definition.Tables)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var objects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -770,10 +830,11 @@ internal static class SqlServerDimensionViewStore
         try
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
+            await using var home = await open(connection, target, ct).ConfigureAwait(false);
             foreach (var name in names)
             {
-                await using var command = new SqlCommand("SELECT o.[type] FROM sys.objects AS o WHERE o.[object_id] = OBJECT_ID(@name);", connection) { CommandTimeout = CommandTimeoutSeconds };
-                command.Parameters.Add(new SqlParameter("@name", SqlDbType.NVarChar, 300) { Value = DimensionTables.Qualified(name) });
+                await using var command = new SqlCommand(ObjectSql, home.Connection) { CommandTimeout = CommandTimeoutSeconds };
+                command.Parameters.Add(new SqlParameter("@view", SqlDbType.NVarChar, 300) { Value = target.Qualified(name) });
                 if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is string type)
                 {
                     objects[name] = type.Trim();
@@ -791,7 +852,7 @@ internal static class SqlServerDimensionViewStore
             var problems = new List<string>();
             var notes = new List<string>();
             var record = records.FirstOrDefault(r => string.Equals(r.Name, view.Name, StringComparison.OrdinalIgnoreCase));
-            var shown = DimensionTables.Shown(view.ViewName);
+            var shown = target.Shown(view.ViewName);
             if (record is not null && !string.Equals(record.FlowName, flow, StringComparison.OrdinalIgnoreCase))
             {
                 problems.Add($"View {view.Name} is declared by dimension flow '{record.FlowName}' as well; a view's name is unique among the flows of a database.");
@@ -811,28 +872,13 @@ internal static class SqlServerDimensionViewStore
 
             foreach (var table in view.Definition.Tables.Where(t => !objects.ContainsKey(t)))
             {
-                notes.Add($"{DimensionTables.Shown(table)} is not in the database yet; a build makes it empty, and its join finds nothing until its dimension is built.");
+                notes.Add($"{target.Shown(table)} is not in the database yet; a build makes it empty, and its join finds nothing until its dimension is built.");
             }
 
             probes.Add(new DimensionViewProbe(view.Name, problems, notes));
         }
 
         return probes;
-    }
-
-    /// <summary>The database <paramref name="db"/> connects to, as its server names it.</summary>
-    public static async Task<DatabaseIdentity> IdentityAsync(OsduDbContext db, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(db);
-        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
-        try
-        {
-            return await IdentityAsync((SqlConnection)db.Database.GetDbConnection(), ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
-        }
     }
 
     /// <summary>The database an open <paramref name="connection"/> is on: the server's name, the database's, and when the database was made.</summary>
@@ -877,7 +923,10 @@ internal static class SqlServerDimensionViewStore
         return new DimensionViewState(
             row.ViewId, row.Name, row.ViewName, row.FlowName, row.LedgerId, row.Description, declaration?.From ?? string.Empty, declaration?.Joins ?? [], columns,
             TablesOf(row.TablesJson), row.Sql, row.SqlHash is not null, row.Note, row.WrittenRunId, row.WrittenBy, row.WrittenUtc, row.CreatedUtc, declaration?.Where,
-            declaration?.GroupBy);
+            declaration?.GroupBy)
+        {
+            TableTarget = DimensionTableTarget.Of(row.TableConnection, row.TableDatabase, row.TableSchema),
+        };
     }
 
     private static DimensionViewCheckState ToState(DeliveryDimensionViewCheck row, string partition)
@@ -913,6 +962,6 @@ internal static class SqlServerDimensionViewStore
         }
     }
 
-    private static SqlCommand Command(SqlConnection connection, SqlTransaction transaction, string sql)
+    private static SqlCommand Command(SqlConnection connection, SqlTransaction? transaction, string sql)
         => new(sql, connection, transaction) { CommandTimeout = CommandTimeoutSeconds };
 }

@@ -49,7 +49,9 @@ What a [dimension flow](dimension.md) is refused for when it is read, and what f
 | `incremental.dateColumns names modifyTime twice.` | A column named twice. |
 | `incremental.lagMinutes is -1; ... from 0 to 1440 minutes.` | Out of range. |
 | `incremental.fullLoadAfterHours is 0; ... from 1 to 8784. ...` | Out of range. |
-| `views needs target.connection: the module's database as the pipelines reading the views name it ...` | Views without `target.connection`. |
+| `target names no connection, database or schema. Name one, or leave target out ...` | `target: {}`. |
+| `target.schema 'dims-2' is not a schema name a build writes: a letter or an underscore, then letters, digits and underscores, at most 128.` | A schema a build would have to quote. |
+| `target.database '' is not a database name: at most 128 characters, none of them a control character.` | An empty or overlong database name. |
 | `views[0] 'Curve': join[0].on 'Mnemonic' holds no key: Mnemonic is a field kept as a value ...` | A join on a column holding no key. |
 | `views[0] 'Curve': join[0] joins 'WellLogID' to RefUnitOfMeasure, and it holds the id of a work-product-component--WellLog and the dimension is keyed by the id of a reference-data--UnitOfMeasure, ...` | Keys that never meet. |
 | `views[0] 'Curve': join[0] joins Wellbore, whose table holds a row per value it collects of each key, so a join to it would repeat the view's rows. ...` | A join to a dimension of several rows a key. |
@@ -71,10 +73,15 @@ What a [dimension flow](dimension.md) is refused for when it is read, and what f
 | `Dimension Wellbore reads data.WellboreID of <pattern>, and the flow reads no template of <kind> (<n> record(s)), so how the index stores the field there is not known: no template folder on the path of ... holds template <kind>. ...` | Put the template of every kind the pattern matches in a template folder on the flow's path (`sqlflow template capture --kind <kind> --out <folder>/<file>.json`), or narrow `kind`. |
 | `Dimension <name> reads <path>, which the kinds its pattern matches index differently: ... One field is read one way; narrow the kind to the versions that agree.` | Narrow `kind`. |
 | `<path> holds more than <n> distinct values, the most this dimension keeps (maxValues). Narrow the dimension's query, or raise maxValues if the partition really holds that many.` | Narrow or raise `maxValues`. |
-| `Dimension <name> of <flow> would write the table osdu.dim_<name>, which dimension <name> of <other flow> writes: ... Rename one of them.` | Dimension names are unique across the flows of a database. |
+| `Dimension <name> of <flow> would write a table named dim_<name>, which dimension <name> of <other flow> writes: ... Rename one of them.` | Dimension names are unique across the module's dimension flows, wherever their targets keep their tables. |
 | `Dimension <name> could not read dictionary <dictionary>: ...` | Add or fix `dictionaries/<name>.yaml`. |
 | `The dimension's table osdu.dim_<name> has a column <name> already ... Drop that column, or name the <role>'s column otherwise in the flow: columns: { <role>: <name> }.` | A rename would take a name another column holds. |
-| `Dimension flow '<flow>': target.connection ${env:<NAME>} reaches another database than this host's module database, ... Point it at the module's database.` | Point the reference at the module's database. Nothing was built. |
+| `Flow '<flow>': the dimension table database could not be opened (SQL error <n>): ...`, or `... could not be opened after 4 attempts (SQL error <n>): ...` | The target's server or database cannot be reached, or the login is refused; an error SQL Server raises while a database fails over (such as 4060, a database that cannot be opened) is tried four times first. Nothing was built; a plan says the same of each view ([Dimension target](dimension-target.md)). |
+| `Flow '<flow>': target.connection ${env:<NAME>} could not be resolved on this host: ...` | The reference has no value where the build runs. Nothing was built; a plan says the same of each view. |
+| `Flow '<flow>' keeps its dimension tables on target.connection ${env:<NAME>}, and this host resolves no connection references, ...` | The host reading the table resolves no references; read it where the reference resolves. |
+| `Flow <flow>'s target (${env:<NAME>}) reaches the module's own database, with schema <schema>; in the module's database a dimension's table is kept in schema osdu only. ...` | Leave `target.schema` out, or name another database. Nothing was built. |
+| `Dimension <id> was written, but its table <name> was not: ... The next build lays the table out whole.` | The table step failed after the merge committed; the build is failed and the next one writes the whole table. |
+| `Dimension <id>'s flow now keeps its table at <name>, and the table could not be taken from <name>, where it was kept before, ...` | A moved target's old place cannot be reached. The build wrote nothing; the next build tries again. |
 | `View <name> is declared by dimension flow '<other>' as well, and a view's name is unique among the flows of a database, so osdu.v_dim_<name> was not written. ...` | Rename one of the views, or remove the other flow's. |
 | `osdu.v_dim_<name> is in the database, and no build of a dimension flow made it, so it is not written over. ...` | Drop the object, or name the view otherwise. |
 | `View <name> joins osdu.v_dim_<other>, which this build could not write, so it was not written either and keeps its last definition; ...` | Fix what stopped the view it joins; the next build writes both. |

@@ -14,7 +14,8 @@ namespace SqlFlow.Delivery.Tests;
 /// after the dimensions, joined exactly, converted without failing a read, checked with their counts and examples, left
 /// alone when nothing changed, written again after a build renames a column they read, dropped when no longer declared,
 /// refused where another flow or a person holds the name, failing the build on a value no expression could be written
-/// around, and refused when <c>target.connection</c> reaches another database than the module's.
+/// around, and kept with their tables where the flow's target names (osdu/docs/reference/flow/dimension-target.md): in
+/// another database, moved back from it, and refused before anything is built where the target cannot be reached.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -26,6 +27,33 @@ public sealed class DimensionViewRunTests : IDisposable
 
     /// <summary>The variable <c>target.connection</c> names, set to the test database's connection string for the suite's runs.</summary>
     private const string TargetVariable = "OSDU_VIEW_TESTS_DB";
+
+    /// <summary>The target of the suite's flows: the module's database, named by a reference that resolves to it.</summary>
+    private const string ModuleTarget = "target:\n  connection: ${env:" + TargetVariable + "}";
+
+    /// <summary>
+    /// The schema a target naming another database keeps the suite's tables and views in: the suite's own, in the end-to-end
+    /// suite's database on the test server, emptied before and after each test that uses it.
+    /// </summary>
+    private const string OtherSchema = "odtarget";
+
+    /// <summary>The other database such a target names: the end-to-end suite's (<c>SQLFLOW_E2E_CATALOG_DB</c> names it), on the test server.</summary>
+    private static string OtherDatabase => Environment.GetEnvironmentVariable("SQLFLOW_E2E_CATALOG_DB") is { Length: > 0 } e2e
+        ? new SqlConnectionStringBuilder(e2e).InitialCatalog
+        : "OsduDeliveryE2E";
+
+    // Every view and table of the suite's schema in the other database, and the schema.
+    private const string EmptyOtherSql = """
+        DECLARE @sql nvarchar(max) = N'';
+        SELECT @sql += N'DROP VIEW ' + QUOTENAME(s.[name]) + N'.' + QUOTENAME(v.[name]) + N';'
+        FROM sys.views AS v JOIN sys.schemas AS s ON s.[schema_id] = v.[schema_id] WHERE s.[name] = @schema;
+        SELECT @sql += N'DROP TABLE ' + QUOTENAME(s.[name]) + N'.' + QUOTENAME(t.[name]) + N';'
+        FROM sys.tables AS t JOIN sys.schemas AS s ON s.[schema_id] = t.[schema_id] WHERE s.[name] = @schema;
+        IF SCHEMA_ID(@schema) IS NOT NULL SET @sql += N'DROP SCHEMA ' + QUOTENAME(@schema) + N';';
+        EXEC sys.sp_executesql @sql;
+        """;
+
+    private bool _usedOther;
 
     private readonly OsduTestDatabase _db = new();
     private readonly TestClock _clock = new();
@@ -39,19 +67,27 @@ public sealed class DimensionViewRunTests : IDisposable
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(TargetVariable, null);
+        if (_usedOther)
+        {
+            using var other = new SqlConnection(OtherConnectionString());
+            other.Open();
+            using var empty = new SqlCommand(EmptyOtherSql, other);
+            empty.Parameters.Add(new SqlParameter("@schema", System.Data.SqlDbType.NVarChar, 128) { Value = OtherSchema });
+            empty.ExecuteNonQuery();
+        }
+
         _db.Dispose();
         _platform.Dispose();
     }
 
-    private static string Flow(string views, string name = "wells-dimensions", string logValue = "LogName", string dimensions = "") => $$"""
+    private static string Flow(string views, string name = "wells-dimensions", string logValue = "LogName", string dimensions = "", string target = ModuleTarget) => $$"""
         flowType: dimension
         name: {{name}}
         partitions: [dev]
         source:
           endpoint: http://localhost
           aggregationSize: 50
-        target:
-          connection: ${env:{{TargetVariable}}}
+        {{target}}
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
         parallelism: { recordsAtOnce: 2 }
         dimensions:
@@ -449,24 +485,92 @@ public sealed class DimensionViewRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_target_connection_that_reaches_another_database_than_the_module_s_is_refused_before_anything_is_built()
+    public async Task A_target_naming_another_database_keeps_the_tables_and_views_there_and_one_moved_back_leaves_nothing_there()
+    {
+        await OtherAsync();
+        Logs();
+        var elsewhere = DimensionTableTarget.Of(null, OtherDatabase, OtherSchema);
+        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
+
+        var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+
+        Assert.Equal((3, 0), (outcome.Built, outcome.Failed));
+        var view = Assert.Single(outcome.Views);
+        Assert.Equal((DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed, (long?)4L), (view.Status, view.Check, view.Rows));
+        Assert.Equal($"{OtherDatabase}.{OtherSchema}", view.Kept);
+        Assert.Equal(
+            ["LOG-1|GR|gAPI", "LOG-1|MD|m", "LOG-2|MD|(null)", "LOG-3|(null)|(null)"],
+            await OtherSqlAsync($"SELECT [Log], [Curve], [Unit] FROM [{OtherSchema}].[v_dim_TestCurveView] ORDER BY [Log], [Curve];"));
+
+        // The module's database keeps the dimensions, and neither their tables nor the view; the ledger says where those are.
+        Assert.Equal(["(null)|(null)"], await SqlAsync("SELECT OBJECT_ID(N'[osdu].[dim_TestCurve]'), OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
+        var curve = (await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"))!;
+        Assert.Equal(elsewhere, curve.TableTarget);
+        var page = (await ledger.ReadDimensionTableAsync(curve.DimensionId, new DimensionTableQuery()))!;
+        Assert.Equal($"{OtherDatabase}.{OtherSchema}.dim_TestCurve", page.Table);
+        Assert.Equal(4, page.Rows.Count);
+        Assert.Equal(elsewhere, (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.TableTarget);
+
+        // A build that finds nothing changed writes nothing there again.
+        var (same, _, _) = await RunnerAsync(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
+        Assert.Equal(DimensionViewWriteStatus.Unchanged, Assert.Single((await same.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Views).Status);
+
+        // Moved back to the module's database, the next build lays the tables out whole there, writes the view beside them,
+        // and leaves nothing where they were.
+        var (back, _, _) = await RunnerAsync(Flow(CurveView));
+        var again = await back.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+
+        Assert.Equal((3, 0), (again.Built, again.Failed));
+        Assert.Equal(((long?)4L, "osdu"), (Assert.Single(again.Views).Rows, again.Views[0].Kept));
+        Assert.Equal(["4"], await SqlAsync("SELECT COUNT(*) FROM [osdu].[v_dim_TestCurveView];"));
+        Assert.Empty(await OtherSqlAsync($"SELECT o.[name] FROM sys.objects AS o WHERE o.[schema_id] = SCHEMA_ID(N'{OtherSchema}') AND o.[type] IN ('U', 'V');"));
+        Assert.Equal(DimensionTableTarget.Catalog, (await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"))!.TableTarget);
+        Assert.Equal(DimensionTableTarget.Catalog, (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.TableTarget);
+    }
+
+    [Fact]
+    public async Task A_target_whose_database_cannot_be_opened_stops_the_build_before_anything_is_built()
     {
         Logs();
-        var other = new SqlConnectionStringBuilder(_db.ConnectionString) { InitialCatalog = "master" }.ConnectionString;
-        Environment.SetEnvironmentVariable(TargetVariable, other);
-        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView));
+        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: ModuleTarget + "\n  database: OsduDeliveryNoSuchDatabase"));
+
+        // The open is tried as often as a database that is failing over is (4060 is such an error), and then given up.
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
+
+        Assert.Contains("Flow 'wells-dimensions': the dimension table database could not be opened after 4 attempts (SQL error 4060)", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(_db.ConnectionString, refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"));
+    }
+
+    [Fact]
+    public async Task A_target_whose_reference_does_not_resolve_stops_the_build_before_anything_is_built_and_the_plan_says_so()
+    {
+        Logs();
+        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: "target:\n  connection: ${env:OSDU_VIEW_TESTS_NO_SUCH_DB}"));
 
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
-        Assert.Contains($"target.connection ${{env:{TargetVariable}}} reaches another database than this host's module database", refused.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("master", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("target.connection ${env:OSDU_VIEW_TESTS_NO_SUCH_DB} could not be resolved on this host", refused.Message, StringComparison.Ordinal);
         Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"));
 
         // The plan says so too, and gives the statement a build would write.
         var plan = await runner.PlanAsync([], CancellationToken.None);
         var view = Assert.Single(plan.Views);
         Assert.StartsWith("CREATE OR ALTER VIEW [osdu].[v_dim_TestCurveView]", view.Sql, StringComparison.Ordinal);
-        Assert.Contains(view.Problems, p => p.Contains("reaches another database", StringComparison.Ordinal));
+        Assert.Contains(view.Problems, p => p.Contains("could not be resolved on this host", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_target_reaching_the_module_s_database_with_another_schema_is_refused_before_anything_is_built()
+    {
+        Logs();
+        var (runner, ledger, flow) = await RunnerAsync(Flow(CurveView, target: ModuleTarget + $"\n  schema: {OtherSchema}"));
+
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
+
+        Assert.Contains("reaches the module's own database, with schema odtarget; in the module's database a dimension's table is kept in schema osdu only", refused.Message, StringComparison.Ordinal);
+        Assert.Contains($"${{env:{TargetVariable}}}", refused.Message, StringComparison.Ordinal);
+        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"));
     }
 
     [Fact]
@@ -479,15 +583,46 @@ public sealed class DimensionViewRunTests : IDisposable
 
         var view = Assert.Single(plan.Views);
         Assert.Empty(view.Problems);
+        Assert.Equal("osdu", view.Kept);
         Assert.Equal(["dim_TestCurve", "dim_TestLog", "dim_TestUnit"], view.Tables);
         Assert.Contains("A build writes osdu.v_dim_TestCurveView.", view.Notes);
         Assert.Contains(view.Notes, n => n.StartsWith("osdu.dim_TestUnit is not in the database yet", StringComparison.Ordinal));
         Assert.Equal(["(null)"], await SqlAsync("SELECT OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
     }
 
-    private async Task<List<string>> SqlAsync(string sql)
+    /// <summary>The other database a target names, on the test server.</summary>
+    private string OtherConnectionString() => new SqlConnectionStringBuilder(_db.ConnectionString) { InitialCatalog = OtherDatabase }.ConnectionString;
+
+    /// <summary>
+    /// The other database, ready for a test: made on the test server when it is not there (it is the end-to-end suite's, one
+    /// of the suites' own), and the suite's schema in it emptied of what an interrupted run left.
+    /// </summary>
+    private async Task OtherAsync()
     {
-        await using var connection = new SqlConnection(_db.ConnectionString);
+        await using (var master = new SqlConnection(new SqlConnectionStringBuilder(_db.ConnectionString) { InitialCatalog = "master" }.ConnectionString))
+        {
+            await master.OpenAsync();
+            await using var make = new SqlCommand(
+                "IF DB_ID(@name) IS NULL BEGIN DECLARE @make nvarchar(400) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC sys.sp_executesql @make; END;", master);
+            make.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = OtherDatabase });
+            await make.ExecuteNonQueryAsync();
+        }
+
+        _usedOther = true;
+        await using var other = new SqlConnection(OtherConnectionString());
+        await other.OpenAsync();
+        await using var empty = new SqlCommand(EmptyOtherSql, other);
+        empty.Parameters.Add(new SqlParameter("@schema", System.Data.SqlDbType.NVarChar, 128) { Value = OtherSchema });
+        await empty.ExecuteNonQueryAsync();
+    }
+
+    private Task<List<string>> OtherSqlAsync(string sql) => SqlAsync(sql, OtherConnectionString());
+
+    private Task<List<string>> SqlAsync(string sql) => SqlAsync(sql, _db.ConnectionString);
+
+    private static async Task<List<string>> SqlAsync(string sql, string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql;

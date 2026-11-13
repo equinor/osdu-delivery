@@ -136,7 +136,7 @@ internal static class DeliveryDimensionVerbs
                 ["changes"] = removed.Changes,
                 ["attributes"] = removed.Attributes,
                 ["texts"] = removed.Texts,
-                ["tableDropped"] = removed.TableDropped is { } dropped ? DimensionTables.Shown(dropped) : null,
+                ["tableDropped"] = removed.TableDropped is { } dropped ? removed.TableTarget.Shown(dropped) : null,
             }));
             return 0;
         }
@@ -166,9 +166,10 @@ internal static class DeliveryDimensionVerbs
                     $"{flow.Name} declares no view named '{name}', and no build of it wrote one{(flow.Views.Count == 0 ? string.Empty : $"; it declares {string.Join(", ", flow.Views.Select(v => v.Name))}")}.");
             }
 
-            return ShowView(context, declared, detail);
+            return ShowView(context, declared, detail, DimensionTableTarget.Of(flow.Target));
         }
 
+        var declaredTarget = DimensionTableTarget.Of(flow.Target);
         var rows = flow.Views
             .Select(v => (v.Name, Declared: (DimensionViewSpec?)v, State: recorded.FirstOrDefault(r => string.Equals(r.Name, v.Name, StringComparison.OrdinalIgnoreCase))))
             .Concat(recorded
@@ -192,7 +193,7 @@ internal static class DeliveryDimensionVerbs
                 ["views"] = new JsonArray(rows.Select(r => (JsonNode)new JsonObject
                 {
                     ["view"] = r.Name,
-                    ["viewName"] = DimensionTables.Shown(r.Declared?.ViewName ?? r.State!.ViewName),
+                    ["viewName"] = (r.State?.TableTarget ?? declaredTarget).Shown(r.Declared?.ViewName ?? r.State!.ViewName),
                     ["declared"] = r.Declared is not null,
                     ["written"] = r.State?.Written ?? false,
                     ["changed"] = r.Declared is not null && r.State is not null && !string.Equals(r.State.Sql, r.Declared.Definition.CreateSql, StringComparison.Ordinal),
@@ -208,7 +209,7 @@ internal static class DeliveryDimensionVerbs
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{flow.Name}: {flow.Views.Count} view(s)"));
         foreach (var (name, declared, state) in rows)
         {
-            var shown = DimensionTables.Shown(declared?.ViewName ?? state!.ViewName);
+            var shown = (state?.TableTarget ?? declaredTarget).Shown(declared?.ViewName ?? state!.ViewName);
             var status = declared is null
                 ? "no longer declared: remove it with sqlflow dimensions remove-view <flow.yaml> --view " + name
                 : state is null ? "not written yet: a build of the flow writes it"
@@ -274,9 +275,10 @@ internal static class DeliveryDimensionVerbs
         return joins.Count == 0 ? string.Empty : " joining " + string.Join(", ", joins);
     }
 
-    private static int ShowView(CliVerbContext context, DimensionViewSpec? declared, DimensionViewDetail? detail)
+    private static int ShowView(CliVerbContext context, DimensionViewSpec? declared, DimensionViewDetail? detail, DimensionTableTarget declaredTarget)
     {
         var state = detail?.View;
+        var kept = state?.TableTarget ?? declaredTarget;
         var name = declared?.Name ?? state!.Name;
         var columns = declared?.Definition.Columns.Select(c => new DimensionViewColumnState(c.Name, c.Type, c.Expression, c.DataType, c.Description)).ToList()
             ?? state!.Columns.ToList();
@@ -288,14 +290,14 @@ internal static class DeliveryDimensionVerbs
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
             {
                 ["view"] = name,
-                ["viewName"] = DimensionTables.Shown(declared?.ViewName ?? state!.ViewName),
+                ["viewName"] = kept.Shown(declared?.ViewName ?? state!.ViewName),
                 ["description"] = declared?.Description ?? state?.Description,
                 ["declared"] = declared is not null,
                 ["written"] = state?.Written ?? false,
                 ["from"] = declared?.From ?? state!.From,
                 ["joins"] = new JsonArray(joins.Select(j => (JsonNode)new JsonObject
                 {
-                    ["alias"] = j.Alias, ["to"] = j.To, ["on"] = j.On, ["table"] = DimensionTables.Shown(j.Table),
+                    ["alias"] = j.Alias, ["to"] = j.To, ["on"] = j.On, ["table"] = kept.Shown(j.Table),
                 }).ToArray()),
                 ["columns"] = new JsonArray(columns.Select(c => (JsonNode)new JsonObject
                 {
@@ -309,7 +311,7 @@ internal static class DeliveryDimensionVerbs
             return 0;
         }
 
-        context.Out.WriteLine($"{name}  {DimensionTables.Shown(declared?.ViewName ?? state!.ViewName)}  from {declared?.From ?? state!.From}{Joined(declared, state)}");
+        context.Out.WriteLine($"{name}  {kept.Shown(declared?.ViewName ?? state!.ViewName)}  from {declared?.From ?? state!.From}{Joined(declared, state)}");
         if ((declared?.Description ?? state?.Description) is { } description)
         {
             context.Out.WriteLine("  " + description);
@@ -399,7 +401,7 @@ internal static class DeliveryDimensionVerbs
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
             {
                 ["view"] = removed.Name,
-                ["viewName"] = DimensionTables.Shown(removed.ViewName),
+                ["viewName"] = detail.View.TableTarget.Shown(removed.ViewName),
                 ["flow"] = removed.FlowName,
                 ["dropped"] = removed.Dropped,
                 ["checks"] = removed.Checks,
@@ -449,7 +451,7 @@ internal static class DeliveryDimensionVerbs
                                 ["trim"] = a.Trim,
                             })).ToArray()),
                         ["aggregateBy"] = dimension?.Field?.AggregateBy,
-                        ["table"] = dimension?.TableName is { } table ? DimensionTables.Shown(table) : null,
+                        ["table"] = dimension?.TableName is { } table ? dimension.TableTarget.Shown(table) : null,
                         ["keyColumn"] = spec.KeyColumn,
                         ["valueColumn"] = spec.ValueColumn,
                         ["values"] = dimension?.Members,
@@ -480,7 +482,7 @@ internal static class DeliveryDimensionVerbs
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"  {spec.Name}  ({spec.Kind} {spec.Path}{label})  {dimension.Members} value(s) from {dimension.Originals} key(s), {built}"));
             context.Out.WriteLine(dimension.TableName is { } table
-                ? $"      table {DimensionTables.Shown(table)}"
+                ? $"      table {dimension.TableTarget.Shown(table)}"
                 : $"      no table yet: run the flow, or read it with sqlflow dimensions table <flow.yaml> --dimension {spec.Name}");
             if (latest.TryGetValue(dimension.DimensionId, out var newest) && newest.DimensionRunId != dimension.LastRunId)
             {

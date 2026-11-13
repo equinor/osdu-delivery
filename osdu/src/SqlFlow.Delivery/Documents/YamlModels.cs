@@ -2004,7 +2004,7 @@ internal sealed class DimensionFlowYaml
 
     public List<DimensionYaml>? Dimensions { get; set; }
 
-    /// <summary>The module's database as the pipelines reading the flow's tables and views name it.</summary>
+    /// <summary>Where the flow's tables and views are written; left out, the module's database.</summary>
     public DimensionTargetYaml? Target { get; set; }
 
     /// <summary>The views over the flow's dimension tables, each joining them at the grain of one.</summary>
@@ -2041,8 +2041,14 @@ internal sealed class DimensionIncrementalYaml
 
 internal sealed class DimensionTargetYaml
 {
-    /// <summary>A ${env:...} or ${keyvault:...} reference, or a connection string whose password is one.</summary>
+    /// <summary>A ${env:...} or ${keyvault:...} reference, or a connection string whose password is one; left out, the module's.</summary>
     public string? Connection { get; set; }
+
+    /// <summary>A database on the connection's server; left out, the connection's own.</summary>
+    public string? Database { get; set; }
+
+    /// <summary>The schema the tables and views go to; left out, <c>osdu</c>.</summary>
+    public string? Schema { get; set; }
 }
 
 internal sealed class DimensionViewYaml

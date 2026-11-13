@@ -20,17 +20,19 @@ internal sealed record RunTimeTableChange(EvolutionPlan Plan, bool Changed);
 internal static class RunTimeTables
 {
     /// <summary>
-    /// Brings <paramref name="table"/> in the <c>osdu</c> schema to <paramref name="desired"/>, keyed by <paramref name="keyColumns"/>,
-    /// on an open connection outside any transaction.
+    /// Brings <paramref name="table"/> in <paramref name="schema"/> (the <c>osdu</c> schema unless named) to
+    /// <paramref name="desired"/>, keyed by <paramref name="keyColumns"/>, on an open connection outside any transaction.
     /// </summary>
     public static async Task<RunTimeTableChange> EvolveAsync(
-        SqlConnection connection, string table, IReadOnlyList<SqlColumn> desired, IReadOnlySet<string> keyColumns, CancellationToken ct)
+        SqlConnection connection, string table, IReadOnlyList<SqlColumn> desired, IReadOnlySet<string> keyColumns, CancellationToken ct,
+        string schema = DeliveryModel.SchemaName)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentException.ThrowIfNullOrWhiteSpace(table);
         ArgumentNullException.ThrowIfNull(desired);
         ArgumentNullException.ThrowIfNull(keyColumns);
-        var target = new RelationalObject { Database = connection.Database, Schema = DeliveryModel.SchemaName, Name = table };
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        var target = new RelationalObject { Database = connection.Database, Schema = schema, Name = table };
         var plan = await new SchemaSyncService(new SqlServerCatalogReader()).PlanAsync(connection, target, desired, keyColumns, ct).ConfigureAwait(false);
         var batch = EvolutionDdlGenerator.Generate(target, plan, allowTableRewrite: false);
         await SqlServerSchemaProvider.ApplyDdlAsync(connection, batch, new SchemaApplyOptions(), ct).ConfigureAwait(false);

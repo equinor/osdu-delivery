@@ -14,6 +14,7 @@ keywords:
   - incremental load
 related:
   - delivery-concept-database
+  - delivery-flow-dimension-target
   - delivery-concept-dimension-tables
   - delivery-flow-dimension
   - delivery-guide-dimensions
@@ -26,7 +27,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
+  - osdu/src/SqlFlow.Delivery.Data/Migrations/20261112223514_DimensionTableTargets.cs
 ---
 
 # osdu.Dimension: one dimension of a dimension flow in a partition, its declaration and what it holds now
@@ -37,10 +40,11 @@ originals, builds and changes are rows of the other dimension tables, which name
 ([The tables a dimension keeps](../concepts/dimension-tables.md)). A dimension flow keeps its ledger in the partition
 (kind `dimension`).
 
-The dimension's own table, `[osdu].[dim_<dimension>]`, is named here (`TableName`) but is no table of the model: builds
-create and widen it through SQLFlow's schema evolution, and no migration touches it
-([The dimension's table](../flow/dimension-table.md)). Removing a dimension deletes its rows in the
-partition and drops its table with the last partition writing it.
+The dimension's own table, `dim_<dimension>`, is named here (`TableName`), with where it is kept (`TableConnection`,
+`TableDatabase`, `TableSchema`: the module's database and `osdu` when null), but is no table of the model: builds create
+and widen it through SQLFlow's schema evolution, and no migration touches it
+([The dimension's table](../flow/dimension-table.md), [Dimension target](../flow/dimension-target.md)). Removing a
+dimension deletes its rows in the partition and drops its table with the last partition writing it.
 
 ## Columns
 
@@ -65,7 +69,11 @@ partition and drops its table with the last partition writing it.
 | `ElementsJson` | `nvarchar(max)` | yes | The objects of a nested array each key's records hold, as JSON `{ "path", "fields": [...] }`: a row each in the dimension's table, their fields kept in [`osdu.DimensionElement`](dimension-element.md). Null when the dimension reads none. |
 | `CollectedJson` | `nvarchar(max)` | yes | What the last build that settled the field read of each collected attribute, as a JSON array: its name and path, how the index stores its field, and the value records holding none of its values were given. |
 | `DefinitionHash` | `nvarchar(16)` | no | The hash of the dimension's declaration as the last build read it. |
-| `TableName` | `nvarchar(128)` | yes | The dimension's table in the schema (`dim_<dimension>`), as the last build wrote it; null before a build wrote one. |
+| `TableName` | `nvarchar(128)` | yes | The dimension's table (`dim_<dimension>`), as the last build wrote it; null before a build wrote one. |
+| `TableConnection` | `nvarchar(2000)` | yes | The connection the table is kept on, as the flow's `target.connection` names it: a reference, never what it resolves to. Null for the module's own connection. Set by the build's merge, so a reader knows where the table goes before the table step has written it. |
+| `TableDatabase` | `nvarchar(128)` | yes | The database the table is kept in, as `target.database` names it; null for the connection's own. |
+| `TableSchema` | `nvarchar(128)` | yes | The schema the table is kept in, as `target.schema` names it; null for `osdu`. |
+| `TableRunId` | `bigint` | yes | The build whose rows the table holds. A build whose table step failed leaves it behind `LastRunId`, and the next build then lays the table out whole; so does a table moved to another target. Migration `DimensionTableTargets` gave every table written before it its last build. |
 | `KeyColumn` | `nvarchar(128)` | yes | The column of the dimension's table that holds each key, as the table has it now: named after the property the dimension's path ends with unless its document names it, and `key` in a table made before dimensions named their columns. |
 | `ValueColumn` | `nvarchar(128)` | yes | The column of the dimension's table that holds each key's value, as the table has it now: named after the property the label ends with (or after the dimension, when it reads no label) unless its document names it, and `value` in a table made before dimensions named their columns. |
 | `TableVersion` | `bigint` | no | How many times a write changed the rows the dimension's table holds of the partition: a build's write that added, rewrote or deleted one, or wrote the table under another name, and a rewrite of the table outside a build. A view's check keeps the versions of the tables it read, and a build whose tables a view reads are of the same versions keeps that check rather than reading the view again ([A check kept](../flow/dimension-views.md)). 0 until a write changed a row. |

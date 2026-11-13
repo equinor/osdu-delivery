@@ -120,7 +120,7 @@ public class DimensionViewDocumentTests
         Assert.Equal("Curve", view.Name);
         Assert.Equal("v_dim_Curve", view.ViewName);
         Assert.Equal("LogCurve", view.From);
-        Assert.Equal(["${env:SQLFLOW_CATALOG_DB}"], new[] { flow.Target!.Connection });
+        Assert.Equal("${env:SQLFLOW_CATALOG_DB}", flow.Target!.Connection);
         Assert.Equal(
             [("WellLogID", "WellLog", "WellLog"), ("WellLog.SamplingDomainTypeID", "Domain", "SamplingDomain"), ("CurveUnitID", "Unit", "Unit"), ("WellLog.WellboreID", "Wellbore", "Wellbore")],
             view.Joins.Select(j => (j.On, j.To, j.As)));
@@ -275,10 +275,40 @@ public class DimensionViewDocumentTests
         => Assert.Contains(reason, Refused(Head.Replace("connection: ${env:SQLFLOW_CATALOG_DB}", connection, StringComparison.Ordinal) + Curve), StringComparison.Ordinal);
 
     [Fact]
-    public void Views_need_the_target_connection()
+    public void Views_of_a_flow_naming_no_target_are_kept_in_the_module_s_database()
+    {
+        var flow = Parse(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:SQLFLOW_CATALOG_DB}\n", string.Empty, StringComparison.Ordinal) + Curve);
+
+        Assert.Null(flow.Target);
+        Assert.StartsWith("CREATE OR ALTER VIEW [osdu].[v_dim_Curve]", Assert.Single(flow.Views).Definition.CreateSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_target_names_the_database_and_schema_its_tables_and_views_are_written_in()
+    {
+        var flow = Parse(Head.ReplaceLineEndings("\n").Replace(
+            "connection: ${env:SQLFLOW_CATALOG_DB}", "connection: ${env:DIMENSIONS_DB}\n  database: Dimensions\n  schema: dims", StringComparison.Ordinal) + Curve);
+
+        Assert.Equal(new DimensionTarget("${env:DIMENSIONS_DB}", "Dimensions", "dims"), flow.Target);
+        var create = Assert.Single(flow.Views).Definition.CreateSql;
+        Assert.StartsWith("CREATE OR ALTER VIEW [dims].[v_dim_Curve]", create, StringComparison.Ordinal);
+        Assert.Contains("FROM [dims].[dim_LogCurve] AS [b]", create, StringComparison.Ordinal);
+        Assert.All(DimensionLineage.Describe(flow).Objects, o => Assert.Equal(("${env:DIMENSIONS_DB}", "Dimensions", "dims"), (o.ConnectionReference, o.Database, o.Schema)));
+
+        // A target naming a database alone is reached on the module's own connection, in the module's schema.
+        var beside = Parse(Head.ReplaceLineEndings("\n").Replace("connection: ${env:SQLFLOW_CATALOG_DB}", "database: Dimensions", StringComparison.Ordinal) + Curve);
+        Assert.Equal(new DimensionTarget(null, "Dimensions"), beside.Target);
+        Assert.All(DimensionLineage.Describe(beside).Objects, o => Assert.Equal(("${env:SQLFLOW_CATALOG_DB}", "Dimensions", "osdu"), (o.ConnectionReference, o.Database, o.Schema)));
+    }
+
+    [Theory]
+    [InlineData("target: {}", "target names no connection, database or schema")]
+    [InlineData("target:\n  schema: dims-2", "target.schema 'dims-2' is not a schema name")]
+    [InlineData("target:\n  database: ''", "target.database '' is not a database name")]
+    public void A_target_names_where_its_tables_go_plainly(string target, string reason)
         => Assert.Contains(
-            "views needs target.connection",
-            Refused(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:SQLFLOW_CATALOG_DB}\n", string.Empty, StringComparison.Ordinal) + Curve),
+            reason,
+            Refused(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:SQLFLOW_CATALOG_DB}", target, StringComparison.Ordinal) + Curve),
             StringComparison.Ordinal);
 
     [Theory]

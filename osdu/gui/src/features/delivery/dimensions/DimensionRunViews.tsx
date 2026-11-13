@@ -7,7 +7,7 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { ExplainTip } from "@/components/ExplainTip";
 import { runResult } from "../runOutcome";
 import { CheckGlyph, NotesMark } from "./DimensionViewBadges";
-import { runViewsOf, viewHref, type RunView } from "./dimensionViewFormat";
+import { runViewsOf, viewHref, viewObject, type RunView } from "./dimensionViewFormat";
 
 /** What the build did with a view, as a glyph in its tone and a word; why it could not write it on hover, with Copy. */
 function WriteMark({ view }: { view: RunView }) {
@@ -49,7 +49,7 @@ export function DimensionRunViews({ run }: { run: RunDetail }) {
       render: (row) => (
         <span className="flex min-w-0 items-baseline gap-2">
           <Link to={viewHref(row.view)} className="font-medium hover:underline" data-testid={`run-dimension-view-${row.view}`}>{row.view}</Link>
-          {row.viewName !== "" && <span className="truncate font-mono text-[11.5px] text-muted-foreground">osdu.{row.viewName}</span>}
+          {row.viewName !== "" && <span className="truncate font-mono text-[11.5px] text-muted-foreground">{viewObject(row)}</span>}
         </span>
       ),
     },

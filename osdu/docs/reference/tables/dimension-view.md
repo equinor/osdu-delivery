@@ -37,8 +37,11 @@ partition and has no `PartitionId`. Removing a view deletes its record and its c
 | --- | --- | --- | --- |
 | `ViewId` | `int` identity | no | The record's id. |
 | `Name` | `nvarchar(64)` | no | The view's name as the document gives it, unique ignoring case among the views of the database. |
-| `ViewName` | `nvarchar(128)` | no | The view's name in the module's schema (`v_dim_<name>`). |
+| `ViewName` | `nvarchar(128)` | no | The view's name (`v_dim_<name>`), in the schema where it is kept. |
 | `FlowName` | `nvarchar(200)` | no | The dimension flow that declares the view, by its name. |
+| `TableConnection` | `nvarchar(2000)` | yes | The connection the view is kept on with the tables it reads, as the flow's `target.connection` names it: a reference, never what it resolves to. Null for the module's own connection ([Dimension target](../flow/dimension-target.md)). |
+| `TableDatabase` | `nvarchar(128)` | yes | The database the view is kept in; null for the connection's own. |
+| `TableSchema` | `nvarchar(128)` | yes | The schema the view is kept in; null for `osdu`. A build that finds the flow's target moved drops the view from here and writes it where the target keeps it now. |
 | `LedgerId` | `uniqueidentifier` | no | The ledger of the build that last wrote the view, which a removal of the view is recorded under ([`osdu.Ledger`](ledger.md)). |
 | `Description` | `nvarchar(1000)` | yes | The view's description, as its document gives it. |
 | `DeclarationJson` | `nvarchar(max)` | no | The view as its document declares it: its `from` dimension, its joins and its columns, as JSON. |

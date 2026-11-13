@@ -2825,12 +2825,31 @@ public sealed class DeliveryDimension
     public string DefinitionHash { get; set; } = string.Empty;
 
     /// <summary>
-    /// The dimension's table in this schema (<c>dim_&lt;dimension&gt;</c>), as the last build wrote it: the
-    /// dimension as one table, a row per key and value it collects and a column per attribute. Builds make the table and
-    /// widen it as the flow declares more; it is no table of the model, and no migration touches it. Null until a build
-    /// has written it.
+    /// The dimension's table (<c>dim_&lt;dimension&gt;</c>), as the last build wrote it: the dimension as one table, a row
+    /// per key and value it collects and a column per attribute, in the database and schema its flow's target names
+    /// (<see cref="TableConnection"/>, <see cref="TableDatabase"/>, <see cref="TableSchema"/>), this schema when it names
+    /// none. Builds make the table and widen it as the flow declares more; it is no table of the model, and no migration
+    /// touches it. Null until a build has written it.
     /// </summary>
     public string? TableName { get; set; }
+
+    /// <summary>
+    /// The connection the table is kept on, as the flow's <c>target.connection</c> names it: a reference, never what it
+    /// resolves to. Null for the module's own connection.
+    /// </summary>
+    public string? TableConnection { get; set; }
+
+    /// <summary>The database on that connection's server the table is kept in; null for the connection's own.</summary>
+    public string? TableDatabase { get; set; }
+
+    /// <summary>The schema the table is kept in; null for the module's, <c>osdu</c>.</summary>
+    public string? TableSchema { get; set; }
+
+    /// <summary>
+    /// The build whose rows the table holds: set when a build's write of the table commits. A build after one whose table
+    /// write did not complete, or whose table moved to another target, lays out every key and brings the table to them.
+    /// </summary>
+    public long? TableRunId { get; set; }
 
     /// <summary>
     /// The column of the dimension's table that holds each key, as the table has it now: named after the property the
@@ -3226,6 +3245,18 @@ public sealed class DeliveryDimensionView
 
     /// <summary>The dimension flow that declares the view, by its name.</summary>
     public string FlowName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The connection the view is kept on, as its flow's <c>target.connection</c> names it, with the tables it reads: a
+    /// reference, never what it resolves to. Null for the module's own connection.
+    /// </summary>
+    public string? TableConnection { get; set; }
+
+    /// <summary>The database on that connection's server the view is kept in; null for the connection's own.</summary>
+    public string? TableDatabase { get; set; }
+
+    /// <summary>The schema the view is kept in; null for the module's, <c>osdu</c>.</summary>
+    public string? TableSchema { get; set; }
 
     /// <summary>The ledger of the build that last wrote the view, which a removal of the view is recorded under.</summary>
     public Guid LedgerId { get; set; }
@@ -4859,6 +4890,9 @@ public static class DeliveryModel
             e.Property(d => d.CleanJson).IsRequired();
             e.Property(d => d.DefinitionHash).HasMaxLength(16).IsRequired();
             e.Property(d => d.TableName).HasMaxLength(128);
+            e.Property(d => d.TableConnection).HasMaxLength(2000);
+            e.Property(d => d.TableDatabase).HasMaxLength(128);
+            e.Property(d => d.TableSchema).HasMaxLength(128);
             e.Property(d => d.KeyColumn).HasMaxLength(128);
             e.Property(d => d.ValueColumn).HasMaxLength(128);
             // A dimension named by its id: every member, original, build and change of it names it so.
@@ -4975,6 +5009,9 @@ public static class DeliveryModel
             e.Property(v => v.Name).HasMaxLength(DeliveryDimensionView.MaxNameLength).IsRequired();
             e.Property(v => v.ViewName).HasMaxLength(128).IsRequired();
             e.Property(v => v.FlowName).HasMaxLength(DeliveryLedger.MaxFlowNameLength).IsRequired();
+            e.Property(v => v.TableConnection).HasMaxLength(2000);
+            e.Property(v => v.TableDatabase).HasMaxLength(128);
+            e.Property(v => v.TableSchema).HasMaxLength(128);
             e.Property(v => v.Description).HasMaxLength(DeliveryDimensionView.MaxDescriptionLength);
             e.Property(v => v.DeclarationJson).IsRequired();
             e.Property(v => v.Sql).IsRequired();

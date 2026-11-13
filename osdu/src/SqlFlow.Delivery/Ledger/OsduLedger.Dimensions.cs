@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Model;
@@ -170,6 +171,10 @@ public sealed partial class OsduLedger
         // A dimension keeps only its latest state: what the build before removed goes first, with everything naming it, and
         // the changes that removed it still say what it was.
         var purged = await SqlServerDimensionStore.PurgeRemovedAsync(db, stage.PartitionId, stage.DimensionId, ct).ConfigureAwait(false);
+        var flowName = await db.DeliveryDimensions.AsNoTracking()
+            .Where(d => d.PartitionId == stage.PartitionId && d.DimensionId == stage.DimensionId)
+            .Select(d => d.FlowName)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false) ?? string.Create(CultureInfo.InvariantCulture, $"dimension {stage.DimensionId}");
         DeliveryDimensionRun? closed = null;
         await SqlServerDimensionStore.WriteAsync(db, partitionName, stage, write, (written, run) =>
         {
@@ -211,8 +216,49 @@ public sealed partial class OsduLedger
             run.Error = null;
             closed = run;
             return Task.CompletedTask;
-        }, ct).ConfigureAwait(false);
+        }, (connection, target, opening) => OpenTableDatabaseAsync(db, connection, target, flowName, write.Secrets, opening), ct).ConfigureAwait(false);
         return ToState(closed!);
+    }
+
+    /// <summary>
+    /// Opens where a dimension's table is kept (<paramref name="target"/>, osdu/docs/reference/flow/dimension-target.md):
+    /// <paramref name="catalog"/>, <paramref name="db"/>'s own connection, for the module's database; else a connection of
+    /// its own, the target's reference resolved through <paramref name="secrets"/> (a run's; this host's when null), or the
+    /// module's connection string pointed at the database the target names.
+    /// </summary>
+    /// <exception cref="DeliveryException">The target cannot be resolved or opened on this host.</exception>
+    private async Task<DimensionTableDatabase> OpenTableDatabaseAsync(
+        OsduDbContext db, SqlConnection catalog, DimensionTableTarget target, string flowName, SqlFlow.Core.Secrets.ISecretResolver? secrets, CancellationToken ct)
+    {
+        if (target.InCatalog)
+        {
+            return DimensionTableDatabase.OfCatalog(catalog, target);
+        }
+
+        var module = db.Database.GetConnectionString()
+            ?? throw new DeliveryException("The module's database connection holds no connection string, so the database a dimension's table is kept in cannot be reached from it.");
+        var connectionString = await target.ConnectionStringAsync(module, secrets ?? _secrets, flowName, ct).ConfigureAwait(false);
+        return await DimensionTableDatabase.OpenAsync(connectionString, target, flowName, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> with the module's database open and the dimension's table database beside it, closing
+    /// both after, whatever it comes to.
+    /// </summary>
+    private async Task<T> WithTableDatabaseAsync<T>(DimensionState dimension, Func<OsduDbContext, SqlConnection, DimensionTableDatabase, Task<T>> work, CancellationToken ct)
+    {
+        await using var db = Open();
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var catalog = (SqlConnection)db.Database.GetDbConnection();
+            await using var home = await OpenTableDatabaseAsync(db, catalog, dimension.TableTarget, dimension.FlowName, null, ct).ConfigureAwait(false);
+            return await work(db, catalog, home).ConfigureAwait(false);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
     }
 
     public async Task CloseDimensionRunAsync(long dimensionRunId, string status, DimensionReadCounts read, string? failure, DateTime completedUtc, CancellationToken ct = default)
@@ -1008,11 +1054,14 @@ public sealed partial class OsduLedger
             return null;
         }
 
-        await using var db = Open();
-        var counts = await SqlServerDimensionStore.RemoveAsync(db, partition, dimensionId, dimension.Partition ?? string.Empty, ct).ConfigureAwait(false);
+        var counts = await WithTableDatabaseAsync(
+            dimension, (db, _, home) => SqlServerDimensionStore.RemoveAsync(db, home, partition, dimensionId, dimension.Partition ?? string.Empty, ct), ct).ConfigureAwait(false);
         return new DimensionRemoved(
             dimensionId, dimension.Name, dimension.FlowName, dimension.Partition,
-            counts.Values, counts.Keys, counts.Builds, counts.Changes, counts.Attributes, counts.Texts, counts.TableDropped);
+            counts.Values, counts.Keys, counts.Builds, counts.Changes, counts.Attributes, counts.Texts, counts.TableDropped)
+        {
+            TableTarget = dimension.TableTarget,
+        };
     }
 
     public async Task<bool> EnsureDimensionTableAsync(int dimensionId, DimensionTableSpec table, CancellationToken ct = default)
@@ -1025,8 +1074,8 @@ public sealed partial class OsduLedger
         }
 
         await GuardTableNameAsync(dimensionId, table, ct).ConfigureAwait(false);
-        await using var db = Open();
-        return await SqlServerDimensionStore.EnsureTableAsync(db, partition, dimensionId, dimension.Partition ?? string.Empty, table, ct).ConfigureAwait(false);
+        return await WithTableDatabaseAsync(
+            dimension, (db, _, home) => SqlServerDimensionStore.EnsureTableAsync(db, home, partition, dimensionId, dimension.Partition ?? string.Empty, table, ct), ct).ConfigureAwait(false);
     }
 
     public async Task<DimensionTableShape?> DimensionTableShapeAsync(int dimensionId, CancellationToken ct = default)
@@ -1038,10 +1087,9 @@ public sealed partial class OsduLedger
         }
 
         var table = TableOf(dimension);
-        await using var db = Open();
-        return new DimensionTableShape(
-            DimensionTables.Shown(table.Name), table.KeyColumn, table.ValueColumn,
-            await SqlServerDimensionStore.TableAttributesAsync(db, partition, dimensionId, table.Name, ct).ConfigureAwait(false));
+        var attributes = await WithTableDatabaseAsync(
+            dimension, (_, catalog, home) => SqlServerDimensionStore.TableAttributesAsync(catalog, home, partition, dimensionId, table.Name, ct), ct).ConfigureAwait(false);
+        return new DimensionTableShape(dimension.TableTarget.Shown(table.Name), table.KeyColumn, table.ValueColumn, attributes);
     }
 
     public async Task<DimensionTablePage?> ReadDimensionTableAsync(int dimensionId, DimensionTableQuery query, CancellationToken ct = default)
@@ -1054,9 +1102,10 @@ public sealed partial class OsduLedger
         }
 
         var table = TableOf(dimension);
-        await using var db = Open();
-        return await SqlServerDimensionStore.ReadTableAsync(db, partition, dimensionId, table, dimension.Partition ?? string.Empty, query, MaxDimensionPage, ct)
-            .ConfigureAwait(false);
+        return await WithTableDatabaseAsync(
+            dimension,
+            (_, catalog, home) => SqlServerDimensionStore.ReadTableAsync(catalog, home, partition, dimensionId, table, dimension.Partition ?? string.Empty, query, MaxDimensionPage, ct),
+            ct).ConfigureAwait(false);
     }
 
     public async IAsyncEnumerable<DimensionTableRow> StreamDimensionTableAsync(int dimensionId, [EnumeratorCancellation] CancellationToken ct = default)
@@ -1069,9 +1118,19 @@ public sealed partial class OsduLedger
 
         var table = TableOf(dimension);
         await using var db = Open();
-        await foreach (var row in SqlServerDimensionStore.StreamTableAsync(db, partition, dimensionId, table, dimension.Partition ?? string.Empty, ct).ConfigureAwait(false))
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
         {
-            yield return row;
+            var catalog = (SqlConnection)db.Database.GetDbConnection();
+            await using var home = await OpenTableDatabaseAsync(db, catalog, dimension.TableTarget, dimension.FlowName, null, ct).ConfigureAwait(false);
+            await foreach (var row in SqlServerDimensionStore.StreamTableAsync(catalog, home, partition, dimensionId, table, dimension.Partition ?? string.Empty, ct).ConfigureAwait(false))
+            {
+                yield return row;
+            }
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
         }
     }
 
@@ -1116,14 +1175,14 @@ public sealed partial class OsduLedger
             if (!string.Equals(other.FlowName, own.FlowName, StringComparison.OrdinalIgnoreCase) || !string.Equals(other.Name, own.Name, StringComparison.OrdinalIgnoreCase))
             {
                 throw new DeliveryException(
-                    $"Dimension {own.Name} of {own.FlowName} would write the table {DimensionTables.Shown(name)}, which dimension {other.Name} of {other.FlowName} writes: a dimension's table is named after the dimension alone, so a dimension's name is unique among the flows of a database. Rename one of them.");
+                    $"Dimension {own.Name} of {own.FlowName} would write a table named {name}, which dimension {other.Name} of {other.FlowName} writes: a dimension's table is named after the dimension alone, so a dimension's name is unique among the module's dimension flows, wherever their targets keep their tables. Rename one of them.");
             }
 
             if (other.PartitionId == own.PartitionId)
             {
                 throw new DeliveryException(
                     string.Create(CultureInfo.InvariantCulture,
-                        $"Dimension {own.Name} of {own.FlowName} is kept twice in this partition (dimensions {other.DimensionId} and {own.DimensionId}, under two ledgers of the flow), and both would write the table {DimensionTables.Shown(name)}. Remove the one the flow no longer builds, then run the flow again."));
+                        $"Dimension {own.Name} of {own.FlowName} is kept twice in this partition (dimensions {other.DimensionId} and {own.DimensionId}, under two ledgers of the flow), and both would write the table {name}. Remove the one the flow no longer builds, then run the flow again."));
             }
         }
     }
@@ -1316,6 +1375,7 @@ public sealed partial class OsduLedger
         CollectedJson = d.CollectedJson,
         DefinitionHash = d.DefinitionHash,
         TableName = d.TableName,
+        TableTarget = DimensionTableTarget.Of(d.TableConnection, d.TableDatabase, d.TableSchema),
         KeyColumn = d.KeyColumn,
         ValueColumn = d.ValueColumn,
         Members = d.Members,

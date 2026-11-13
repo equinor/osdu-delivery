@@ -62,8 +62,10 @@ public sealed record DeliveryDimensionIncrementalDto(int LagMinutes, int? FullLo
 /// the index stores its field, how many values and keys it holds now, the build that wrote that (<c>Current</c>), and the
 /// newest build when that is another one (<c>Latest</c>: one that failed, was cancelled or is running). <c>DimensionId</c> is
 /// null for a dimension no build has registered yet. <c>Changed</c> is true when the declaration differs from the one its
-/// values were built with. <c>Table</c> is the dimension's own table (<c>osdu.dim_...</c>): the dimension as one table, a
-/// row per key and value it collects; null until a build has written it. <c>KeyColumn</c> and <c>ValueColumn</c> are what
+/// values were built with. <c>Table</c> is the dimension's own table where it is kept (<c>osdu.dim_...</c>): the dimension
+/// as one table, a row per key and value it collects; null until a build has written it. <c>Kept</c> is where the table is
+/// kept, or will be, as a person types it before its name: where a build wrote it, else where the flow's target keeps it
+/// (<c>osdu</c>, or <c>Dimensions.dim</c>; osdu/docs/reference/flow/dimension-target.md). <c>KeyColumn</c> and <c>ValueColumn</c> are what
 /// the dimension calls its key and its value, and what the two columns of its table are named after its next build: the
 /// property its path ends with (with <c>Key</c> at its end where the value's has that name), and the property its
 /// label ends with (or its own name, when it reads no label), unless the flow names them.
@@ -72,7 +74,7 @@ public sealed record DeliveryDimensionDto(
     int? DimensionId, string Name, string? Description, string Kind, string? Query, string? BuiltQuery, string Path, IReadOnlyList<string> Label,
     string? Unlabelled, IReadOnlyList<DeliveryDimensionAttributeSpecDto> Attributes, IReadOnlyList<string> Clean, bool CountRecords, long MaxValues, bool Declared,
     bool BuildsHere, bool Changed, DeliveryDimensionFieldDto? Field, long Values, long Keys, DateTime? LastBuiltUtc, DeliveryDimensionBuildDto? Current,
-    DeliveryDimensionBuildDto? Latest, string? Table, string KeyColumn, string ValueColumn, DateTime? LastFullLoadUtc);
+    DeliveryDimensionBuildDto? Latest, string? Table, string KeyColumn, string ValueColumn, DateTime? LastFullLoadUtc, string Kept);
 
 /// <summary>
 /// One row of a dimension's table: the row's number (what a table of facts joins on), the key's number, the key, its
@@ -390,7 +392,7 @@ public static partial class DeliveryDimensionEndpoints
         var builds = await BuildsAsync(ledger, [dimension], ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryDimensionDetailDto(
             pipeline?.Id, pipeline?.RepoId, dimension.FlowName, dimension.FlowId, dimension.Partition, flow is null ? [] : Parameters(flow),
-            ToDto(spec, dimension.Partition, dimension, builds)));
+            ToDto(spec, dimension.Partition, dimension, builds, DimensionTableTarget.Of(flow?.Target))));
     }
 
     /// <summary>
@@ -951,8 +953,9 @@ public static partial class DeliveryDimensionEndpoints
     private static List<DeliveryDimensionDto> Dimensions(DimensionFlowDefinition flow, string? partition, IReadOnlyList<DimensionState> held, BuildIndex builds)
     {
         var byName = held.GroupBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var list = flow.Dimensions.Select(spec => ToDto(spec, partition, byName.GetValueOrDefault(spec.Name), builds)).ToList();
-        list.AddRange(held.Where(d => flow.Dimension(d.Name) is null).Select(d => ToDto(null, partition, d, builds)));
+        var declared = DimensionTableTarget.Of(flow.Target);
+        var list = flow.Dimensions.Select(spec => ToDto(spec, partition, byName.GetValueOrDefault(spec.Name), builds, declared)).ToList();
+        list.AddRange(held.Where(d => flow.Dimension(d.Name) is null).Select(d => ToDto(null, partition, d, builds, declared)));
         return list;
     }
 
@@ -996,14 +999,18 @@ public static partial class DeliveryDimensionEndpoints
     internal static DeliveryDimensionDto DraftDto(DimensionSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
-        return ToDto(spec, null, null, BuildIndex.None);
+        return ToDto(spec, null, null, BuildIndex.None, DimensionTableTarget.Catalog);
     }
 
     /// <summary>How a flow's builds load, as its incremental block says; null for a flow whose every build loads in full.</summary>
     private static DeliveryDimensionIncrementalDto? Incremental(DimensionFlowDefinition? flow)
         => flow?.Incremental is { } incremental ? new DeliveryDimensionIncrementalDto(incremental.LagMinutes, incremental.FullLoadAfterHours, incremental.FullLoad) : null;
 
-    private static DeliveryDimensionDto ToDto(DimensionSpec? spec, string? partition, DimensionState? state, BuildIndex builds)
+    /// <summary>
+    /// A dimension as the pages show it; <paramref name="declared"/> is where its flow's target keeps its table, which names
+    /// the table until a build has written it.
+    /// </summary>
+    private static DeliveryDimensionDto ToDto(DimensionSpec? spec, string? partition, DimensionState? state, BuildIndex builds, DimensionTableTarget declared)
     {
         var current = state?.LastRunId is { } id && builds.ById.TryGetValue(id, out var wrote) ? wrote : null;
         var latest = state is not null && builds.Latest.TryGetValue(state.DimensionId, out var newest) && newest.DimensionRunId != current?.DimensionRunId ? newest : null;
@@ -1032,10 +1039,11 @@ public static partial class DeliveryDimensionEndpoints
             state?.LastBuiltUtc,
             current is null ? null : ToDto(current),
             latest is null ? null : ToDto(latest),
-            state?.TableName is { } table ? DimensionTables.Shown(table) : null,
+            state?.TableName is { } table ? state.TableTarget.Shown(table) : null,
             spec?.KeyColumn ?? state?.KeyColumn ?? DimensionColumnNames.KeyRole,
             spec?.ValueColumn ?? state?.ValueColumn ?? DimensionColumnNames.ValueRole,
-            state?.LastFullBuiltUtc);
+            state?.LastFullBuiltUtc,
+            (state?.TableName is null ? declared : state.TableTarget).Place);
     }
 
     private static DeliveryDimensionBuildDto ToDto(DimensionRunState r) => new(

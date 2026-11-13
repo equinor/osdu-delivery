@@ -18,9 +18,12 @@ import type { DimensionEntry } from "./dimensionFormat";
 /** How many of the keys with the most records a page can step through as examples. */
 const EXAMPLE_KEYS = 25;
 
-/** The table a dimension's first build makes: its name with whatever is not a letter, a digit or an underscore an underscore. */
-function tableOf(name: string): string {
-  return `osdu.dim_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
+/**
+ * The table a dimension's first build makes, where its flow keeps it (`kept`; the module's schema when the control plane
+ * does not say): its name with whatever is not a letter, a digit or an underscore an underscore.
+ */
+function tableOf(name: string, kept: string | undefined): string {
+  return `${kept ?? "osdu"}.dim_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
 }
 
 /**
@@ -100,7 +103,7 @@ export function DimensionDefinition({ entry }: { entry: DimensionEntry }) {
   }
 
   const response = blueprint.data;
-  const table = dimension.table ?? tableOf(dimension.name);
+  const table = dimension.table ?? tableOf(dimension.name, dimension.kept);
   const undescribed = response.blueprint.records.filter((node) => node.template === null && node.entityTypes.length > 0).flatMap((node) => node.entityTypes);
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {

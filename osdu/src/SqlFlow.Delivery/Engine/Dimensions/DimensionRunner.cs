@@ -91,18 +91,20 @@ public sealed record DimensionLoadRequest(bool FullLoad = false, DateTime? From 
 /// failed, why it failed, and what its check found in the run's partition: the rows, whether it could be read, and what
 /// it has to say.
 /// </summary>
-public sealed record DimensionViewSummary(string View, string ViewName, string Status, string? Error, string? Check, long? Rows, IReadOnlyList<string> Notes)
+public sealed record DimensionViewSummary(
+    string View, string ViewName, string Status, string? Error, string? Check, long? Rows, IReadOnlyList<string> Notes, string? Kept = null)
 {
     /// <summary>Whether the view stopped the run: it could not be written, or its check could not read it.</summary>
     public bool Failed => Status == DimensionViewWriteStatus.Failed || Check == DimensionViewCheckStatus.Failed;
 
-    /// <summary>A view's outcome as the run's result carries it.</summary>
-    public static DimensionViewSummary Of(DimensionViewOutcome outcome)
+    /// <summary>A view's outcome as the run's result carries it, with where the view is kept (<paramref name="kept"/>).</summary>
+    public static DimensionViewSummary Of(DimensionViewOutcome outcome, DimensionTableTarget kept)
     {
         ArgumentNullException.ThrowIfNull(outcome);
+        ArgumentNullException.ThrowIfNull(kept);
         return new DimensionViewSummary(
             outcome.Name, outcome.ViewName, outcome.Status, outcome.Error ?? outcome.Check?.Error, outcome.Check?.Status, outcome.Check?.Rows,
-            (outcome.Check?.Notes() ?? []).Take(DimensionBuildOutcome.MaxNotes).ToList());
+            (outcome.Check?.Notes() ?? []).Take(DimensionBuildOutcome.MaxNotes).ToList(), kept.Place);
     }
 }
 
@@ -175,7 +177,8 @@ public sealed record DimensionPlanSummary(
 /// What a plan found of one view: the tables it reads, the statement a build writes it with, what stops a build writing it,
 /// and what a build will do with it.
 /// </summary>
-public sealed record DimensionViewPlanSummary(string View, string ViewName, IReadOnlyList<string> Tables, string Sql, IReadOnlyList<string> Problems, IReadOnlyList<string> Notes);
+public sealed record DimensionViewPlanSummary(
+    string View, string ViewName, IReadOnlyList<string> Tables, string Sql, IReadOnlyList<string> Problems, IReadOnlyList<string> Notes, string? Kept = null);
 
 /// <summary>The <c>result</c> of a plan run of a dimension flow: every dimension selected, checked and counted, and every view laid out, nothing read or kept.</summary>
 public sealed record DimensionPlanOutcome(string Operation, string Flow, string Partition, IReadOnlyList<DimensionPlanSummary> Dimensions)
@@ -217,6 +220,9 @@ public sealed partial class DimensionRunner
     private readonly ILogger _log;
     private readonly HttpMessageHandler? _transport;
     private readonly bool _allowLoopback;
+
+    // Where the run keeps the flow's tables and views: settled by a build before it builds anything.
+    private DimensionTableTarget _tableTarget = DimensionTableTarget.Catalog;
 
     /// <param name="context">The run's engine context.</param>
     /// <param name="flow">The flow bound to the partition the run builds in (or a flow whose partition is its header's).</param>
@@ -304,12 +310,9 @@ public sealed partial class DimensionRunner
             },
             ct).ConfigureAwait(false);
 
-        // A flow declaring views names the module's database as the pipelines reading them do; a build that would declare
-        // tables it does not write stops before it builds anything. A part writes no view: the run that split the build checked.
-        if (!spread.IsPart && _flow.Views.Count > 0 && await TargetProblemAsync(ledger, ct).ConfigureAwait(false) is { } refused)
-        {
-            throw new DeliveryException(refused);
-        }
+        // Where the flow keeps its tables and views (osdu/docs/reference/flow/dimension-target.md), settled before anything is
+        // built: a target this host cannot reach stops the build here, and one naming the module's database is the module's.
+        _tableTarget = await ResolveTargetAsync(ledger, ct).ConfigureAwait(false);
 
         var skipped = selected.Where(d => !d.BuildsIn(partition)).ToList();
         var building = selected.Where(d => d.BuildsIn(partition)).ToList();
@@ -350,7 +353,7 @@ public sealed partial class DimensionRunner
             DeliveryOperations.Build, _flow.Name, partition,
             ordered.Count(s => s.Status == DimensionRunStatus.Completed), ordered.Count(s => s.Status == DimensionRunStatus.Failed), skipped.Count, ordered)
         {
-            Views = views.Views.Select(DimensionViewSummary.Of).ToList(),
+            Views = views.Views.Select(v => DimensionViewSummary.Of(v, _tableTarget)).ToList(),
             ViewsDropped = views.Dropped,
         };
         return outcome.Failed > 0 || outcome.ViewsFailed > 0 ? throw new DimensionBuildsFailedException(outcome) : outcome;
@@ -395,6 +398,8 @@ public sealed partial class DimensionRunner
                 RunId = runId,
                 Actor = actor,
                 Now = Now,
+                TableTarget = _tableTarget,
+                Secrets = _context.Secrets,
             },
             ct).ConfigureAwait(false);
         foreach (var view in written.Views)
@@ -406,7 +411,7 @@ public sealed partial class DimensionRunner
             }
 
             _log.LogInformation(
-                "view {View} ({ViewName}): {Status}, {Rows} row(s) in partition '{Partition}'{Kept}{Notes}", view.Name, DimensionTables.Shown(view.ViewName), view.Status,
+                "view {View} ({ViewName}): {Status}, {Rows} row(s) in partition '{Partition}'{Kept}{Notes}", view.Name, _tableTarget.Shown(view.ViewName), view.Status,
                 view.Check?.Rows ?? 0, partition,
                 view.Check is { ReusedFrom: not null } kept
                     ? string.Create(CultureInfo.InvariantCulture, $", checked as before: nothing it reads changed since its check of {OsduSearch.LuceneTime(kept.ReusedCheckedUtc ?? kept.CheckedUtc)}, so it was not read again")
@@ -423,36 +428,39 @@ public sealed partial class DimensionRunner
     }
 
     /// <summary>
-    /// Why the flow's <c>target.connection</c> cannot stand for the module's database, or null when it reaches it: the
-    /// server is asked on both connections for its name, the database's and when the database was made, so two spellings
-    /// of one server agree. The message names the reference, never what it resolves to.
+    /// Where the flow keeps its tables and views (osdu/docs/reference/flow/dimension-target.md): the module's database when
+    /// it names no target or names that database, else the target it names, once this host has opened it.
     /// </summary>
-    private async Task<string?> TargetProblemAsync(ILedger ledger, CancellationToken ct)
+    /// <exception cref="DeliveryException">The target cannot be reached from this host; the message names its reference, never what it resolves to.</exception>
+    private async Task<DimensionTableTarget> ResolveTargetAsync(ILedger ledger, CancellationToken ct)
     {
-        if (_flow.Target is not { } target)
+        if (_flow.Target is null)
         {
-            return $"Dimension flow '{_flow.Name}' declares views and no target.connection, the module's database as the pipelines reading the views name it (${{env:{OsduModuleDatabase.CatalogConnectionVariable}}}).";
+            return DimensionTableTarget.Catalog;
         }
 
-        var named = target.Connection.StartsWith("${", StringComparison.Ordinal) ? $"target.connection {target.Connection}" : "target.connection";
-        DatabaseIdentity module;
-        DatabaseIdentity declared;
         try
         {
-            module = await ledger.DatabaseIdentityAsync(ct).ConfigureAwait(false);
-            await using var connection = await IngestionConnection.OpenAsync(target.Connection, _flow.Name, _context.Secrets, ct).ConfigureAwait(false);
-            declared = await SqlServerDimensionViewStore.IdentityAsync(connection, ct).ConfigureAwait(false);
+            return await ledger.ResolveDimensionTargetAsync(_flow.Name, _flow.Target, _context.Secrets, ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is DeliveryException or SqlFlowException or Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
+        catch (Exception ex) when (ex is (SqlFlowException and not DeliveryException) or Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
         {
-            return $"Dimension flow '{_flow.Name}': {named} could not be opened to check that it reaches the module's database, so no view was written: {SecretHygiene.RedactedMessage(ex.InnerException ?? ex)}";
+            throw new DeliveryException(
+                $"Dimension flow '{_flow.Name}': its target ({DimensionTableTarget.Of(_flow.Target).Named}) could not be read, so nothing was built: {SecretHygiene.RedactedMessage(ex.InnerException ?? ex)}", ex);
         }
+    }
 
-        return string.Equals(module.Server, declared.Server, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(module.Database, declared.Database, StringComparison.OrdinalIgnoreCase)
-            && module.CreatedUtc == declared.CreatedUtc
-                ? null
-                : $"Dimension flow '{_flow.Name}': {named} reaches another database than this host's module database, so the lineage it declares would name tables and views the build does not write; nothing was built. Point it at the module's database, the catalog's: ${{env:{OsduModuleDatabase.CatalogConnectionVariable}}}.";
+    /// <summary>Where the flow keeps its tables and views, or why this host cannot reach them: what a plan says beforehand.</summary>
+    private async Task<(DimensionTableTarget? Target, string? Problem)> TryResolveTargetAsync(ILedger ledger, CancellationToken ct)
+    {
+        try
+        {
+            return (await ResolveTargetAsync(ledger, ct).ConfigureAwait(false), null);
+        }
+        catch (DeliveryException ex)
+        {
+            return (null, ex.Message);
+        }
     }
 
     /// <summary>Settles the field of every dimension the run selects and counts the records each would read, reading no value.</summary>
@@ -576,8 +584,9 @@ public sealed partial class DimensionRunner
         }
         else
         {
-            target = await TargetProblemAsync(ledger, ct).ConfigureAwait(false);
-            probes = await ledger.ProbeDimensionViewsAsync(_flow.Name, _flow.Views, ct).ConfigureAwait(false);
+            var (kept, problem) = await TryResolveTargetAsync(ledger, ct).ConfigureAwait(false);
+            target = problem;
+            probes = kept is null ? [] : await ledger.ProbeDimensionViewsAsync(_flow.Name, _flow.Views, kept, _context.Secrets, ct).ConfigureAwait(false);
         }
 
         return _flow.Views.Select(view =>
@@ -590,7 +599,7 @@ public sealed partial class DimensionRunner
             }
 
             problems.AddRange(probe?.Problems ?? []);
-            return new DimensionViewPlanSummary(view.Name, view.ViewName, view.Definition.Tables, view.Definition.CreateSql, problems, probe?.Notes ?? []);
+            return new DimensionViewPlanSummary(view.Name, view.ViewName, view.Definition.Tables, view.Definition.CreateSql, problems, probe?.Notes ?? [], view.Kept.Place);
         }).ToList();
     }
 
@@ -1389,6 +1398,8 @@ public sealed partial class DimensionRunner
             KeepsRecords = keepsRecords,
             Read = read,
             CompletedUtc = Now,
+            TableTarget = _tableTarget,
+            Secrets = _context.Secrets,
         };
 
     /// <summary>The write of a build that read nothing, its field unsettled: the dimension keeps what it had, its table brought to it.</summary>
@@ -1405,6 +1416,8 @@ public sealed partial class DimensionRunner
             Records = keepsRecords ? new DimensionRecordsWrite([], []) : null,
             Read = read,
             CompletedUtc = Now,
+            TableTarget = _tableTarget,
+            Secrets = _context.Secrets,
         };
 
     /// <summary>

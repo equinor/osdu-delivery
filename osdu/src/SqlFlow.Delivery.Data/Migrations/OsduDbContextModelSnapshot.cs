@@ -1085,7 +1085,22 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<bool>("Repeats")
                         .HasColumnType("bit");
 
+                    b.Property<string>("TableConnection")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("TableDatabase")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("TableName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long?>("TableRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TableSchema")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
@@ -1795,6 +1810,18 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<string>("SqlHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TableConnection")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("TableDatabase")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("TableSchema")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("TablesJson")
                         .IsRequired()

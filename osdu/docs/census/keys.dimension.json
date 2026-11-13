@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 143,
+  "keyCount": 145,
   "keys": [
     {
       "path": "batch",
@@ -830,19 +830,31 @@
       "path": "target",
       "type": "object",
       "required": false,
-      "description": "Where the pipelines that read the flow's dimension tables and views find them: the module's database, named by the connection those pipelines name it by. With it, the flow's lineage declares that it writes every `osdu.dim_<dimension>` table and every `osdu.v_dim_<view>` view, so a pipeline reading one is ordered after the flow. Required when the flow declares `views`."
+      "description": "Where a build keeps the flow's dimension tables and views (osdu/docs/reference/flow/dimension-target.md): the module's database, in schema `osdu`, when left out. With it, a build writes each table after the dimension's merge commits, on the connection, in the database and in the schema it names, and the flow's lineage declares that it writes every `dim_<dimension>` table and every `v_dim_<view>` view there, so a pipeline reading one is ordered after the flow. The dimensions themselves (keys, values, attributes, changes) stay in the module's database. Names at least one of `connection`, `database` and `schema`."
     },
     {
       "path": "target.connection",
       "type": "string",
-      "required": true,
-      "description": "The module's database, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is one, written exactly as the pipelines reading the tables and views write it: SQLFlow tells two servers apart by the reference as written. A build and a plan open it and ask the server which database it is; one that reaches another database than the module's own is refused before anything is built, naming the reference and never what it resolves to."
+      "required": false,
+      "description": "The server the tables and views are kept on, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is one, written exactly as the pipelines reading them write it: SQLFlow tells two servers apart by the reference as written. Left out, the module's own connection. A build and a plan open it, with the run's references, before anything is built: one that cannot be opened stops the build, naming the reference and never what it resolves to, and one that reaches the module's own database is the module's."
+    },
+    {
+      "path": "target.database",
+      "type": "string",
+      "required": false,
+      "description": "The database on that server the tables and views are kept in, at most 128 characters; left out, the connection's own. With no `connection`, a database on the module's server, reached on the module's own connection. The build's database user needs CREATE TABLE and CREATE VIEW in it."
+    },
+    {
+      "path": "target.schema",
+      "type": "string",
+      "required": false,
+      "description": "The schema the tables and views are kept in: a letter or an underscore, then letters, digits and underscores, at most 128; `osdu` when left out. Made when the database does not hold it. In the module's own database a table is kept in `osdu` only, so another schema there is refused before anything is built."
     },
     {
       "path": "views",
       "type": "list",
       "required": false,
-      "description": "Views over the flow's dimension tables, at most 50, names unique ignoring case. Each puts dimensions of this flow side by side at the grain of one of them (`from`), joined on the keys they share (`join`), with the columns the document lists (`columns`), each an expression converted to a data type. A build writes each as `osdu.v_dim_<name>` after the flow's dimensions, checks it in the run's partition, and drops a view the flow no longer declares. Needs `target.connection`."
+      "description": "Views over the flow's dimension tables, at most 50, names unique ignoring case. Each puts dimensions of this flow side by side at the grain of one of them (`from`), joined on the keys they share (`join`), with the columns the document lists (`columns`), each an expression converted to a data type. A build writes each as `v_dim_<name>`, beside the tables it reads where `target` keeps them (`osdu` in the module's database when it names none), after the flow's dimensions, checks it in the run's partition, and drops a view the flow no longer declares."
     },
     {
       "path": "views[]",
@@ -854,7 +866,7 @@
       "path": "views[].name",
       "type": "string",
       "required": true,
-      "description": "The view's name: a letter, then letters, digits and underscores, at most 64, unique among the views of a database ignoring case. The view is `osdu.v_dim_<name>`. A name another flow's view holds, or an object no build made, is refused when the build writes it."
+      "description": "The view's name: a letter, then letters, digits and underscores, at most 64, unique among the views of a database ignoring case. The view is `v_dim_<name>`, in the target's schema. A name another flow's view holds, or an object no build made, is refused when the build writes it."
     },
     {
       "path": "views[].description",

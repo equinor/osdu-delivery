@@ -753,3 +753,13 @@ rows), and the owner's ruling that a dimension needs no versioning, only its lat
 
 Added decision 0054; amended decision 0011; updated `delivery-flow-dimension`, `delivery-concept-dimension-tables`,
 `delivery-concept-storage-and-retention`, `delivery-cli-dimensions` and the dimension table pages.
+
+## [2026-11-13] ingest | Dimension tables kept where the flow's target says
+
+Source: a storage report of the production database (9.1 GB of dimension storage: 7.2 GB the dimensions' record, 1.7 GB
+the `dim_` tables), and the owner's direction that the materialized table may go to another database named with its
+connection and database, as a second step after the dimension is built, the catalog when nothing is named.
+
+Added decision 0055 and `delivery-flow-dimension-target`; updated `delivery-flow-dimension`,
+`delivery-flow-dimension-views`, `delivery-flow-dimension-errors`, `delivery-concept-lineage`,
+`delivery-concept-storage-and-retention`, `delivery-table-dimension` and `delivery-table-dimension-view`.

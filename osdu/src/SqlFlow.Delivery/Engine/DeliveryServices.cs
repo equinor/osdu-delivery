@@ -313,7 +313,7 @@ public sealed class DeliveryLedgerSource
             if (!_resolved)
             {
                 _factory = _contexts(provider);
-                _ledger = _factory is null ? null : new OsduLedger(_factory, provider.GetRequiredService<TimeProvider>());
+                _ledger = _factory is null ? null : new OsduLedger(_factory, provider.GetRequiredService<TimeProvider>(), provider.GetService<SqlFlow.Core.Secrets.ISecretResolver>());
                 _cache = _factory is null ? null : new OsduCacheStore(_factory);
                 _partitions = _factory is null ? null : new DeliveryPartitionRegistry(_factory);
                 _lineage = _factory is null ? null : new Ordering.SchemaLineageStore(_factory);

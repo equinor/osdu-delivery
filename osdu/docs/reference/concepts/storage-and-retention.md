@@ -107,8 +107,10 @@ their growth is visible even though nothing should remove them.
 **The largest areas are content, not history.** On a working estate the dimensions and the partition cache take most of
 the schema: the dimensions are what the dimension flows publish as they stand now (each build rewrites them), and the
 cache is the reference data the deliveries render against. Neither shrinks by a cleanup. A dimension shrinks when its
-flow declares less, and goes, with its table, when the flow no longer declares it; the cache's history is pruned by its
-own retention, and its current version is as large as the reference data the cache flows capture.
+flow declares less, and goes, with its table, when the flow no longer declares it; a flow can keep its `dim_` tables and
+views in another database by its [target](../flow/dimension-target.md), leaving only the dimensions' record here. The
+cache's history is pruned by its own retention, and its current version is as large as the reference data the cache flows
+capture.
 
 ## What cleans itself
 

@@ -53,6 +53,18 @@ public sealed record DimensionViewWrite
     public required string Actor { get; init; }
 
     public required DateTime Now { get; init; }
+
+    /// <summary>
+    /// Where the views are kept, beside the tables they read: the module's database unless the flow's target names another
+    /// (osdu/docs/reference/flow/dimension-target.md).
+    /// </summary>
+    public DimensionTableTarget TableTarget { get; init; } = DimensionTableTarget.Catalog;
+
+    /// <summary>
+    /// Resolves the target's connection reference as the run resolves every other (the partition's supplied values over the
+    /// node's environment); the host's resolver when null.
+    /// </summary>
+    public SqlFlow.Core.Secrets.ISecretResolver? Secrets { get; init; }
 }
 
 /// <summary>What a build did with one view: written, unchanged or failed, why it failed, and what its check found.</summary>
@@ -98,7 +110,11 @@ public sealed record DimensionViewState(
     DateTime WrittenUtc,
     DateTime CreatedUtc,
     string? Where,
-    IReadOnlyList<string>? GroupBy = null);
+    IReadOnlyList<string>? GroupBy = null)
+{
+    /// <summary>Where the view is kept, beside the tables it reads: the module's database unless its flow's target names another.</summary>
+    public DimensionTableTarget TableTarget { get; init; } = DimensionTableTarget.Catalog;
+}
 
 /// <summary>What a check found of one join: the rows that found their row, those whose value found none, and some of those values.</summary>
 public sealed record DimensionViewJoinCheck(string Alias, string To, string On, long Matched, long Unmatched, IReadOnlyList<string> Examples);
@@ -180,4 +196,14 @@ public sealed record DimensionViewRemoved(string Name, string ViewName, string F
 public sealed record DimensionViewProbe(string Name, IReadOnlyList<string> Problems, IReadOnlyList<string> Notes);
 
 /// <summary>A database as the server names it: its server, its name and when it was made, which tell two databases apart however a connection spells them.</summary>
-public sealed record DatabaseIdentity(string Server, string Database, DateTime CreatedUtc);
+public sealed record DatabaseIdentity(string Server, string Database, DateTime CreatedUtc)
+{
+    /// <summary>Whether <paramref name="other"/> is this database: the same server and name, made at the same moment.</summary>
+    public bool SameAs(DatabaseIdentity other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return string.Equals(Server, other.Server, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Database, other.Database, StringComparison.OrdinalIgnoreCase)
+            && CreatedUtc == other.CreatedUtc;
+    }
+}

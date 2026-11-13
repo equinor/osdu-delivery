@@ -1,16 +1,25 @@
+using SqlFlow.Delivery.Hosting;
+
 namespace SqlFlow.Delivery.Model;
 
 /// <summary>
-/// Where the pipelines that read a dimension flow's tables and views find them
-/// (osdu/docs/reference/flow/dimension-views.md): the module's database, named by the connection a pipeline reading
-/// them names it by, so SQLFlow's lineage orders such a pipeline after the flow. A build checks that it reaches the
-/// module's own database.
+/// Where a dimension flow's tables and views are written (osdu/docs/reference/flow/dimension-target.md): the module's
+/// database unless the flow names another, as a connection, a database on that connection's server, and a schema. A
+/// build merges the dimension in the module's database, then writes its table there. A pipeline reading them names the
+/// same connection, so SQLFlow's lineage orders it after the flow.
 /// </summary>
 /// <param name="Connection">
 /// A <c>${env:NAME}</c> or <c>${keyvault:vault/secret}</c> reference, or a SQL Server connection string whose password is
-/// one, as a delivery flow's <c>source.connection</c> is written; never resolved outside the node that runs the flow.
+/// one, as a delivery flow's <c>source.connection</c> is written; never resolved outside the node that runs the flow. Null
+/// for the module's own connection.
 /// </param>
-public sealed record DimensionTarget(string Connection);
+/// <param name="Database">The database on the connection's server the tables and views go to; null for the connection's own.</param>
+/// <param name="Schema">The schema they go to; null for the module's schema, <c>osdu</c>.</param>
+public sealed record DimensionTarget(string? Connection, string? Database = null, string? Schema = null)
+{
+    /// <summary>The connection reference the tables and views are written on, as a pipeline reading them names it.</summary>
+    public string ConnectionReference => Connection ?? $"${{env:{OsduModuleDatabase.CatalogConnectionVariable}}}";
+}
 
 /// <summary>One join of a view: the column it joins on, the dimension or view it joins to, and the alias the joined columns are read by.</summary>
 /// <param name="On">The column joined on as the document writes it: a column of the view's <c>from</c> dimension, bare, or <c>alias.column</c> of an earlier join.</param>
@@ -87,6 +96,12 @@ public sealed record DimensionViewSpec
 
     /// <summary>The view's name in the module's schema: <c>v_dim_&lt;name&gt;</c>.</summary>
     public string ViewName => Prefix + Name;
+
+    /// <summary>
+    /// Where the view is kept with the tables it reads, as its flow's target declares it (osdu/docs/reference/flow/dimension-target.md):
+    /// the module's database, schema <c>osdu</c>, unless the target names another.
+    /// </summary>
+    public Ledger.DimensionTableTarget Kept { get; init; } = Ledger.DimensionTableTarget.Catalog;
 
     /// <summary>Whether <paramref name="name"/> names a view, a view's column or an alias: a letter, then letters, digits and underscores.</summary>
     public static bool IsName(string? name)

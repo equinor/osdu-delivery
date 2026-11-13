@@ -4628,6 +4628,8 @@
         "typed columns",
         "osdu.v_dim_",
         "target.connection",
+        "target.database",
+        "target.schema",
         "datatype",
         "key_hash",
         "incremental load",
@@ -5009,6 +5011,7 @@
       ],
       "related": [
         "delivery-flow-dimension",
+        "delivery-flow-dimension-target",
         "delivery-concept-dimension-tables",
         "delivery-flow-dimension-views",
         "concept-schema-evolution"
@@ -5018,6 +5021,44 @@
         "osdu/src/SqlFlow.Delivery/Model/DimensionColumnNames.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261001163440_DimensionTables.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-target",
+      "corpus": "reference",
+      "path": "flow/dimension-target.md",
+      "title": "Dimension target (target): the connection, database and schema a dimension flow keeps its tables and views in",
+      "type": "flow-reference",
+      "summary": "Where a dimension flow keeps its dim_ tables and v_dim_ views: another connection, database or schema, written after the merge; dimensions stay in the catalog.",
+      "keywords": [
+        "target",
+        "target.connection",
+        "target.database",
+        "target.schema",
+        "dimension tables in another database",
+        "alternate database",
+        "catalog size",
+        "table step",
+        "table behind",
+        "moving a target"
+      ],
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-table",
+        "delivery-flow-dimension-views",
+        "delivery-concept-dimension-tables",
+        "delivery-concept-lineage",
+        "delivery-concept-storage-and-retention"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.DimensionViews.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261112223514_DimensionTableTargets.cs"
       ]
     },
     {
@@ -5039,7 +5080,7 @@
         "join a view",
         "typed columns",
         "osdu.v_dim_",
-        "target.connection",
+        "target",
         "datatype",
         "conversions",
         "view check",
@@ -5051,6 +5092,7 @@
       ],
       "related": [
         "delivery-flow-dimension",
+        "delivery-flow-dimension-target",
         "delivery-concept-dimension-tables",
         "delivery-cli-dimensions",
         "delivery-guide-dimensions",
@@ -8613,6 +8655,7 @@
       ],
       "related": [
         "delivery-concept-database",
+        "delivery-flow-dimension-target",
         "delivery-concept-dimension-tables",
         "delivery-flow-dimension",
         "delivery-guide-dimensions",
@@ -8626,7 +8669,9 @@
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261112223514_DimensionTableTargets.cs"
       ]
     },
     {
@@ -11820,7 +11865,8 @@
       ],
       "related": [
         "delivery-wiki-0011-dimension-flows",
-        "delivery-wiki-0030-dimension-rows-one-range"
+        "delivery-wiki-0030-dimension-rows-one-range",
+        "delivery-wiki-0055-dimension-tables-kept-where-the-flow-says"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Purge.cs",
@@ -11828,6 +11874,38 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0055-dimension-tables-kept-where-the-flow-says",
+      "corpus": "wiki",
+      "path": "decisions/0055-dimension-tables-kept-where-the-flow-says.md",
+      "title": "Decision 0055: a dimension flow keeps its tables and views where its target says, written after the merge",
+      "type": "decision",
+      "summary": "Why dim_ tables and v_dim_ views may live in another database while the dimension stays in the catalog, and why the table is written after the merge.",
+      "keywords": [
+        "dimension",
+        "target",
+        "target.database",
+        "target.schema",
+        "alternate database",
+        "catalog size",
+        "table step",
+        "storage"
+      ],
+      "related": [
+        "delivery-wiki-0011-dimension-flows",
+        "delivery-wiki-0026-one-database-connection",
+        "delivery-wiki-0054-dimensions-keep-only-their-latest-state"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.DimensionViews.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
       ]
     },
     {

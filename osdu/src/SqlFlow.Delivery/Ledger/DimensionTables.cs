@@ -37,7 +37,8 @@ public sealed record DimensionTableRef(string Name, string KeyColumn, string Val
 
 /// <summary>
 /// The table of a dimension (osdu/docs/reference/flow/dimension-table.md, The dimension's table): the dimension as one table
-/// any SQL client reads and joins on, in the module's schema, named after the dimension. A row per key and value it
+/// any SQL client reads and joins on, in the module's schema unless its flow's target names another database or schema
+/// (<see cref="DimensionTableTarget"/>), named after the dimension. A row per key and value it
 /// collects (one row for a key of a dimension collecting nothing, or collecting no value), with the row's number, the
 /// partition, the key's number, the key exactly as the index holds it, its value, the records of the row, the search
 /// filter finding the key's records, and a column per attribute named as the dimension declares it. The key's column
@@ -46,9 +47,10 @@ public sealed record DimensionTableRef(string Name, string KeyColumn, string Val
 /// </summary>
 /// <remarks>
 /// <para>
-/// A build makes the table and keeps it: it writes the rows in the transaction that writes the rest of the dimension, so
-/// the table is never behind it, and it writes only what differs from the rows the table held, so a row keeps its number
-/// for as long as the dimension holds it.
+/// A build makes the table and keeps it: once the rest of the dimension is written, it brings the table to the rows that
+/// write laid out, in a transaction of the database the table is kept in, and writes only what differs from the rows the
+/// table held, so a row keeps its number for as long as the dimension holds it. The ledger records the build whose rows
+/// the table holds, so a build after one whose table write did not complete lays out every key and the table catches up.
 /// </para>
 /// <para>
 /// The table's schema follows the declaration through SQLFlow's schema evolution, the same that widens an ingestion
@@ -118,11 +120,11 @@ public static class DimensionTables
             [.. attributes.Select(a => new DimensionTableColumn(a.Name, a.IsCollected)), .. fields.Select(f => new DimensionTableColumn(f.Name, false, Element: true))]);
     }
 
-    /// <summary>A table's name with its schema, as a statement names it: <c>[osdu].[dim_...]</c>.</summary>
-    public static string Qualified(string name) => $"[{DeliveryModel.SchemaName}].{Quoted(name)}";
+    /// <summary>A table's name in the module's schema, as a statement names it: <c>[osdu].[dim_...]</c>.</summary>
+    public static string Qualified(string name) => DimensionTableTarget.Catalog.Qualified(name);
 
-    /// <summary>A table's name as a person types it: <c>osdu.dim_...</c>, which needs no quoting.</summary>
-    public static string Shown(string name) => $"{DeliveryModel.SchemaName}.{name}";
+    /// <summary>A table's name in the module's schema as a person types it: <c>osdu.dim_...</c>, which needs no quoting.</summary>
+    public static string Shown(string name) => DimensionTableTarget.Catalog.Shown(name);
 
     /// <summary>
     /// The columns <paramref name="table"/> is to have, which SQLFlow's schema evolution brings the table to: the fixed
@@ -171,10 +173,11 @@ public static class DimensionTables
     /// <c>id</c> stays, nonclustered. An index follows a column that is renamed, so each is named after what its column is
     /// for, not after the column. The statement runs under the table's lock, so two builds never lay a table out at once.
     /// </summary>
-    internal static string IndexSql(DimensionTableSpec spec)
+    internal static string IndexSql(DimensionTableSpec spec, DimensionTableTarget target)
     {
         ArgumentNullException.ThrowIfNull(spec);
-        var table = Qualified(spec.Name);
+        ArgumentNullException.ThrowIfNull(target);
+        var table = target.Qualified(spec.Name);
         var literal = table.Replace("'", "''", StringComparison.Ordinal);
         var key = ("PK_" + spec.Name).Replace("'", "''", StringComparison.Ordinal);
         return $"""
@@ -195,14 +198,15 @@ public static class DimensionTables
             END;
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_value')
                 CREATE INDEX [IX_value] ON {table} ([partition], {Quoted(spec.ValueColumn)}, [id]);
-            {KeyHashIndexSql(spec.Name)}
+            {KeyHashIndexSql(spec.Name, target)}
             """;
     }
 
     /// <summary>The index a view's join finds a key's row by, made when the table has none of the name.</summary>
-    internal static string KeyHashIndexSql(string name)
+    internal static string KeyHashIndexSql(string name, DimensionTableTarget target)
     {
-        var table = Qualified(name);
+        ArgumentNullException.ThrowIfNull(target);
+        var table = target.Qualified(name);
         var literal = table.Replace("'", "''", StringComparison.Ordinal);
         return $"""
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key_hash')
@@ -216,10 +220,13 @@ public static class DimensionTables
     /// as the table names it now. One partition's rows are reached by a seek of the partition, so no other partition's rows
     /// are read; every index of the table leads with it.
     /// </summary>
-    internal static string FillKeyHashSql(string table, string keyColumn, bool onePartition)
-        => onePartition
-            ? $"UPDATE t SET t.[{KeyHashColumn}] = {KeyHash("t." + Quoted(keyColumn))} FROM {Qualified(table)} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[{KeyHashColumn}] IS NULL;"
-            : $"UPDATE {Qualified(table)} SET [{KeyHashColumn}] = {KeyHash(Quoted(keyColumn))} WHERE [{KeyHashColumn}] IS NULL;";
+    internal static string FillKeyHashSql(string table, string keyColumn, bool onePartition, DimensionTableTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return onePartition
+            ? $"UPDATE t SET t.[{KeyHashColumn}] = {KeyHash("t." + Quoted(keyColumn))} FROM {target.Qualified(table)} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[{KeyHashColumn}] IS NULL;"
+            : $"UPDATE {target.Qualified(table)} SET [{KeyHashColumn}] = {KeyHash(Quoted(keyColumn))} WHERE [{KeyHashColumn}] IS NULL;";
+    }
 
     /// <summary>The hash of a key's text, as a view's join computes the hash of the value it joins on.</summary>
     internal static string KeyHash(string keySql) => $"CAST(HASHBYTES('SHA2_256', {keySql}) AS binary(32))";
@@ -298,11 +305,12 @@ public static class DimensionTables
     /// rewrote and added to <c>@changed</c> (an output), which the write raises the table's version by
     /// (<c>DeliveryDimension.TableVersion</c>).
     /// </summary>
-    internal static string ApplySql(DimensionTableSpec table, IReadOnlyCollection<string> retired)
+    internal static string ApplySql(DimensionTableSpec table, IReadOnlyCollection<string> retired, DimensionTableTarget kept)
     {
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(retired);
-        var target = Qualified(table.Name);
+        ArgumentNullException.ThrowIfNull(kept);
+        var target = kept.Qualified(table.Name);
         var key = Quoted(table.KeyColumn);
         var value = Quoted(table.ValueColumn);
         var attributes = table.Columns.Select((column, index) => (Column: Quoted(column.Name), Slot: $"[{Slot(index + 1)}]", column.Collected)).ToList();
@@ -383,7 +391,7 @@ public static class DimensionTables
 
         sql.Append(CultureInfo.InvariantCulture,
             $"\nFROM #DimRow AS s\nWHERE NOT EXISTS (SELECT 1 FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND {same})\nORDER BY s.[Value], s.[Key], {(table.HasElements ? "s.[Element]" : "s.[Part]")};\nSET @changed += @@ROWCOUNT;");
-        sql.Append("\n\n").Append(FillKeyHashSql(table.Name, table.KeyColumn, onePartition: true));
+        sql.Append("\n\n").Append(FillKeyHashSql(table.Name, table.KeyColumn, onePartition: true, kept));
         return sql.ToString();
     }
 

@@ -31,10 +31,10 @@ public sealed record DimensionFlowDocument : RegisteredFlowDocument
 
     public override string? TargetReference => DimensionsTarget;
 
-    /// <summary>The connection a flow naming <c>target.connection</c> writes its dimension tables and views on, so its
-    /// pipeline names that server as its target (the connections page counts it, and a run's statements are attributed
-    /// there); none for a flow that names no target.</summary>
-    public override string? TargetConnectionReference => Flow.Target?.Connection;
+    /// <summary>The connection a flow naming a <c>target</c> writes its dimension tables and views on (the module's own
+    /// when it names a database or a schema alone), so its pipeline names that server as its target (the connections page
+    /// counts it, and a run's statements are attributed there); none for a flow that names no target.</summary>
+    public override string? TargetConnectionReference => Flow.Target?.ConnectionReference;
 
     public override IEnumerable<KeyValuePair<string, string>> CredentialReferences => Flow.CredentialReferences();
 

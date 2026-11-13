@@ -207,13 +207,13 @@ export function ViewJoins({ view, verdicts, onOpenDimension }: {
       render: (row) => (
         <span className="flex items-baseline gap-2">
           {row.alias === row.to
-            ? <DimensionName name={row.to} table={row.table} onOpen={onOpenDimension} strong />
+            ? <DimensionName name={row.to} table={tableObject(row.table, view.kept)} onOpen={onOpenDimension} strong />
             : (
               <>
-                <RichTooltip title="Joins" body={`${row.to} (${tableObject(row.table)})`} mono>
+                <RichTooltip title="Joins" body={`${row.to} (${tableObject(row.table, view.kept)})`} mono>
                   <span className="font-mono text-[12px] font-medium">{row.alias}</span>
                 </RichTooltip>
-                <span className="hidden text-muted-foreground @4xl/joins:inline"><DimensionName name={row.to} table={row.table} onOpen={onOpenDimension} /></span>
+                <span className="hidden text-muted-foreground @4xl/joins:inline"><DimensionName name={row.to} table={tableObject(row.table, view.kept)} onOpen={onOpenDimension} /></span>
               </>
             )}
         </span>
@@ -239,7 +239,7 @@ export function ViewJoins({ view, verdicts, onOpenDimension }: {
       <p className="flex flex-wrap items-baseline gap-x-1.5 text-[12.5px] text-muted-foreground">
         <span>{view.groupBy?.length ? "A row for each group of the rows of" : "A row for each row of"}</span>
         <DimensionName name={view.from} onOpen={onOpenDimension} />
-        <span className="font-mono text-[11.5px]">{tableObject(view.tables[0] ?? `dim_${view.from}`)}</span>
+        <span className="font-mono text-[11.5px]">{tableObject(view.tables[0] ?? `dim_${view.from}`, view.kept)}</span>
         {view.where ? (
           <>
             <span>where</span>
@@ -425,7 +425,7 @@ function declaredEntries(view: DeliveryDimensionView, verdicts: readonly Deliver
     key: "from",
     kind: "from",
     name: view.from,
-    makes: `a row for each row of ${tableObject(view.tables[0] ?? `dim_${view.from}`)}`,
+    makes: `a row for each row of ${tableObject(view.tables[0] ?? `dim_${view.from}`, view.kept)}`,
     found: check?.status === "passed" ? { text: counted(rows, "row"), warn: false } : null,
   }];
   view.joins.forEach((join, index) => {

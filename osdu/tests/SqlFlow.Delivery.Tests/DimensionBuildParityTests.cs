@@ -60,7 +60,7 @@ public sealed class DimensionBuildParityTests : IDisposable
     /// <summary>The columns holding the number of a build, written as the build's place among the dimension's builds.</summary>
     private static readonly HashSet<string> BuildColumns = new(StringComparer.Ordinal)
     {
-        "DimensionRunId", "FirstSeenRunId", "RemovedRunId", "MemberSinceRunId", "LastRunId", "LastFullRunId",
+        "DimensionRunId", "FirstSeenRunId", "RemovedRunId", "MemberSinceRunId", "LastRunId", "LastFullRunId", "TableRunId",
     };
 
     private static readonly JsonSerializerOptions Readable = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

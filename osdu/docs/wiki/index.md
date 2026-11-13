@@ -270,6 +270,9 @@ other packages adopt the same contract.
 - [0054: a dimension keeps only its latest state, and its change log keeps what left](decisions/0054-dimensions-keep-only-their-latest-state.md):
   why the next build deletes what a build removed, a few keys a round before it merges, why the removed mark still lasts
   one build, and why each change keeps its key's and values' text.
+- [0055: a dimension flow keeps its tables and views where its target says, written after the merge](decisions/0055-dimension-tables-kept-where-the-flow-says.md):
+  why a dimension's `dim_` table and its flow's views may live on another connection, database or schema while the
+  dimension stays in the catalog, why the table is a second step after the merge, and why a moved target leaves nothing.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

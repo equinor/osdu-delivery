@@ -341,6 +341,7 @@ public sealed class DeliveryDimensionApiTests
             var tableName = "osdu.dim_" + wellboreName;
             var wellbore = (await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}")).GetProperty("dimension");
             Assert.Equal(JsonValueKind.Null, wellbore.GetProperty("table").ValueKind);
+            Assert.Equal("osdu", wellbore.GetProperty("kept").GetString());
             Assert.Equal(("WellboreID", "FacilityName"), (wellbore.GetProperty("keyColumn").GetString(), wellbore.GetProperty("valueColumn").GetString()));
             var curves = (await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{dimensionId}")).GetProperty("dimension");
             Assert.Equal(("Mnemonic", "CurveMnemonic"), (curves.GetProperty("keyColumn").GetString(), curves.GetProperty("valueColumn").GetString()));

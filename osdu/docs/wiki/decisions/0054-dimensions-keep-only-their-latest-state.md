@@ -25,6 +25,7 @@ referenceRefs:
 related:
   - delivery-wiki-0011-dimension-flows
   - delivery-wiki-0030-dimension-rows-one-range
+  - delivery-wiki-0055-dimension-tables-kept-where-the-flow-says
 updated: 2026-11-12
 ---
 # 0054: A dimension keeps only its latest state, and its change log keeps what left

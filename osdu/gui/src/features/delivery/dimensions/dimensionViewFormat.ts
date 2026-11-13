@@ -77,14 +77,17 @@ export function viewStandingOf(view: DeliveryDimensionView): ViewStanding {
   return view.changed ? "changed" : "written";
 }
 
-/** What a view stands for in the database: its name in the module's schema. */
-export function viewObject(view: { viewName: string }): string {
-  return `osdu.${view.viewName}`;
+/** Where a view and the tables it reads are kept when nothing says otherwise: the module's schema. */
+const MODULE_SCHEMA = "osdu";
+
+/** What a view stands for in the database: its name where its flow keeps it (`osdu.v_dim_Curve`, `Dimensions.dim.v_dim_Curve`). */
+export function viewObject(view: { viewName: string; kept?: string | null }): string {
+  return `${view.kept ?? MODULE_SCHEMA}.${view.viewName}`;
 }
 
-/** A dimension table as a person types it. */
-export function tableObject(table: string): string {
-  return table.includes(".") ? table : `osdu.${table}`;
+/** A dimension table as a person types it, kept where `kept` says (the module's schema when it says nothing). */
+export function tableObject(table: string, kept?: string | null): string {
+  return table.includes(".") ? table : `${kept ?? MODULE_SCHEMA}.${table}`;
 }
 
 /** An instant as a tooltip says it: to the minute, in UTC. */
@@ -173,6 +176,8 @@ export function declaredOf(target: string): string | null {
 export interface RunView {
   view: string;
   viewName: string;
+  /** Where the view is kept, as a person types it before its name; null in a result written before runs said so. */
+  kept: string | null;
   /** `written`, `unchanged` or `failed` for a build; null for a plan, which writes nothing. */
   status: "written" | "unchanged" | "failed" | null;
   error: string | null;
@@ -212,6 +217,7 @@ export function runViewsOf(result: Record<string, unknown> | null): { views: Run
     return {
       view: text(entry.view) ?? "",
       viewName: text(entry.viewName) ?? "",
+      kept: text(entry.kept),
       status,
       error: text(entry.error),
       check,

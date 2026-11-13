@@ -71,9 +71,10 @@ public static class DimensionLineage
     }
 
     /// <summary>
-    /// The database objects the flow writes (osdu/docs/reference/flow/dimension-views.md): each
-    /// dimension's table and each view, in the module's schema, on the connection <c>target.connection</c> names, so a
-    /// pipeline reading either through the same reference is ordered after the flow. A flow naming no target declares none.
+    /// The database objects the flow writes (osdu/docs/reference/flow/dimension-target.md): each dimension's table and each
+    /// view, in the target's database and schema, on the connection the target names (the module's own when it names a
+    /// database or a schema alone), so a pipeline reading either through the same reference is ordered after the flow. A
+    /// flow naming no target declares none.
     /// </summary>
     private static List<DeclaredDataObject> Objects(DimensionFlowDefinition flow)
     {
@@ -88,8 +89,9 @@ public static class DimensionLineage
             .Select(table => new DeclaredDataObject
             {
                 Relation = LineageRelation.Writes,
-                ConnectionReference = target.Connection,
-                Schema = DeliveryModel.SchemaName,
+                ConnectionReference = target.ConnectionReference,
+                Database = target.Database,
+                Schema = target.Schema ?? DeliveryModel.SchemaName,
                 Name = table,
                 Kind = LineageNodeKind.Table,
             })
@@ -97,8 +99,9 @@ public static class DimensionLineage
         objects.AddRange(flow.Views.Select(view => new DeclaredDataObject
         {
             Relation = LineageRelation.Writes,
-            ConnectionReference = target.Connection,
-            Schema = DeliveryModel.SchemaName,
+            ConnectionReference = target.ConnectionReference,
+            Database = target.Database,
+            Schema = target.Schema ?? DeliveryModel.SchemaName,
             Name = view.ViewName,
             Kind = LineageNodeKind.View,
         }));

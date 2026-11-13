@@ -106,7 +106,19 @@ public static partial class IngestionConnection
             throw new DeliveryException($"Flow '{flowName}': the source connection reference could not be resolved on this node: {SecretHygiene.RedactedMessage(ex.Message)}", ex);
         }
 
-        var connection = new SqlConnection(Canonicalize(resolved, flowName))
+        return await OpenResolvedAsync(Canonicalize(resolved, flowName), flowName, "source", ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Opens a connection string already resolved and canonicalized, retrying the open on the transient errors Azure SQL
+    /// raises while a database scales or fails over; <paramref name="what"/> names the database in a failure ("source").
+    /// The caller owns the connection.
+    /// </summary>
+    public static async Task<SqlConnection> OpenResolvedAsync(string connectionString, string flowName, string what, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(what);
+        var connection = new SqlConnection(connectionString)
         {
             RetryLogicProvider = SqlConfigurableRetryFactory.CreateExponentialRetryProvider(new SqlRetryLogicOption
             {
@@ -124,7 +136,15 @@ public static partial class IngestionConnection
         catch (SqlException ex)
         {
             await connection.DisposeAsync().ConfigureAwait(false);
-            throw new DeliveryException($"Flow '{flowName}': the source database could not be opened (SQL error {ex.Number}): {SecretHygiene.RedactedMessage(ex.Message)}", ex);
+            throw new DeliveryException($"Flow '{flowName}': the {what} database could not be opened (SQL error {ex.Number}): {SecretHygiene.RedactedMessage(ex.Message)}", ex);
+        }
+        catch (AggregateException ex) when (ex.InnerExceptions.Count > 0 && ex.InnerExceptions[^1] is SqlException last)
+        {
+            // The retry logic gave up on an error it retries: it throws every attempt's, and the last says why.
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw new DeliveryException(
+                $"Flow '{flowName}': the {what} database could not be opened after {ex.InnerExceptions.Count} attempts (SQL error {last.Number}): {SecretHygiene.RedactedMessage(last.Message)}",
+                ex);
         }
         catch
         {
