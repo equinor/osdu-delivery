@@ -106,6 +106,65 @@ public sealed class ExplorerReferencesTests : IDisposable
     }
 
     [Fact]
+    public async Task The_kinds_are_listed_without_reading_a_schema_the_partitions_own_naming_no_group_among_them_and_kept_until_due()
+    {
+        const string Completion = "acme:wells:Completion:1.0.0";
+        Partition();
+        _platform.Schemas[Completion] = Kind(data: Data(("WellboreID", Rel("master-data", "Wellbore"))));
+        _platform.SchemaInfos[Completion] = ("DEVELOPMENT", "INTERNAL");
+        var index = Index();
+
+        await index.EnsureKinds(Open(), refresh: false)!;
+
+        var view = index.KindsView();
+        Assert.Equal(SchemaKindsView.Ready, view.State);
+        // Every kind records can be of, the abstract building blocks left out, each in its status and scope; no schema read.
+        Assert.Equal(
+            [Completion, CustomWellbore, Well10, Wellbore10, Wellbore11, TrajectoryType10, WellLog10],
+            view.Last!.Kinds.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(("DEVELOPMENT", "INTERNAL"), (view.Last.Kinds[Completion].Status, view.Last.Kinds[Completion].Scope));
+        Assert.Equal(11, view.Last.Listed);
+        Assert.All(_platform.Schemas.Keys, id => Assert.Equal(0, _platform.SchemaReads(id)));
+        Assert.Equal(6, _platform.SchemaListings().Count);
+
+        // A listing stands until it is due, or a reader asks for one.
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.Null(index.EnsureKinds(Open(), refresh: false));
+        _platform.Schemas["acme:wells:SurveyRun:1.0.0"] = Kind(data: Data());
+        await index.EnsureKinds(Open(), refresh: true)!;
+        Assert.Contains("acme:wells:SurveyRun:1.0.0", index.KindsView().Last!.Kinds.Keys);
+        _clock.Advance(PartitionSchemaIndex.KindsMaxAge + TimeSpan.FromSeconds(1));
+        Assert.NotNull(index.EnsureKinds(Open(), refresh: false));
+
+        // The pass reading every schema reads the partition's own kind too, so it is among the types naming a wellbore.
+        await index.Ensure(Open(), refresh: false)!;
+        var wellbore = ExplorerReferences.Of("master-data--Wellbore", index.View());
+        Assert.Contains(wellbore.Types, t => t.EntityType == "Completion" && t.Kinds.Single().Kind == Completion);
+    }
+
+    [Fact]
+    public async Task A_listing_of_the_kinds_the_service_refuses_says_why_and_is_not_retried_by_every_ask()
+    {
+        Partition();
+        foreach (var status in SchemaServiceReader.Statuses)
+        {
+            foreach (var scope in SchemaServiceReader.Scopes)
+            {
+                _platform.SchemaListingRefusals[$"{status} {scope}"] = HttpStatusCode.Forbidden;
+            }
+        }
+
+        var index = Index();
+        await index.EnsureKinds(Open(), refresh: false)!;
+
+        var view = index.KindsView();
+        Assert.Equal((SchemaKindsView.Failed, (SchemaKindsListing?)null), (view.State, view.Last));
+        Assert.False(string.IsNullOrEmpty(view.Problem));
+        Assert.Null(index.EnsureKinds(Open(), refresh: false));
+        Assert.Equal(SchemaKindsView.Failed, ExplorerSchemas.Of(view).State);
+    }
+
+    [Fact]
     public async Task A_pass_after_the_first_reads_only_the_kinds_added_and_those_in_development_and_drops_those_no_longer_listed()
     {
         Partition();

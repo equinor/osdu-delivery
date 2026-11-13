@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Download, ExternalLink, FlaskConical, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
+import { Download, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,10 +16,11 @@ import { IconAction } from "@/components/IconAction";
 import { LinkRef } from "@/components/LinkRef";
 import { RelativeTime } from "@/components/RelativeTime";
 import { SearchInput } from "@/components/SearchInput";
-import { StatePill } from "@/components/StatusBadge";
+import { explorerApi } from "../../api/explorer";
+import { useActivePartition } from "./activePartition";
 import { DimensionGrid } from "./dimensions/DimensionGrid";
-import { KindText } from "./KindText";
 import { TemplateCompareSheet, type CompareStart } from "./TemplateCompareSheet";
+import { BrowseSourcePicker, KindStatusCell, PartitionSchemaBrowse, type BrowseSource } from "./TemplatesPartitionBrowse";
 import { kindStem, osduTemplateFileQuery, templateFileName } from "./templateFormat";
 import { problemText } from "./problemText";
 import { ProblemView, TaskProgress, TemplateSheet } from "./TemplateSheet";
@@ -39,30 +40,6 @@ interface Viewing {
   kind: string;
 }
 
-/**
- * A schema's kind, and its status after it when that is not the usual one: a published schema says nothing, one in
- * development or obsolete stands out beside its kind.
- */
-function KindStatusCell({ schema }: { schema: DeliveryOsduSchema }) {
-  const usual = schema.status === null || schema.status === "PUBLISHED";
-  const obsolete = schema.status === "OBSOLETE";
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="min-w-0 shrink"><KindText kind={schema.kind} /></span>
-      {!usual && (
-        <span className="shrink-0">
-          <StatePill
-            tone={obsolete ? "muted" : "warning"}
-            label={obsolete ? "Obsolete" : schema.status === "DEVELOPMENT" ? "In development" : schema.status ?? ""}
-            icon={obsolete ? Archive : FlaskConical}
-            testId={`templates-browse-status-${schema.kind}`}
-          />
-        </span>
-      )}
-    </span>
-  );
-}
-
 /** A link out to the data definitions repository, opening in a new tab. */
 function RepositoryLink({ href, children, testId }: { href: string; children: ReactNode; testId: string }) {
   return (
@@ -76,13 +53,35 @@ function RepositoryLink({ href, children, testId }: { href: string; children: Re
 }
 
 /**
- * Browse OSDU: the OSDU data definitions, the Open Group's public repository of OSDU schemas and the canonical source of
- * every OSDU kind. Pick a release (the newest by default), find a kind with one search, look at it laid out as a template,
- * and download it as the file a repository's template folder keeps: committed beside the documents that fill it, the
+ * Browse OSDU: the schemas a template is made from, read from either of two places. The OSDU data definitions, the Open
+ * Group's public repository and the canonical source of every OSDU kind, release by release; or the Schema service of the
+ * partition picked in the title bar, which holds the platform's kinds and the partition's own custom ones, registered
+ * there and published nowhere else. The partition is offered when the title bar names one the control plane can read.
+ */
+export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
+  const [active] = useActivePartition();
+  const connection = useQuery({
+    queryKey: ["explorer", "connection", active],
+    queryFn: () => explorerApi.connection(active),
+    staleTime: 60_000,
+    enabled: canOperate,
+  });
+  const partition = canOperate && connection.data?.available === true ? connection.data.partition : null;
+  const [source, setSource] = useState<BrowseSource>("definitions");
+  const picker = partition === null ? null : <BrowseSourcePicker value={source} onChange={setSource} partition={partition} />;
+  return partition !== null && source === "partition"
+    ? <PartitionSchemaBrowse key={partition} partition={partition} sourcePicker={picker} />
+    : <DefinitionsBrowse canOperate={canOperate} sourcePicker={picker} />;
+}
+
+/**
+ * The OSDU data definitions, the Open Group's public repository of OSDU schemas and the canonical source of every OSDU
+ * kind. Pick a release (the newest by default), find a kind with one search, look at it laid out as a template, and
+ * download it as the file a repository's template folder keeps: committed beside the documents that fill it, the
  * repository's next sync records it. The control plane reads the repository; the schemas are public, so no flow,
  * credential or node is involved, and nothing is kept.
  */
-export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
+function DefinitionsBrowse({ canOperate, sourcePicker }: { canOperate: boolean; sourcePicker: ReactNode }) {
   const queryClient = useQueryClient();
   const [pickedRelease, setPickedRelease] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -208,7 +207,7 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
 
   // A row opens its kind laid out as a template; the glyphs at its end do the rest, each named on hover.
   const columns: Column<BrowseRow>[] = [
-    { id: "kind", header: "Kind", fill: true, floor: 200, render: (row) => <KindStatusCell schema={row.schema} /> },
+    { id: "kind", header: "Kind", fill: true, floor: 200, render: (row) => <KindStatusCell kind={row.schema.kind} status={row.schema.status} /> },
     ...(allVersions ? [] : [{
       id: "versions",
       header: "Versions",
@@ -291,6 +290,7 @@ export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
             className="sm:w-80"
             testId="templates-browse-search"
           />
+          {sourcePicker}
           <div className="flex items-center gap-2">
             <Label htmlFor="templates-browse-release" className="text-[13px] font-normal text-muted-foreground">Release</Label>
             <Select value={release ?? ""} onValueChange={setPickedRelease} disabled={releases.data === undefined}>

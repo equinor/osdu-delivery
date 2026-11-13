@@ -103,16 +103,76 @@ export interface ExplorerPage {
   refusal?: string | null;
 }
 
+/** A schema's status in the Schema service. */
+export type ExplorerSchemaStatus = "PUBLISHED" | "DEVELOPMENT" | "OBSOLETE";
+
+/** A schema's scope in the Schema service: the partition's own, or the platform's. */
+export type ExplorerSchemaScope = "INTERNAL" | "SHARED";
+
+/**
+ * A kind in the list of types, with how many records the search finds of it: none for a kind the Schema service lists that
+ * holds no record the connection may read. Its schema's status and scope are left out where the service lists no schema
+ * of it (records of a kind never registered) or was not listed.
+ */
+export interface ExplorerKindCount {
+  kind: string;
+  count: number;
+  status?: ExplorerSchemaStatus | null;
+  scope?: ExplorerSchemaScope | null;
+}
+
+/** Where the listing of the partition's schemas stands: `reading` while the first is made, `failed` with why. */
+export interface ExplorerSchemaListing {
+  state: "reading" | "ready" | "failed";
+  readUtc?: string | null;
+  problem?: string | null;
+}
+
 export interface ExplorerTypes {
   reading: ExplorerReading;
   query: string | null;
   total: number;
-  kinds: { kind: string; count: number }[];
-  /** What the kinds add up to: less than the total when the service named fewer groups than there are. */
+  /** With no text and no condition, every kind the Schema service lists is here too, with no records where the search finds none. */
+  kinds: ExplorerKindCount[];
+  /** What the kinds add up to: less than the total when records are of kinds neither the search's groups nor the schemas named. */
   listed: number;
   notes: string[];
   /** The search service's words when it refused the query; left out of the answer when it did not, as every null is. */
   refusal?: string | null;
+  /** The listing of the partition's schemas the kinds are completed from, and how many kinds it holds. */
+  schemas?: (ExplorerSchemaListing & { kinds: number }) | null;
+}
+
+/** A kind the partition's Schema service lists, whether or not any record is of it. */
+export interface ExplorerSchemaKind {
+  kind: string;
+  authority: string;
+  source: string;
+  entityType: string;
+  version: string;
+  status: ExplorerSchemaStatus;
+  scope: ExplorerSchemaScope;
+}
+
+/** The kinds the partition's Schema service lists, every status and scope, from the listing the control plane keeps. */
+export interface ExplorerSchemas extends ExplorerSchemaListing {
+  /** How many schemas the service listed, the abstract ones no record is of included. */
+  listed: number;
+  kinds: ExplorerSchemaKind[];
+  notes: string[];
+}
+
+/** A kind's schema as the partition's Schema service holds it, bundled, as the file a repository's template folder keeps. */
+export interface ExplorerSchemaFile {
+  kind: string;
+  status?: ExplorerSchemaStatus | null;
+  scope?: ExplorerSchemaScope | null;
+  /** The file's text: the bundled schema, indented. */
+  file: string;
+  /** The schema ids read: the kind's, then each it refers to. */
+  read: string[];
+  /** The references left as they were, each with why. */
+  unresolved: string[];
 }
 
 /**
@@ -167,9 +227,26 @@ export const explorerApi = {
   /** How the partition is reached; the workbench's when none is named. */
   connection: (partition: string | null) =>
     get<ExplorerConnection>("/api/v1/delivery/explorer/connection", partition === null ? {} : { partition }),
-  /** The count of the records a search finds, kind by kind. */
-  types: (partition: string | null, request: ExplorerSearchRequest) =>
-    post<ExplorerAnswer<ExplorerTypes>>(`/api/v1/delivery/explorer/types${partitionQuery(partition)}`, request),
+  /**
+   * The count of the records a search finds, kind by kind, completed from the kinds the partition's Schema service lists;
+   * `refresh` lists them again first.
+   */
+  types: (partition: string | null, request: ExplorerSearchRequest, refresh = false) =>
+    post<ExplorerAnswer<ExplorerTypes>>(
+      `/api/v1/delivery/explorer/types${partitionQuery(partition)}${refresh ? `${partition === null ? "?" : "&"}refresh=true` : ""}`, request),
+  /**
+   * The kinds the partition's Schema service lists, every status and scope, whether or not any record is of them; `refresh`
+   * lists them again. While the first listing is made, the answer says so and holds none.
+   */
+  schemas: async (partition: string | null, refresh = false) => {
+    const answered = await post<ExplorerAnswer<ExplorerSchemas>>(`/api/v1/delivery/explorer/schemas${partitionQuery(partition)}`, { refresh });
+    return { ...answered, answer: { ...answered.answer, kinds: answered.answer.kinds ?? [], notes: answered.answer.notes ?? [] } };
+  },
+  /** One kind's schema as the partition's Schema service holds it, bundled, as the file a template folder keeps. */
+  schema: async (partition: string | null, kind: string) => {
+    const answered = await post<ExplorerAnswer<ExplorerSchemaFile>>(`/api/v1/delivery/explorer/schema${partitionQuery(partition)}`, { kind });
+    return { ...answered, answer: { ...answered.answer, read: answered.answer.read ?? [], unresolved: answered.answer.unresolved ?? [] } };
+  },
   /** One page of the records a search finds. */
   search: (partition: string | null, request: ExplorerSearchRequest) =>
     post<ExplorerAnswer<ExplorerPage>>(`/api/v1/delivery/explorer/search${partitionQuery(partition)}`, request),

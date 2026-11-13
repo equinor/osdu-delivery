@@ -28,7 +28,7 @@ import { ExplorerProblem } from "./ExplorerProblem";
 import { ExplorerReferencesDialog } from "./ExplorerReferences";
 import { ExplorerValidateDialog } from "./ExplorerValidation";
 import { ReadingBar } from "./ReadingBar";
-import { counted, fieldLabel, kindParts, sameFilter, SORT_LABELS, type ExplorerScope } from "./explorerModel";
+import { counted, fieldLabel, isNamespace, kindParts, sameFilter, scopeKind, SORT_LABELS, typeScopeOf, type ExplorerScope } from "./explorerModel";
 import { termOf, termSource, useSearchTerms } from "./explorerTerms";
 
 /** How a search was read, as a word after the count; nothing for the plain cases. */
@@ -128,12 +128,18 @@ export function ScopeCrumbs({ partition, scope, onScope, last = true }: {
   if (scope.level === "group") {
     steps.push({ label: scope.group, scope });
   } else if (scope.level === "type" || scope.level === "kind") {
-    const parts = kindParts(scope.level === "type" ? `*:*:${scope.entityType}:*` : scope.kind);
-    if (parts.group !== "") {
-      steps.push({ label: parts.group, scope: { level: "group", group: parts.group } });
+    // A type naming no group sits in its namespace (authority:source), as the list of types shows it.
+    const typeScope = scope.level === "type" ? scope : typeScopeOf(scope.kind);
+    const parts = kindParts(scopeKind(scope) ?? "");
+    const group = parts.group !== "" ? parts.group : typeScope.level === "type" ? typeScope.namespace : undefined;
+    if (group !== undefined) {
+      steps.push({ label: group, scope: { level: "group", group }, mono: isNamespace(group) });
     }
 
-    steps.push({ label: parts.type, scope: { level: "type", entityType: parts.entityType } });
+    if (typeScope.level === "type") {
+      steps.push({ label: parts.type, scope: typeScope });
+    }
+
     if (scope.level === "kind") {
       steps.push({ label: `${parts.version} ${parts.authority}:${parts.source}`, scope, mono: true });
     }

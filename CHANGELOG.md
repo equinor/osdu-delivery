@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The explorer lists every type the partition holds, its own custom ones among them.** The type list was the search
+  service's groups of `kind`, at most 1,000 and the largest first, so a partition's own kinds, and any kind with no record
+  the connection may read, were missing. It is now completed from the partition's Schema service (every status and scope,
+  listed once and kept ten minutes, the refresh icon lists it again): a kind registered with no records is a quiet row of
+  none, the kinds the groups left out are counted apart, and a type naming no group (`acme:wells:Completion:1.0.0`) sits
+  in a group of its authority and source that can be picked like any other
+  ([where the types come from](osdu/docs/reference/concepts/explorer.md#where-the-types-come-from)).
+- **Templates, Browse OSDU, reads the partition's Schema service too.** Beside the OSDU data definitions, the partition
+  in the title bar lists every schema registered there, its custom ones among them (**Custom only**), each laid out as a
+  template and downloaded as a template file (`POST /api/v1/delivery/explorer/schemas`, `POST /api/v1/delivery/explorer/schema`;
+  [the partition's Schema service](osdu/docs/reference/concepts/templates.md#the-partitions-schema-service)).
 - **Every run says what started it.** A schedule on its own, a schedule after the schedule it chains behind (naming the
   parent fire it followed), a person or API client, an external trigger, or the command line: the runs board has a
   Started by column and filter, a run's and a run group's page say it under the title, a chained run's page lists the

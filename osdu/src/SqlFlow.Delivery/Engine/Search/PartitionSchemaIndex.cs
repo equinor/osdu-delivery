@@ -89,6 +89,11 @@ public sealed class SchemaIndexConnection : IDisposable
 /// A listing the service refuses as asked (400, a status or scope it does not know) is noted; any other refusal fails the
 /// pass. The log has one line for each pass, never one for each schema.
 /// </para>
+/// <para>
+/// Apart from the passes, the index keeps the listing alone (<see cref="EnsureKinds"/>): every kind the service lists, read
+/// in a few requests and never a schema's content, which the explorer's types and the Templates page list the partition's
+/// kinds from.
+/// </para>
 /// </remarks>
 public sealed partial class PartitionSchemaIndex : IDisposable
 {
@@ -138,14 +143,14 @@ public sealed partial class PartitionSchemaIndex : IDisposable
     /// <summary>When the index was last asked.</summary>
     public DateTimeOffset LastAsked { get; private set; }
 
-    /// <summary>Whether a pass is under way.</summary>
+    /// <summary>Whether a pass, or a listing of the kinds, is under way.</summary>
     public bool Reading
     {
         get
         {
             lock (_gate)
             {
-                return _pass is not null;
+                return _pass is not null || _kindsListing is not null;
             }
         }
     }

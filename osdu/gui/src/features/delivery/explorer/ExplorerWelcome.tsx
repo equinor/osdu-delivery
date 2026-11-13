@@ -41,8 +41,11 @@ function typeFacts(scope: ExplorerScope): { group: string; detail: string } {
   switch (scope.level) {
     case "group":
       return { group: scope.group, detail: "every type in it" };
-    case "type":
-      return { group: kindParts(`*:*:${scope.entityType}:*`).group, detail: kindParts(`*:*:${scope.entityType}:*`).group };
+    case "type": {
+      // A type naming no group is told apart by its namespace, as the list of types groups it.
+      const group = kindParts(`*:*:${scope.entityType}:*`).group || scope.namespace || "";
+      return { group, detail: group };
+    }
     case "kind": {
       const parts = kindParts(scope.kind);
       return { group: parts.group, detail: `${parts.authority}:${parts.source}` };

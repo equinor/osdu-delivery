@@ -31,6 +31,8 @@ keywords:
   - parent kind
   - x-osdu-inheriting-from-kind
   - custom schema
+  - registered schema
+  - partition schemas
   - child kind
 related:
   - delivery-flow-mapping
@@ -79,6 +81,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/gui/src/features/delivery/TemplatesPage.tsx
   - osdu/gui/src/features/delivery/TemplatesBrowseTab.tsx
+  - osdu/gui/src/features/delivery/TemplatesPartitionBrowse.tsx
+  - osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerSchemas.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Search/PartitionSchemaIndex.Kinds.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Schemas.cs
   - osdu/gui/src/features/delivery/MappingBuilderPage.tsx
   - osdu/gui/src/features/delivery/templateFormat.ts
   - osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
@@ -330,6 +336,27 @@ On the GUI's Templates page, the **Browse OSDU** tab:
 `sqlflow template capture --kind <kind> [--release <tag>] --out <folder>/<file>` writes the same file into a template
 folder of a working copy ([template](../cli/template.md)).
 
+### The partition's Schema service
+
+A partition's own schemas (a kind of another authority than `osdu`, such as `acme:wells:Completion:1.0.0` or
+`acme:governance:data-governance--AccessGroupMap:1.0.0`) are registered in its Schema service and published nowhere
+else, so no release of the data definitions holds them. When the title bar names a partition the control plane can read
+([the explorer's connection](explorer.md#how-it-reaches-osdu)), Browse OSDU offers it beside the data definitions, as
+**Partition** and its id:
+
+1. **Lists every schema the partition's Schema service holds**: the platform's and the partition's own, every status
+   (published, in development, obsolete) and scope, whether or not any record is of them, the abstract building blocks
+   left out. **Custom only** keeps the kinds of an authority other than `osdu`; the summary says how many there are. The
+   control plane lists them once and keeps the listing for ten minutes (the explorer's type list reads the same one);
+   **List again** lists them anew, for a schema registered since.
+2. **Looks at a schema**: read from the Schema service, bundled with every schema it refers to
+   (`POST /api/v1/delivery/explorer/schema`), and laid out as a template; the sheet says how many schemas were read and
+   how many references could not be followed.
+3. **Downloads it** as the file a template folder keeps, under the kind's file name, as a release's download does.
+
+`sqlflow template register` goes the other way: it registers a template folder's custom schemas in a partition
+([template register](../cli/template-register.md)).
+
 ### A schema file
 
 A schema the data definitions do not publish (a kind of your own, or a version not released yet) is written into a
@@ -503,6 +530,8 @@ mapping reads before the repository is synced.
 | List releases, list a release's record kinds | Browse OSDU | | `GET /templates/osdu/releases`, `GET /templates/osdu/schemas?release=` |
 | Read a kind from a release | Browse OSDU, a row | | `GET /templates/osdu/schema?release=&kind=` |
 | Download a kind as a template file | Browse OSDU, Download | `sqlflow template capture --kind <kind> --out <file>` | `GET /templates/osdu/file?release=&kind=` (a file to save) |
+| List the schemas registered in a partition, its custom ones among them | Browse OSDU, Partition | | `POST /explorer/schemas?partition=` |
+| Read or download a partition's schema as a template file | Browse OSDU, Partition, a row or Download | | `POST /explorer/schema?partition=` (the file's text in `file`) |
 | Write a schema of one's own as a template file | | `sqlflow template import <schema.json> --kind <kind> --out <file>` | |
 | Register the custom kinds a working copy holds with a partition's Schema service | | `sqlflow template register [<dir>] [--env-file <path>] [--dry-run \| --confirm <partition>]` | |
 | Lay out a schema without keeping it | Browse OSDU, a row | | `POST /templates/preview` |

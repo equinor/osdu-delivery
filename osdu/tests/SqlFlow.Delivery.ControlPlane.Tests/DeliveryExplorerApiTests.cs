@@ -131,7 +131,25 @@ public sealed class DeliveryExplorerApiTests
             Assert.Equal(["data.Augmented.WellboreName"], conditions.Columns);
 
             var types = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/types?partition={named}", new { text = "Wellbore B" });
-            Assert.Equal(ExploreOperation.TypesAction, types.Argument(ExploreOperation.ActionArgument));
+            Assert.Equal((ExploreOperation.TypesAction, (string?)null), (types.Argument(ExploreOperation.ActionArgument), types.Argument(ExploreOperation.RefreshArgument)));
+
+            // The types list the partition's schemas again only when asked, as the partition's kinds do.
+            var typesAgain = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/types?partition={named}&refresh=true", new { });
+            Assert.Equal("true", typesAgain.Argument(ExploreOperation.RefreshArgument));
+            var schemas = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/schemas?partition={named}", new { });
+            Assert.Equal((ExploreOperation.SchemasAction, (string?)null), (schemas.Argument(ExploreOperation.ActionArgument), schemas.Argument(ExploreOperation.RefreshArgument)));
+            var schemasAgain = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/schemas?partition={named}", new { refresh = true });
+            Assert.Equal("true", schemasAgain.Argument(ExploreOperation.RefreshArgument));
+
+            // A partition's own schema is read by its id, whether or not its entity type names a group.
+            var schema = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/schema?partition={named}", new { kind = " acme:wells:Completion:1.0.0 " });
+            Assert.Equal(
+                (ExploreOperation.SchemaAction, "acme:wells:Completion:1.0.0"),
+                (schema.Argument(ExploreOperation.ActionArgument), schema.Argument(ExploreOperation.KindArgument)));
+            var schema400 = $"/api/v1/delivery/explorer/schema?partition={named}";
+            await RefusedAsync(client, token, schema400, new { kind = "acme:wells:Completion:*" }, HttpStatusCode.BadRequest, "is not a schema's id");
+            await RefusedAsync(client, token, schema400, new { kind = "acme:wells:Completion" }, HttpStatusCode.BadRequest, "is not a schema's id");
+            await RefusedAsync(client, token, schema400, new { }, HttpStatusCode.BadRequest, "Name the kind whose schema to read");
             var fields = await RanAsync(operations, client, token, $"/api/v1/delivery/explorer/fields?partition={named}", new { kind = "osdu:wks:master-data--Wellbore:1.1.0" });
             Assert.Equal((ExploreOperation.FieldsAction, "osdu:wks:master-data--Wellbore:1.1.0"), (fields.Argument(ExploreOperation.ActionArgument), fields.Argument(ExploreOperation.KindArgument)));
 

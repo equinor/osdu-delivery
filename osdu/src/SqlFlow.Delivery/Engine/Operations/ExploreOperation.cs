@@ -12,6 +12,7 @@ using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 using SqlFlow.Delivery.Search;
 using SqlFlow.Delivery.Snapshots;
+using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Engine.Operations;
 
@@ -21,7 +22,9 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// it), or through a record's own flow for the check a record page makes, and then nothing else of the flow: no ledger,
 /// mapping or cache is read. The payload's <c>action</c> says which read:
 /// <list type="bullet">
-/// <item><description><c>types</c>: the kinds of the records a search finds, with their counts (<c>search</c>).</description></item>
+/// <item><description><c>types</c>: the kinds of the records a search finds, with their counts (<c>search</c>), completed from the kinds the partition's Schema service lists (<see cref="PartitionSchemaIndex.EnsureKinds"/>); <c>refresh</c> lists them again.</description></item>
+/// <item><description><c>schemas</c>: the kinds the partition's Schema service lists, every status and scope, from the listing the engine keeps; <c>refresh</c> lists them again.</description></item>
+/// <item><description><c>schema</c>: the schema of one <c>kind</c> as the partition's Schema service holds it, bundled, as the file a repository's template folder keeps.</description></item>
 /// <item><description><c>search</c>: one page of the records a search finds (<c>search</c>).</description></item>
 /// <item><description><c>fields</c>: the properties the records of a <c>kind</c> hold: the record's own, those the kind's schema declares (read from the Schema service), and those its records hold beyond them.</description></item>
 /// <item><description><c>read</c>: one record from the storage service by its <c>targetId</c>, at its latest or at a <c>version</c>, with its version list.</description></item>
@@ -79,6 +82,14 @@ public sealed class ExploreOperation : DeliveryOperation
     public const string ValidateAction = "validate";
     public const string ValidateListAction = "validate-list";
     public const string ReferencedByAction = "referenced-by";
+    public const string SchemasAction = "schemas";
+    public const string SchemaAction = "schema";
+
+    /// <summary>
+    /// How long an ask of the types or of the partition's kinds waits on a listing of the kinds before it answers without
+    /// them, saying the listing is under way; the listing goes on, and the next ask answers from it.
+    /// </summary>
+    public static readonly TimeSpan KindsWait = TimeSpan.FromSeconds(4);
 
     /// <summary>The task argument naming the type whose referring types are asked for: a type, or a kind naming one.</summary>
     public const string TypeArgument = "type";
@@ -111,7 +122,8 @@ public sealed class ExploreOperation : DeliveryOperation
     public const string MappingArgument = "mapping";
 
     /// <summary>Every read the task can name.</summary>
-    public static readonly IReadOnlyList<string> Actions = [TypesAction, SearchAction, FieldsAction, ReadAction, DimensionKeysAction, DimensionExampleAction, DimensionPreviewAction, ValidateAction, ValidateListAction, ReferencedByAction];
+    public static readonly IReadOnlyList<string> Actions =
+        [TypesAction, SearchAction, FieldsAction, ReadAction, DimensionKeysAction, DimensionExampleAction, DimensionPreviewAction, ValidateAction, ValidateListAction, ReferencedByAction, SchemasAction, SchemaAction];
 
     /// <summary>How the dimension builder's requests and answers are written: the web's conventions, as the API writes them.</summary>
     public static JsonSerializerOptions BuilderJson { get; } = ReadOnly(new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -200,7 +212,10 @@ public sealed class ExploreOperation : DeliveryOperation
             ValidateListAction => await (await ChecksAsync(context, target, client, ct).ConfigureAwait(false)).ListAsync(
                 explorer, ExplorerSearch.Parse(payload.Argument(SearchArgument)), MaxOf(payload), SchemaSourceOf(payload),
                 await AssertionsAsync(context, payload, ct).ConfigureAwait(false), ct).ConfigureAwait(false),
-            TypesAction => await explorer.TypesAsync(ExplorerSearch.Parse(payload.Argument(SearchArgument)), ct).ConfigureAwait(false),
+            TypesAction => await explorer.TypesAsync(
+                ExplorerSearch.Parse(payload.Argument(SearchArgument)), await KindsAsync(context, target, client, partition, payload, ct).ConfigureAwait(false), ct).ConfigureAwait(false),
+            SchemasAction => ExplorerSchemas.Of(await KindsAsync(context, target, client, partition, payload, ct).ConfigureAwait(false)),
+            SchemaAction => await SchemaAsync(context, client, partition, payload, ct).ConfigureAwait(false),
             SearchAction => await explorer.SearchAsync(ExplorerSearch.Parse(payload.Argument(SearchArgument)), ct).ConfigureAwait(false),
             DimensionKeysAction => await Sampler(client, context).KeysAsync(KeysOf(payload, partition), ct).ConfigureAwait(false),
             DimensionExampleAction => await ExampleAsync(context, Sampler(client, context), payload, partition, ct).ConfigureAwait(false),
@@ -266,6 +281,57 @@ public sealed class ExploreOperation : DeliveryOperation
         }
 
         return ExplorerReferences.Of(entityType, index.View());
+    }
+
+    /// <summary>
+    /// The kinds the partition's Schema service lists, from the listing the engine keeps of them, which a listing through a
+    /// connection of its own to the target brings up to date when it is due (or the payload asks for it). An ask waits on a
+    /// listing under way for <see cref="KindsWait"/>, then answers with where it stands. A host that keeps no index lists
+    /// them for the ask, and answers once they are listed.
+    /// </summary>
+    private async Task<SchemaKindsView> KindsAsync(
+        EngineContext context, OsduReadTarget target, OsduHttpClient client, string? partition, ComputeTaskPayload payload, CancellationToken ct)
+    {
+        var refresh = string.Equals(payload.Argument(RefreshArgument)?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        using var own = context.SchemaIndexes is null ? new PartitionSchemaIndexes(context.Time, context.Loggers) : null;
+        var index = (context.SchemaIndexes ?? own!).For(client.Endpoint, partition ?? client.Header(CacheScope.PartitionHeader));
+        if (index.EnsureKinds(token => SchemaConnectionAsync(context, target, token), refresh) is { } listing)
+        {
+            try
+            {
+                await (own is null ? listing.WaitAsync(KindsWait, ct) : listing.WaitAsync(ct)).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The listing goes on; the answer says it is under way.
+            }
+        }
+
+        return index.KindsView();
+    }
+
+    /// <summary>
+    /// The schema of the payload's kind as the partition's Schema service holds it, bundled with every schema it refers to,
+    /// as the file a repository's template folder keeps; its status and scope from the listing the engine keeps, where it
+    /// holds the kind. A kind the service holds no schema of is refused, naming it.
+    /// </summary>
+    private static async Task<ExplorerSchemaFile> SchemaAsync(EngineContext context, OsduHttpClient client, string? partition, ComputeTaskPayload payload, CancellationToken ct)
+    {
+        var kind = payload.RequireArgument(KindArgument).Trim();
+        if (ExplorerSchemaFile.KindProblem(kind) is { } wrong)
+        {
+            throw new SqlFlowException(wrong);
+        }
+
+        var read = await new SchemaServiceReader(client, context.Time).ReadAsync(kind, ct).ConfigureAwait(false);
+        if (read.Schema is null)
+        {
+            throw new SqlFlowException($"The Schema service of {(partition is null ? "the partition" : $"partition '{partition}'")} holds no schema {kind}.");
+        }
+
+        SchemaListing? listed = null;
+        context.SchemaIndexes?.For(client.Endpoint, partition ?? client.Header(CacheScope.PartitionHeader)).KindsView().Last?.Kinds.TryGetValue(kind, out listed);
+        return new ExplorerSchemaFile(kind, listed?.Status, listed?.Scope, TemplateSources.FileText(read.Schema), read.Read, read.Unresolved);
     }
 
     /// <summary>A connection to the target of the pass's own, held until the pass ends: the one the engine keeps for the target, or one of its own.</summary>

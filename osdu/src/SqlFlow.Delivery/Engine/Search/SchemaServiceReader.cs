@@ -24,8 +24,12 @@ public sealed record SchemaServiceRead(SchemaSnapshot? Schema, IReadOnlyList<str
 /// <param name="Scope"><c>INTERNAL</c> (the partition's own) or <c>SHARED</c> (the platform's).</param>
 public sealed record SchemaListing(string Id, string Authority, string Source, string EntityType, string Version, string Status, string Scope)
 {
-    /// <summary>Whether records are of this schema's kind: its entity type names a group (<c>master-data--Wellbore</c>), as an abstract schema's does not.</summary>
-    public bool IsKind => EntityType.Contains("--", StringComparison.Ordinal);
+    /// <summary>
+    /// Whether records can be of this schema's kind: every schema but the abstract building blocks the platform's schemas are
+    /// made of (<c>AbstractFacility</c>), which no record is of. The platform's own kinds name a group
+    /// (<c>master-data--Wellbore</c>); a partition's own need not (<c>acme:wells:Completion:1.0.0</c>).
+    /// </summary>
+    public bool IsKind => EntityType.Contains("--", StringComparison.Ordinal) || !EntityType.StartsWith("Abstract", StringComparison.Ordinal);
 
     /// <summary>Whether the service keeps the schema as it is: a published or obsolete schema never changes, one in development may.</summary>
     public bool Settled => !string.Equals(Status, SchemaServiceReader.Development, StringComparison.OrdinalIgnoreCase);

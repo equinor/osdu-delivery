@@ -41,12 +41,16 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Element.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Terms.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Schemas.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/ExploreOperation.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/TargetClients.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.Via.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.Types.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Search/PartitionSchemaIndex.Kinds.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerSchemas.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerChecks.cs
   - osdu/src/SqlFlow.Delivery/Engine/SyncedMappings.cs
@@ -79,6 +83,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/explorer/ExplorerReferences.tsx
   - osdu/gui/src/features/delivery/explorer/ExplorerElementQuery.tsx
   - osdu/gui/src/features/delivery/explorer/explorerModel.ts
+  - osdu/gui/src/features/delivery/explorer/explorerKinds.ts
   - osdu/gui/src/features/delivery/explorer/dimension/DimensionBuildPanel.tsx
   - osdu/gui/src/features/delivery/OsduRecordInspector.tsx
   - osdu/specs/core/search/openapi.yaml
@@ -142,7 +147,8 @@ The explorer reads:
 | Search | `POST /api/search/v2/query` | types and their counts, records, groups of values, mentions |
 | Storage | `GET /api/storage/v2/records/{id}`, `GET /api/storage/v2/records/versions/{id}`, `GET /api/storage/v2/records/{id}/{version}` | a record, its version list, an older version |
 | Storage | `POST /api/storage/v2/query/records` | the records a check of a search reads, and those a record refers to, during a validation |
-| Schema | `GET /api/schema-service/v1/schema`, `GET /api/schema-service/v1/schema/{id}` | a kind's properties, validation, Referenced by |
+| Schema | `GET /api/schema-service/v1/schema` | the partition's kinds, every status and scope, for the type list and the Templates page's Browse OSDU |
+| Schema | `GET /api/schema-service/v1/schema/{id}` | a kind's properties, validation, Referenced by, a partition's schema as a template |
 
 A record is read the way a record page's OSDU tab reads it back, so both pages show a record the same way. A record
 page's check of the record it shows (`POST /api/v1/delivery/flows/{pipelineId}/osdu/validate`) is the one read made
@@ -180,13 +186,16 @@ picked reads its records, a search reads what it finds, and a record opened read
 
 Once asked, the page shows the partition's kinds beside the records of the place picked.
 
-- **The type list.** One search aggregation over `kind` across every kind (`*:*:*:*`) counts the records of each, and the
-  list groups them as OSDU names them: the group (`master-data`, `reference-data`, `work-product-component`, `dataset`),
-  the type, and under a type kept in several kinds (versions, authorities) each kind. Groups start folded, but for the
-  one holding the place picked, and while a search is in view the groups it finds something in open (unless one holds
-  more than 24 types). **Filter types** finds a type among hundreds; **All types** lists every record of the partition.
-  Picking a group, a type or a kind narrows the records to it (`*:*:master-data--*:*`, `*:*:master-data--Wellbore:*`, or
-  the kind). The counts follow the search and the conditions, so the list also says where else a search finds something.
+- **The type list.** Every kind the partition holds ([where the types come from](#where-the-types-come-from)), grouped as
+  OSDU names them: the group (`master-data`, `reference-data`, `work-product-component`, `dataset`), the type, and under a
+  type kept in several kinds (versions, authorities) each kind. A partition's own kinds need not name a group
+  (`acme:wells:Completion:1.0.0`); those of one authority and source are a group of their own after the others, named
+  `acme:wells`. Groups start folded, but for the one holding the place picked, and while a search is in view the groups
+  it finds something in open (unless one holds more than 24 types). **Filter types** finds a type among hundreds, by its
+  name or any part of its kind (`acme`); **All types** lists every record of the partition. Picking a group, a type or a
+  kind narrows the records to it (`*:*:master-data--*:*`, `*:*:master-data--Wellbore:*`, `acme:wells:*:*`,
+  `acme:wells:Completion:*`, or the kind). The counts follow the search and the conditions, so the list also says where
+  else a search finds something. A kind's row names, on hover, its schema's status and scope.
 - **The records grid.** One row per record: its name (the first of `data.FacilityName`, `data.Name`,
   `data.ProjectName`, `data.Code` or the file name in `data.DatasetProperties.FileSourceInfo.Name`, else the unique part
   of its id), its type unless one type is in view, its id (cut from the start, so the end that tells ids apart stays
@@ -205,6 +214,33 @@ The search service pages through the first 10,000 records a query matches; past 
 search. Every page is one query of the index, so a partition of millions reads as fast as one of hundreds. What was read
 is kept for a minute and reused (the types of a whole partition and a kind's properties for ten minutes); **Read again
 from OSDU** reads at once.
+
+### Where the types come from
+
+The search service counts the records of each kind by one aggregation over `kind` across every kind (`*:*:*:*`). It
+names at most 1,000 kinds in an answer, the largest first (`aggregationSize`, search-service
+`AggregationParserUtil.java` and `SearchConfigurationProperties.java` at `958c599c`), and it counts only the records the
+connection's groups may read. In a partition holding records of more kinds the smallest are left out, which a partition's
+own kinds usually are, and a kind registered with no record yet is not there at all. So the list is completed from the
+partition's Schema service, which lists every schema whatever records exist (`GET /api/schema-service/v1/schema`, each
+status and scope, `PUBLISHED`, `DEVELOPMENT` and `OBSOLETE`, `INTERNAL` and `SHARED`, a page of 100 at a time). The
+storage service's own list of kinds (`GET /api/storage/v2/query/kinds`) is not used: it is deprecated since M6, hidden
+from the API, and asks for the storage creator or admin role (`QueryApi.java` at `c8d3796d`).
+
+- **Listed once, kept.** The control plane lists the partition's schemas, never reading one, and keeps the listing for
+  ten minutes; the next type list after that lists them again, and the refresh icon beside **Filter types** does so at
+  once, for a schema registered since. The abstract building blocks (`osdu:wks:AbstractFacility:1.0.0`) are left out,
+  since no record is of them. While the first listing is made (a few seconds for thousands of schemas) the list shows
+  the kinds the search found and says it is listing the schemas, then completes itself.
+- **Every kind, records or none.** With nothing typed and no condition, every kind the Schema service lists is in the
+  list: one the search finds no record of has none, its row quiet. Its records may not exist yet, or the connection's
+  groups may not read them. With a search in view the list holds only where the search found records.
+- **The counts the aggregation left out.** When the kinds the aggregation named add up to fewer records than the search
+  found, the kinds the Schema service lists that it did not name are counted apart: the same aggregation, 100 of them to
+  an answer, each asked with a condition naming them (`kind:("…" OR "…")`), four answers at a time, at most 40.
+- **What is still left out.** Records of a kind no schema is registered for, past the aggregation's 1,000, are counted
+  but not listed: the list's foot says how many records that is. When the Schema service cannot be listed, the list
+  holds the kinds the search found and its foot says so.
 
 ## Searching
 
@@ -491,7 +527,9 @@ the workbench's partition, else the registry's default, is read.
 | Route | Group | What it does |
 | --- | --- | --- |
 | `GET /api/v1/delivery/explorer/connection` | read | How the partition is reached: its `partition` as the registry spells it, `available`, the `endpoint` it reaches, or the `reason` it cannot be. |
-| `POST /api/v1/delivery/explorer/types` | operate | The records a search finds, counted kind by kind. |
+| `POST /api/v1/delivery/explorer/types` | operate | The records a search finds, counted kind by kind, completed from the kinds the Schema service lists; `?refresh=true` lists them again first. Each kind carries its schema's `status` and `scope`, and `schemas` says where the listing stands (`reading`, `ready`, `failed` with its `problem`). |
+| `POST /api/v1/delivery/explorer/schemas` | operate | The kinds the partition's Schema service lists, every status and scope, the abstract ones left out; `refresh` lists them again. While the first listing is made, `state` is `reading` and `kinds` is empty. |
+| `POST /api/v1/delivery/explorer/schema` | operate | The schema of one `kind` (`authority:source:entityType:major.minor.patch`) as the Schema service holds it, bundled with every schema it refers to, as the `file` a template folder keeps, with the ids `read` and the references `unresolved`; 422 for a kind it holds no schema of. |
 | `POST /api/v1/delivery/explorer/search` | operate | One page of records: `text`, `lucene` or `mentions`, `kind`, `filters` (at most 12; a filter may name a search `term`), `sort`, `offset` and `limit` (1 to 200, inside the first 10,000), `facet`, `columns` (at most 8). |
 | `POST /api/v1/delivery/explorer/fields` | operate | The properties the records of a `kind` hold. |
 | `POST /api/v1/delivery/explorer/read` | operate | One record from storage by `targetId`, at its latest or at `version`, with its version list. |

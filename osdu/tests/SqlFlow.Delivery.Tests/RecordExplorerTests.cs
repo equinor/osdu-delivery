@@ -291,6 +291,109 @@ public class RecordExplorerTests
     }
 
     [Fact]
+    public async Task Every_kind_the_partitions_schemas_list_is_a_type_with_no_records_where_the_search_finds_none_while_nothing_narrows_the_list()
+    {
+        var handler = new FakeHttpHandler().On(HttpMethod.Post, "/api/search/v2/query", HttpStatusCode.OK, new JsonObject
+        {
+            ["results"] = new JsonArray(new JsonObject { ["id"] = Wellbore }),
+            ["aggregations"] = new JsonArray(
+                new JsonObject { ["key"] = "osdu:wks:master-data--Wellbore:1.1.0", ["count"] = 3 },
+                new JsonObject { ["key"] = "acme:wells:Completion:1.0.0", ["count"] = 2 }),
+            ["totalCount"] = 5,
+        }.ToJsonString());
+        var schemas = Listed(
+            ("osdu:wks:master-data--Wellbore:1.1.0", "PUBLISHED", "SHARED"),
+            ("acme:wells:Completion:1.0.0", "PUBLISHED", "INTERNAL"),
+            ("acme:wells:StationReading:1.0.0", "DEVELOPMENT", "INTERNAL"));
+        var (explorer, runtime) = Explorer(handler);
+        using (runtime)
+        {
+            var types = await explorer.TypesAsync(new ExplorerSearch(), schemas, CancellationToken.None);
+
+            // A partition's own kind naming no group is a type like any other; one registered with no record has none.
+            Assert.Equal(
+                [
+                    new ExplorerKindCount("acme:wells:Completion:1.0.0", 2, "PUBLISHED", "INTERNAL"),
+                    new ExplorerKindCount("acme:wells:StationReading:1.0.0", 0, "DEVELOPMENT", "INTERNAL"),
+                    new ExplorerKindCount("osdu:wks:master-data--Wellbore:1.1.0", 3, "PUBLISHED", "SHARED"),
+                ],
+                types.Kinds);
+            Assert.Equal((5L, 5L), (types.Total, types.Listed));
+            Assert.Equal(("ready", 3), (types.Schemas!.State, types.Schemas.Kinds));
+
+            // A search lists only where it finds records, and the search groups named every kind, so nothing more was asked.
+            var found = await explorer.TypesAsync(new ExplorerSearch { Text = "C-28" }, schemas, CancellationToken.None);
+            Assert.Equal(["acme:wells:Completion:1.0.0", "osdu:wks:master-data--Wellbore:1.1.0"], found.Kinds.Select(k => k.Kind));
+            Assert.Equal(2, handler.Calls.Count);
+        }
+    }
+
+    [Fact]
+    public async Task The_kinds_the_search_groups_leave_out_are_counted_apart_by_the_kinds_the_partitions_schemas_list()
+    {
+        // The first answer names the largest groups only (at most 1,000 in the platform); the partition's own kinds are left out.
+        var handler = new FakeHttpHandler()
+            .OnMatch(r => Body(r).Contains("acme", StringComparison.Ordinal), _ => FakeHttpHandler.Json(HttpStatusCode.OK, new JsonObject
+            {
+                ["results"] = new JsonArray(new JsonObject { ["id"] = Wellbore }),
+                ["aggregations"] = new JsonArray(
+                    new JsonObject { ["key"] = "acme:wells:Completion:1.0.0", ["count"] = 7 },
+                    new JsonObject { ["key"] = "acme:governance:data-governance--AccessGroupMap:1.0.0", ["count"] = 2 }),
+                ["totalCount"] = 9,
+            }.ToJsonString()))
+            .On(HttpMethod.Post, "/api/search/v2/query", HttpStatusCode.OK, new JsonObject
+            {
+                ["results"] = new JsonArray(new JsonObject { ["id"] = Wellbore }),
+                ["aggregations"] = new JsonArray(new JsonObject { ["key"] = "osdu:wks:master-data--Wellbore:1.1.0", ["count"] = 90 }),
+                ["totalCount"] = 100,
+            }.ToJsonString());
+        var schemas = Listed(
+            ("osdu:wks:master-data--Wellbore:1.1.0", "PUBLISHED", "SHARED"),
+            ("acme:wells:Completion:1.0.0", "PUBLISHED", "INTERNAL"),
+            ("acme:governance:data-governance--AccessGroupMap:1.0.0", "PUBLISHED", "INTERNAL"),
+            ("acme:wells:SurveyRun:1.0.0", "PUBLISHED", "INTERNAL"));
+        var (explorer, runtime) = Explorer(handler);
+        using (runtime)
+        {
+            var types = await explorer.TypesAsync(new ExplorerSearch { Text = "Riverbend" }, schemas, CancellationToken.None);
+
+            Assert.Equal(
+                [("acme:governance:data-governance--AccessGroupMap:1.0.0", 2L), ("acme:wells:Completion:1.0.0", 7L), ("osdu:wks:master-data--Wellbore:1.1.0", 90L)],
+                types.Kinds.Select(k => (k.Kind, k.Count)));
+            Assert.Equal((100L, 99L), (types.Total, types.Listed));
+
+            // The kinds left out are asked as the first was, with a condition naming them, the kind it already named not among them.
+            var fill = JsonNode.Parse(handler.Calls[1].Body!)!;
+            Assert.Equal(("*:*:*:*", "kind"), (fill["kind"]!.GetValue<string>(), fill["aggregateBy"]!.GetValue<string>()));
+            Assert.Equal(
+                "(\"Riverbend\") AND (kind:(\"acme:governance:data-governance--AccessGroupMap:1.0.0\" OR \"acme:wells:Completion:1.0.0\" OR \"acme:wells:SurveyRun:1.0.0\"))",
+                fill["query"]!.GetValue<string>());
+            Assert.Equal(2, handler.Calls.Count);
+        }
+
+        OsduContracts.AssertConform(handler.Calls, null, OsduContracts.Search);
+    }
+
+    /// <summary>A listing of the partition's schemas holding <paramref name="kinds"/>, each in its status and scope.</summary>
+    private static SchemaKindsView Listed(params (string Kind, string Status, string Scope)[] kinds)
+        => new(
+            new SchemaKindsListing(
+                DateTimeOffset.UnixEpoch,
+                kinds.ToDictionary(
+                    k => k.Kind,
+                    k =>
+                    {
+                        var parts = k.Kind.Split(':');
+                        return new SchemaListing(k.Kind, parts[0], parts[1], parts[2], parts[3], k.Status, k.Scope);
+                    },
+                    StringComparer.Ordinal),
+                kinds.Length,
+                []),
+            Listing: false,
+            Problem: null,
+            ProblemUtc: null);
+
+    [Fact]
     public async Task Without_a_schema_the_properties_of_a_kind_are_those_its_records_hold_each_typed_by_its_value()
     {
         var handler = new FakeHttpHandler()

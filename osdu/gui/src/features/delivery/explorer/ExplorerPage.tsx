@@ -143,7 +143,18 @@ export default function ExplorerPage() {
     reachable && browsing ? () => explorerApi.types(active, typesRequest) : null,
     // The kinds of a whole partition move slowly; those a search finds are read again sooner.
     typesRequest.text === undefined && filters.length === 0 ? 10 * 60_000 : undefined,
+    // While the partition's schemas are first listed, the list is read again until they complete it.
+    (answer) => answer.schemas?.state === "reading",
   );
+  // Listing the types again lists the partition's schemas anew, for a type registered since.
+  const [refreshingTypes, setRefreshingTypes] = useState(false);
+  const refreshTypes = () => {
+    setRefreshingTypes(true);
+    explorerApi.types(active, typesRequest, true)
+      .then((answered) => queryClient.setQueryData(["explorer", "types", active, typesRequest], answered))
+      .catch(() => void types.refetch())
+      .finally(() => setRefreshingTypes(false));
+  };
   // Each property a condition asks is a column of the grid, so the grid shows why each record is listed.
   const request = { text: text === "" ? undefined : text, lucene, kind: scopeKind(scope), filters, sort, columns: columnsOf(filters, NAME_FIELDS) };
 
@@ -313,11 +324,14 @@ export default function ExplorerPage() {
             <ResizablePanel defaultSize={264} minSize={200} maxSize="40" className="flex min-h-0 flex-col border-r">
               <ExplorerTypeRail
                 types={types.data?.answer}
-                loading={types.isFetching}
+                // While the schemas are listed the list is read again every two seconds; its own line says so instead.
+                loading={types.isFetching && types.data?.answer.schemas?.state !== "reading"}
                 error={types.isError ? failureText(types.error) : types.data?.answer.refusal ?? null}
                 scope={asksRecords ? scope : null}
                 searchKey={typesRequest.text === undefined && filters.length === 0 ? null : JSON.stringify(typesRequest)}
                 onScope={goScope}
+                onRefresh={refreshTypes}
+                refreshing={refreshingTypes}
               />
             </ResizablePanel>
             <ResizableHandle />

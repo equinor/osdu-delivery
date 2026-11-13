@@ -1,5 +1,6 @@
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 import type { ExplorerAnswer, ExplorerCondition, ExplorerFilter, ExplorerIndex, ExplorerSort } from "../../../api/explorer";
+import { scopeKind, scopeOf, type ExplorerScope } from "./explorerKinds";
 
 // What the explorer keeps between its parts: the scope a reader narrowed to (every type, a group, a type, one kind), the
 // property values they narrowed by, the kinds of a partition as a tree of groups and types, and the reads, each answered
@@ -13,7 +14,13 @@ const FRESH_MS = 60_000;
  * answers from what was read, until it is a minute old (or `freshMs`). A read is never retried by itself; a failure is the reader's to
  * see, and the page's refresh asks again.
  */
-export function useExplorerRead<T>(key: QueryKey, read: (() => Promise<ExplorerAnswer<T>>) | null, freshMs = FRESH_MS) {
+export function useExplorerRead<T>(
+  key: QueryKey,
+  read: (() => Promise<ExplorerAnswer<T>>) | null,
+  freshMs = FRESH_MS,
+  /** While it answers true for the answer read, the read is asked again every two seconds: a listing still under way. */
+  pending?: (answer: T) => boolean,
+) {
   return useQuery({
     queryKey: ["explorer", ...key],
     queryFn: () => read!(),
@@ -22,146 +29,15 @@ export function useExplorerRead<T>(key: QueryKey, read: (() => Promise<ExplorerA
     gcTime: 10 * 60_000,
     retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => (pending !== undefined && query.state.data !== undefined && pending(query.state.data.answer) ? 2_000 : false),
   });
 }
 
-/** The four parts of a kind, `authority:source:group--Type:version`, with the group and type of its entity type apart. */
-export interface KindParts {
-  authority: string;
-  source: string;
-  entityType: string;
-  group: string;
-  type: string;
-  version: string;
-}
-
-export function kindParts(kind: string): KindParts {
-  const [authority = "", source = "", entityType = "", version = ""] = kind.split(":");
-  const dashes = entityType.indexOf("--");
-  return {
-    authority,
-    source,
-    entityType,
-    group: dashes < 0 ? "" : entityType.slice(0, dashes),
-    type: dashes < 0 ? entityType : entityType.slice(dashes + 2),
-    version,
-  };
-}
-
-/** What the reader narrowed the records to: every type, one group of types, one type in every version, or one kind. */
-export type ExplorerScope =
-  | { level: "all" }
-  | { level: "group"; group: string }
-  | { level: "type"; entityType: string }
-  | { level: "kind"; kind: string };
-
-/** The kind pattern the search is asked of for a scope; none for every type. */
-export function scopeKind(scope: ExplorerScope): string | undefined {
-  switch (scope.level) {
-    case "all":
-      return undefined;
-    case "group":
-      return `*:*:${scope.group}--*:*`;
-    case "type":
-      return `*:*:${scope.entityType}:*`;
-    default:
-      return scope.kind;
-  }
-}
-
-/** The kind pattern of every type, which the address carries once a reader picked every type. */
-export const ALL_KINDS = "*:*:*:*";
-
-/** The scope a kind pattern in the address names; every type for none, or for one the explorer did not write. */
-export function scopeOf(kind: string | null): ExplorerScope {
-  if (kind === null || kind.trim() === "" || kind === ALL_KINDS) {
-    return { level: "all" };
-  }
-
-  const group = /^\*:\*:([\w.-]+)--\*:\*$/.exec(kind);
-  if (group !== null) {
-    return { level: "group", group: group[1] };
-  }
-
-  const type = /^\*:\*:([\w.-]+--[\w.-]+):\*$/.exec(kind);
-  if (type !== null) {
-    return { level: "type", entityType: type[1] };
-  }
-
-  return /^[\w.*-]+:[\w.*-]+:[\w.*-]+:[\d.*]+$/.test(kind) ? { level: "kind", kind } : { level: "all" };
-}
-
-/** Whether two scopes are the same. */
-export function sameScope(a: ExplorerScope, b: ExplorerScope): boolean {
-  return scopeKind(a) === scopeKind(b);
-}
-
-/** A scope as a reader says it: the type, the group, or every type. */
-export function scopeLabel(scope: ExplorerScope): string {
-  switch (scope.level) {
-    case "all":
-      return "every type";
-    case "group":
-      return scope.group;
-    case "type":
-      return kindParts(`*:*:${scope.entityType}:*`).type;
-    default: {
-      const parts = kindParts(scope.kind);
-      return `${parts.type} ${parts.version}`;
-    }
-  }
-}
-
-/** One kind of a type, with its count. */
-export interface KindNode {
-  kind: string;
-  parts: KindParts;
-  count: number;
-}
-
-/** One type (an entity type in every kind of it), with its kinds and their count. */
-export interface TypeNode {
-  entityType: string;
-  group: string;
-  type: string;
-  count: number;
-  kinds: KindNode[];
-}
-
-/** One group of types (master-data, reference-data, work-product-component), with its types and their count. */
-export interface GroupNode {
-  group: string;
-  count: number;
-  types: TypeNode[];
-}
-
-/** The kinds a partition holds as groups of types, each in name order, with the counts summed upward. */
-export function typeTree(kinds: { kind: string; count: number }[]): GroupNode[] {
-  const groups = new Map<string, Map<string, KindNode[]>>();
-  for (const { kind, count } of kinds) {
-    const parts = kindParts(kind);
-    const group = parts.group === "" ? "other" : parts.group;
-    const types = groups.get(group) ?? new Map<string, KindNode[]>();
-    groups.set(group, types);
-    types.set(parts.entityType, [...(types.get(parts.entityType) ?? []), { kind, parts, count }]);
-  }
-
-  const byName = (a: string, b: string) => a.localeCompare(b, "en", { sensitivity: "base" });
-  return [...groups.entries()]
-    .sort(([a], [b]) => byName(a, b))
-    .map(([group, types]) => {
-      const nodes = [...types.entries()]
-        .map(([entityType, kindNodes]): TypeNode => ({
-          entityType,
-          group,
-          type: kindNodes[0].parts.type,
-          count: kindNodes.reduce((sum, node) => sum + node.count, 0),
-          kinds: [...kindNodes].sort((a, b) => byName(a.kind, b.kind)),
-        }))
-        .sort((a, b) => byName(a.type, b.type));
-      return { group, count: nodes.reduce((sum, node) => sum + node.count, 0), types: nodes };
-    });
-}
+// The kinds and the places a reader narrows to are kept apart (explorerKinds.ts), read by the unit tests without the API.
+export {
+  ALL_KINDS, groupOf, isNamespace, kindInScope, kindParts, kindTitle, sameScope, scopeKind, scopeLabel, scopeOf, typeScopeOf, typeTree,
+  type ExplorerScope, type GroupNode, type KindCount, type KindNode, type KindParts, type TypeNode,
+} from "./explorerKinds";
 
 const INDEXES = new Set<ExplorerIndex>(["text", "keyword", "number", "boolean", "date"]);
 

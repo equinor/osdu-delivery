@@ -474,14 +474,40 @@ public sealed record ExplorerPage(
     string Reading, string? Query, string Kind, long Total, int Offset, IReadOnlyList<ExplorerHit> Hits, string? FacetPath,
     IReadOnlyList<ExplorerBucket>? Facet, IReadOnlyList<string> Notes, string? Refusal);
 
-/// <summary>A kind the partition holds records of, and how many of them the query matches.</summary>
-public sealed record ExplorerKindCount(string Kind, long Count);
+/// <summary>
+/// A kind the partition holds records of, or one its Schema service lists, and how many of its records the query matches:
+/// none for a kind registered with no record the search can read.
+/// </summary>
+/// <param name="Kind">The kind, <c>authority:source:entityType:version</c>.</param>
+/// <param name="Count">How many of its records the query matches.</param>
+/// <param name="Status">The schema's status as the Schema service lists it (<c>PUBLISHED</c>, <c>DEVELOPMENT</c>, <c>OBSOLETE</c>); null where it lists no schema of the kind, or was not listed.</param>
+/// <param name="Scope">The schema's scope: <c>INTERNAL</c> (the partition's own) or <c>SHARED</c> (the platform's); null likewise.</param>
+public sealed record ExplorerKindCount(string Kind, long Count, string? Status = null, string? Scope = null);
+
+/// <summary>Where the listing of the partition's schemas the types are completed from stands.</summary>
+/// <param name="State"><c>reading</c> (the first listing is under way), <c>ready</c> or <c>failed</c> (see <paramref name="Problem"/>).</param>
+/// <param name="Kinds">How many kinds the listing holds.</param>
+/// <param name="ReadUtc">When the listing answered from was made; null before the first.</param>
+/// <param name="Problem">Why no listing could be made.</param>
+public sealed record ExplorerTypeSchemas(string State, int Kinds, DateTimeOffset? ReadUtc, string? Problem);
 
 /// <summary>
-/// The kinds the records a query matches are of, each with its count: what the explorer's type list shows. <paramref name="Listed"/>
-/// is what the kinds add up to; less than <paramref name="Total"/> when the service named fewer groups than there are.
+/// The kinds the records a query matches are of, each with its count: what the explorer's type list shows. With no text and
+/// no condition, every kind the partition's Schema service lists is among them, with no records where the search finds
+/// none. <paramref name="Listed"/> is what the kinds add up to; less than <paramref name="Total"/> when records are of kinds
+/// neither the service's groups nor the schema listing named.
 /// </summary>
-public sealed record ExplorerTypes(string Reading, string? Query, long Total, IReadOnlyList<ExplorerKindCount> Kinds, long Listed, IReadOnlyList<string> Notes, string? Refusal);
+/// <param name="Reading">How the text was read (<see cref="ExplorerReading.Reading"/>).</param>
+/// <param name="Query">The Lucene query asked; null for every record.</param>
+/// <param name="Total">The records the query matches, of every kind.</param>
+/// <param name="Kinds">The kinds, in id order.</param>
+/// <param name="Listed">What the kinds add up to.</param>
+/// <param name="Notes">What the explorer did that the reader should know.</param>
+/// <param name="Refusal">The search service's words when it refused the query.</param>
+/// <param name="Schemas">Where the listing of the partition's schemas stands; null when none was asked.</param>
+public sealed record ExplorerTypes(
+    string Reading, string? Query, long Total, IReadOnlyList<ExplorerKindCount> Kinds, long Listed, IReadOnlyList<string> Notes, string? Refusal,
+    ExplorerTypeSchemas? Schemas = null);
 
 /// <summary>
 /// A property records of a kind hold, which a page searches, narrows to, groups by and shows as a column: its path, how the
@@ -762,30 +788,6 @@ public sealed partial class RecordExplorer
             aggregateBy is null || asked.Answer.Refusal is not null ? null : asked.Answer.Buckets.Select(b => new ExplorerBucket(b.Key, b.Count)).ToList(),
             notes,
             asked.Answer.Refusal);
-    }
-
-    /// <summary>
-    /// The kinds of the records <paramref name="search"/>'s text and property values find across every kind, each with its count:
-    /// the search's own kind, order and page do not narrow it, since the list is what a reader picks a kind from.
-    /// </summary>
-    public async Task<ExplorerTypes> TypesAsync(ExplorerSearch search, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(search);
-        if (search.Problem() is { } problem)
-        {
-            throw new DeliveryException(problem);
-        }
-
-        var notes = new List<string>();
-        search = await ThroughOthersAsync(search, notes, ct).ConfigureAwait(false);
-        var reading = Interpret(search with { Kind = null }, _partition);
-        var asked = await AskAsync(reading, search.Filters, ExplorerKinds.Any, ExplorerSort.Relevance, 0, 1, "kind", ["id"], notes, ct).ConfigureAwait(false);
-        var kinds = asked.Answer.Buckets
-            .Where(b => !string.IsNullOrEmpty(b.Key))
-            .Select(b => new ExplorerKindCount(b.Key!, b.Count))
-            .OrderBy(k => k.Kind, StringComparer.Ordinal)
-            .ToList();
-        return new ExplorerTypes(reading.Reading, asked.Query, asked.Answer.Total, kinds, kinds.Sum(k => k.Count), notes, asked.Answer.Refusal);
     }
 
     /// <summary>

@@ -125,6 +125,7 @@ public static partial class DeliveryExplorerEndpoints
         MapDimensionBuilderEndpoints(delivery);
         MapValidateEndpoints(delivery);
         MapReferenceEndpoints(delivery);
+        MapSchemaEndpoints(delivery);
         return delivery;
     }
 
@@ -137,14 +138,17 @@ public static partial class DeliveryExplorerEndpoints
             : new DeliveryExplorerConnectionDto(found.Partition, false, null, found.Reason));
     }
 
-    /// <summary>The kinds of the records a search finds across every kind, each with its count.</summary>
+    /// <summary>
+    /// The kinds of the records a search finds across every kind, each with its count, completed from the kinds the
+    /// partition's Schema service lists; <c>refresh</c> lists them again first.
+    /// </summary>
     private static Task<Results<ContentHttpResult, ProblemHttpResult>> TypesAsync(
-        DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
+        DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, [FromQuery] bool? refresh, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
         DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         OsduDbContext osdu, TimeProvider clock, IRepositoryFolders folders, CancellationToken ct)
         => ExploreSearchAsync(
             ExploreOperation.TypesAction, body, partition, partitions, config, direct, loggers, request, user,
-            new SearchTermDirectory(osdu, documents, clock, folders), ct);
+            new SearchTermDirectory(osdu, documents, clock, folders), ct, refresh == true);
 
     /// <summary>One page of the records a search finds.</summary>
     private static Task<Results<ContentHttpResult, ProblemHttpResult>> SearchAsync(
@@ -193,7 +197,7 @@ public static partial class DeliveryExplorerEndpoints
 
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ExploreSearchAsync(
         string action, DeliveryExplorerSearchRequest? body, string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
-        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, SearchTermDirectory directory, CancellationToken ct)
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, SearchTermDirectory directory, CancellationToken ct, bool refresh = false)
     {
         var asked = body ?? new DeliveryExplorerSearchRequest();
         var (terms, failure) = await TermsOfAsync(asked, partition, partitions, config, request, directory, ct).ConfigureAwait(false);
@@ -208,9 +212,13 @@ public static partial class DeliveryExplorerEndpoints
             return DeliveryEndpoints.Invalid(invalid!);
         }
 
-        return await ExploreAsync(
-            action, new Dictionary<string, string>(StringComparer.Ordinal) { [ExploreOperation.SearchArgument] = search.ToJson() },
-            partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal) { [ExploreOperation.SearchArgument] = search.ToJson() };
+        if (refresh)
+        {
+            arguments[ExploreOperation.RefreshArgument] = "true";
+        }
+
+        return await ExploreAsync(action, arguments, partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>Runs one of the explorer's reads in this process, through the partition's own connection, and answers with it.</summary>

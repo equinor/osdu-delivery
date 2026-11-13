@@ -10,7 +10,7 @@ import { OsduRecordPanel, type RecordFollow } from "../OsduRecordView";
 import { ExplorerProblem, ExplorerErrorText } from "./ExplorerProblem";
 import { ExplorerValidationView, ValidationFieldMark } from "./ExplorerValidation";
 import { ScopeCrumbs } from "./ExplorerResults";
-import { counted, kindParts, rememberRecord, useExplorerRead, type ExplorerScope } from "./explorerModel";
+import { counted, kindParts, rememberRecord, typeScopeOf, useExplorerRead, type ExplorerScope } from "./explorerModel";
 
 /** A list of records as the record view lists them (the ones that mention it, the ones near an id): name, type and id. */
 function HitList({ hits, onOpen, testId }: { hits: ExplorerHit[]; onOpen: (id: string) => void; testId: string }) {
@@ -188,7 +188,13 @@ export function ExplorerRecord({ partition, id, version, onBack, onScope, onOpen
           <ArrowLeft className="size-4" />
         </button>
       )}
-      <ScopeCrumbs partition={partition} scope={entityType === "" ? { level: "all" } : { level: "type", entityType }} onScope={onScope} last={false} />
+      <ScopeCrumbs
+        partition={partition}
+        // The record's own kind places it, a type naming no group within its namespace; until it is read, its id does.
+        scope={typeof read?.record?.kind === "string" ? typeScopeOf(read.record.kind) : entityType === "" ? { level: "all" } : { level: "type", entityType }}
+        onScope={onScope}
+        last={false}
+      />
     </span>
   );
   const actions: ReactNode = (
