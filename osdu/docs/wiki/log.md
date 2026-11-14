@@ -784,3 +784,13 @@ Added decision 0057, `delivery-concept-compute-usage` and the compute usage, com
 pages; updated `delivery-flow-repository`, `delivery-concept-request-correlation`, `delivery-concept-api`,
 `delivery-concept-menu`, `delivery-concept-gui`, `delivery-concept-control-plane`, `delivery-concept-database` and
 `delivery-concept-storage-and-retention`.
+
+## [2026-11-14] ingest | Deleting what a missing document left behind
+
+Source: the owner's report that the Orphaned ledgers page offered no way to remove an orphan, with a request for a full
+check of the page, and the code of the takeover it extends (`LedgerBindings`, `LedgerMoves`, `OsduLedger.Moves`).
+
+Amended decision 0028 with why a deletion refuses a ledger that is the only record of something in OSDU, and why it asks
+nothing of OSDU; updated `delivery-concept-renaming-a-pipeline`, `delivery-concept-api`, `delivery-concept-gui-ledger`,
+`delivery-concept-ledger`, `delivery-concept-control-plane`, `delivery-guide-operations-runbook` and the activity table
+page.

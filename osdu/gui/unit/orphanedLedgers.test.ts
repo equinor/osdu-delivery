@@ -1,11 +1,12 @@
 // What the Orphaned ledgers page says of a missing document (osdu/docs/reference/concepts/renaming-a-pipeline.md, Missing
 // documents): what it left behind in words, where each ledger goes under the flow picked, which documents a search and a
-// kind keep, and the totals the page heads with.
+// kind keep, the totals the page heads with, and what a deletion would do and did.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  destinationOf, heldCount, heldText, ledgerLabel, matches, recordsHref, suggestedOf, totals, trailHref, type MissingDocument,
+  deletedText, deleteEffect, deleteLabel, deletePartition, deleteTitle, deletionTotals, destinationOf, documentKey, heldCount, heldText, ledgerLabel, leftRecently, matches,
+  RECENT_MS, recordsHref, SHARES, suggestedOf, totals, trailHref, type MissingDocument,
 } from "../src/features/delivery/orphanedLedgers.ts";
 
 const SOURCE: MissingDocument = {
@@ -91,5 +92,73 @@ describe("the list", () => {
   it("links a ledger's records and trail in its partition", () => {
     assert.equal(recordsHref(SOURCE.ledgers[0]), "/delivery/records?flow=w&partition=dev");
     assert.equal(trailHref("d", "test"), "/delivery/activity?flow=d&partition=test");
+  });
+});
+
+describe("deleting what a missing document left behind", () => {
+  const NOW = Date.parse("2026-11-14T12:00:00Z");
+
+  it("tells one document from another by its kind and flow, and names the file a renamed flow shares", () => {
+    assert.equal(documentKey(SOURCE), "delivery:petrel");
+    assert.equal(documentKey(DIMENSIONS), "dimension:welldb-dimensions");
+    assert.equal(SHARES.file.label, "same file");
+  });
+
+  it("acts in the workbench's partition, else the one partition every ledger is kept in, else in none", () => {
+    assert.equal(deletePartition([SOURCE, DIMENSIONS], "prod"), "prod");
+    assert.equal(deletePartition([SOURCE], null), "dev");
+    assert.equal(deletePartition([SOURCE, DIMENSIONS], null), null);
+    assert.equal(deletePartition([], null), null);
+  });
+
+  it("says a document left only just now within a day, and never without a departure on record", () => {
+    assert.equal(leftRecently(Date.parse("2026-11-13T16:00:00Z"), NOW), true);
+    assert.equal(leftRecently(NOW - RECENT_MS, NOW), false);
+    assert.equal(leftRecently(Date.parse("2026-11-04T12:00:00Z"), NOW), false);
+    assert.equal(leftRecently(null, NOW), false);
+    assert.equal(leftRecently(Number.NaN, NOW), false);
+  });
+
+  it("adds up what can go by kind, and counts the ledgers that stay", () => {
+    const totalled = deletionTotals([
+      { kind: "assertion", ledgers: [{ ledger: "a", rows: 1 }] },
+      { kind: "assertion", ledgers: [{ ledger: "b", rows: 20, refusal: null }] },
+      { kind: "delivery", ledgers: [{ ledger: "w", rows: 5000, refusal: "OSDU may still hold them" }, { ledger: "l", rows: 431 }] },
+      { kind: "inventory", ledgers: [{ ledger: "i", rows: 2, refusal: "holds a removal" }] },
+    ]);
+    assert.deepEqual(totalled, { ledgers: 3, staying: 2, documents: 3, held: ["431 records", "21 assertion runs"] });
+    assert.deepEqual(deletionTotals([]), { ledgers: 0, staying: 0, documents: 0, held: [] });
+  });
+
+  it("heads with the one document's ledgers, or the flows", () => {
+    assert.equal(deleteTitle([DIMENSIONS]), "Delete the orphaned ledger");
+    assert.equal(deleteTitle([SOURCE]), "Delete 2 orphaned ledgers");
+    assert.equal(deleteTitle([SOURCE, DIMENSIONS]), "Delete the orphaned ledgers of 2 flows");
+  });
+
+  it("says what goes of the kinds in the dialog only, in the page's order, and that the trail stays", () => {
+    assert.equal(deleteEffect(["assertion"]), "Assertion runs go with their results. Each ledger's audit trail stays, with this deletion in it as yours.");
+    const both = deleteEffect(["inventory", "delivery", "inventory"]);
+    assert.ok(both.startsWith("A delivery ledger goes only once OSDU holds none of its records"));
+    assert.ok(both.includes("Inventories go with"));
+    assert.equal(both.split("Inventories").length, 2);
+  });
+
+  it("puts what goes on the button: one kind's rows, else the ledgers", () => {
+    assert.equal(deleteLabel({ ledgers: 21, held: ["21 assertion runs"] }), "Delete 21 assertion runs");
+    assert.equal(deleteLabel({ ledgers: 1, held: ["1 assertion run"] }), "Delete 1 assertion run");
+    assert.equal(deleteLabel({ ledgers: 1234, held: ["431 records", "21 assertion runs"] }), "Delete 1,234 ledgers");
+    assert.equal(deleteLabel({ ledgers: 0, held: [] }), "Delete");
+  });
+
+  it("says how a ledger's deletion ended: what went, that it waits, or why it stays", () => {
+    assert.equal(deletedText("assertion", { outcome: "completed", rows: 2, summary: "deleted" }), "2 assertion runs deleted, with all they held.");
+    assert.equal(deletedText("assertion", { outcome: "completed", rows: 1, summary: "deleted" }), "1 assertion run deleted, with all it held.");
+    assert.equal(deletedText("delivery", { outcome: "completed", rows: 1, summary: "deleted" }), "1 record deleted, a line kept of it.");
+    assert.equal(deletedText("delivery", { outcome: "completed", rows: 3, summary: "deleted" }), "3 records deleted, a line kept of each.");
+    assert.equal(
+      deletedText("delivery", { outcome: "running", rows: 1, summary: "a run is still working on 'petrel'" }),
+      "It waits (a run is still working on 'petrel'); the control plane finishes it.");
+    assert.equal(deletedText("inventory", { outcome: "failed", rows: 2, summary: "holds 1 removal(s)" }), "holds 1 removal(s)");
   });
 });

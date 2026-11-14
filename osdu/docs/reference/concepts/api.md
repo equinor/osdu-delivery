@@ -202,8 +202,12 @@ See [removal and reversal](removal-and-reversal.md) for what each scope does.
 | --- | --- | --- | --- |
 | `GET /ledgers/orphaned` | read | `partition` (else the workbench's, else every partition) | The missing documents: each flow no repository declares any more whose ledgers hold anything, with `kind`, `flowName`, `relativePath` and `leftUtc` (where and when a sync last found it), `rows` and `claimed` (what it left behind), `ledgers` (one per interface and partition) and `candidates` (the declared flows that can take it over, the likeliest first, each with what it `shares`, how many ledgers it `takes`, and whether it is `suggested`). |
 | `POST /ledgers/orphaned/takeover` | operate | body `kind`, `from` (the missing flow), `to` (the declared flow), `partition` (else the workbench's, else every partition) | 200 with each ledger's move (`outcome`: `completed`, `running` for one that waits for work in flight, `failed`, or `skipped` for one the flow keeps no counterpart of, which stays orphaned) and how many ended each way. 400 without `kind`, `from` or `to`; 409 when the document is not missing, or no repository (or more than one) declares the flow. |
+| `POST /ledgers/orphaned/delete/preview` | operate | body `kind`, `flow` (the missing flow), `partition` (else the workbench's) | 200 with each of its orphaned ledgers in the partition (`ledger`, `interface`, `ledgerName`, `rows`, `claimed`, and when it cannot be deleted now, why: `refusal` in full, `refusedFor` in a few words), `deletable` and `refused`. Nothing is written. 400 without `kind`, `flow` or a partition; 409 when the document left no orphaned ledger there. |
+| `POST /ledgers/orphaned/delete` | operate | the same, and `confirm` naming the partition | 200 with each ledger's deletion (`outcome`: `completed`, `running` for one that waits for work in flight or that another process is deleting, or `failed` with why, a refused ledger's `activityId` 0) and how many ended each way. 400 without `kind`, `flow` or a partition, or when `confirm` is missing or names another partition; 409 when the document left no orphaned ledger there. |
 
-A takeover moves each ledger as the caller, as [Renaming a pipeline](renaming-a-pipeline.md#missing-documents-and-taking-them-over) describes.
+A takeover moves each ledger as the caller, as [Renaming a pipeline](renaming-a-pipeline.md#missing-documents-and-taking-them-over) describes;
+a deletion deletes each ledger as the caller, and refuses one that knows something of OSDU nothing else does
+([Deleting what a missing document left behind](renaming-a-pipeline.md#deleting-what-a-missing-document-left-behind)).
 
 ## Issues and reversals
 

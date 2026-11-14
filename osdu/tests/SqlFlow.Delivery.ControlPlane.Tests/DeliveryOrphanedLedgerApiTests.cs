@@ -16,10 +16,12 @@ using Xunit;
 namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
-/// The missing documents and their takeover, as the API serves them (osdu/docs/reference/concepts/api.md, Missing
-/// documents): a flow no repository declares any more is listed with what it left behind and the declared flow that pins its
-/// mapping suggested first; a takeover without its names is refused, one names the flow that takes the ledger over, moves
-/// it as the caller and answers how each ledger ended, and a document taken over is missing no more.
+/// The missing documents, their takeover and their deletion, as the API serves them (osdu/docs/reference/concepts/api.md,
+/// Missing documents): a flow no repository declares any more is listed with what it left behind and the declared flow that
+/// pins its mapping suggested first; a takeover without its names is refused, one names the flow that takes the ledger over,
+/// moves it as the caller and answers how each ledger ended, and a document taken over is missing no more. A deletion is
+/// previewed without writing, refused without its partition named back, refused for a ledger whose records OSDU may still
+/// hold, and made as the caller once none can.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -108,6 +110,111 @@ public sealed class DeliveryOrphanedLedgerApiTests
             await using var catalog = CatalogDatabase.Create(cs);
             await catalog.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
             await catalog.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
+    public async Task What_a_missing_document_left_is_previewed_and_deleted_as_the_caller_once_its_partition_is_named_back()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var flow = "api-orphan-delete-" + suffix;
+        var id = FlowId.Of(flow);
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(id, TestLedgers.Partition, flow);
+        await ledger.UpsertPendingAsync(id, [Claiming(id, suffix)]);
+
+        try
+        {
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+            const string Preview = "/api/v1/delivery/ledgers/orphaned/delete/preview";
+            const string Delete = "/api/v1/delivery/ledgers/orphaned/delete";
+            var named = new { kind = "delivery", flow, partition = TestLedgers.Partition };
+
+            // The preview writes nothing and says why the ledger cannot go: its record claimed an OSDU id and is not removed.
+            using (var previewed = await SendAsync(client, token, HttpMethod.Post, Preview, named))
+            {
+                var text = await previewed.Content.ReadAsStringAsync();
+                Assert.True(previewed.StatusCode == HttpStatusCode.OK, text);
+                var preview = JsonDocument.Parse(text).RootElement;
+                Assert.Equal((0, 1), (preview.GetProperty("deletable").GetInt32(), preview.GetProperty("refused").GetInt32()));
+                var only = Assert.Single(preview.GetProperty("ledgers").EnumerateArray());
+                Assert.Equal((id, 1L, 1L), (only.GetProperty("ledger").GetGuid(), only.GetProperty("rows").GetInt64(), only.GetProperty("claimed").GetInt64()));
+                Assert.Contains("OSDU may still hold them", only.GetProperty("refusal").GetString(), StringComparison.Ordinal);
+                Assert.Equal("OSDU may still hold 1 of its records", only.GetProperty("refusedFor").GetString());
+            }
+
+            // A deletion names its document and partition, and the partition again to confirm it.
+            using (var incomplete = await SendAsync(client, token, HttpMethod.Post, Delete, new { kind = "delivery", partition = TestLedgers.Partition, confirm = TestLedgers.Partition }))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, incomplete.StatusCode);
+            }
+
+            using (var unconfirmed = await SendAsync(client, token, HttpMethod.Post, Delete, named))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, unconfirmed.StatusCode);
+                Assert.Contains("Confirmation required", await unconfirmed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            }
+
+            using (var mistaken = await SendAsync(client, token, HttpMethod.Post, Delete, new { kind = "delivery", flow, partition = TestLedgers.Partition, confirm = "prod" }))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, mistaken.StatusCode);
+                Assert.Contains("Confirmation does not match", await mistaken.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            }
+
+            // Confirmed, the ledger is still refused, saying why, and its record stays.
+            var confirmed = new { kind = "delivery", flow, partition = TestLedgers.Partition, confirm = TestLedgers.Partition };
+            using (var refused = await SendAsync(client, token, HttpMethod.Post, Delete, confirmed))
+            {
+                var text = await refused.Content.ReadAsStringAsync();
+                Assert.True(refused.StatusCode == HttpStatusCode.OK, text);
+                var answer = JsonDocument.Parse(text).RootElement;
+                Assert.Equal((0, 0, 1), (answer.GetProperty("completed").GetInt32(), answer.GetProperty("waiting").GetInt32(), answer.GetProperty("failed").GetInt32()));
+                Assert.Contains("OSDU may still hold them", Assert.Single(answer.GetProperty("ledgers").EnumerateArray()).GetProperty("summary").GetString(), StringComparison.Ordinal);
+            }
+
+            Assert.Single(await ledger.ListAsync(id, new RecordQuery()));
+
+            // Once the record is out of OSDU, the ledger is deleted as the caller, and the document is missing no more.
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                await osdu.DeliveryRecords.Where(r => r.FlowId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "deleted"));
+            }
+
+            using (var deleted = await SendAsync(client, token, HttpMethod.Post, Delete, confirmed))
+            {
+                var text = await deleted.Content.ReadAsStringAsync();
+                Assert.True(deleted.StatusCode == HttpStatusCode.OK, text);
+                var answer = JsonDocument.Parse(text).RootElement;
+                Assert.Equal((1, 0, 0), (answer.GetProperty("completed").GetInt32(), answer.GetProperty("waiting").GetInt32(), answer.GetProperty("failed").GetInt32()));
+                Assert.Equal(LedgerMoves.Completed, Assert.Single(answer.GetProperty("ledgers").EnumerateArray()).GetProperty("outcome").GetString());
+            }
+
+            Assert.Empty(await ledger.ListAsync(id, new RecordQuery()));
+            var activity = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = id, Kind = LedgerDeletes.Kind }));
+            Assert.StartsWith("user:", activity.Actor, StringComparison.Ordinal);
+            using var again = await SendAsync(client, token, HttpMethod.Post, Delete, confirmed);
+            Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+        }
+        finally
+        {
+            await using var osdu = SampleEstate.Context(cs);
+            await osdu.DeliveryPurgedRecords.Where(p => p.FlowId == id).ExecuteDeleteAsync();
+            await osdu.DeliveryActivityRecords.Where(a => a.FlowId == id).ExecuteDeleteAsync();
+            await osdu.DeliveryActivities.Where(a => a.FlowId == id).ExecuteDeleteAsync();
+            await osdu.DeliveryAttempts.Where(a => a.FlowId == id).ExecuteDeleteAsync();
+            await osdu.DeliveryRecordIdentities.Where(i => i.FlowId == id).ExecuteDeleteAsync();
+            await osdu.DeliveryRecords.Where(r => r.FlowId == id).ExecuteDeleteAsync();
+            await osdu.DeliveryLedgers.Where(l => l.FlowId == id).ExecuteDeleteAsync();
         }
     }
 

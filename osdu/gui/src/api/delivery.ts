@@ -2277,7 +2277,7 @@ export interface TakeoverCandidate {
   relativePath: string;
   interfaces: string[];
   mappings: string[];
-  /** What it shares with the missing document: mapping, record table, interface, folder. */
+  /** What it shares with the missing document: file, mapping, record table, interface, folder. */
   shares: string[];
   /** How many of the missing document's ledgers it would take. */
   takes: number;
@@ -2329,6 +2329,59 @@ export interface DeliveryTakeoverAnswer {
   waiting: number;
   failed: number;
   skipped: number;
+}
+
+/** A deletion, or its preview: the missing flow of `kind` and the one partition whose orphaned ledgers of it go; a deletion names that partition again as `confirm`. */
+export interface OrphanDeleteRequest {
+  kind: string;
+  flow: string;
+  partition: string;
+  confirm?: string;
+}
+
+/** One orphaned ledger as a deletion's preview shows it: what it holds, and why it cannot be deleted now when it cannot. */
+export interface OrphanDeleteLedger {
+  ledger: string;
+  partition: string;
+  /** Empty for a flow in the single form, and for every kind but delivery. */
+  interface: string;
+  ledgerName: string;
+  rows: number;
+  claimed: number;
+  /** Why it stays, in full, with what to do instead: it knows something of OSDU nothing else does, or something declared still reads it. Absent when it can go. */
+  refusal?: string | null;
+  /** The same in a few words, for the line beside the ledger: `OSDU may still hold 12 of its records`. */
+  refusedFor?: string | null;
+}
+
+/** What deleting a missing document would do in a partition: each ledger, and how many can go and how many are refused. */
+export interface OrphanDeletePreview {
+  kind: string;
+  flowName: string;
+  partition: string;
+  ledgers: OrphanDeleteLedger[];
+  deletable: number;
+  refused: number;
+}
+
+/** What one ledger's deletion came to: completed, running (it waits for work in flight, or another process is at it), or failed with why. */
+export interface LedgerDeleteResult {
+  /** 0 for a ledger refused before anything was asked. */
+  activityId: number;
+  partition: string;
+  ledger: string;
+  interface: string;
+  outcome: "completed" | "running" | "failed";
+  rows: number;
+  summary: string;
+}
+
+/** What a deletion did to each ledger of the missing document, and how many ended each way. */
+export interface OrphanDeleteAnswer {
+  ledgers: LedgerDeleteResult[];
+  completed: number;
+  waiting: number;
+  failed: number;
 }
 
 /** A takeover: the missing flow of `kind`, the declared flow that takes it over, and the one partition it acts in. */
@@ -4869,5 +4922,11 @@ export const deliveryApi = {
   /** Hands a missing document's ledgers to a declared flow, as the caller: each ledger moves at once, and the answer says how. */
   takeOverLedgers: (request: DeliveryTakeoverRequest) =>
     post<DeliveryTakeoverAnswer>("/api/v1/delivery/ledgers/orphaned/takeover", request),
+  /** What deleting a missing document's ledgers in a partition would do: each ledger, and why it stays when it cannot go. Nothing is written. */
+  previewOrphanedDelete: (request: OrphanDeleteRequest) =>
+    post<OrphanDeletePreview>("/api/v1/delivery/ledgers/orphaned/delete/preview", request),
+  /** Deletes what a missing document left behind in a partition, as the caller, once `confirm` names that partition. Nothing is asked of OSDU. */
+  deleteOrphanedLedgers: (request: OrphanDeleteRequest) =>
+    post<OrphanDeleteAnswer>("/api/v1/delivery/ledgers/orphaned/delete", request),
 };
 

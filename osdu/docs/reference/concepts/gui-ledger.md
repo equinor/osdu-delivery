@@ -140,7 +140,7 @@ Every run and intervention across flows, newest first: when, **Took** (how long 
 submission, else the run). It narrows by actor, flow,
 action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
 `restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-restore`, `inventory-repair`,
-`reassign-id`, `source-remove`, `lift-removal`, `ledger-move`) and outcome. Runs
+`reassign-id`, `source-remove`, `lift-removal`, `ledger-move`, `delete-orphaned-ledger`) and outcome. Runs
 that changed nothing are left out until **Show idle runs**. An entry opens on its ids, **Parameters**, its captured
 **Log** (downloadable), and for a `deliver`, `replan`, `drain` or `intake` run that has ended, **Reverse this run**; a
 `reverse` entry shows its **Reversal**. The flow is in the address (`flow`, the ledger's flow id), so one flow's trail is
@@ -164,10 +164,15 @@ where**, each ledger with the ledger it goes to under the flow picked, or that i
 moves (**Take over 5,431 records**). Once taken over, the dialog says how each ledger ended, with a link to the trail it
 moved to.
 
-The rows with a suggested flow can be selected and taken over together: **Take over with suggested flows** lists each
-pair and what it holds, then takes them over one after another and says how each ended. While any missing document
-exists, the Delivery page says so and links here. See
-[Renaming a pipeline](renaming-a-pipeline.md#missing-documents-and-taking-them-over).
+Rows can be selected. **Take over with suggested flows** takes the selected rows that have a suggestion over together (the
+button says so when only some have one): it lists each pair and what it holds, then takes them over one after another and
+says how each ended. **Delete what they left behind** deletes the selection, and **Delete** (the bin on a row) one
+document: the dialog first asks what each ledger holds, lists every document with what it left and when and each ledger
+that stays with why, says when one left less than a day ago, and has the partition typed back; the button says what goes
+(**Delete 21 assertion runs**). Once asked it says how each ended, with a link to the audit trail that keeps the deletion.
+While any missing document exists, the Delivery page says so and links here. See
+[Renaming a pipeline](renaming-a-pipeline.md#missing-documents-and-taking-them-over) and
+[Deleting what a missing document left behind](renaming-a-pipeline.md#deleting-what-a-missing-document-left-behind).
 
 ## A record's page
 

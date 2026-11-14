@@ -127,6 +127,40 @@ public sealed class LedgerFlowTakeoverTests : IDisposable
     }
 
     [Fact]
+    public async Task A_flow_renamed_and_changed_in_its_own_file_is_suggested_over_the_other_flows_of_its_folder()
+    {
+        const string Other = "welldb-welllog-04-header-assertion";
+        Write($"flows/{Assertion}.yaml", Sample($"{Assertion}.yaml", Assertion));
+        Write($"flows/{Other}.yaml", Sample($"{Other}.yaml", Other));
+        await SyncAsync(First);
+        var ledger = _module.Ledger(new TestClock());
+        await using (var db = _module.CreateDbContext())
+        {
+            var partition = await RegisterAsync(ledger, db, LedgerKinds.Assertion, Assertion);
+            db.DeliveryAssertionRuns.Add(Run(partition, Assertion));
+            await db.SaveChangesAsync();
+        }
+
+        // Renamed and changed where it is: another document in the same file, so the sync moves nothing.
+        var changed = Sample($"{Assertion}.yaml", RenamedAssertion)
+            .Replace("description: The delivered wells meet", "description: The delivered wells of the renamed flow meet", StringComparison.Ordinal);
+        Assert.Contains("of the renamed flow", changed, StringComparison.Ordinal);
+        Write($"flows/{Assertion}.yaml", changed);
+        await SyncAsync(Later);
+        await using (var moves = _module.CreateDbContext())
+        {
+            Assert.False(await moves.DeliveryActivities.AnyAsync(a => a.Kind == LedgerMoves.Kind));
+        }
+
+        // Two flows share its folder, so the folder alone would suggest neither: the one now declared in its file is suggested.
+        var missing = Assert.Single(await ledger.ListOrphanedDocumentsAsync("dev"));
+        Assert.Equal((Assertion, $"flows/{Assertion}.yaml"), (missing.FlowName, missing.RelativePath));
+        Assert.Equal([(RenamedAssertion, true), (Other, false)], missing.Candidates.Select(c => (c.FlowName, c.Suggested)));
+        Assert.Equal(["file", "folder"], missing.Candidates[0].Shares);
+        Assert.Equal(["folder"], missing.Candidates[1].Shares);
+    }
+
+    [Fact]
     public async Task A_dimension_flow_renamed_and_changed_is_taken_over_with_its_dimensions_and_views()
     {
         var ledger = await OrphanedDimensionsAsync();

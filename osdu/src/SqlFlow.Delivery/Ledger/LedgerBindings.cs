@@ -19,13 +19,15 @@ namespace SqlFlow.Delivery.Ledger;
 /// recorded as theirs, one per ledger.
 /// <para>
 /// A ledger is orphaned when it is placed in a partition, holds anything (a delivery ledger's record, a row of another kind's
-/// first table), no move takes it away already, and no declared flow keeps it: for a delivery ledger, no interface a
+/// first table), no move takes it away and no deletion empties it already (<see cref="LedgerDeletes"/>), and no declared flow keeps it: for a delivery ledger, no interface a
 /// repository declares keeps its identity (<see cref="DeliveryInterface"/>); for another kind, no repository declares a flow
 /// of its kind under the name it was kept by (<see cref="DeliveryLedgerFlow"/>), since those flows keep their ledgers
 /// under their names alone. The orphaned ledgers of one flow are one missing document. A declared flow of its kind takes it
 /// over: each ledger goes to the ledger the flow keeps, or would keep, in the same partition; a delivery ledger to the one
 /// of the interface of the same name, and the ledger of a flow in the single form to the one of the flow's one interface.
-/// The flows that share a mapping document, record table, interface or folder with the missing document come first.
+/// The flows that share its file, a mapping document, record table, interface or folder with the missing document come first.
+/// A person who decides no flow is to take a missing document over deletes what it left behind instead
+/// (<see cref="PlanDeleteAsync"/>, <see cref="RequestDeleteAsync"/>).
 /// </para>
 /// </summary>
 public static class LedgerBindings
@@ -128,7 +130,7 @@ public static class LedgerBindings
             ?? throw new DeliveryException($"Partition '{step.Partition}' keeps no ledger {step.Ledger:D} any more, so it was not taken over.");
         if (!estate.Orphaned(ledger))
         {
-            throw new DeliveryException($"The ledger of '{ledger.FlowName}' in partition '{step.Partition}' is no longer orphaned (a declared flow keeps it, or a move takes it already), so it was not taken over again.");
+            throw new DeliveryException($"The ledger of '{ledger.FlowName}' in partition '{step.Partition}' is no longer orphaned (a declared flow keeps it, a move takes it already, or it is being deleted), so it was not taken over again.");
         }
 
         var asked = await LedgerMoves.RequestAsync(
@@ -139,10 +141,105 @@ public static class LedgerBindings
         {
             LedgerMoveAsk.Asked => asked.ActivityId,
             LedgerMoveAsk.Waits => throw new DeliveryException(
-                $"Another move takes the ledger of '{ledger.FlowName}' or of '{to.FlowName}' in partition '{step.Partition}' already, so this one was not asked: take it over once that move is done, which the audit trail shows."),
+                $"Another move takes the ledger of '{ledger.FlowName}' or of '{to.FlowName}' in partition '{step.Partition}' already, or one of them is being deleted, so this one was not asked: take it over once that is done, which the audit trail shows."),
             _ => throw new DeliveryException(
                 $"'{to.FlowName}' keeps its ledger in another partition than '{step.Partition}', and a ledger keeps the rows of one partition, so the ledger of '{ledger.FlowName}' there was not taken over."),
         };
+    }
+
+    /// <summary>
+    /// What a deletion asks: each orphaned ledger of the missing document <paramref name="request"/> names, in its partition,
+    /// with what it holds.
+    /// </summary>
+    /// <exception cref="DeliveryException">The document left no orphaned ledger in the partition.</exception>
+    public static async Task<IReadOnlyList<LedgerDeleteStep>> PlanDeleteAsync(OsduDbContext context, LedgerDeleteRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Kind);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Flow);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Partition);
+        var estate = await EstateAsync(context, ct).ConfigureAwait(false);
+        var orphans = (await OrphansAsync(context, estate, request.Partition, ct).ConfigureAwait(false))
+            .Where(o => o.Ledger.Kind == request.Kind && string.Equals(o.Ledger.FlowName, request.Flow.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderBy(o => o.Ledger.Interface, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (orphans.Count == 0)
+        {
+            throw new DeliveryException(
+                $"No {request.Kind} flow '{request.Flow}' left an orphaned ledger in partition '{request.Partition}', so nothing was deleted: the Orphaned ledgers page lists the documents that did.");
+        }
+
+        return [.. orphans.Select(o => new LedgerDeleteStep(
+            o.Ledger.FlowId, o.Ledger.PartitionId, o.Partition, o.Ledger.Kind, o.Ledger.FlowName, o.Ledger.Interface, o.Ledger.LedgerName, o.Rows, o.Claimed))];
+    }
+
+    /// <summary>
+    /// Asks the deletion of one orphaned ledger, as <paramref name="actor"/>, on <paramref name="context"/>, in whatever
+    /// transaction it was opened with; answers the deletion's activity. In a transaction, it holds the lock every ask for a
+    /// move holds (<see cref="LedgerMoves.LockAsksAsync"/>) from before it checks the ledger is still orphaned, so a deletion
+    /// and a move of one ledger are never both asked. A ledger whose deletion is asked already answers that one's activity.
+    /// </summary>
+    /// <exception cref="DeliveryException">The deletion cannot be asked; the message says why, and nothing was written.</exception>
+    public static async Task<long> RequestDeleteAsync(OsduDbContext context, LedgerDeleteStep step, string actor, DateTime nowUtc, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(step);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        await LedgerMoves.LockAsksAsync(context, ct).ConfigureAwait(false);
+        var estate = await EstateAsync(context, ct).ConfigureAwait(false);
+        var ledger = await context.DeliveryLedgers.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.FlowId == step.Ledger && l.PartitionId == step.PartitionId, ct).ConfigureAwait(false)
+            ?? throw new DeliveryException($"Partition '{step.Partition}' keeps no ledger {step.Ledger:D} any more, so nothing was deleted.");
+        if (estate.Deleting.TryGetValue(ledger.FlowId, out var asked))
+        {
+            return asked;
+        }
+
+        if (!estate.Orphaned(ledger))
+        {
+            throw new DeliveryException(
+                $"The ledger of '{ledger.FlowName}' in partition '{step.Partition}' is no longer orphaned (a declared flow keeps it, or a move takes it already), so it was not deleted.");
+        }
+
+        var activity = new DeliveryActivity
+        {
+            PartitionId = ledger.PartitionId,
+            FlowId = ledger.FlowId,
+            FlowName = ledger.FlowName,
+            Kind = LedgerDeletes.Kind,
+            Actor = actor,
+            StartedUtc = nowUtc,
+            Outcome = LedgerMoves.Running,
+            ParametersJson = LedgerDeletes.Write(new LedgerDeleteParameters
+            {
+                Ledger = ledger.FlowId,
+                LedgerName = ledger.LedgerName,
+                LedgerKind = ledger.Kind,
+                Flow = ledger.FlowName,
+                Interface = ledger.Interface,
+                Rows = step.Rows,
+                Claimed = step.Claimed,
+            }),
+            Summary = $"deleting the orphaned ledger of '{ledger.FlowName}', which no repository declares",
+        };
+        context.DeliveryActivities.Add(activity);
+        await context.SaveChangesAsync(ct).ConfigureAwait(false);
+        return activity.ActivityId;
+    }
+
+    /// <summary>
+    /// True while no declared flow keeps the ledger <paramref name="ledger"/> of partition <paramref name="partitionId"/> and
+    /// no move takes it away: what a deletion under way checks before each pass, since a repository may declare its flow
+    /// again meanwhile. False for a ledger the directory no longer holds.
+    /// </summary>
+    public static async Task<bool> UnkeptAsync(OsduDbContext context, short partitionId, Guid ledger, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var estate = await EstateAsync(context, ct).ConfigureAwait(false);
+        var row = await context.DeliveryLedgers.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.FlowId == ledger && l.PartitionId == partitionId, ct).ConfigureAwait(false);
+        return row is not null && !estate.Moving.Contains(ledger) && !estate.Kept(row);
     }
 
     /// <summary>
@@ -158,21 +255,25 @@ public static class LedgerBindings
             : (Identity.FlowId.Of(flow.FlowName), flow.FlowName);
     }
 
-    /// <summary>What the takeover and the listing read of the estate: the partitions, the flows declared, and the moves under way.</summary>
+    /// <summary>What the takeover, the deletion and the listing read of the estate: the partitions, the flows declared, and the moves and deletions under way.</summary>
     private sealed record Estate(
         IReadOnlyDictionary<short, string> Partitions,
         IReadOnlyList<DeliveryInterface> Interfaces,
         IReadOnlyList<DeliveryLedgerFlow> Flows,
-        IReadOnlySet<Guid> Moving)
+        IReadOnlySet<Guid> Moving,
+        IReadOnlyDictionary<Guid, long> Deleting)
     {
         private readonly HashSet<Guid> _kept = [.. Interfaces.Where(i => i.Active).Select(i => i.LedgerFlowId)];
 
         private readonly HashSet<string> _declared = new(Flows.Where(f => f.Active).Select(f => Name(f.Kind, f.FlowName)), StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>True when no declared flow keeps <paramref name="ledger"/>, and no move takes it away already.</summary>
+        /// <summary>True when no declared flow keeps <paramref name="ledger"/>, no move takes it away already, and no deletion empties it.</summary>
         public bool Orphaned(DeliveryLedger ledger)
-            => !Moving.Contains(ledger.FlowId)
-               && (ledger.Kind == LedgerKinds.Delivery ? !_kept.Contains(ledger.FlowId) : !_declared.Contains(Name(ledger.Kind, ledger.FlowName)));
+            => !Moving.Contains(ledger.FlowId) && !Deleting.ContainsKey(ledger.FlowId) && !Kept(ledger);
+
+        /// <summary>True when a declared flow keeps <paramref name="ledger"/>: an interface of its identity, or for another kind, a flow of its kind and name.</summary>
+        public bool Kept(DeliveryLedger ledger)
+            => ledger.Kind == LedgerKinds.Delivery ? _kept.Contains(ledger.FlowId) : _declared.Contains(Name(ledger.Kind, ledger.FlowName));
 
         private static string Name(string kind, string flow) => kind + "\u001f" + flow;
     }
@@ -190,7 +291,8 @@ public static class LedgerBindings
             .Select(a => a.ParametersJson)
             .ToListAsync(ct).ConfigureAwait(false);
         var moving = moves.Select(LedgerMoves.Read).Where(m => m is not null).Select(m => m!.From).ToHashSet();
-        return new Estate(partitions, interfaces, flows, moving);
+        var deleting = await LedgerDeletes.RunningAsync(context, null, ct).ConfigureAwait(false);
+        return new Estate(partitions, interfaces, flows, moving, deleting);
     }
 
     /// <summary>The orphaned ledgers of <paramref name="partition"/>, or of every partition, that hold anything.</summary>
@@ -297,10 +399,11 @@ public static class LedgerBindings
 
     /// <summary>
     /// The declared flows of <paramref name="kind"/> that can take over a missing document's <paramref name="ledgers"/>: those
-    /// that keep, or would keep, a ledger for at least one of them. Ranked by what they share with the missing document (for a
-    /// delivery flow, a mapping document its interfaces pinned, a record table they read, an interface name; for any kind,
-    /// the folder it was declared in), then by how many of its ledgers they take; the one that alone ranks first, when it
-    /// shares a mapping document (or for another kind, its folder), is suggested.
+    /// that keep, or would keep, a ledger for at least one of them. Ranked by what they share with the missing document (for
+    /// any kind, the file it was last declared in, which a flow renamed and changed in place still is, and the folder; for a
+    /// delivery flow, a mapping document its interfaces pinned, a record table they read, an interface name), then by how many
+    /// of its ledgers they take; the one that alone ranks first, when it shares the file or a mapping document (or for another
+    /// kind, its folder), is suggested.
     /// </summary>
     private static IReadOnlyList<TakeoverCandidate> Candidates(
         Estate estate, string kind, string flowName, IReadOnlyList<OrphanedLedger> ledgers, (Guid RepoId, string Path)? origin)
@@ -321,6 +424,13 @@ public static class LedgerBindings
 
             var shares = new List<string>();
             var score = 0;
+            var sameRepository = origin is { } from && from.RepoId == flow.RepoId;
+            if (sameRepository && string.Equals(Normalized(origin!.Value.Path), Normalized(flow.RelativePath), StringComparison.OrdinalIgnoreCase))
+            {
+                shares.Add(FileShare);
+                score += 16;
+            }
+
             if (kind == LedgerKinds.Delivery)
             {
                 if (ledgers.Any(l => l.Mapping is { } m && flow.Rows.Any(r => string.Equals(r.MappingReference, m, StringComparison.Ordinal))))
@@ -342,7 +452,7 @@ public static class LedgerBindings
                 }
             }
 
-            if (origin is { } o && o.RepoId == flow.RepoId && string.Equals(Folder(o.Path), Folder(flow.RelativePath), StringComparison.OrdinalIgnoreCase))
+            if (sameRepository && string.Equals(Folder(origin!.Value.Path), Folder(flow.RelativePath), StringComparison.OrdinalIgnoreCase))
             {
                 shares.Add("folder");
                 score += 1;
@@ -360,7 +470,7 @@ public static class LedgerBindings
             .ToList();
         if (ranked.Count > 0 && ranked[0].Score > 0
             && (ranked.Count == 1 || ranked[1].Score < ranked[0].Score)
-            && ranked[0].Candidate.Shares.Contains(kind == LedgerKinds.Delivery ? "mapping" : "folder"))
+            && (ranked[0].Candidate.Shares.Contains(FileShare) || ranked[0].Candidate.Shares.Contains(kind == LedgerKinds.Delivery ? "mapping" : "folder")))
         {
             ranked[0] = (ranked[0].Candidate with { Suggested = true }, ranked[0].Score);
         }
@@ -430,6 +540,11 @@ public static class LedgerBindings
         return new LedgerTakeoverStep(ledger.FlowId, ledger.PartitionId, orphan.Partition, ledger.Interface, orphan.Rows, target, skipped);
     }
 
+    /// <summary>What a flow shares with a missing document it is declared in the last file of.</summary>
+    private const string FileShare = "file";
+
+    private static string Normalized(string relativePath) => relativePath.Replace('\\', '/').Trim('/');
+
     private static string Folder(string relativePath)
     {
         var normalized = relativePath.Replace('\\', '/');
@@ -471,9 +586,9 @@ public sealed record OrphanedLedger(Guid Ledger, string Partition, string Interf
 /// <param name="RelativePath">The file that declares it.</param>
 /// <param name="Interfaces">Its interfaces, for a delivery flow that names them.</param>
 /// <param name="Mappings">The mapping documents its interfaces pin, for a delivery flow.</param>
-/// <param name="Shares">What it shares with the missing document: <c>mapping</c>, <c>record table</c>, <c>interface</c>, <c>folder</c>.</param>
+/// <param name="Shares">What it shares with the missing document: <c>file</c>, <c>mapping</c>, <c>record table</c>, <c>interface</c>, <c>folder</c>.</param>
 /// <param name="Takes">How many of the missing document's ledgers it would take.</param>
-/// <param name="Suggested">True for the one flow that alone ranks first, sharing a mapping document (another kind: its folder).</param>
+/// <param name="Suggested">True for the one flow that alone ranks first, sharing the file or a mapping document (another kind: its folder).</param>
 /// <param name="Plan">Where each of the missing document's ledgers would go, as a takeover by this flow hands it over.</param>
 public sealed record TakeoverCandidate(
     Guid RepoId, string FlowName, string RelativePath, IReadOnlyList<string> Interfaces, IReadOnlyList<string> Mappings, IReadOnlyList<string> Shares, int Takes, bool Suggested,

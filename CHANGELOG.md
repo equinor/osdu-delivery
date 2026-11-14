@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **What a flow no repository declares left behind can be deleted.** **Delete** on a row of Orphaned ledgers, or **Delete
+  what they left behind** for a selection, deletes the orphaned ledgers no flow is to take over, in one partition, once
+  the partition is typed back. The dialog first lists what each holds and what stays and why: nothing is asked of OSDU,
+  and a ledger that is the only record of something in OSDU (a delivery record OSDU may still hold, an inventory's
+  removal) is refused. Each deletion is in the ledger's audit trail as `delete-orphaned-ledger`
+  (`POST /api/v1/delivery/ledgers/orphaned/delete`, `/delete/preview`;
+  [deleting what a missing document left behind](osdu/docs/reference/concepts/renaming-a-pipeline.md#deleting-what-a-missing-document-left-behind)).
 - **The explorer builds a cached type as it builds a dimension.** **Build**, in the explorer's header, takes the place of
   **Build a dimension** and offers both: a dimension, or a cached type, the item a cache flow lists under `types:`. The
   cache builder docks beside the records and tells the type in steps (the records, what is kept of each, the attributes
@@ -677,6 +684,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A flow renamed and changed in its own file is suggested to take its old ledger over.** The Orphaned ledgers page counts
+  the file a missing flow was last declared in (**same file**) above its mapping and folder, so the flow now declared there
+  is suggested even where several flows share the folder; and rows without a suggestion can be selected too, for a
+  deletion ([taking them over](osdu/docs/reference/concepts/renaming-a-pipeline.md#missing-documents-and-taking-them-over)).
 - **The explorer's partition's own groups sit under one Custom row.** Groups the OSDU data definitions do not name, and
   the namespaces of types naming no group, fold under **Custom** after OSDU's own groups; a partition's own kind of an
   OSDU type stays under that type. Browse OSDU's choice reads **OSDU standard** and **Registered in** the partition, the

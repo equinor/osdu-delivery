@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, Link2, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowRightLeft, Link2, RefreshCw, Sparkles, Trash2, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DataTable, type Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { FilterBar } from "@/components/FilterBar";
@@ -21,12 +22,11 @@ import { useActivePartition } from "./activePartition";
 import { useLinkedPartition } from "./useLinkedPartition";
 import { NoFact } from "./Facts";
 import { BulkTakeoverDialog } from "./BulkTakeoverDialog";
-import { heldCount, heldText, KINDS, ledgerLabel, matches, suggestedOf, totals } from "./orphanedLedgers";
+import { DeleteOrphanedDialog, type OrphanDeletion } from "./DeleteOrphanedDialog";
+import { documentKey, heldCount, heldText, KINDS, ledgerLabel, matches, suggestedOf, totals } from "./orphanedLedgers";
 import { TakeoverDialog } from "./TakeoverDialog";
 
 const ALL = "all";
-
-const keyOf = (document: OrphanedDocument) => `${document.kind}:${document.flowName}`;
 
 /** Who would take a missing document over: the suggested flow, else how many flows could, else that none can. */
 function TakenOverBy({ document }: { document: OrphanedDocument }) {
@@ -35,7 +35,7 @@ function TakenOverBy({ document }: { document: OrphanedDocument }) {
     return (
       <span className="flex min-w-0 items-center gap-1.5" title="The one flow that shares the most with it. Nothing moves until you take it over.">
         <Sparkles className="size-3.5 shrink-0 text-primary" aria-hidden />
-        <span className="block max-w-[300px] @max-5xl/table:max-w-[170px] @max-4xl/table:max-w-[140px] @max-3xl/table:max-w-[110px]">
+        <span className="block max-w-[300px] @max-5xl/table:max-w-[150px] @max-4xl/table:max-w-[130px] @max-3xl/table:max-w-[110px]">
           <TruncatedText text={suggested.flowName} mono maxWidth={1600} />
         </span>
       </span>
@@ -55,7 +55,8 @@ function TakenOverBy({ document }: { document: OrphanedDocument }) {
  * before the sync recorded documents. The page heads with what they left behind; a document opens the takeover, where a
  * person picks the declared flow that takes it over, the one that alone shares the most with it offered first; and the
  * documents with a suggestion can be taken over together. Until then a flow delivering the same records holds those whose
- * OSDU ids a missing one claimed.
+ * OSDU ids a missing one claimed. What no flow is to take over is deleted instead, a document or a selection at a time,
+ * once the control plane has said what can go and the partition is typed back.
  */
 export default function OrphanedLedgersPage() {
   useLinkedPartition();
@@ -65,6 +66,7 @@ export default function OrphanedLedgersPage() {
   const [chosen, setChosen] = useState<OrphanedDocument | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulk, setBulk] = useState<OrphanedDocument[] | null>(null);
+  const [deletion, setDeletion] = useState<OrphanDeletion | null>(null);
   const documents = useQuery({
     queryKey: ["delivery", "orphaned-ledgers", active],
     queryFn: () => deliveryApi.orphanedDocuments(active),
@@ -75,7 +77,8 @@ export default function OrphanedLedgersPage() {
   const kinds = useMemo(() => KINDS.filter((k) => all.some((d) => d.kind === k)), [all]);
   const shown = useMemo(() => all.filter((d) => matches(d, search, kind === ALL ? null : kind)), [all, search, kind]);
   const sums = totals(all);
-  const picked = all.filter((d) => selected.has(keyOf(d)) && suggestedOf(d) !== undefined);
+  const picked = all.filter((d) => selected.has(documentKey(d)));
+  const suggested = picked.filter((d) => suggestedOf(d) !== undefined);
   const where = active === null ? "" : ` in ${active}`;
 
   const columns: Column<OrphanedDocument>[] = [
@@ -90,11 +93,11 @@ export default function OrphanedLedgersPage() {
             {active === null && [...new Set(row.ledgers.map((l) => l.partition))].map((p) => (
               <Badge key={p} variant="secondary" className="shrink-0 font-mono text-[10px]" title="The partition its ledger is kept in">{p}</Badge>
             ))}
-            <span className="block max-w-[340px] @max-5xl/table:max-w-[210px] @max-4xl/table:max-w-[170px] @max-3xl/table:max-w-[130px]">
+            <span className="block max-w-[340px] @max-5xl/table:max-w-[190px] @max-4xl/table:max-w-[160px] @max-3xl/table:max-w-[130px]">
               <TruncatedText text={row.flowName} mono maxWidth={1600} className="font-medium" />
             </span>
           </span>
-          <span className="block max-w-[340px] text-[11px] text-muted-foreground @max-5xl/table:max-w-[210px] @max-4xl/table:max-w-[170px] @max-3xl/table:max-w-[130px]">
+          <span className="block max-w-[340px] text-[11px] text-muted-foreground @max-5xl/table:max-w-[190px] @max-4xl/table:max-w-[160px] @max-3xl/table:max-w-[130px]">
             {row.relativePath
               ? <TruncatedText text={row.relativePath} mono maxWidth={1600} />
               : <span title="The read model holds no row of where it was declared">file not on record</span>}
@@ -107,7 +110,7 @@ export default function OrphanedLedgersPage() {
       id: "held",
       header: "Left behind",
       fill: true,
-      floor: 160,
+      floor: 120,
       render: (row) => (
         <span title={[heldText(row.kind, row.rows, row.claimed), ...row.ledgers.map((l) => `${ledgerLabel(l)}: ${heldText(row.kind, l.rows, l.claimed)}`)].join("\n")}>
           <TruncatedText text={heldCount(row.kind, row.rows) + (row.ledgers.length > 1 ? ` in ${row.ledgers.length} ledgers` : "")} maxWidth={1600} />
@@ -120,21 +123,41 @@ export default function OrphanedLedgersPage() {
       header: "",
       align: "right",
       render: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7"
-          onClick={(event) => {
-            event.stopPropagation();
-            setChosen(row);
-          }}
-          aria-label={`Take over ${row.flowName}`}
-          title="Take over"
-          data-testid={`orphaned-takeover-${row.flowName}`}
-        >
-          <ArrowRightLeft />
-          <span className="@max-5xl/table:hidden">Take over</span>
-        </Button>
+        <span className="flex items-center justify-end gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            onClick={(event) => {
+              event.stopPropagation();
+              setChosen(row);
+            }}
+            aria-label={`Take over ${row.flowName}`}
+            title="Take over"
+            data-testid={`orphaned-takeover-${row.flowName}`}
+          >
+            <ArrowRightLeft />
+            <span className="@max-5xl/table:hidden">Take over</span>
+          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDeletion({ documents: [row], atMs: Date.now() });
+                }}
+                aria-label={`Delete what ${row.flowName} left behind`}
+                data-testid={`orphaned-delete-${row.flowName}`}
+              >
+                <Trash2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete what it left behind, when no flow is to take it over</TooltipContent>
+          </Tooltip>
+        </span>
       ),
     },
   ];
@@ -145,10 +168,31 @@ export default function OrphanedLedgersPage() {
       <Button variant="link" size="sm" className="h-6 px-0 text-[13px] text-muted-foreground" onClick={() => setSelected(new Set())} data-testid="orphaned-clear-selection">
         Clear
       </Button>
-      <Button size="sm" className="ml-auto h-7" onClick={() => setBulk(picked)} data-testid="orphaned-take-over-suggested">
-        <ArrowRightLeft />
-        Take over with suggested flows
-      </Button>
+      <span className="ml-auto flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7"
+          onClick={() => setDeletion({ documents: picked, atMs: Date.now() })}
+          data-testid="orphaned-delete-selected"
+        >
+          <Trash2 />
+          Delete what they left behind
+        </Button>
+        <Button
+          size="sm"
+          className="h-7"
+          onClick={() => setBulk(suggested)}
+          disabled={suggested.length === 0}
+          title={suggested.length === 0 ? "None of the selected flows has a suggested flow: take each over from its row" : undefined}
+          data-testid="orphaned-take-over-suggested"
+        >
+          <ArrowRightLeft />
+          {suggested.length === picked.length || suggested.length === 0
+            ? "Take over with suggested flows"
+            : `Take over the ${suggested.length} with a suggested flow`}
+        </Button>
+      </span>
     </div>
   );
 
@@ -175,7 +219,7 @@ export default function OrphanedLedgersPage() {
         <EmptyState
           icon={<Link2 />}
           title={`No orphaned ledgers${where}`}
-          description="Every ledger that holds records or history is kept by a flow a repository declares. A flow renamed and changed at once, or deleted in one sync and added back in another, leaves its ledger here for you to hand to the flow that replaced it."
+          description="Every ledger that holds records or history is kept by a flow a repository declares. A flow renamed and changed at once, or deleted in one sync and added back in another, leaves its ledger here for you to hand to the flow that replaced it, or to delete."
           data-testid="orphaned-ledgers-none"
         />
       </Card>
@@ -185,12 +229,8 @@ export default function OrphanedLedgersPage() {
       <DataTable
         columns={columns}
         rows={documents.isSuccess ? shown : undefined}
-        rowKey={keyOf}
-        selection={{
-          selected,
-          onChange: setSelected,
-          isSelectable: (row) => suggestedOf(row) !== undefined,
-        }}
+        rowKey={documentKey}
+        selection={{ selected, onChange: setSelected }}
         toolbar={toolbar}
         emptyMessage="No missing document matches the search."
         data-testid="orphaned-ledgers-table"
@@ -202,7 +242,7 @@ export default function OrphanedLedgersPage() {
     <Page data-testid="page-delivery-orphaned-ledgers">
       <PageHeader
         title="Orphaned ledgers"
-        subtitle={`Flows no repository declares any more, with the records and history their ledgers keep${where}. Hand each to the flow that replaced it.`}
+        subtitle={`Flows no repository declares any more, with the records and history their ledgers keep${where}. Hand each to the flow that replaced it, or delete what no flow is to keep.`}
       />
       {all.length > 0 && (
         <SummaryStrip
@@ -217,7 +257,7 @@ export default function OrphanedLedgersPage() {
               tone: sums.claimed > 0 ? "warning" : undefined,
               testId: "orphaned-summary-claimed",
             },
-            { label: "Suggested takeovers", value: `${sums.suggested} of ${sums.documents}`, caption: "select them to take over together", testId: "orphaned-summary-suggested" },
+            { label: "Suggested takeovers", value: `${sums.suggested} of ${sums.documents}`, caption: "select rows to take over or delete together", testId: "orphaned-summary-suggested" },
           ]}
         />
       )}
@@ -242,6 +282,12 @@ export default function OrphanedLedgersPage() {
         partition={active}
         onClose={() => setBulk(null)}
         onDone={(taken) => setSelected((current) => new Set([...current].filter((key) => !taken.includes(key))))}
+      />
+      <DeleteOrphanedDialog
+        deletion={deletion}
+        partition={active}
+        onClose={() => setDeletion(null)}
+        onDone={(deleted) => setSelected((current) => new Set([...current].filter((key) => !deleted.includes(key))))}
       />
     </Page>
   );
