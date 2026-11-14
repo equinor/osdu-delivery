@@ -934,6 +934,147 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.ToTable("CacheVersion", "osdu");
                 });
 
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryComputeUsage", b =>
+                {
+                    b.Property<DateTime>("EndedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("UsageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("UsageId"));
+
+                    b.Property<int>("Attempt")
+                        .HasColumnType("int");
+
+                    b.Property<double>("ComputeUnits")
+                        .HasColumnType("float");
+
+                    b.Property<int>("Cores")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Flow")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<Guid>("MeasurementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Node")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("NodeSlots")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Project")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Repo")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("RepoId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("Slots")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Team")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("WallClockMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("EndedUtc", "UsageId");
+
+                    b.HasIndex("MeasurementId")
+                        .IsUnique();
+
+                    b.ToTable("ComputeUsage", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryComputeUsageDay", b =>
+                {
+                    b.Property<int>("UsageDayId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("UsageDayId"));
+
+                    b.Property<double>("ComputeUnits")
+                        .HasColumnType("float");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Flow")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<string>("Project")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Repo")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Team")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("WallClockMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("WorkCount")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("UsageDayId");
+
+                    b.HasIndex("Day", "Team", "Repo", "Project", "Flow", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("ComputeUsageDay", "osdu");
+                });
+
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryConfigProperty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4315,6 +4456,29 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.HasIndex("PartitionId", "FlowId", "State", "DeliveryKey");
 
                     b.ToTable("RemovedKey", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryRepositoryTeam", b =>
+                {
+                    b.Property<Guid>("RepoId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Folder")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Team")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("RepoId", "Folder");
+
+                    b.ToTable("RepositoryTeam", "osdu");
                 });
 
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryRepositoryTemplate", b =>

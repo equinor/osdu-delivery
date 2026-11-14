@@ -55,14 +55,20 @@ public sealed class OsduStorageAreasTests
     }
 
     [Fact]
-    public void Only_superseded_attempts_finished_activities_logs_and_superseded_assertion_runs_take_a_retention()
+    public void Only_superseded_attempts_finished_activities_logs_superseded_assertion_runs_and_node_work_take_a_retention()
     {
         var areas = new OsduStorageContributor().Areas;
         var cleanable = areas.Where(a => a.Retention is not null).Select(a => a.Id).Order().ToList();
         Assert.Equal(
-            [OsduStorageContributor.ActivityLogsArea, OsduStorageContributor.AssertionRunsArea, OsduStorageContributor.AttemptsArea],
+            [
+                OsduStorageContributor.ActivityLogsArea, OsduStorageContributor.AssertionRunsArea, OsduStorageContributor.AttemptsArea,
+                OsduStorageContributor.ComputeWorkArea,
+            ],
             cleanable);
         Assert.All(areas.Where(a => a.Retention is not null), a => Assert.Equal(StorageVerdict.Optional, a.Verdict));
+
+        // The compute totals a cleanup of the node work adds to are never anything but kept.
+        Assert.Equal(StorageVerdict.Keep, areas.Single(a => a.Id == "osdu.compute-totals").Verdict);
 
         // The ledger's own state and audit trail are never anything but kept.
         foreach (var id in new[] { "osdu.records", "osdu.submissions", "osdu.activities", "osdu.purged-records", "osdu.render-context", "osdu.artifacts" })

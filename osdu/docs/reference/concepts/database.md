@@ -202,6 +202,14 @@ starts and dropped when it ends ([A dimension build's staging](../flow/dimension
 | [`osdu.ConfigProperty`](../tables/config-property.md) | A value of the central configuration the control plane supplies to runs |
 | [`osdu.AccessRestriction`](../tables/access-restriction.md) | An access restriction registered for a partition: the groups a restricted record's ACL in OSDU becomes |
 
+### Compute usage
+
+| Table | One row is |
+| --- | --- |
+| [`osdu.ComputeUsage`](../tables/compute-usage.md) | A piece of work a node did (a run attempt or a compute task): its wall-clock time, the node's cores and slots, its compute units, and the team, repository and flow it is charged to |
+| [`osdu.ComputeUsageDay`](../tables/compute-usage-day.md) | The compute usage of a day, team and flow that a cleanup folded from the work it removed |
+| [`osdu.RepositoryTeam`](../tables/repository-team.md) | The team a folder of a synced repository belongs to, as its repository document names it |
+
 ### The schema itself
 
 | Table | One row is |

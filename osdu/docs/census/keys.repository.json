@@ -5,13 +5,13 @@
   "strictKeys": true,
   "generatedFrom": "osdu/docs/reference/flow/repository.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader reads the document with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 3,
+  "keyCount": 4,
   "keys": [
     {
       "path": "documentType",
       "type": "enum(repository)",
       "required": true,
-      "description": "Always repository: the file osdu-delivery.yaml (or osdu-delivery.yml) at the root of a repository, naming the code every run of its flows carries in the correlation id of its OSDU requests. A flow takes the nearest one in its folder or a folder above it, up to the folder holding .git.",
+      "description": "Always repository: the file osdu-delivery.yaml (or osdu-delivery.yml) at the root of a repository, naming the code every run of its flows carries in the correlation id of its OSDU requests, and optionally the team its flows belong to. A flow takes the nearest one in its folder or a folder above it, up to the folder holding .git.",
       "enumValues": [
         "repository"
       ]
@@ -27,6 +27,12 @@
       "type": "string",
       "required": false,
       "description": "Free text describing the repository."
+    },
+    {
+      "path": "team",
+      "type": "string",
+      "required": false,
+      "description": "The team the flows under the document belong to, of every kind: the work the nodes do for them is charged to it, and the Compute usage page sums by it. One line of at most 64 characters. A folder's own document names the team of the flows under it; a document with no team leaves them with the team of the document above. Recorded by each sync of the repository, and applied to the work that ends after it."
     }
   ]
 }

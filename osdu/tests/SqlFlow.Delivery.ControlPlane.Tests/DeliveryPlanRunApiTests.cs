@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
 using SqlFlow.Core.Identity;
+using SqlFlow.Delivery.ComputeUsage;
 using SqlFlow.Delivery.ControlPlane;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Engine;
@@ -24,8 +25,9 @@ namespace SqlFlow.ControlPlane.Tests;
 /// <summary>
 /// The platform's run path end to end over a flow of the module's kind: a triggered <c>plan</c> run of the sample
 /// wellbore flow, executed by the in-process node, rendering the records the flow's ingestion tables hold. It needs no
-/// OSDU target, which is what makes it a safe end-to-end proof that the module's kind really executes. Gated on a
-/// reachable catalog database.
+/// OSDU target, which is what makes it a safe end-to-end proof that the module's kind really executes, and that the work
+/// the node did for it is measured and charged to the flow's team (osdu/docs/reference/concepts/compute-usage.md). Gated
+/// on a reachable catalog database.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -56,6 +58,17 @@ public sealed class DeliveryPlanRunApiTests
             ["alias_name"] = "WB-A",
         });
 
+        // The repository's root document names a team, as a sync of it would have recorded.
+        await using (var osdu = SampleEstate.Context(cs))
+        {
+            osdu.DeliveryRepositoryTeams.Add(new DeliveryRepositoryTeam
+            {
+                RepoId = estate.RepoId, Folder = string.Empty, Team = "Sample wells", UpdatedUtc = DateTime.UtcNow,
+            });
+            await osdu.SaveChangesAsync();
+        }
+
+        var runId = Guid.Empty;
         try
         {
             await using var factory = new ControlPlaneAppFactory()
@@ -66,7 +79,6 @@ public sealed class DeliveryPlanRunApiTests
             using var client = factory.CreateClient();
             var token = await TokenAsync(client);
 
-            Guid runId;
             using (var response = await client.SendAsync(Authorized(
                 HttpMethod.Post, "/api/v1/runs", token,
                 new RunTriggerRequest(estate.RepoId, SampleEstate.WellboreFlowName, Operation: DeliveryOperations.Plan))))
@@ -108,9 +120,42 @@ public sealed class DeliveryPlanRunApiTests
             Assert.True(
                 messages.Exists(m => m.Contains("record", StringComparison.OrdinalIgnoreCase)),
                 "the plan's trace never mentioned a record: " + string.Join(" | ", messages));
+
+            // The node measured the run and wrote it, in the background: one row for the attempt, with the node's own cores
+            // and slots, the compute units they come to, and the team of the repository's root document.
+            DeliveryComputeUsage? usage = null;
+            for (var attempt = 0; attempt < 80 && usage is null; attempt++)
+            {
+                await Task.Delay(250);
+                await using var osdu = SampleEstate.Context(cs);
+                usage = await osdu.DeliveryComputeUsages.AsNoTracking().SingleOrDefaultAsync(u => u.WorkId == runId);
+            }
+
+            Assert.True(usage is not null, "the node wrote no compute usage for the run:" + Environment.NewLine + string.Join(Environment.NewLine, factory.Logs.TakeLast(20)));
+            Assert.Equal(ComputeWorkKinds.Run, usage.Kind);
+            Assert.Equal(1, usage.Attempt);
+            Assert.Equal(estate.RepoId, usage.RepoId);
+            Assert.Equal("Sample wells", usage.Team);
+            Assert.Equal(SampleEstate.WellboreFlowName, usage.Flow);
+            Assert.Equal(ComputeOutcomes.Completed, usage.Outcome);
+            Assert.False(string.IsNullOrEmpty(usage.Node));
+            Assert.False(string.IsNullOrEmpty(usage.Repo));
+            Assert.False(string.IsNullOrEmpty(usage.RequestedBy));
+            Assert.Equal(Environment.ProcessorCount, usage.Cores);
+            Assert.Equal(1, usage.Slots);
+            Assert.True(usage.NodeSlots > 1, $"the node reported {usage.NodeSlots} slot(s)");
+            Assert.True(usage.WallClockMs > 0, "the run took no time at all");
+            Assert.Equal(usage.StartedUtc.AddMilliseconds(usage.WallClockMs), usage.EndedUtc);
+            Assert.Equal(ComputeUnits.Of(usage.WallClockMs, usage.Cores, usage.Slots, usage.NodeSlots), usage.ComputeUnits, 12);
         }
         finally
         {
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                await osdu.DeliveryComputeUsages.Where(u => u.WorkId == runId).ExecuteDeleteAsync();
+                await osdu.DeliveryRepositoryTeams.Where(t => t.RepoId == estate.RepoId).ExecuteDeleteAsync();
+            }
+
             await estate.CleanupAsync(cs);
         }
     }

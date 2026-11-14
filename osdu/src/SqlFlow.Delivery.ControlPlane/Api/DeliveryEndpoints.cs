@@ -607,6 +607,9 @@ public static class DeliveryEndpoints
         DeliveryPartitionEndpoints.Map(delivery);
         DeliveryAccessRestrictionEndpoints.Map(delivery);
 
+        // The compute the nodes spent, and how it divides over repositories, project folders and flows: an admin's.
+        DeliveryComputeUsageEndpoints.Map(delivery);
+
         // Where each cached type of a partition comes from, who reads it, and what its last refreshes did.
         DeliveryCacheStreams.Map(delivery);
 

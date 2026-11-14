@@ -773,3 +773,14 @@ automatically.
 Added decision 0056; updated `delivery-concept-partition-cache`, `delivery-flow-cache`, `delivery-cli-cache`,
 `delivery-concept-api`, `delivery-concept-storage-and-retention`, `delivery-guide-reference-data-cache` and the
 partition, cache version and cache definition table pages.
+
+## [2026-11-14] ingest | Compute usage, measured on the node and charged by team
+
+Source: the owner's request for a measure of how long compute runs, as a unit a licence policy could later use and a way
+to divide one deployment's cost over the teams sharing it, modelled on a sibling product's wall-clock metering; and the
+direction, while it was built, that a team be a tag in YAML written with the wall-clock time.
+
+Added decision 0057, `delivery-concept-compute-usage` and the compute usage, compute usage day and repository team table
+pages; updated `delivery-flow-repository`, `delivery-concept-request-correlation`, `delivery-concept-api`,
+`delivery-concept-menu`, `delivery-concept-gui`, `delivery-concept-control-plane`, `delivery-concept-database` and
+`delivery-concept-storage-and-retention`.

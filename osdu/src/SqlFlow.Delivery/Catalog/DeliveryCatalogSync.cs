@@ -378,6 +378,10 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         ArgumentNullException.ThrowIfNull(warnings);
 
+        // The team each folder belongs to, which the work the nodes do for its flows is charged to. It is settled from the
+        // repository documents alone and counted with no document family: a team is a label, not a document of its own.
+        await SyncTeamsAsync(context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
+
         // The template folders first: the mappings are settled from what they hold.
         var folders = await SyncTemplateFoldersAsync(context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
         var mappings = await SyncMappingsAsync(context, repoId, root, folders, nowUtc, warnings, ct).ConfigureAwait(false);
@@ -388,6 +392,75 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         // their warnings are reported.
         await DeliverySearchTermCatalog.ReconcileAsync(context, RepositoryFolders.Of(repoId, root), repoId, sources, _documents, nowUtc, warnings, ct).ConfigureAwait(false);
         return mappings.Add(caches).Add(interfaces);
+    }
+
+    /// <summary>
+    /// Records the team every repository document of the repository names (<c>team</c> in <c>osdu-delivery.yaml</c>,
+    /// osdu/docs/reference/flow/repository.md), by the folder holding the document, and drops the rows of documents that are
+    /// gone or name no team any more: what the work a node does for a flow is charged by
+    /// (osdu/docs/reference/concepts/compute-usage.md, Teams). A document that cannot be read is reported and leaves its
+    /// folder with no team of its own, so its flows take the team of the document above it.
+    /// </summary>
+    private async Task SyncTeamsAsync(
+        OsduDbContext context, Guid repoId, string root, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
+    {
+        var named = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var path in EnumerateYaml(root).Where(f => RepositoryDefinition.IsFileName(Path.GetFileName(f))))
+        {
+            ct.ThrowIfCancellationRequested();
+            var relative = Relative(root, path);
+            RepositoryDefinition document;
+            try
+            {
+                document = _documents.LoadRepository(path, relative);
+            }
+            catch (FlowValidationException ex)
+            {
+                warnings.Add($"{ex.Message} The compute usage of the flows under it is charged to the team of the document above it, if any.");
+                continue;
+            }
+
+            if (document.Team is not { } team)
+            {
+                continue;
+            }
+
+            var slash = relative.LastIndexOf('/');
+            var folder = slash < 0 ? string.Empty : relative[..slash];
+            if (folder.Length > DeliveryRepositoryTeam.MaxFolderLength)
+            {
+                warnings.Add($"{relative}: the folder's path is longer than {DeliveryRepositoryTeam.MaxFolderLength} characters, so its team '{team}' is not recorded.");
+                continue;
+            }
+
+            // A folder holding the document under both of its names is refused when a flow under it runs; the first is recorded.
+            named.TryAdd(folder, team);
+        }
+
+        var existing = await context.DeliveryRepositoryTeams.Where(t => t.RepoId == repoId).AsTracking()
+            .ToDictionaryAsync(t => t.Folder, StringComparer.Ordinal, ct).ConfigureAwait(false);
+        foreach (var (folder, team) in named)
+        {
+            if (!existing.TryGetValue(folder, out var row))
+            {
+                context.DeliveryRepositoryTeams.Add(new DeliveryRepositoryTeam { RepoId = repoId, Folder = folder, Team = team, UpdatedUtc = nowUtc });
+            }
+            else if (!string.Equals(row.Team, team, StringComparison.Ordinal))
+            {
+                row.Team = team;
+                row.UpdatedUtc = nowUtc;
+            }
+        }
+
+        foreach (var (folder, row) in existing)
+        {
+            if (!named.ContainsKey(folder))
+            {
+                context.DeliveryRepositoryTeams.Remove(row);
+            }
+        }
+
+        await context.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
     private async Task<CatalogSyncExtensionResult> SyncMappingsAsync(

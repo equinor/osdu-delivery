@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using SqlFlow.ControlPlane.Maintenance;
+using SqlFlow.Delivery.ComputeUsage;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Ledger;
 
@@ -11,11 +12,13 @@ namespace SqlFlow.Delivery.ControlPlane.Maintenance;
 /// every table of the module's model, and the tables dimension builds and duplicate checks create at run time, grouped as an
 /// operator thinks of them, each with what it holds, what maintenance may do with it and why. The rule every verdict follows
 /// is the product's: every delivered record stays reconstructible from the ledger alone. So the records, submissions,
-/// activities, render contexts and every audit row are kept, work in progress and working sets clean themselves, and three
+/// activities, render contexts and every audit row are kept, work in progress and working sets clean themselves, and four
 /// areas may be removed at a cost each states, never unless an admin sets how long they stay: the delivery attempts a later
-/// attempt of the same record superseded, the free-text logs of finished activities, and the assertion runs whose every
-/// result a later run superseded. Their cleanups are the ledger's own (<see cref="ILedger"/>), which keep each record's
-/// latest attempt and each test's latest result whatever the days.
+/// attempt of the same record superseded, the free-text logs of finished activities, the assertion runs whose every
+/// result a later run superseded, and the nodes' work listed piece by piece. The first three cleanups are the ledger's own
+/// (<see cref="ILedger"/>), which keep each record's latest attempt and each test's latest result whatever the days; the
+/// fourth is the compute usage store's (<see cref="ComputeUsageStore"/>), which adds each piece of work to its day's total
+/// before it removes it.
 /// </summary>
 public sealed class OsduStorageContributor : IStorageContributor
 {
@@ -28,6 +31,9 @@ public sealed class OsduStorageContributor : IStorageContributor
     /// <summary>The assertion runs whose every result a later run superseded.</summary>
     public const string AssertionRunsArea = OsduSchema.Module + ".assertion-runs";
 
+    /// <summary>The nodes' work listed piece by piece, which a cleanup folds into daily totals.</summary>
+    public const string ComputeWorkArea = OsduSchema.Module + ".compute-work";
+
     private const string Schema = DeliveryModel.SchemaName;
 
     private const string LedgerGroup = "Delivery ledger";
@@ -39,6 +45,7 @@ public sealed class OsduStorageContributor : IStorageContributor
     private const string Removals = "Removals and retrievals";
     private const string Downloads = "Downloads";
     private const string Setup = "Repositories and setup";
+    private const string Compute = "Compute usage";
 
     private readonly IServiceProvider? _services;
 
@@ -64,6 +71,11 @@ public sealed class OsduStorageContributor : IStorageContributor
     public async Task<long> CountAsync(StorageArea area, DateTime olderThanUtc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(area);
+        if (area.Id == ComputeWorkArea)
+        {
+            return await ComputeUsage().CountFoldableAsync(olderThanUtc, ct).ConfigureAwait(false);
+        }
+
         var ledger = Ledger();
         return area.Id switch
         {
@@ -77,6 +89,11 @@ public sealed class OsduStorageContributor : IStorageContributor
     public async Task<long> CleanAsync(StorageArea area, DateTime olderThanUtc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(area);
+        if (area.Id == ComputeWorkArea)
+        {
+            return await ComputeUsage().FoldAsync(olderThanUtc, ct).ConfigureAwait(false);
+        }
+
         var ledger = Ledger();
         return area.Id switch
         {
@@ -89,6 +106,10 @@ public sealed class OsduStorageContributor : IStorageContributor
 
     private ILedger Ledger()
         => _services?.GetRequiredService<ILedger>()
+            ?? throw new InvalidOperationException("This storage contributor describes the osdu schema's areas only; resolve it from the control plane's services to clean them.");
+
+    private ComputeUsageStore ComputeUsage()
+        => _services?.GetRequiredService<ComputeUsageStore>()
             ?? throw new InvalidOperationException("This storage contributor describes the osdu schema's areas only; resolve it from the control plane's services to clean them.");
 
     private static InvalidOperationException NotCleanable(StorageArea area)
@@ -482,6 +503,44 @@ public sealed class OsduStorageContributor : IStorageContributor
                 Lifecycle = "Managed on the Partitions and Access restrictions pages and by the deployment's configuration; an access restriction goes only once no record carries it.",
                 Tables = [T("Partition"), T("AccessRestriction"), T("ConfigProperty"), T("SchemaVersion"), T(OsduDbContext.MigrationsHistoryTable)],
                 ManagedAt = "/delivery/partitions",
+            },
+            new()
+            {
+                Id = ComputeWorkArea,
+                Group = Compute,
+                Title = "Node work, piece by piece",
+                Verdict = StorageVerdict.Optional,
+                Holds = "One row per piece of work a node did: an attempt of a run or a compute task, with how long the node held it, the node's cores and slots, the compute units that comes to, and the team, repository, project folder, flow and requester it is charged to.",
+                Reason = "A removed row is first added to the total of its day, team and flow, so the compute units, the time and the count of work of every period and team stay exact. What goes is the detail: which node did the work, who asked for it, how it ended, and the values its units were worked out from.",
+                Retention = new StorageRetention("Every total: each removed piece of work is added to its day, team and flow first.", "pieces of work"),
+                Tables = [T("ComputeUsage")],
+                ManagedAt = "/delivery/compute-usage",
+            },
+            new()
+            {
+                Id = OsduSchema.Module + ".compute-totals",
+                Group = Compute,
+                Title = "Daily compute totals",
+                Verdict = StorageVerdict.Keep,
+                Holds = "One row per day, team and flow: the count, the wall-clock time and the compute units of the work a cleanup removed from the piece-by-piece list.",
+                Reason = "It is the only record of the compute spent before the oldest piece of work still listed, and what a deployment's cost is divided by.",
+                Brief = "Never removed",
+                Lifecycle = "Nothing removes it: it grows by at most one row per flow per day, and only when an admin has set how long the piece-by-piece list stays.",
+                Tables = [T("ComputeUsageDay")],
+                ManagedAt = "/delivery/compute-usage",
+            },
+            new()
+            {
+                Id = OsduSchema.Module + ".teams",
+                Group = Compute,
+                Title = "Teams of repository folders",
+                Verdict = StorageVerdict.Keep,
+                Holds = "One row per folder of a synced repository whose repository document names a team.",
+                Reason = "The work a node does for a flow is charged to the team of the nearest folder above the flow, read from here as the work is recorded.",
+                Brief = "Rewritten by every sync",
+                Lifecycle = "Every sync of a repository rewrites its rows from the repository documents it holds; a document that is gone, or names no team any more, loses its row.",
+                Tables = [T("RepositoryTeam")],
+                ManagedAt = "/delivery/compute-usage",
             },
         ];
     }

@@ -90,6 +90,7 @@ SQLFlow's.
 | | | AI context | `/semantic-layer` |
 | | | Access restrictions | `/delivery/access-restrictions` |
 | | | Partitions | `/delivery/partitions` |
+| | | Compute usage | `/delivery/compute-usage` |
 | Settings | | Access tokens | `/settings/tokens` |
 | | | Notifications | `/settings/notifications` |
 
@@ -110,9 +111,10 @@ SQLFlow's.
   read it (Subscribers), changes to its definitions, and the search over all of it.
 - **Admin**, shown to an admin only: every page an admin runs ([decision 0048](../../wiki/decisions/0048-admin-holds-admin-pages.md)).
   Who and what may act: the users, the external systems that may fire schedules, and what the assistant may read; the
-  groups a record's access can be restricted to (Access restrictions); and the partitions the flows deliver to
-  (Partitions). Anyone signed in can still open the last two by their address, and Partitions from the title bar's
-  partition picker; only an admin changes them.
+  groups a record's access can be restricted to (Access restrictions); the partitions the flows deliver to
+  (Partitions); and what the nodes' work came to, by team ([Compute usage](compute-usage.md)). Anyone signed in can still
+  open Access restrictions and Partitions by their address, and Partitions from the title bar's partition picker; only an
+  admin changes them. Compute usage opens for anyone by its address and reads for an admin only.
 - **Settings**: the person's own access tokens and notifications, which the account menu also opens.
 
 No flow is configured from the menu. Flows of every kind are written in their repository's files, and synced and

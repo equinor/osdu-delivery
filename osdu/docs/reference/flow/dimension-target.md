@@ -109,4 +109,7 @@ CREATE TABLE and CREATE VIEW in the target's database and ALTER on its schema, t
 and make indexes; and CREATE SCHEMA there when the schema is not there yet. In the module's database the module's own
 grants cover it.
 
+**Write the flow file**, in the explorer's dimension builder, writes a new flow keeping its tables where the estate's
+flows write their data ([Writing a dimension flow file](../guides/dimension-flow-file.md)).
+
 Why the record stays and only the tables move is [decision 0055](../../wiki/decisions/0055-dimension-tables-kept-where-the-flow-says.md).

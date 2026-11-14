@@ -42,6 +42,7 @@ const DELIVERY_TOOLS: &[&str] = &[
     "delivery_check_mapping",
     "delivery_config",
     "delivery_decide_cache_changes",
+    "delivery_dimension_flow",
     "delivery_dimensions",
     "delivery_find_records",
     "delivery_flow",
@@ -408,7 +409,7 @@ async fn every_delivery_tool_is_described_for_a_model_choosing_between_tools() {
             );
         }
     }
-    assert!(total <= 18_000, "the delivery tools' descriptions add up to {total} characters");
+    assert!(total <= 18_500, "the delivery tools' descriptions add up to {total} characters");
 
     // The operator's actions say what they are; nothing else claims to be one.
     let acts = ["delivery_probe_target", "delivery_verify_record", "delivery_sync_with_source", "delivery_release_records",

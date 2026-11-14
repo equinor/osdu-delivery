@@ -454,6 +454,11 @@ public sealed class DeliveryCliModule : ICliModule
             // The runs a node takes render against the current version of their partition's cache, which it reads into
             // memory ahead of them, so the first run after the node starts, or after a refresh, does not wait for the read.
             services.Services.AddDeliveryCacheWarmup(Catalog.CacheWarmupOptions.FromEnvironment(Environment.GetEnvironmentVariable));
+
+            // The work the node does is measured on its line to the control plane and written to the module's database,
+            // by a hosted service the node stops only after it has drained, so the runs it finishes while stopping count
+            // (osdu/docs/reference/concepts/compute-usage.md).
+            services.Services.AddDeliveryComputeUsage();
         }
     }
 }

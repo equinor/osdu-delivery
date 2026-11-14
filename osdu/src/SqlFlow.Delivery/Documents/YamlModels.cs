@@ -28,6 +28,8 @@ internal sealed class RepositoryYaml
     public string? Code { get; set; }
 
     public string? Description { get; set; }
+
+    public string? Team { get; set; }
 }
 
 internal sealed class FlowYaml

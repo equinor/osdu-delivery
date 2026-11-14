@@ -2,7 +2,7 @@
 id: delivery-concept-storage-and-retention
 title: "What the osdu schema stores, what is kept, and what may be removed"
 type: concept
-summary: "The osdu schema's storage areas on the Maintenance page: what each holds, which are kept, which clean themselves, and the three cleanups an admin may set."
+summary: "The osdu schema's storage areas on the Maintenance page: what each holds, which are kept, which clean themselves, and the four cleanups an admin may set."
 keywords:
   - maintenance
   - storage
@@ -16,6 +16,7 @@ keywords:
   - osdu.attempts
   - osdu.activity-logs
   - osdu.assertion-runs
+  - osdu.compute-work
   - database size
 referenceRefs:
   - concept-maintenance
@@ -25,6 +26,7 @@ related:
   - delivery-concept-ledger
   - delivery-concept-partition-cache
   - delivery-concept-dimension-tables
+  - delivery-concept-compute-usage
   - concept-maintenance
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs
@@ -32,6 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs
@@ -56,7 +59,7 @@ the module's areas are and why each verdict is what it is.
 Every verdict follows the product's rule: **every delivered record stays reconstructible from the ledger alone**, from
 the source row it came from to the OSDU id and version it landed as, every operator action with who and when. So the
 records, their submissions, the render context they point at and every audit row are kept; work in progress, working
-sets and render context no record points at clean themselves; and three areas may be removed at a cost each states,
+sets and render context no record points at clean themselves; and four areas may be removed at a cost each states,
 never until an admin sets how long they stay.
 
 ## What may be removed, and what it costs
@@ -66,13 +69,16 @@ never until an admin sets how long they stay.
 | Delivery attempts (`osdu.attempts`), `osdu.Attempt` | Attempts started before the cut-off that a later attempt of the same record follows | Each record's latest attempt, however old | A record's earlier tries leave its Timeline and its chain of changes, and a reversal or a removal of an old run or submission no longer finds what such a record held then (a reversal reads what OSDU held from the attempt). The delivered, pending, failed and deleted counts come from the records and are unaffected. |
 | Activity logs (`osdu.activity-logs`), the `Log` column of `osdu.Activity` | The captured free-text log of activities that started before the cut-off and have finished | Every activity row: who, what, when, with which inputs, the outcome and the summary; and the log of an activity still running | The line-by-line account of an old run. |
 | Assertion runs and results (`osdu.assertion-runs`), `osdu.AssertionRun`, `osdu.AssertionResult` | Finished runs started before the cut-off none of whose results is still the latest of its test, each run whole with its results. A run that completes already removes its flow's earlier runs its latest status no longer needs ([only the latest status is kept](../flow/assertion-sets.md#only-the-latest-status-is-kept)), so this reaches what that does not, such as the runs of a flow that no longer runs | Each test's latest result, and every run that holds one | The removed runs' reports, so a test's history and trend start at the oldest run kept. |
+| Node work, piece by piece (`osdu.compute-work`), `osdu.ComputeUsage` | The pieces of work (run attempts and compute tasks) that ended before the cut-off, each added to the total of its day, team and flow in `osdu.ComputeUsageDay` before its row goes | Every total: the compute units, the wall-clock time and the count of work of every day, team and flow | The detail of the removed work: which node did it, who asked for it, how it ended, and the values its compute units were worked out from. The Compute usage page's figures, chart and division still count it; its Work tab starts later ([compute usage](compute-usage.md#keeping-the-totals)). |
 
-The counts are in the area's own unit (attempts, logs, runs), and a preview counts exactly what the cleanup then takes:
-the count and the deletion share one query in the ledger (`CountPrunableAttemptsAsync` and `PruneAttemptsAsync`,
-`CountActivityLogsAsync` and `ClearActivityLogsAsync`, `CountPrunableAssertionRunsAsync` and `PruneAssertionRunsAsync`).
-Each deletes in bounded statements (4,000 attempts, 1,000 logs, 100 runs at a time), each its own short transaction,
-across every partition. Traceability keeps every attempt, so leave the attempts' limit unset unless the ledger's size
-calls for it, and choose it in years rather than months: statistics and trends read further back than an incident does.
+The counts are in the area's own unit (attempts, logs, runs, pieces of work), and a preview counts exactly what the
+cleanup then takes: the count and the deletion share one query in the ledger (`CountPrunableAttemptsAsync` and
+`PruneAttemptsAsync`, `CountActivityLogsAsync` and `ClearActivityLogsAsync`, `CountPrunableAssertionRunsAsync` and
+`PruneAssertionRunsAsync`), and in the compute usage store for the node work (`CountFoldableAsync` and `FoldAsync`).
+Each deletes in bounded statements (4,000 attempts, 1,000 logs, 100 runs, 5,000 pieces of work at a time), each its own
+short transaction, across every partition. Traceability keeps every attempt, so leave the attempts' limit unset unless
+the ledger's size calls for it, and choose it in years rather than months: statistics and trends read further back than
+an incident does.
 
 ## What is kept
 
@@ -96,6 +102,8 @@ calls for it, and choose it in years rather than months: statistics and trends r
 | Downloads | `Download`, `DownloadRecord` | Updated by each run; ids OSDU no longer serves stay listed as gone, as their files stay in the folder |
 | Download runs | `DownloadRun` | Never removed |
 | Mappings, templates and search terms | `Mapping`, `RepositoryTemplate`, `SearchTerm`, `SearchTermRefinement` | Rewritten by each repository sync |
+| Daily compute totals | `ComputeUsageDay` | Never removed; it grows only when an admin limits how long the node work stays listed piece by piece ([compute usage](compute-usage.md#keeping-the-totals)) |
+| Teams of repository folders | `RepositoryTeam` | Rewritten by each repository sync |
 | OSDU schema lineage | `SchemaLineage`, `SchemaLineageKind` | One set per release built; building it again replaces it |
 | Partitions and configuration | `Partition`, `AccessRestriction`, `ConfigProperty`, `SchemaVersion`, `__EFMigrationsHistory` | Managed on the Partitions and Access restrictions pages and by the configuration; an access restriction goes only once no record carries it |
 
@@ -153,7 +161,7 @@ batch names under the flow's `source.work`, which the module does not delete, an
 `OsduStorageContributor` describes the areas, and the control-plane module registers it with
 `AddStorageContributor`. `OsduStorageAreasTests` holds the areas to the module's model: every table of the model belongs
 to exactly one area, the tables builds create at run time are claimed by their prefix (`dim_`, `dup_`), the areas and
-SQLFlow's follow the rules together, and only the three areas above take a limit. A table added to the model without an
+SQLFlow's follow the rules together, and only the four areas above take a limit. A table added to the model without an
 area fails that test, naming the table, so the page never misses one.
 
 The retention pass the module used to offer as `POST /api/v1/delivery/ledger/prune` is gone: its three cleanups are the

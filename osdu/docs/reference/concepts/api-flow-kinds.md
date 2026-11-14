@@ -69,6 +69,8 @@ every delivery route does: the scopes, partition and interface parameters and an
 | `GET /runs/{runId}/dimension-builds` | read | | The builds a platform run made. |
 | `POST /dimensions/{dimensionId}/filter` | read | body `valueIds`, `values` | The search filter of the values named. Reads only. |
 | `POST /dimensions/search` | read | body `picks`, `kind`, `within` | The OSDU search finding records that hold the picked values. Nothing is sent to OSDU. |
+| `GET /dimensions/flow-patterns` | read | | The catalog's dimension flows, each with its document but its dimensions and views, and the connections the estate's flows keep their data through ([Writing a dimension flow file](../guides/dimension-flow-file.md)). |
+| `POST /dimensions/flow-check` | read | body `yaml`, `path` | A whole dimension flow document checked as a sync and a build take it. Reads only. |
 | `DELETE /dimensions/{dimensionId}` | admin | | Removes a dimension its flow no longer declares, and everything kept of it. 409 for one the flow declares. |
 | `GET /dimensions/views` | read | | Every view: those the active dimension flows declare, and those builds wrote that no flow declares any more. |
 | `GET /flows/{pipelineId}/dimensions/views` | read | | One dimension flow's views; 409 for another kind. |

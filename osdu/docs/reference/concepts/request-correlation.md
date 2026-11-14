@@ -182,6 +182,7 @@ The repository's code is one small file, reviewed with the flows, that does noth
 | `documentType` | yes | `repository`. |
 | `code` | yes | The repository's code ([the rule for a code](#the-rule-for-a-code)). |
 | `description` | no | Free text. |
+| `team` | no | The team the flows under the document belong to, which their [compute usage](compute-usage.md#teams) is charged to. It plays no part in the correlation id. |
 
 A run reads the file nearest its flow's file: `osdu-delivery.yaml` (or `osdu-delivery.yml`) in the flow's folder, else
 in each folder above it in turn.

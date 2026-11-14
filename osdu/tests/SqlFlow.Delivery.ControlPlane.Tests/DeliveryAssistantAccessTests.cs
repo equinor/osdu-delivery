@@ -74,7 +74,7 @@ public sealed class DeliveryAssistantAccessTests
         var unneeded = open.Where(e => !needed.Contains(e)).Select(Describe).ToList();
         Assert.True(unneeded.Count == 0, "Open to an assistant run though no allowed delivery tool calls them: " + string.Join(", ", unneeded));
 
-        // A write the assistant may make is one of the four previews, and nothing else.
+        // A write the assistant may make is one of the previews, and nothing else.
         var writable = open.Where(e => e.Metadata.GetMetadata<AssistantAccess>()!.AllowsUnsafeMethods).Select(Name).Order(StringComparer.Ordinal);
         Assert.Equal(DeliveryAssistantAccess.Previews.Order(StringComparer.Ordinal), writable);
     }

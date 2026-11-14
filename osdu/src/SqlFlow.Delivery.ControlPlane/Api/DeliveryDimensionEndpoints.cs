@@ -295,6 +295,9 @@ public static partial class DeliveryDimensionEndpoints
         // set of them can be long.
         delivery.MapPost("/dimensions/{dimensionId:int}/filter", FilterAsync).WithName("GetDeliveryDimensionFilter");
         delivery.MapPost("/dimensions/search", SearchAsync).WithName("ComposeDeliveryDimensionSearch");
+
+        // Writing a whole dimension flow file: the patterns a new flow follows, and a check of the document; both only read.
+        MapFlowWriting(delivery);
     }
 
     /// <summary>The routes that change what the ledger keeps of a dimension: removing one, an admin's alone.</summary>

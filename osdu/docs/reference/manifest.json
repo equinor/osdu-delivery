@@ -1668,6 +1668,63 @@
       ]
     },
     {
+      "id": "delivery-concept-compute-usage",
+      "corpus": "reference",
+      "path": "concepts/compute-usage.md",
+      "title": "Compute usage: how long the nodes worked, in compute units, and which team each piece of work is charged to",
+      "type": "concept",
+      "summary": "Every run attempt and compute task a node does is measured in wall-clock time and compute units, charged to its team, repository and flow, and summed per day.",
+      "keywords": [
+        "compute usage",
+        "compute unit",
+        "compute units",
+        "wall clock",
+        "wall time",
+        "metering",
+        "meter",
+        "usage",
+        "core hours",
+        "cost division",
+        "chargeback",
+        "team",
+        "team tag",
+        "licence unit",
+        "license unit",
+        "node work",
+        "osdu.ComputeUsage",
+        "osdu.ComputeUsageDay",
+        "osdu.RepositoryTeam",
+        "compute-usage api"
+      ],
+      "related": [
+        "delivery-flow-repository",
+        "delivery-table-compute-usage",
+        "delivery-table-compute-usage-day",
+        "delivery-table-repository-team",
+        "delivery-concept-storage-and-retention",
+        "delivery-concept-control-plane",
+        "delivery-concept-api",
+        "delivery-concept-menu",
+        "delivery-concept-run-trace-and-metrics"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeWork.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageMeter.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/MeteredNodeTransport.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageRecorder.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Model/RepositoryDefinition.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryComputeUsageEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs",
+        "osdu/gui/src/features/delivery/compute/ComputeUsagePage.tsx",
+        "osdu/gui/src/features/delivery/compute/computeUsageModel.ts",
+        "osdu/gui/src/api/computeUsage.ts"
+      ]
+    },
+    {
       "id": "delivery-concept-control-plane",
       "corpus": "reference",
       "path": "concepts/control-plane.md",
@@ -2133,7 +2190,9 @@
         "dimension yaml",
         "key suggestions",
         "clean steps",
-        "where a key's record holds nothing"
+        "where a key's record holds nothing",
+        "write the flow file",
+        "whole flow file"
       ],
       "related": [
         "delivery-concept-explorer",
@@ -2142,7 +2201,8 @@
         "delivery-flow-dimension-clean",
         "delivery-concept-dimension-blueprint",
         "delivery-guide-dimensions",
-        "delivery-concept-templates"
+        "delivery-concept-templates",
+        "delivery-guide-dimension-flow-file"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs",
@@ -2159,7 +2219,9 @@
         "osdu/gui/src/features/delivery/explorer/dimension/BuilderFilterDialog.tsx",
         "osdu/gui/src/features/delivery/explorer/dimension/dimensionStory.ts",
         "osdu/gui/src/features/delivery/explorer/dimension/dimensionDraft.ts",
-        "osdu/gui/src/features/delivery/explorer/dimension/useDimensionBuild.ts"
+        "osdu/gui/src/features/delivery/explorer/dimension/useDimensionBuild.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFlowFile.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts"
       ]
     },
     {
@@ -3499,7 +3561,7 @@
       "path": "concepts/storage-and-retention.md",
       "title": "What the osdu schema stores, what is kept, and what may be removed",
       "type": "concept",
-      "summary": "The osdu schema's storage areas on the Maintenance page: what each holds, which are kept, which clean themselves, and the three cleanups an admin may set.",
+      "summary": "The osdu schema's storage areas on the Maintenance page: what each holds, which are kept, which clean themselves, and the four cleanups an admin may set.",
       "keywords": [
         "maintenance",
         "storage",
@@ -3513,6 +3575,7 @@
         "osdu.attempts",
         "osdu.activity-logs",
         "osdu.assertion-runs",
+        "osdu.compute-work",
         "database size"
       ],
       "related": [
@@ -3521,6 +3584,7 @@
         "delivery-concept-ledger",
         "delivery-concept-partition-cache",
         "delivery-concept-dimension-tables",
+        "delivery-concept-compute-usage",
         "concept-maintenance"
       ],
       "sourceRefs": [
@@ -3529,6 +3593,7 @@
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs",
@@ -6768,14 +6833,17 @@
       "id": "delivery-flow-repository",
       "corpus": "reference",
       "path": "flow/repository.md",
-      "title": "Repository document (documentType: repository): the code a repository's runs carry in their correlation id",
+      "title": "Repository document (documentType: repository): the code a repository's runs carry in their correlation id, and the team its flows belong to",
       "type": "flow-reference",
-      "summary": "osdu-delivery.yaml at a repository's root names the code its runs carry in every OSDU request's correlation-id; how a flow finds it.",
+      "summary": "osdu-delivery.yaml at a repository's root names the code its runs carry in every OSDU request's correlation-id and the team its compute usage is charged to.",
       "keywords": [
         "repository document",
         "documenttype repository",
         "osdu-delivery.yaml",
         "repository code",
+        "team",
+        "team tag",
+        "compute usage team",
         "correlation id",
         "telemetry",
         "header policy"
@@ -6783,6 +6851,8 @@
       "yamlPath": "(root, documentType: repository)",
       "related": [
         "delivery-concept-request-correlation",
+        "delivery-concept-compute-usage",
+        "delivery-table-repository-team",
         "delivery-flow-overview",
         "delivery-cli-validate",
         "delivery-cli-run"
@@ -6794,6 +6864,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs",
         "osdu/src/SqlFlow.Delivery/Model/RepositoryDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/docs/census/keys.repository.json"
       ]
     },
@@ -7216,6 +7287,41 @@
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "sqlflow/src/SqlFlow.Cli/Program.cs",
         "sqlflow/src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-guide-dimension-flow-file",
+      "corpus": "reference",
+      "path": "guides/dimension-flow-file.md",
+      "title": "Writing a dimension flow file: the whole file from a built dimension, modelled on the estate's flows",
+      "type": "guide",
+      "summary": "Write the flow file, in the dimension builder: the assistant writes the whole flow on the estate's own, its tables where its data is, checked first.",
+      "keywords": [
+        "write the flow file",
+        "whole dimension flow file",
+        "dimension flow from the builder",
+        "delivery_dimension_flow",
+        "flow patterns",
+        "envelope",
+        "data database",
+        "dimension tables in the data database",
+        "check a dimension flow",
+        "flow-check",
+        "flow-patterns"
+      ],
+      "related": [
+        "delivery-concept-explorer-dimension-builder",
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-target",
+        "delivery-guide-dimensions",
+        "delivery-guide-mcp"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFlowFile.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/DimensionBuildPanel.tsx",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.Flow.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/tools/dimensions.rs"
       ]
     },
     {
@@ -8626,6 +8732,61 @@
       ]
     },
     {
+      "id": "delivery-table-compute-usage",
+      "corpus": "reference",
+      "path": "tables/compute-usage.md",
+      "title": "osdu.ComputeUsage: the work the nodes did, one row per run attempt or compute task, with its wall-clock time and compute units",
+      "type": "table",
+      "summary": "One row per piece of work a node did: how long it held it, the node's cores and slots, the compute units, and the team, repository and flow it is charged to.",
+      "keywords": [
+        "osdu.ComputeUsage",
+        "compute usage table",
+        "compute units",
+        "wall clock",
+        "node work",
+        "metering",
+        "team"
+      ],
+      "related": [
+        "delivery-concept-compute-usage",
+        "delivery-concept-database",
+        "delivery-concept-storage-and-retention",
+        "delivery-table-compute-usage-day",
+        "delivery-table-repository-team"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageMeter.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageRecorder.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-compute-usage-day",
+      "corpus": "reference",
+      "path": "tables/compute-usage-day.md",
+      "title": "osdu.ComputeUsageDay: the compute usage a cleanup folded, one row per day, team and flow",
+      "type": "table",
+      "summary": "One row per UTC day, team and flow: the count, wall-clock time and compute units of the work a cleanup removed from osdu.ComputeUsage.",
+      "keywords": [
+        "osdu.ComputeUsageDay",
+        "compute usage totals",
+        "daily totals",
+        "compute units",
+        "folded usage"
+      ],
+      "related": [
+        "delivery-concept-compute-usage",
+        "delivery-concept-database",
+        "delivery-concept-storage-and-retention",
+        "delivery-table-compute-usage"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs"
+      ]
+    },
+    {
       "id": "delivery-table-config-property",
       "corpus": "reference",
       "path": "tables/config-property.md",
@@ -9949,6 +10110,33 @@
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022223524_RemovalFlows.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-repository-team",
+      "corpus": "reference",
+      "path": "tables/repository-team.md",
+      "title": "osdu.RepositoryTeam: the team each folder of a synced repository belongs to, as its repository document names it",
+      "type": "table",
+      "summary": "One row per folder of a synced repository whose osdu-delivery.yaml names a team, written by every sync; compute usage is charged by it.",
+      "keywords": [
+        "osdu.RepositoryTeam",
+        "team",
+        "team tag",
+        "repository document",
+        "osdu-delivery.yaml",
+        "compute usage team"
+      ],
+      "related": [
+        "delivery-concept-compute-usage",
+        "delivery-flow-repository",
+        "delivery-concept-database",
+        "delivery-table-compute-usage"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs"
       ]
     },
     {
@@ -11961,6 +12149,39 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/gui/src/features/delivery/CacheVersionsKeptButton.tsx"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0057-compute-usage-measured-on-the-node",
+      "corpus": "wiki",
+      "path": "decisions/0057-compute-usage-measured-on-the-node.md",
+      "title": "Decision 0057: compute usage is measured on the node, in compute units, and charged to the team a repository document names",
+      "type": "decision",
+      "summary": "Why a node's work is measured on the node's own line to the control plane, counted by cores and slots, charged by a team tag in YAML, and kept as daily totals.",
+      "keywords": [
+        "compute usage",
+        "compute unit",
+        "metering",
+        "wall clock",
+        "team tag",
+        "licence unit",
+        "cost division",
+        "node transport"
+      ],
+      "related": [
+        "delivery-wiki-0029-storage-maintenance",
+        "delivery-wiki-0037-request-correlation",
+        "delivery-wiki-0048-admin-holds-admin-pages"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageMeter.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/MeteredNodeTransport.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageRecorder.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs",
+        "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeWork.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs"
       ]
     },
     {

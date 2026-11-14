@@ -57,6 +57,8 @@
     "src/features/delivery/dimensions/yamlTokens.ts",
     "src/features/delivery/explorer/dimension/dimensionStory.ts",
     "src/features/delivery/explorer/explorerKinds.ts",
+    "src/features/delivery/explorer/dimension/flowFileQuestion.ts",
+    "src/features/delivery/compute/computeUsageModel.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

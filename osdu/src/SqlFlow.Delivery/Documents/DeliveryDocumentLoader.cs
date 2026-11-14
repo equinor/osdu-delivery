@@ -394,7 +394,14 @@ public sealed class DeliveryDocumentLoader
             throw new FlowValidationException($"{source}: code '{code}' is not a repository code: {OsduCorrelation.CodeRule}.");
         }
 
-        return new RepositoryDefinition { Code = code, Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description.Trim() };
+        var team = string.IsNullOrWhiteSpace(y.Team) ? null : y.Team.Trim();
+        if (team is not null && (team.Length > RepositoryDefinition.MaxTeamLength || team.Any(char.IsControl)))
+        {
+            throw new FlowValidationException(
+                $"{source}: team '{team}' is not a team name: it is one line of at most {RepositoryDefinition.MaxTeamLength} characters, the name compute usage is summed under.");
+        }
+
+        return new RepositoryDefinition { Code = code, Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description.Trim(), Team = team };
     }
 
     public MappingDefinition ParseMapping(string yaml, string source = "<inline>") => ParseMapping(yaml, source, pins: null, location: null);

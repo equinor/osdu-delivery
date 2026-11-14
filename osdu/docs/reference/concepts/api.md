@@ -77,7 +77,7 @@ module registers, grouped by area, with the policy it is mapped under, its param
 
 **Policies.** The module registers no policy of its own: it maps its routes into SQLFlow's policy groups. `read`,
 `operate` and `author` are names only, each resolving to "a signed-in user", so any valid token, whatever scopes it
-carries, reaches every route of those three groups. Only `admin` checks the token, for the `admin` scope, on nine routes
+carries, reaches every route of those three groups. Only `admin` checks the token, for the `admin` scope, on sixteen routes
 ([authentication and identity](authentication-and-identity.md)). The Policy column says which group a route is in.
 
 **Addressing.** A flow's routes take the catalog's pipeline id (`/flows/{pipelineId}/...`). A record's routes take the
@@ -321,6 +321,16 @@ change, for example
 
 See [partitions](partitions.md), [configured partitions](partitions.md#configured-partitions),
 [sqlflow partition](../cli/partition.md) and [sqlflow config](../cli/config.md).
+
+## Compute usage
+
+| Route | Policy | Parameters | Answers |
+| --- | --- | --- | --- |
+| `GET /compute-usage` | admin | `from`, `to` | The compute usage of the UTC days `from` to `to` (`yyyy-MM-dd`, both included; the last 30 days when left out, at most 1,100 days): `totals`, each day that has usage, each flow's share under its team with the largest first, and `workKeptFromUtc`, when the oldest piece of work still listed one by one ended. 400 `Compute usage request refused` for a day not written `yyyy-MM-dd` or a period that ends before it starts. |
+| `GET /compute-usage/work` | admin | `from`, `to`, `team`, `repo`, `project`, `flow`, `after`, `take` | The pieces of work of the period, newest first, with every value their compute units were worked out from: `take` a page (1 to 500, 100 when left out), `next` naming the page that follows as `after`. A filter left out is not applied; an empty one asks for the work that names none. |
+| `GET /compute-usage/teams` | admin | | Every folder of a synced repository that names a team, by repository then folder. |
+
+See [compute usage](compute-usage.md).
 
 ## The explorer and search terms
 

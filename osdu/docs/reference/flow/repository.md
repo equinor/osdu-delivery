@@ -1,19 +1,24 @@
 ---
 id: delivery-flow-repository
-title: "Repository document (documentType: repository): the code a repository's runs carry in their correlation id"
+title: "Repository document (documentType: repository): the code a repository's runs carry in their correlation id, and the team its flows belong to"
 type: flow-reference
-summary: "osdu-delivery.yaml at a repository's root names the code its runs carry in every OSDU request's correlation-id; how a flow finds it."
+summary: "osdu-delivery.yaml at a repository's root names the code its runs carry in every OSDU request's correlation-id and the team its compute usage is charged to."
 keywords:
   - repository document
   - documenttype repository
   - osdu-delivery.yaml
   - repository code
+  - team
+  - team tag
+  - compute usage team
   - correlation id
   - telemetry
   - header policy
 yamlPath: "(root, documentType: repository)"
 related:
   - delivery-concept-request-correlation
+  - delivery-concept-compute-usage
+  - delivery-table-repository-team
   - delivery-flow-overview
   - delivery-cli-validate
   - delivery-cli-run
@@ -24,6 +29,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs
   - osdu/src/SqlFlow.Delivery/Model/RepositoryDefinition.cs
   - osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/docs/census/keys.repository.json
 ---
 
@@ -31,14 +37,16 @@ sourceRefs:
 
 A repository document names the code of a flow repository: the segment every run of its flows carries after
 `osdu-delivery` in the `correlation-id` of its OSDU requests, `osdu-delivery-<code>-<operation>-<run id>`
-([request correlation](../concepts/request-correlation.md)). It is one small file at the repository's root, reviewed with
-the flows, and it does nothing on its own.
+([request correlation](../concepts/request-correlation.md)). It may also name the team its flows belong to, which the
+work the nodes do for them is charged to ([compute usage](../concepts/compute-usage.md#teams)). It is one small file at
+the repository's root, reviewed with the flows, and it does nothing on its own.
 
 ```yaml
 # osdu-delivery.yaml, at the root of the repository
 documentType: repository
 code: wl
 description: The well log estate.
+team: Subsurface data
 ```
 
 | Key | Type | Required | Meaning |
@@ -46,10 +54,12 @@ description: The well log estate.
 | `documentType` | string | yes | `repository`. |
 | `code` | string | yes | The repository's code: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. |
 | `description` | string | no | Free text. |
+| `team` | string | no | The team the flows under the document belong to: one line of at most 64 characters, the name their compute usage is summed under. |
 
 ## What it changes
 
-Only the correlation id of the OSDU requests its flows' runs send. Nothing a flow reads, writes or delivers changes:
+The correlation id of the OSDU requests its flows' runs send, and, with a `team`, who their compute usage is charged to.
+Nothing a flow reads, writes or delivers changes:
 
 | A run of `welldb-welllog-05-dimensions` (a dimension flow, operation code `dim`) | Carries |
 | --- | --- |
@@ -58,6 +68,18 @@ Only the correlation id of the OSDU requests its flows' runs send. Nothing a flo
 
 Adding one to a repository takes a file at its root, a `sqlflow validate .`, a commit and a sync
 ([setting it up](../concepts/request-correlation.md#setting-it-up-for-a-repository)).
+
+## The team
+
+`team` says who the flows under the document belong to. Every sync of the repository records it for the document's
+folder ([`osdu.RepositoryTeam`](../tables/repository-team.md)), and each piece of work a node does for a flow, of any
+kind, is charged to the team of the nearest document above the flow's file that names one
+([compute usage](../concepts/compute-usage.md#teams)). The Compute usage page sums by it.
+
+- A folder's own document names the team of the flows under it; a document with no `team` leaves them with the team of
+  the document above.
+- It applies to the work that ends after the sync that recorded it. Work already recorded keeps its team.
+- It plays no part in the correlation id, in a flow's document hash, or in anything a run does.
 
 ## Where a flow finds it
 
@@ -88,6 +110,7 @@ The document is read strictly, as every OSDU document is:
 | --- | --- |
 | No code | `osdu-delivery.yaml: code is required: the repository's code, which every run of its flows carries in its correlation id.` |
 | A code that breaks the rule | `osdu-delivery.yaml: code 'WL' is not a repository code: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen, so the correlation id splits on its hyphens.` |
+| A team longer than 64 characters, or of more than one line | `osdu-delivery.yaml: team '<team>' is not a team name: it is one line of at most 64 characters, the name compute usage is summed under.` |
 | A key it does not take | `osdu-delivery.yaml: invalid YAML at line 3, column 1 - Property 'name' not found on type 'SqlFlow.Delivery.Documents.RepositoryYaml'.` |
 | Another file name | `repository.yaml: a repository document is found by its name, walking up from each flow's folder; name the file osdu-delivery.yaml.` |
 

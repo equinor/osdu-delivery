@@ -335,7 +335,7 @@ The **Delivery** section of Build holds what a delivered record is built from an
 ## Admin
 
 The **Admin** group, shown to an admin only, holds every page an admin runs: SQLFlow's Users, External triggers and AI
-context, and the two below. Anyone signed in can still open these by their address, and Partitions from the
+context, and the three below. Anyone signed in can still open the first two by their address, and Partitions from the
 [partition picker](#the-partition-picker); only an admin changes what they hold.
 
 - **Partitions**: the registry, as the control plane's configuration names it. Each partition with its description,
@@ -352,6 +352,11 @@ context, and the two below. Anyone signed in can still open these by their addre
   **Register**s one (a name, what it is for, and the groups as one email per line, checked to be data groups before
   anything is sent), **Describe**s it, or **Remove**s one no record carries; while records carry it, **Remove** says so on
   hover. A restriction's groups stay as registered. See [restricting access](access-restriction.md#the-registry).
+- **Compute usage**: what the nodes' work came to in a period, in compute units (one core held for one hour): four
+  figures, a bar per day, and the **Division** over the teams the repositories name, their repositories, project folders
+  and flows, each with its share, searched by name and downloaded as CSV. Every row opens the **Work** behind it, piece
+  by piece, with the node, who started it, its wall-clock time and the cores it held; **Team tags** lists which folder
+  names which team. The control plane answers its reads to an admin only. See [compute usage](compute-usage.md).
 
 ## Records in the workbench's search
 

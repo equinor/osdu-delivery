@@ -60,7 +60,10 @@ const MENU: MenuGroup[] = [
   {
     id: "admin",
     label: "Admin",
-    entries: ["nav-users", "nav-external-triggers", "nav-semantic-layer", "nav-delivery-access-restrictions", "nav-delivery-partitions"],
+    entries: [
+      "nav-users", "nav-external-triggers", "nav-semantic-layer", "nav-delivery-access-restrictions", "nav-delivery-partitions",
+      "nav-delivery-compute-usage",
+    ],
     sections: [],
   },
   { id: "settings", label: "Settings", entries: ["nav-settings-tokens", "nav-settings-notifications"], sections: [] },

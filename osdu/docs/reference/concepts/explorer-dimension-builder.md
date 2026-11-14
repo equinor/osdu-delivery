@@ -22,6 +22,8 @@ keywords:
   - key suggestions
   - clean steps
   - where a key's record holds nothing
+  - write the flow file
+  - whole flow file
 related:
   - delivery-concept-explorer
   - delivery-flow-dimension
@@ -30,6 +32,7 @@ related:
   - delivery-concept-dimension-blueprint
   - delivery-guide-dimensions
   - delivery-concept-templates
+  - delivery-guide-dimension-flow-file
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionBuilder.cs
@@ -46,6 +49,8 @@ sourceRefs:
   - osdu/gui/src/features/delivery/explorer/dimension/dimensionStory.ts
   - osdu/gui/src/features/delivery/explorer/dimension/dimensionDraft.ts
   - osdu/gui/src/features/delivery/explorer/dimension/useDimensionBuild.ts
+  - osdu/gui/src/features/delivery/explorer/dimension/BuilderFlowFile.tsx
+  - osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts
 ---
 
 # Building a dimension in the explorer: picking it on the records, step by step
@@ -131,6 +136,11 @@ whether the YAML is ready to paste, and names the first thing to put right, whic
 a synced repository does not hold is a warning, with where to download one.
 
 **YAML** shows the item as it is copied, the findings above it, each lighting the lines it is about.
+
+**Write the flow file**, beside **Copy the YAML** once the YAML loads and while the assistant is configured, asks the
+assistant for the whole flow file holding the dimension: modelled on the estate's dimension flows, its tables kept
+where the estate keeps its data, and checked before it is shown. The conversation opens under **Flow file**, beside
+**YAML** ([Writing a dimension flow file](../guides/dimension-flow-file.md)).
 
 ## Kept in the address
 

@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
-use sqlflow_mcp::{encode, GuiLinks};
+use sqlflow_mcp::{encode, json_str, GuiLinks};
 
 use super::{DeliveryTools, PIPELINE_HINT};
 use crate::links::flow_page;
@@ -26,6 +26,16 @@ pub struct DimensionsInput {
     pub max_builds: Option<i64>,
     /// With pipelineId: lay out how this dimension (its name in the flow) is built instead of the board.
     pub blueprint: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DimensionFlowInput {
+    /// The whole dimension flow document to check, exactly as its file is to hold it. Omit it to read the patterns a new
+    /// flow follows first.
+    pub yaml: Option<String>,
+    /// With yaml: the file the document is meant for, relative to its repository (`flows/acme-wellbore-dimensions.yaml`),
+    /// which the issues name.
+    pub path: Option<String>,
 }
 
 #[tool_router(router = dimensions_router, vis = "pub(crate)")]
@@ -100,6 +110,68 @@ running its flow with trigger_run."
             }
         };
         relinked(board, |board| link_unbuilt(board, self.ctx.links()))
+    }
+
+    #[tool(
+        description = "Write a whole dimension flow file and check it; this is how a new dimension flow starts. Without yaml: the \
+catalog's dimension flows, each with its envelope (the document without its dimensions and views, as written), \
+and the connections the estate's flows write their data through. Copy the nearest flow's envelope, references \
+and all; keep the tables in the estate's data database under target.connection, not the module's. With yaml: \
+loads, valid, issues, tables, and the flow it replaces. Run it until valid before showing the file. Writes \
+nothing."
+    )]
+    async fn delivery_dimension_flow(&self, Parameters(i): Parameters<DimensionFlowInput>) -> String {
+        let Some(yaml) = i.yaml.filter(|yaml| !yaml.trim().is_empty()) else {
+            let mut patterns = match self.ctx.read("/api/v1/delivery/dimensions/flow-patterns", &[]).await {
+                Ok(patterns) => patterns,
+                Err(error) => return refuse(format!("{error:#}")),
+            };
+            if let Some(flows) = patterns.get_mut("flows").and_then(Value::as_array_mut) {
+                for flow in flows.iter_mut() {
+                    if let Some(pipeline) = flow.get("pipelineId").and_then(Value::as_str).map(str::to_string) {
+                        let mut links = Map::new();
+                        links.insert("flow".to_string(), json!(self.ctx.links().pipeline(&pipeline)));
+                        put_links(flow, links);
+                    }
+                }
+            }
+            if let Value::Object(answer) = &mut patterns {
+                answer.insert(
+                    "readingThis".to_string(),
+                    json!(
+                        "flows are the catalog's dimension flows; envelope is each one's document without its dimensions \
+                         and views, as written, and envelopeCut says it was cut. target is null for a flow keeping its \
+                         tables in the module's database. connections are counted by the kind of flow writing or reading \
+                         them; module marks the module's own. moreFlows counts the flows left out."
+                    ),
+                );
+            }
+            return json_str(&patterns);
+        };
+
+        let request = json!({ "yaml": yaml, "path": text(i.path) });
+        let mut check = match self.ctx.send("/api/v1/delivery/dimensions/flow-check", request).await {
+            Ok(check) => check,
+            Err(error) => return refuse(format!("{error:#}")),
+        };
+        if let Some(pipeline) = check.pointer("/existing/pipelineId").and_then(Value::as_str).map(str::to_string) {
+            if let Some(existing) = check.get_mut("existing") {
+                let mut links = Map::new();
+                links.insert("flow".to_string(), json!(self.ctx.links().pipeline(&pipeline)));
+                put_links(existing, links);
+            }
+        }
+        if let Value::Object(answer) = &mut check {
+            answer.insert(
+                "readingThis".to_string(),
+                json!(
+                    "valid is true when the document loads and no issue is an error; warnings do not stop it. Each \
+                     issue names the dimension it is about, when it is about one. dimensions[].table is where a build \
+                     writes each table. existing is the catalog's flow of the same name, null when there is none."
+                ),
+            );
+        }
+        json_str(&check)
     }
 }
 

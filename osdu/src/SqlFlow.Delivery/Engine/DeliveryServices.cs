@@ -7,6 +7,7 @@ using SqlFlow.Core;
 using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Catalog;
+using SqlFlow.Delivery.ComputeUsage;
 using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Data;
@@ -22,6 +23,7 @@ using SqlFlow.Delivery.Storage;
 using SqlFlow.Delivery.Templates;
 using SqlFlow.Delivery.Validation;
 using SqlFlow.Execution;
+using SqlFlow.Node;
 using SqlFlow.Yaml;
 
 namespace SqlFlow.Delivery.Engine;
@@ -198,6 +200,9 @@ public static class DeliveryServices
         // to supply the runs it queues, and the CLI reads and writes it so a deployment can configure an estate.
         services.AddSingleton(sp => new Catalog.DeliveryConfigStore(sp.GetRequiredService<DeliveryLedgerSource>().Contexts(sp)));
 
+        // The compute usage the nodes measure: a node writes it, and the control plane reads it, so every host has the store.
+        services.AddSingleton(sp => new ComputeUsageStore(sp.GetRequiredService<DeliveryLedgerSource>().Contexts(sp)));
+
         // The partition registry: which partitions a flow that names none serves, and the default a run that names none runs in.
         // One registry per host, the one the engine reads: a host without the module's database gets one that says so when used.
         services.AddSingleton(sp => sp.GetRequiredService<DeliveryLedgerSource>().Partitions(sp) ?? new DeliveryPartitionRegistry(null));
@@ -224,6 +229,51 @@ public static class DeliveryServices
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// Measures the work this host's node does and writes it to the module's database
+    /// (osdu/docs/reference/concepts/compute-usage.md): the meter listens on the node's line to the control plane, which
+    /// every run and compute task the node is handed passes, and the recorder writes what it measured in the background.
+    /// Called by every host that runs a node (the control plane, whose own node it is, and a worker), after the platform
+    /// registered the node's transport and after <see cref="AddDeliveryLedger(IServiceCollection)"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The host registered no node transport to listen on.</exception>
+    public static IServiceCollection AddDeliveryComputeUsage(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        var transport = services.LastOrDefault(d => d.ServiceType == typeof(INodeTransport))
+            ?? throw new InvalidOperationException(
+                $"No {nameof(INodeTransport)} is registered, so the delivery module cannot measure the work of this host's node. The module is being configured outside a host that runs one.");
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton(sp => new ComputeUsageMeter(sp.GetRequiredService<TimeProvider>()));
+        services.Remove(transport);
+        services.Add(ServiceDescriptor.Describe(
+            typeof(INodeTransport),
+            sp => new MeteredNodeTransport(RegisteredTransport(sp, transport), sp.GetRequiredService<ComputeUsageMeter>()),
+            transport.Lifetime));
+        services.AddHostedService<ComputeUsageRecorder>();
+        return services;
+    }
+
+    /// <summary>The node transport the host had registered, however it registered it.</summary>
+    private static INodeTransport RegisteredTransport(IServiceProvider provider, ServiceDescriptor registered)
+    {
+        if (registered.ImplementationInstance is INodeTransport instance)
+        {
+            return instance;
+        }
+
+        if (registered.ImplementationFactory is { } factory)
+        {
+            return (INodeTransport)factory(provider);
+        }
+
+        return (INodeTransport)ActivatorUtilities.CreateInstance(
+            provider,
+            registered.ImplementationType
+                ?? throw new InvalidOperationException($"The registered {nameof(INodeTransport)} names no implementation to wrap."));
     }
 
     /// <summary>

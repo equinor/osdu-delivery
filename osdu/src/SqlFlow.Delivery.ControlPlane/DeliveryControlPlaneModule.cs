@@ -74,6 +74,10 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         services.Services.AddDeliveryKind();
         services.Services.AddDeliveryLedger();
 
+        // The work this control plane's own node does is measured as a standalone node's is, on the node's line to the
+        // dispatcher, and written to the module's database (osdu/docs/reference/concepts/compute-usage.md).
+        services.Services.AddDeliveryComputeUsage();
+
         // The record search reads the partition the workbench works in from the request it answers.
         services.Services.AddHttpContextAccessor();
 

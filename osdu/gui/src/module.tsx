@@ -1,5 +1,6 @@
 import {
-  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, Download, FileCode2, Layers, LayoutTemplate, ListChecks, ListX, Lock,
+  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, Download, FileCode2, Gauge, Layers, LayoutTemplate, ListChecks, ListX,
+  Lock,
   Network, PackageCheck, PackageSearch, ScrollText, Settings, Shapes, ShieldCheck, Telescope, TextSearch, Unlink,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
@@ -45,6 +46,7 @@ const MappingBuilderPage = lazyRoute("MappingBuilderPage", () => import("./featu
 const DeliveryCachePage = lazyRoute("DeliveryCachePage", () => import("./features/delivery/DeliveryCachePage"));
 const DeliveryPartitionsPage = lazyRoute("DeliveryPartitionsPage", () => import("./features/delivery/DeliveryPartitionsPage"));
 const AccessRestrictionsPage = lazyRoute("AccessRestrictionsPage", () => import("./features/delivery/AccessRestrictionsPage"));
+const ComputeUsagePage = lazyRoute("ComputeUsagePage", () => import("./features/delivery/compute/ComputeUsagePage"));
 const DeliveryAssertionsPage = lazyRoute("DeliveryAssertionsPage", () => import("./features/delivery/assertions/DeliveryAssertionsPage"));
 const AssertionReportPage = lazyRoute("AssertionReportPage", () => import("./features/delivery/assertions/AssertionReportPage"));
 const DeliveryDimensionsPage = lazyRoute("DeliveryDimensionsPage", () => import("./features/delivery/dimensions/DeliveryDimensionsPage"));
@@ -437,6 +439,7 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/cache", component: DeliveryCachePage },
     { path: "/delivery/partitions", component: DeliveryPartitionsPage },
     { path: "/delivery/access-restrictions", component: AccessRestrictionsPage },
+    { path: "/delivery/compute-usage", component: ComputeUsagePage },
     { path: "/delivery/assertions", component: DeliveryAssertionsPage },
     { path: "/delivery/assertions/runs/:assertionRunId", component: AssertionReportPage },
     { path: "/delivery/dimensions", component: DeliveryDimensionsPage },
@@ -454,7 +457,8 @@ export const osduDeliveryModule: GuiModule = {
   // live, and the checks of it. Build is what is delivered, how and from where, all of it kept in the
   // repositories: the flows, what a delivered record is built from, and the sources they read. Explore is the data the
   // flows read and write and how it connects. Admin is every page an admin runs (decision
-  // 0048): who and what may act, the access restrictions and the partitions; Settings is the person's own. A group of
+  // 0048): who and what may act, the access restrictions, the partitions and what the nodes' work came to; Settings is
+  // the person's own. A group of
   // more than one sort of page lists each sort under a section. The mapping builder is reached from Mappings, which owns
   // its path. The activity bar opens the pages worked in most in one click, in the order the owner asked for (decision
   // 0045): the assistant, the delivery overview, the repositories and their schedules, the Explorer, the mappings and
@@ -503,7 +507,7 @@ export const osduDeliveryModule: GuiModule = {
         label: "Admin",
         icon: ShieldCheck,
         requiresScope: "admin",
-        entries: ["/users", "/external-triggers", "/semantic-layer", "/delivery/access-restrictions", "/delivery/partitions"],
+        entries: ["/users", "/external-triggers", "/semantic-layer", "/delivery/access-restrictions", "/delivery/partitions", "/delivery/compute-usage"],
       },
       { id: "settings", label: "Settings", icon: Settings, bottom: true, entries: ["/settings/tokens", "/settings/notifications"] },
     ],
@@ -545,6 +549,8 @@ export const osduDeliveryModule: GuiModule = {
         description: "The OSDU partitions the flows run in, as the control plane's configuration names them, each with its cache and the flows serving it; an admin can describe or remove the others." },
     { label: "Access restrictions", to: "/delivery/access-restrictions", icon: Lock, testId: "nav-delivery-access-restrictions",
         description: "The groups a record's ACL in OSDU can be restricted to without removing it, per partition, with how many records carry each; an admin registers, describes or removes them." },
+    { label: "Compute usage", to: "/delivery/compute-usage", icon: Gauge, testId: "nav-delivery-compute-usage",
+        description: "What the nodes' work came to in compute units, a day at a time and divided over the teams the repositories name, down to the flow; open the work behind any share." },
     { label: "Search terms", to: "/delivery/search-terms", icon: TextSearch, testId: "nav-delivery-search-terms",
         description: "The source columns the mappings read, which the Explorer searches by: rename one to what people call it, pick the route it searches through, add a note, or delete and restore it." },
   ],
