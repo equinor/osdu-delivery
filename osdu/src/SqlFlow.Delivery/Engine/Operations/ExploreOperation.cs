@@ -6,6 +6,7 @@ using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Dimensions;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Search;
+using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Model;
@@ -30,6 +31,7 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// <item><description><c>dimension-keys</c>: the commonest keys of a drafted dimension's path, which the builder's example steps through (<see cref="DimensionSampler.KeysAsync"/>), asked by the <c>keys</c> long argument.</description></item>
 /// <item><description><c>dimension-example</c>: one key of a drafted dimension made into its row as a build makes it (<see cref="DimensionSampler.ExampleAsync"/>): the dimension's item as YAML (<c>item</c>), the <c>key</c>, and how the key and each collected path are indexed (<c>fields</c>).</description></item>
 /// <item><description><c>dimension-preview</c>: the commonest keys of a drafted dimension made into their rows as a build makes them, the table's preview (<see cref="DimensionSampler.PreviewAsync"/>): the item (<c>item</c>) and how its key and collected paths are indexed (<c>fields</c>), as an example is asked.</description></item>
+/// <item><description><c>cache-preview</c>: the first records of a drafted cached type as the cache would keep them, read as a refresh reads a page (<see cref="SnapshotBuilder.SampleTypeAsync"/>): the type's item as YAML (<c>item</c>), read back by the document loader.</description></item>
 /// <item><description><c>validate</c>: one record (<c>targetId</c>, at its latest or a <c>version</c>) checked against the schema of its kind, the Schema service's or a template a synced repository holds (<c>schema</c>, <c>templateVersion</c>), with the records it refers to looked up in storage, and the assertions of the synced <c>mapping</c> named by its id judged on it (<see cref="ExplorerChecks.RecordAsync"/>).</description></item>
 /// <item><description><c>validate-list</c>: the records a <c>search</c> finds, up to <c>max</c>, checked the same way and counted by rule and by assertion (<see cref="ExplorerChecks.ListAsync"/>).</description></item>
 /// <item><description><c>referenced-by</c>: the types whose schemas name records of a <c>type</c> (<see cref="ExplorerReferences"/>), answered from what the partition's Schema service holds, read once and kept (<see cref="PartitionSchemaIndex"/>); <c>refresh</c> reads it again.</description></item>
@@ -78,6 +80,7 @@ public sealed class ExploreOperation : DeliveryOperation
     public const string DimensionKeysAction = "dimension-keys";
     public const string DimensionExampleAction = "dimension-example";
     public const string DimensionPreviewAction = "dimension-preview";
+    public const string CachePreviewAction = "cache-preview";
     public const string ValidateAction = "validate";
     public const string ValidateListAction = "validate-list";
     public const string ReferencedByAction = "referenced-by";
@@ -122,7 +125,10 @@ public sealed class ExploreOperation : DeliveryOperation
 
     /// <summary>Every read the task can name.</summary>
     public static readonly IReadOnlyList<string> Actions =
-        [TypesAction, SearchAction, FieldsAction, ReadAction, DimensionKeysAction, DimensionExampleAction, DimensionPreviewAction, ValidateAction, ValidateListAction, ReferencedByAction, SchemasAction, SchemaAction];
+        [
+            TypesAction, SearchAction, FieldsAction, ReadAction, DimensionKeysAction, DimensionExampleAction, DimensionPreviewAction, CachePreviewAction,
+            ValidateAction, ValidateListAction, ReferencedByAction, SchemasAction, SchemaAction,
+        ];
 
     /// <summary>How the dimension builder's requests and answers are written: the web's conventions, as the API writes them.</summary>
     public static JsonSerializerOptions BuilderJson { get; } = ReadOnly(new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -219,6 +225,7 @@ public sealed class ExploreOperation : DeliveryOperation
             DimensionKeysAction => await Sampler(client, context).KeysAsync(KeysOf(payload, partition), ct).ConfigureAwait(false),
             DimensionExampleAction => await ExampleAsync(context, Sampler(client, context), payload, partition, ct).ConfigureAwait(false),
             DimensionPreviewAction => await PreviewAsync(context, Sampler(client, context), payload, partition, ct).ConfigureAwait(false),
+            CachePreviewAction => await CachePreviewAsync(context, client, payload, ct).ConfigureAwait(false),
             ReferencedByAction => await ReferencedByAsync(context, target, client, partition, payload, ct).ConfigureAwait(false),
             _ => await explorer.FieldsAsync(payload.RequireArgument(KindArgument), new SchemaServiceReader(client, context.Time), ct).ConfigureAwait(false),
         };
@@ -446,6 +453,29 @@ public sealed class ExploreOperation : DeliveryOperation
         var draft = DraftOf(context, payload);
         return await sampler.PreviewAsync(draft.Dimension, Filled(draft.Dimension.Query, partition), draft.KeyField, draft.Collected, draft.Cleaner, ct)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>How many records the preview of a drafted cached type reads.</summary>
+    public const int CachePreviewRecords = 25;
+
+    /// <summary>
+    /// The first records of the drafted cached type the payload's <c>item</c> carries, as the cache would keep them: the item
+    /// read back by the document loader, as a cache flow's own would be, and its records read as a refresh reads a page, so
+    /// the preview is what a refresh of that YAML would cache of those records.
+    /// </summary>
+    private static async Task<CacheSample> CachePreviewAsync(EngineContext context, OsduHttpClient client, ComputeTaskPayload payload, CancellationToken ct)
+    {
+        var item = LongArgument.Require(payload, ItemArgument);
+        var type = context.Documents.ParseCache(CacheTypeBuilder.Document(item), CacheTypeBuilder.CheckSource).Types[0];
+        try
+        {
+            return await SnapshotBuilder.SampleTypeAsync(
+                client, type, CachePreviewRecords, context.Loggers.CreateLogger<SnapshotBuilder>(), SnapshotBuilder.DefaultStoragePath, ct).ConfigureAwait(false);
+        }
+        catch (DeliveryException ex)
+        {
+            throw new SqlFlowException(ex.Message, ex);
+        }
     }
 
     /// <summary>A drafted dimension as the payload carries it, read back: the dimension, how its key and each collected path are indexed, and its cleaner.</summary>

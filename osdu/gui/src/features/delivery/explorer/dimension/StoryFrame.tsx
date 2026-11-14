@@ -4,16 +4,18 @@ import { ChevronDown, CirclePlus, CircleX, Info, TriangleAlert, type LucideIcon 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DimensionDraftIssue } from "../../../../api/explorer";
-import type { StepState, StoryStep } from "./dimensionStory";
+import type { StepState } from "./dimensionStory";
 
 /**
- * One step of the dimension's story (osdu/docs/reference/concepts/explorer-dimension-builder.md): a marker on the rail
+ * One step of a builder's story, the dimension's or the cached type's
+ * (osdu/docs/reference/concepts/explorer-dimension-builder.md, explorer-cache-builder.md): a marker on the rail
  * that joins the steps, saying where the step stands; a sentence of what the draft holds there, its lead quiet and its
  * choice in full; a line of facts; what the builder found wrong there, loud for an error and quiet for a warning; the ask
  * of the step that wants a pick next; and the step's settings, shown only while it is open.
  */
 export function StoryFrame({ step, state, lead, answer, facts, issues = [], shownInBody = [], open = false, onToggle, hint, body, children, last = false }: {
-  step: StoryStep;
+  /** The step's name in its story (`from`, `rows`, `keeps`), which its test id carries. */
+  step: string;
   state: StepState;
   /** The words the step's sentence starts with: `From`, `One row per`. */
   lead: string;

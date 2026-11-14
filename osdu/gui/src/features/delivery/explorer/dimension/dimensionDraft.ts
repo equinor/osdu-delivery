@@ -620,7 +620,19 @@ export function planOf(draft: DimensionDraft, pick: BuildPick): PickPlan | PickR
   }
 
   steps.push({ location, readIn: last.id, record: last.record });
-  const what = pick.action === "value" ? "the value of each key" : "the attribute";
+  return {
+    action: pick.action, kind, key: keyPath, keyExample: firstValueAt(root.record, keyPath), path: plain,
+    steps: steps.map(({ location: at, readIn }) => ({ location: at, readIn })),
+    questions: questionsOf(steps, pick.action === "value" ? "the value of each key" : "the attribute"),
+  };
+}
+
+/**
+ * The questions a path of `steps` raises, each step read in its record: one for every list of objects a step passes
+ * through one item of, where the objects answer differently, asking which is read. `what` names what the last step
+ * reads; a step before it reads the records named next. A cached type's attribute raises them as a dimension's does.
+ */
+export function questionsOf(steps: readonly (PlannedStep & { record: Record<string, unknown> })[], what: string): AmbiguousPick[] {
   const questions: AmbiguousPick[] = [];
   steps.forEach((step, index) => {
     const follows = index < steps.length - 1;
@@ -647,10 +659,7 @@ export function planOf(draft: DimensionDraft, pick: BuildPick): PickPlan | PickR
     });
   });
 
-  return {
-    action: pick.action, kind, key: keyPath, keyExample: firstValueAt(root.record, keyPath), path: plain,
-    steps: steps.map(({ location: at, readIn }) => ({ location: at, readIn })), questions,
-  };
+  return questions;
 }
 
 /**

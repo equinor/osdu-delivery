@@ -298,6 +298,7 @@ public static partial class DeliveryDimensionEndpoints
 
         // Writing a whole dimension flow file: the patterns a new flow follows, and a check of the document; both only read.
         MapFlowWriting(delivery);
+        DeliveryCacheFlowEndpoints.Map(delivery);
     }
 
     /// <summary>The routes that change what the ledger keeps of a dimension: removing one, an admin's alone.</summary>

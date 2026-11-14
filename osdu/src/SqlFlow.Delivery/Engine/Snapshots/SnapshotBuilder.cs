@@ -351,42 +351,14 @@ public sealed partial class SnapshotBuilder
         // One pool for the capture: a value many records hold (the field a thousand wellbores lie in) is kept once.
         var pool = new StringPool();
         var coverage = typeSpec.Fields.ToDictionary(f => f.Name, _ => 0, StringComparer.OrdinalIgnoreCase);
-        var search = new OsduSearch(osdu.Client, QueryPath, SearchPath, _logger, osdu.Paging);
-        var attributes = typeSpec.Fields.Where(f => f.IsAttribute).ToList();
-
-        // What each record has to hold: every path of it the type keeps, and what the first step of each attribute reads of it.
-        var read = typeSpec.Fields.SelectMany(PathsRead).Distinct(StringComparer.Ordinal).ToList();
-        var indexOnly = read.Select(RootOf).Where(root => root.Length > 0 && !StorageProperties.Contains(root)).ToFrozenSet(StringComparer.Ordinal);
-        var whole = typeSpec.FetchRecords ? new WholeRead(new StorageRecords(osdu.Client, storagePath), indexOnly) : null;
-
-        // Reading records whole, the search only names them: it returns their ids, and the paths under a property only the
-        // index holds, which storage's record lacks.
-        var returned = read.Where(path => !typeSpec.FetchRecords || indexOnly.Contains(RootOf(path))).Prepend("id").Distinct(StringComparer.Ordinal).ToList();
-        var query = new OsduSearchQuery
+        var reading = ReadingOf(osdu.Client, osdu.Paging, typeSpec, storagePath, _logger);
+        var whole = reading.Whole;
+        var reader = reading.Reader;
+        var attributes = reading.Attributes;
+        await foreach (var page in reading.Search.PagesAsync(reading.Query, SearchPageSize, ct).ConfigureAwait(false))
         {
-            Kind = typeSpec.Kind ?? throw new DeliveryException($"Reference type {typeSpec.Name} names no kind, so there is nothing to search for it."),
-            Query = typeSpec.Query,
-            ReturnedFields = returned,
-        };
-
-        // An attribute reads the records the cached ones reference as a dimension reads them: from the index, or whole from
-        // storage for a type that reads its records whole. The cached records in hand answer its first step.
-        var reader = attributes.Count == 0
-            ? null
-            : new CacheAttributeReader(
-                whole is null ? new SearchLabelRecords(search) : new StorageLabelRecords(whole.Storage), StorageReadsAtOnce);
-        var asked = returned.ToHashSet(StringComparer.Ordinal);
-        Func<IReadOnlyList<string>, bool> covers = whole is null
-            ? fields => fields.All(asked.Contains)
-            : fields => fields.All(field => RootOf(field) is var root && (StorageProperties.Contains(root) || indexOnly.Contains(root)));
-        await foreach (var page in search.PagesAsync(query, SearchPageSize, ct).ConfigureAwait(false))
-        {
-            var records = whole is null ? Parsed(typeSpec, page.Hits) : await ReadWholeAsync(typeSpec, whole, page.Hits, ct).ConfigureAwait(false);
-            var attached = reader is null ? null : await reader.ReadAsync(records, attributes, covers, pool, ct).ConfigureAwait(false);
-            foreach (var record in records)
+            foreach (var item in await ItemsAsync(reading, typeSpec, page.Hits, pool, ct).ConfigureAwait(false))
             {
-                var item = Project(record, typeSpec.Fields, pool, attached)
-                    ?? throw new DeliveryException($"Reference type {typeSpec.Name}: the search of kind {typeSpec.Kind} handed on a record without an id.");
                 if (!items.TryAdd(item.Id, item))
                 {
                     throw new DeliveryException($"Reference type {typeSpec.Name}: the search of kind {typeSpec.Kind} handed on record {item.Id} twice.");
@@ -474,6 +446,155 @@ public sealed partial class SnapshotBuilder
             "Captured {Count} {Type} item(s) with {Fields}.",
             items.Count, typeSpec.Name, string.Join(", ", typeSpec.Fields.Select(f => $"{f.Name}={coverage[f.Name]}")));
         return new ReferenceType(typeSpec.Name, typeSpec.EntityType, items.Values.OrderBy(i => i.Id, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// How one type's records are read, page by page, whoever reads them: the capture, every page of the type, or a sample, its
+    /// first records (<see cref="SampleTypeAsync"/>). The search and what it asks each hit to hold, the storage read of a type
+    /// that reads its records whole, and the reader of its attributes.
+    /// </summary>
+    private sealed class TypeReading
+    {
+        public required OsduSearch Search { get; init; }
+
+        public required OsduSearchQuery Query { get; init; }
+
+        public required IReadOnlyList<ReferenceFieldSpec> Attributes { get; init; }
+
+        /// <summary>Whether the records in hand hold the paths a read of an attribute asks for.</summary>
+        public required Func<IReadOnlyList<string>, bool> Covers { get; init; }
+
+        public WholeRead? Whole { get; init; }
+
+        public CacheAttributeReader? Reader { get; init; }
+    }
+
+    /// <summary>The reading of <paramref name="typeSpec"/> through <paramref name="client"/>: what its search asks for, and how its records and attributes are read.</summary>
+    private static TypeReading ReadingOf(Protocols.OsduHttpClient client, SearchPaging paging, ReferenceTypeSpec typeSpec, string storagePath, ILogger logger)
+    {
+        var search = new OsduSearch(client, QueryPath, SearchPath, logger, paging);
+        var attributes = typeSpec.Fields.Where(f => f.IsAttribute).ToList();
+
+        // What each record has to hold: every path of it the type keeps, and what the first step of each attribute reads of it.
+        var read = typeSpec.Fields.SelectMany(PathsRead).Distinct(StringComparer.Ordinal).ToList();
+        var indexOnly = read.Select(RootOf).Where(root => root.Length > 0 && !StorageProperties.Contains(root)).ToFrozenSet(StringComparer.Ordinal);
+        var whole = typeSpec.FetchRecords ? new WholeRead(new StorageRecords(client, storagePath), indexOnly) : null;
+
+        // Reading records whole, the search only names them: it returns their ids, and the paths under a property only the
+        // index holds, which storage's record lacks.
+        var returned = read.Where(path => !typeSpec.FetchRecords || indexOnly.Contains(RootOf(path))).Prepend("id").Distinct(StringComparer.Ordinal).ToList();
+        var query = new OsduSearchQuery
+        {
+            Kind = typeSpec.Kind ?? throw new DeliveryException($"Reference type {typeSpec.Name} names no kind, so there is nothing to search for it."),
+            Query = typeSpec.Query,
+            ReturnedFields = returned,
+        };
+
+        // An attribute reads the records the cached ones reference as a dimension reads them: from the index, or whole from
+        // storage for a type that reads its records whole. The cached records in hand answer its first step.
+        var reader = attributes.Count == 0
+            ? null
+            : new CacheAttributeReader(
+                whole is null ? new SearchLabelRecords(search) : new StorageLabelRecords(whole.Storage), StorageReadsAtOnce);
+        var asked = returned.ToHashSet(StringComparer.Ordinal);
+        Func<IReadOnlyList<string>, bool> covers = whole is null
+            ? fields => fields.All(asked.Contains)
+            : fields => fields.All(field => RootOf(field) is var root && (StorageProperties.Contains(root) || indexOnly.Contains(root)));
+        return new TypeReading { Search = search, Query = query, Attributes = attributes, Covers = covers, Whole = whole, Reader = reader };
+    }
+
+    /// <summary>
+    /// One page of a type's hits made into the items the cache keeps: each record as the index returned it, or read whole from
+    /// storage, projected onto the type's paths with its attributes read.
+    /// </summary>
+    private static async Task<List<ReferenceItem>> ItemsAsync(
+        TypeReading reading, ReferenceTypeSpec typeSpec, IReadOnlyList<JsonElement> hits, StringPool pool, CancellationToken ct)
+    {
+        var records = reading.Whole is null ? Parsed(typeSpec, hits) : await ReadWholeAsync(typeSpec, reading.Whole, hits, ct).ConfigureAwait(false);
+        var attached = reading.Reader is null ? null : await reading.Reader.ReadAsync(records, reading.Attributes, reading.Covers, pool, ct).ConfigureAwait(false);
+        var items = new List<ReferenceItem>(records.Count);
+        foreach (var record in records)
+        {
+            items.Add(Project(record, typeSpec.Fields, pool, attached)
+                ?? throw new DeliveryException($"Reference type {typeSpec.Name}: the search of kind {typeSpec.Kind} handed on a record without an id."));
+        }
+
+        return items;
+    }
+
+    /// <summary>The most records a sample of a type reads.</summary>
+    public const int MaxSample = 50;
+
+    /// <summary>
+    /// The first records of a type made into what the cache would keep of them, read exactly as a capture reads a page
+    /// (<see cref="ReadingOf"/>, <see cref="ItemsAsync"/>): the paths projected, the attributes read through the records
+    /// they reference, the records whole from storage for a type that reads them so. Nothing is written. A query the search
+    /// service refuses is answered with its words; a path or an attribute no sampled record gave a value is noted, as a
+    /// capture warns of one.
+    /// </summary>
+    /// <param name="client">The connection the type is searched, and its records read, through.</param>
+    /// <param name="typeSpec">The type, as a cache flow would declare it.</param>
+    /// <param name="max">How many records to read, up to <see cref="MaxSample"/>.</param>
+    /// <param name="logger">Where the search reports.</param>
+    /// <param name="storagePath">The storage service's batch read, for a type that reads its records whole.</param>
+    /// <param name="ct">Cancels the read.</param>
+    public static async Task<CacheSample> SampleTypeAsync(
+        Protocols.OsduHttpClient client, ReferenceTypeSpec typeSpec, int max, ILogger logger, string storagePath = DefaultStoragePath, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(typeSpec);
+        ArgumentNullException.ThrowIfNull(logger);
+        typeSpec.Validate();
+
+        var reading = ReadingOf(client, SearchPaging.Cursor, typeSpec, storagePath, logger);
+        var answer = await reading.Search.PageAsync(reading.Query, 0, Math.Clamp(max, 1, MaxSample), null, ct).ConfigureAwait(false);
+        var coverage = typeSpec.Fields.ToDictionary(f => f.Name, _ => 0, StringComparer.OrdinalIgnoreCase);
+        List<CacheSampleColumn> Columns() => [.. typeSpec.Fields.Select(f => new CacheSampleColumn(f.Name, f.Path, f.IsAttribute, coverage[f.Name]))];
+        if (answer.Refusal is { } refusal)
+        {
+            return new CacheSample(typeSpec.Name, typeSpec.EntityType, 0, Columns(), [], [], refusal);
+        }
+
+        var hits = answer.Hits.Select(hit => JsonSerializer.SerializeToElement(hit)).ToList();
+        var items = await ItemsAsync(reading, typeSpec, hits, new StringPool(), ct).ConfigureAwait(false);
+        var records = new List<CacheSampleRecord>(items.Count);
+        foreach (var item in items)
+        {
+            var fields = new JsonObject();
+            foreach (var (name, value) in item.Fields)
+            {
+                coverage[name]++;
+                fields[name] = value.Node.DeepClone();
+            }
+
+            records.Add(new CacheSampleRecord(item.Id, fields));
+        }
+
+        var notes = new List<string>();
+        if (reading.Whole is { Gone: > 0 } gone)
+        {
+            notes.Add(
+                $"Storage did not return {gone.Gone} of the records the search found (deleted since they were indexed, or not readable with the partition's credentials), so they are not cached.");
+        }
+
+        if (records.Count > 0)
+        {
+            foreach (var field in typeSpec.Fields.Where(f => coverage[f.Name] == 0))
+            {
+                notes.Add(field.IsAttribute
+                    ? $"None of these records gave {field.Name}."
+                    : reading.Whole is null
+                        ? $"None of these records holds {field.Path}. The search index holds only what the kind's schema describes: for a path it leaves open, such as one under data.ExtensionProperties, read the records whole from storage."
+                        : $"None of these records holds {field.Path} in storage.");
+            }
+        }
+
+        if (reading.Reader is { } reader)
+        {
+            notes.AddRange(reader.Notes());
+        }
+
+        return new CacheSample(typeSpec.Name, typeSpec.EntityType, answer.Total, Columns(), records, notes, null);
     }
 
     /// <summary>A page's hits as records, each the projection the index returned.</summary>

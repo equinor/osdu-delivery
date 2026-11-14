@@ -508,7 +508,9 @@ to read 50 kinds, more than it read, stops, since the service is failing rather 
 
 ## Building a dimension
 
-**Build a dimension**, in the header, docks the dimension builder beside the records (the workbench's side bar folds
+**Build**, in the header, offers a dimension or a cached type to build from the records in view. **A cached type** docks
+the [cache builder](explorer-cache-builder.md), which writes an item of a cache flow's `types:` the same way. **A
+dimension** docks the dimension builder beside the records (the workbench's side bar folds
 meanwhile). It tells a [dimension](../flow/dimension.md) as a story of steps, from the records read to the table it makes,
 and its key, its value and its columns are picked on the values themselves as records are browsed and their links
 followed. It suggests keys from the kind's template a synced repository holds, fills an example row with what one key
@@ -546,6 +548,8 @@ the workbench's partition, else the registry's default, is read.
 | `POST /api/v1/delivery/explorer/dimension/keys` | operate | The commonest keys of a drafted dimension's path. |
 | `POST /api/v1/delivery/explorer/dimension/compose` | operate | A draft written as a dimension flow's item, and checked. |
 | `POST /api/v1/delivery/explorer/dimension/preview` | operate | The rows a build of a draft would make of the 100 keys most records hold; 400 while a build would refuse the draft. |
+| `POST /api/v1/delivery/explorer/cache/compose` | operate | A draft written as a cache flow's item, and checked ([the cache builder](explorer-cache-builder.md)). |
+| `POST /api/v1/delivery/explorer/cache/preview` | operate | The first 25 records as a refresh of a draft would cache them; 400 while a refresh would refuse the draft. |
 
 A request the read would refuse (a kind that is not one, more than 12 conditions, a page past the window, an id that is
 not one) answers 400 before anything is read, with the reason, for example `The search service pages through the first

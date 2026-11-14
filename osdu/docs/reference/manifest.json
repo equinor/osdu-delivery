@@ -2166,6 +2166,58 @@
       ]
     },
     {
+      "id": "delivery-concept-explorer-cache-builder",
+      "corpus": "reference",
+      "path": "concepts/explorer-cache-builder.md",
+      "title": "Building a cached type in the explorer: picking what the cache keeps on the records",
+      "type": "concept",
+      "summary": "The explorer's cache builder: Build, A cached type, its steps from the records to the type, picks made on the records' values, the preview, and the YAML.",
+      "keywords": [
+        "build a cached type",
+        "cache builder",
+        "build a cache type",
+        "keep in the cache",
+        "add as an attribute",
+        "cache yaml",
+        "types item",
+        "preview the records",
+        "cache preview",
+        "what to build",
+        "build menu",
+        "dimension or cached type",
+        "write the flow file",
+        "whole cache flow file",
+        "cached already by"
+      ],
+      "related": [
+        "delivery-concept-explorer",
+        "delivery-concept-explorer-dimension-builder",
+        "delivery-flow-cache",
+        "delivery-flow-cache-attributes",
+        "delivery-flow-cache-records",
+        "delivery-concept-partition-cache",
+        "delivery-flow-mapping-lookups",
+        "delivery-guide-cache-flow-file"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Cache.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheTypeBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheSample.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/ExploreOperation.cs",
+        "osdu/gui/src/features/delivery/explorer/BuilderMode.tsx",
+        "osdu/gui/src/features/delivery/explorer/cache/CacheBuildPanel.tsx",
+        "osdu/gui/src/features/delivery/explorer/cache/CacheSteps.tsx",
+        "osdu/gui/src/features/delivery/explorer/cache/CachePreview.tsx",
+        "osdu/gui/src/features/delivery/explorer/cache/CacheFieldActions.tsx",
+        "osdu/gui/src/features/delivery/explorer/cache/cacheDraft.ts",
+        "osdu/gui/src/features/delivery/explorer/cache/cacheStory.ts",
+        "osdu/gui/src/features/delivery/explorer/cache/useCacheBuild.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFoot.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFrom.tsx"
+      ]
+    },
+    {
       "id": "delivery-concept-explorer-dimension-builder",
       "corpus": "reference",
       "path": "concepts/explorer-dimension-builder.md",
@@ -2202,7 +2254,8 @@
         "delivery-concept-dimension-blueprint",
         "delivery-guide-dimensions",
         "delivery-concept-templates",
-        "delivery-guide-dimension-flow-file"
+        "delivery-guide-dimension-flow-file",
+        "delivery-concept-explorer-cache-builder"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs",
@@ -2220,8 +2273,10 @@
         "osdu/gui/src/features/delivery/explorer/dimension/dimensionStory.ts",
         "osdu/gui/src/features/delivery/explorer/dimension/dimensionDraft.ts",
         "osdu/gui/src/features/delivery/explorer/dimension/useDimensionBuild.ts",
-        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFlowFile.tsx",
-        "osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts"
+        "osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFoot.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFrom.tsx",
+        "osdu/gui/src/features/delivery/explorer/BuilderMode.tsx"
       ]
     },
     {
@@ -7152,6 +7207,41 @@
       ]
     },
     {
+      "id": "delivery-guide-cache-flow-file",
+      "corpus": "reference",
+      "path": "guides/cache-flow-file.md",
+      "title": "Writing a cache flow file: the whole file from a built type, modelled on the estate's flows",
+      "type": "guide",
+      "summary": "Write the flow file, in the cache builder: the assistant writes the whole cache flow on the estate's own, in the flow caching the type already, checked first.",
+      "keywords": [
+        "write the flow file",
+        "whole cache flow file",
+        "cache flow from the builder",
+        "delivery_flow_file",
+        "flowType cache",
+        "flow patterns",
+        "envelope",
+        "check a cache flow",
+        "cache flow-check",
+        "cache flow-patterns",
+        "type cached already"
+      ],
+      "related": [
+        "delivery-concept-explorer-cache-builder",
+        "delivery-flow-cache",
+        "delivery-concept-partition-cache",
+        "delivery-guide-dimension-flow-file",
+        "delivery-guide-mcp"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFoot.tsx",
+        "osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCacheFlowEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Cache.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/tools/dimensions.rs"
+      ]
+    },
+    {
       "id": "delivery-guide-data-quality-tests",
       "corpus": "reference",
       "path": "guides/data-quality-tests.md",
@@ -7300,7 +7390,7 @@
         "write the flow file",
         "whole dimension flow file",
         "dimension flow from the builder",
-        "delivery_dimension_flow",
+        "delivery_flow_file",
         "flow patterns",
         "envelope",
         "data database",
@@ -7314,11 +7404,12 @@
         "delivery-flow-dimension",
         "delivery-flow-dimension-target",
         "delivery-guide-dimensions",
-        "delivery-guide-mcp"
+        "delivery-guide-mcp",
+        "delivery-guide-cache-flow-file"
       ],
       "sourceRefs": [
-        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFlowFile.tsx",
         "osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts",
+        "osdu/gui/src/features/delivery/explorer/dimension/BuilderFoot.tsx",
         "osdu/gui/src/features/delivery/explorer/dimension/DimensionBuildPanel.tsx",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.Flow.cs",
         "osdu/hosts/osdu-delivery-mcp/src/tools/dimensions.rs"

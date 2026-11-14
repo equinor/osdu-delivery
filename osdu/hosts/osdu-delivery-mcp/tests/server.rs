@@ -42,7 +42,7 @@ const DELIVERY_TOOLS: &[&str] = &[
     "delivery_check_mapping",
     "delivery_config",
     "delivery_decide_cache_changes",
-    "delivery_dimension_flow",
+    "delivery_flow_file",
     "delivery_dimensions",
     "delivery_find_records",
     "delivery_flow",

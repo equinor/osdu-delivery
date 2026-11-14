@@ -364,6 +364,8 @@ declarations agree, or rename one type.
 - [The partition cache](../concepts/partition-cache.md): versions, several flows sharing a cache, tags and rollout.
 - [Getting your own lookup table into the cache](../guides/lookup-table-cache.md) and [caching OSDU reference
   data](../guides/reference-data-cache.md): the two common tasks, end to end.
+- [Building a cached type in the explorer](../concepts/explorer-cache-builder.md): an OSDU type picked on the records,
+  previewed, and written as an item of `types`.
 - [Dictionary document](dictionary.md), [dimension flow](dimension.md).
 - [Mapping lookups](mapping-lookups.md) and [modifiers](mapping-modifiers.md): how a mapping reads a cached type.
 - [`sqlflow cache`](../cli/cache.md): list a partition's versions; SQLFlow's [ingestion flow](../../../../sqlflow/docs/reference/flow/ing.md) loads the tables a table type reads.

@@ -157,7 +157,7 @@ Every `delivery_*` tool calls a route under `/api/v1/delivery` and nothing else 
 | What breaks if we move to the next version of a kind? | `delivery_osdu_schema_compare` |
 | Are the data quality tests passing? What failed last night? | `delivery_assertions`, `delivery_assertion_runs` |
 | Which dimensions exist, and are they up to date? What does this dimension's YAML make? | `delivery_dimensions` (with `blueprint`, how it is built) |
-| Write a whole dimension flow file the way the estate writes its others. | `delivery_dimension_flow` (the patterns first, then the document checked until valid: [Writing a dimension flow file](dimension-flow-file.md)) |
+| Write a whole dimension or cache flow file the way the estate writes its others. | `delivery_flow_file` (`flowType` `dimension` or `cache`; the patterns first, then the document checked until valid: [a dimension flow file](dimension-flow-file.md), [a cache flow file](cache-flow-file.md)) |
 | Which inventories exist, and what did the last reconcile find? | `delivery_inventories` (counts by finding, never the ids) |
 | What will this removal take out, and how did it last run? | `delivery_removals` (it reads; approving and removing are in the GUI) |
 

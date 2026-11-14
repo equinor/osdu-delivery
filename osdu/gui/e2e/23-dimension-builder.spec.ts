@@ -114,6 +114,8 @@ async function buildOnWellLogs(page: Page) {
   await logs.getByRole("button").last().click();
   await expect(page.getByTestId("explorer-grid").getByTestId("explorer-grid-row")).toHaveCount(5, { timeout: 60_000 });
   await expect(page.getByTestId("nav-delivery-explorer")).toBeVisible();
+  // Build offers what to build from the records in view; a dimension here.
+  await page.getByTestId("explorer-build").click();
   await page.getByTestId("explorer-build-dimension").click();
   await expect(page.getByTestId("builder-panel")).toBeVisible();
   // The workbench's side bar folds while the builder is docked, so the records and the builder share the width.
@@ -330,6 +332,7 @@ test.describe.serial("dimension builder", () => {
     // Started where no type is picked, the build waits for one, and takes the kind of the type picked then.
     await adminPage.goto("/delivery/explorer");
     await expect(adminPage.getByTestId("explorer-live")).toContainText(PARTITION, { timeout: 30_000 });
+    await adminPage.getByTestId("explorer-build").click();
     await adminPage.getByTestId("explorer-build-dimension").click();
     await expect(adminPage.getByTestId("builder-next")).toContainText("Pick a type");
     await expect(adminPage.getByTestId("builder-step-from")).toHaveAttribute("data-state", "next");
@@ -366,7 +369,7 @@ test.describe.serial("dimension builder", () => {
     await expect(adminPage.getByTestId("confirm-dialog")).toContainText("Close the builder?");
     await adminPage.getByTestId("confirm-dialog-confirm").click();
     await expect(adminPage.getByTestId("builder-panel")).toHaveCount(0);
-    await expect(adminPage.getByTestId("explorer-build-dimension")).toBeVisible();
+    await expect(adminPage.getByTestId("explorer-build")).toBeVisible();
     await expect(adminPage.getByTestId("nav-delivery-explorer")).toBeVisible();
     await expect(adminPage.getByTestId("explorer-grid").getByTestId("explorer-grid-row")).toHaveCount(5);
   });

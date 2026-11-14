@@ -123,6 +123,7 @@ public static partial class DeliveryExplorerEndpoints
         delivery.MapPost("/explorer/read", ReadAsync).WithName("ExploreDeliveryOsduRecord");
         MapElementQueryEndpoints(delivery);
         MapDimensionBuilderEndpoints(delivery);
+        MapCacheBuilderEndpoints(delivery);
         MapValidateEndpoints(delivery);
         MapReferenceEndpoints(delivery);
         MapSchemaEndpoints(delivery);

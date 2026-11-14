@@ -33,6 +33,7 @@ related:
   - delivery-guide-dimensions
   - delivery-concept-templates
   - delivery-guide-dimension-flow-file
+  - delivery-concept-explorer-cache-builder
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionBuilder.cs
@@ -49,14 +50,18 @@ sourceRefs:
   - osdu/gui/src/features/delivery/explorer/dimension/dimensionStory.ts
   - osdu/gui/src/features/delivery/explorer/dimension/dimensionDraft.ts
   - osdu/gui/src/features/delivery/explorer/dimension/useDimensionBuild.ts
-  - osdu/gui/src/features/delivery/explorer/dimension/BuilderFlowFile.tsx
   - osdu/gui/src/features/delivery/explorer/dimension/flowFileQuestion.ts
+  - osdu/gui/src/features/delivery/explorer/dimension/BuilderFoot.tsx
+  - osdu/gui/src/features/delivery/explorer/dimension/BuilderFrom.tsx
+  - osdu/gui/src/features/delivery/explorer/BuilderMode.tsx
 ---
 
 # Building a dimension in the explorer: picking it on the records, step by step
 
-**Build a dimension**, in the [explorer](explorer.md)'s header, docks the dimension builder beside the records (the
-workbench's side bar folds meanwhile). The builder writes the `dimensions:` item of a [dimension flow](../flow/dimension.md)
+**Build**, in the [explorer](explorer.md)'s header, offers what to build from the records in view; **A dimension**
+docks the dimension builder beside the records (the workbench's side bar folds meanwhile). The other choice, **A cached
+type**, docks the [cache builder](explorer-cache-builder.md) the same way; the head of a docked builder says which is
+being built and switches to the other, starting a new draft from the same records. The builder writes the `dimensions:` item of a [dimension flow](../flow/dimension.md)
 from picks made on the records themselves, as they are browsed and their links followed, and previews the table the
 item makes. It saves nothing: no flow, no dimension, nothing in OSDU or the database. **Copy the YAML** takes the
 item, to paste into a flow.
@@ -139,8 +144,9 @@ a synced repository does not hold is a warning, with where to download one.
 
 **Write the flow file**, beside **Copy the YAML** once the YAML loads and while the assistant is configured, asks the
 assistant for the whole flow file holding the dimension: modelled on the estate's dimension flows, its tables kept
-where the estate keeps its data, and checked before it is shown. The conversation opens under **Flow file**, beside
-**YAML** ([Writing a dimension flow file](../guides/dimension-flow-file.md)).
+where the estate keeps its data, and checked before it is shown. The conversation opens in the assistant's panel,
+which slides in over the records and leaves the builder in view
+([Writing a dimension flow file](../guides/dimension-flow-file.md)).
 
 ## Kept in the address
 

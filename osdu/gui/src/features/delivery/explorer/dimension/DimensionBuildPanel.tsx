@@ -1,39 +1,33 @@
 import { useMemo, useRef, useState } from "react";
-import { BotMessageSquare, CircleCheck, CircleX, Loader2, RotateCcw, TableProperties, TriangleAlert, X } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { CopyButton } from "@/components/CopyButton";
 import { RichTooltip } from "@/components/RichTooltip";
-import { useExplain } from "@/features/chat/ExplainContext";
-import { cn } from "@/lib/utils";
 import type { DeliveryDimensionKey } from "../../../../api/delivery";
 import type { DimensionCompose, DimensionDraftIssue, DimensionExample } from "../../../../api/explorer";
 import { failureText } from "../../answers";
 import { BlueprintDiagram } from "../../dimensions/BlueprintDiagram";
 import { examplesOf, layoutOf } from "../../dimensions/blueprintModel";
+import { BuildModeSwitch, type BuildMode } from "../BuilderMode";
 import { BuilderFilterDialog } from "./BuilderFilterDialog";
-import { BuilderFlowFile } from "./BuilderFlowFile";
+import { BuilderFoot } from "./BuilderFoot";
 import { BuilderPreview } from "./BuilderPreview";
 import { BuilderRow } from "./BuilderRow";
 import { BuilderSteps } from "./BuilderStory";
 import { BuilderYaml } from "./BuilderYaml";
 import { kindTypeName, nextStep, stepOfTarget, stepStates, type StoryStep } from "./dimensionStory";
-import { flowFileQuestion, flowFileSubject } from "./flowFileQuestion";
 import { IssueLine, QuietInput } from "./StoryFrame";
 import type { DimensionBuild } from "./useDimensionBuild";
 
-/**
- * What the panel shows: the story the dimension is picked by, the table it makes previewed, its YAML, or the assistant
- * writing the whole flow file that holds it.
- */
-type BuilderView = "story" | "preview" | "yaml" | "flow";
+/** What the panel shows: the story the dimension is picked by, the table it makes previewed, or its YAML. */
+type BuilderView = "story" | "preview" | "yaml";
 
 /** Whether a value the view toggle gives is one of the panel's views. */
 function isView(value: string): value is BuilderView {
-  return value === "story" || value === "preview" || value === "yaml" || value === "flow";
+  return value === "story" || value === "preview" || value === "yaml";
 }
 
 /** The example row a dimension's pages draw a key from, made of what the builder's example read. */
@@ -59,13 +53,6 @@ function keyOf(example: DimensionExample): DeliveryDimensionKey {
   };
 }
 
-/** The flow file asked of the assistant: a conversation of its own, numbered so asking again starts a new one. */
-interface FlowAsked {
-  id: number;
-  subject: string;
-  question: string;
-}
-
 /**
  * The dimension being built in the explorer (osdu/docs/reference/concepts/explorer-dimension-builder.md), docked
  * beside the records it is built from and told as a story read top to bottom, one step per choice: from these records,
@@ -73,23 +60,22 @@ interface FlowAsked {
  * Only the step asking for a pick says what to do, with the one action that does it; every step's settings open in
  * place, and the picks themselves are made on the values of the records. Its name heads it; the table it makes,
  * previewed with the rows of the keys most records hold, and its YAML are views of their own; and the foot says whether
- * the YAML is ready, copies it, and asks the assistant for the whole flow file holding it, which it writes in a view of
- * its own, modelled on the estate's dimension flows.
+ * the YAML is ready, copies it, and asks the assistant for the whole flow file holding it (BuilderFoot). Its head says
+ * what is built, and builds a cached type from the same records instead (BuildModeSwitch).
  */
-export function DimensionBuildPanel({ build, startKind }: {
+export function DimensionBuildPanel({ build, startKind, onSwitch }: {
   build: DimensionBuild;
   /** The kind a build started over reads: the explorer's place, or the record in view's kind; empty for none. */
   startKind: string;
+  /** Builds the other thing the explorer builds instead, from the same records. */
+  onSwitch: (mode: BuildMode) => void;
 }) {
   const draft = build.draft;
   const [view, setView] = useState<BuilderView>("story");
   const [open, setOpen] = useState<StoryStep | null>(null);
   const [showRow, setShowRow] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [asked, setAsked] = useState<FlowAsked | null>(null);
-  const askedCount = useRef(0);
   const story = useRef<HTMLDivElement>(null);
-  const explain = useExplain();
 
   const states = draft === null ? null : stepStates(draft, build.keyEntity !== null);
   const next = states === null ? null : nextStep(states);
@@ -113,23 +99,8 @@ export function DimensionBuildPanel({ build, startKind }: {
   const issues = compose.data?.issues ?? [];
   const named = issues.filter((issue) => stepOfTarget(issue.target) === "name");
   const keyed = draft.path !== null && draft.path !== "";
-  // The preview reads the rows of keys, so a draft without one shows its story; the flow file is shown once asked for.
-  const shown: BuilderView = view === "preview" && !keyed ? "story" : view === "flow" && asked === null ? "yaml" : view;
-
-  // Asking for the flow file again with the same YAML shows the conversation already asked; a changed YAML asks anew.
-  const writeFlow = () => {
-    if (compose.data === undefined) {
-      return;
-    }
-
-    const question = flowFileQuestion(compose.data.yaml, build.partition);
-    if (asked === null || asked.question !== question) {
-      askedCount.current += 1;
-      setAsked({ id: askedCount.current, subject: flowFileSubject(draft.name), question });
-    }
-
-    setView("flow");
-  };
+  // The preview reads the rows of keys, so a draft without one shows its story.
+  const shown: BuilderView = view === "preview" && !keyed ? "story" : view;
 
   // A problem named in the foot is shown where it is: its step opened in the story, and brought into view.
   const showProblem = (issue: DimensionDraftIssue) => {
@@ -149,10 +120,8 @@ export function DimensionBuildPanel({ build, startKind }: {
     <div className="flex min-h-0 flex-1 flex-col" data-testid="builder-panel">
       <div className="flex flex-col border-b px-4 pb-2.5 pt-2">
         <div className="flex h-8 min-w-0 items-center gap-2">
-          <TableProperties className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="truncate text-[12px] text-muted-foreground">
-            {draft.kind === "" ? "New dimension" : `New dimension of ${kindTypeName(draft.kind)} records`}
-          </span>
+          <BuildModeSwitch mode="dimension" onSwitch={onSwitch} />
+          {draft.kind !== "" && <span className="-ml-1.5 truncate text-[12px] text-muted-foreground">{`of ${kindTypeName(draft.kind)} records`}</span>}
           <span className="ml-auto flex shrink-0 items-center gap-1">
             <ToggleGroup
               type="single"
@@ -170,18 +139,12 @@ export function DimensionBuildPanel({ build, startKind }: {
               <ToggleGroupItem value="story" className="h-7 px-2.5 text-[12.5px]" data-testid="builder-view-story">Build</ToggleGroupItem>
               <ToggleGroupItem value="preview" className="h-7 px-2.5 text-[12.5px]" disabled={!keyed} data-testid="builder-view-preview">Preview</ToggleGroupItem>
               <ToggleGroupItem value="yaml" className="h-7 px-2.5 text-[12.5px]" disabled={draft.kind === ""} data-testid="builder-view-yaml">YAML</ToggleGroupItem>
-              {asked !== null && (
-                <ToggleGroupItem value="flow" className="h-7 px-2.5 text-[12.5px]" data-testid="builder-view-flow">Flow file</ToggleGroupItem>
-              )}
             </ToggleGroup>
             <RichTooltip body={startKind === "" ? "Start over: a new dimension." : `Start over: a new dimension of ${kindTypeName(startKind)} records.`}>
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => {
-                  setAsked(null);
-                  build.start(startKind);
-                }}
+                onClick={() => build.start(startKind)}
                 aria-label="Start over"
                 data-testid="builder-restart"
               >
@@ -225,49 +188,19 @@ export function DimensionBuildPanel({ build, startKind }: {
         )
         : shown === "preview"
           ? <BuilderPreview build={build} draft={draft} />
-          : shown === "flow" && asked !== null
-            ? (
-              <BuilderFlowFile
-                key={asked.id}
-                subject={asked.subject}
-                question={asked.question}
-                onClose={() => {
-                  setAsked(null);
-                  setView("yaml");
-                }}
-              />
-            )
-            : <BuilderYaml compose={compose.data} failure={compose.isError ? failureText(compose.error) : null} />}
+          : <BuilderYaml compose={compose.data} failure={compose.isError ? failureText(compose.error) : null} />}
 
-      {/* The verdict keeps room to be read: on a narrow builder the actions go to a line of their own. */}
-      <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 border-t px-3 py-1.5">
-        <div className="flex min-w-40 flex-1">
-          <Verdict
-            ready={draft.kind !== ""}
-            compose={compose.data}
-            composing={compose.isFetching}
-            failure={compose.isError ? failureText(compose.error) : null}
-            onShow={showProblem}
-          />
-        </div>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {explain !== null && compose.data !== undefined && (
-            <RichTooltip
-              body={compose.data.valid
-                ? "The assistant reads the dimension flows the estate already has and writes the whole flow file holding this dimension, modelled on them, its table kept in the database the estate keeps its data in rather than the catalog's. It checks the file before showing it; nothing is saved."
-                : "The assistant writes the flow file once the YAML loads: put right what the line beside this names first."}
-            >
-              <span className="inline-flex" tabIndex={compose.data.valid ? -1 : 0}>
-                <Button variant="outline" size="sm" disabled={!compose.data.valid} onClick={writeFlow} data-testid="builder-write-flow">
-                  <BotMessageSquare />
-                  Write the flow file
-                </Button>
-              </span>
-            </RichTooltip>
-          )}
-          {compose.data !== undefined && <CopyButton label="Copy the YAML" text={compose.data.yaml} testId="builder-copy" />}
-        </span>
-      </div>
+      <BuilderFoot
+        flow="dimension"
+        ready={draft.kind !== ""}
+        notReady="The YAML is written once a type is picked."
+        composed={compose.data}
+        composing={compose.isFetching}
+        failure={compose.isError ? failureText(compose.error) : null}
+        name={draft.name}
+        partition={build.partition}
+        onShow={showProblem}
+      />
 
       <Dialog open={showRow} onOpenChange={setShowRow}>
         <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-[min(1400px,95vw)]" data-testid="builder-row-dialog">
@@ -294,74 +227,6 @@ export function DimensionBuildPanel({ build, startKind }: {
         onClose={() => setClosing(false)}
       />
     </div>
-  );
-}
-
-/**
- * Whether the YAML is ready to paste, in one line: quiet when it is, and naming what to put right when it is not, a click
- * away from where that is.
- */
-function Verdict({ ready, compose, composing, failure, onShow }: {
-  ready: boolean;
-  compose: DimensionCompose | undefined;
-  composing: boolean;
-  failure: string | null;
-  onShow: (issue: DimensionDraftIssue) => void;
-}) {
-  if (!ready) {
-    return <span className="text-[12.5px] text-muted-foreground" data-testid="builder-status" data-valid="false">The YAML is written once a type is picked.</span>;
-  }
-
-  if (compose === undefined) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground" data-testid="builder-status" data-valid="false">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden />
-        {failure === null ? "Writing the YAML" : `The YAML could not be written: ${failure}`}
-      </span>
-    );
-  }
-
-  const errors = compose.issues.filter((issue) => issue.severity === "error");
-  const warnings = compose.issues.filter((issue) => issue.severity === "warning");
-  const glyph = composing
-    ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-    : errors.length > 0
-      ? <CircleX className="size-4 shrink-0 text-destructive" aria-hidden />
-      : warnings.length > 0
-        ? <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden />
-        : <CircleCheck className="size-4 shrink-0 text-success" aria-hidden />;
-
-  if (errors.length > 0) {
-    return (
-      <button
-        type="button"
-        onClick={() => onShow(errors[0])}
-        className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[12.5px] hover:bg-accent/60"
-        title={errors[0].message}
-        data-testid="builder-status"
-        data-valid={compose.valid}
-      >
-        {glyph}
-        <span className="truncate">
-          <span className="font-medium">{`${errors.length} ${errors.length === 1 ? "thing" : "things"} to put right`}</span>
-          <span className="text-muted-foreground">{` before the YAML loads: ${errors[0].message}`}</span>
-        </span>
-      </button>
-    );
-  }
-
-  return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1.5 px-1 text-[12.5px]")} data-testid="builder-status" data-valid={compose.valid}>
-      {glyph}
-      <span className="truncate">
-        Ready to paste
-        {warnings.length > 0 && (
-          <button type="button" onClick={() => onShow(warnings[0])} className="text-muted-foreground hover:text-foreground hover:underline" title={warnings[0].message}>
-            {`, ${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}`}
-          </button>
-        )}
-      </span>
-    </span>
   );
 }
 

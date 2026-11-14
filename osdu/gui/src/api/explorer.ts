@@ -764,3 +764,95 @@ export function previewDimension(partition: string | null, draft: DimensionDraft
 export function composeDimension(partition: string | null, draft: DimensionDraft, example: string | null) {
   return post<DimensionCompose>(`/api/v1/delivery/explorer/dimension/compose${partitionQuery(partition)}`, { draft, example });
 }
+
+/** A value a drafted cached type keeps of each record: its path, and the name it is kept under when not the one the path gives. */
+export interface CacheTypeDraftField {
+  path: string;
+  as: string | null;
+}
+
+/** A value a drafted cached type reads through the records each cached record references: its name, and the paths it is read through. */
+export interface CacheTypeDraftAttribute {
+  name: string;
+  steps: string[];
+}
+
+/**
+ * A cached type as the explorer's cache builder holds it (osdu/docs/reference/concepts/explorer-cache-builder.md): every
+ * part of the item a cache flow lists under `types`, as typed or picked. The control plane writes it as YAML and reads
+ * that back through the loader a flow is read by.
+ */
+export interface CacheTypeDraft {
+  /** The name a mapping reads the type by; empty takes the one the kind gives. */
+  name: string;
+  kind: string;
+  query: string | null;
+  fields: CacheTypeDraftField[];
+  attributes: CacheTypeDraftAttribute[];
+  /** Each record read whole from storage, for a path the search index does not hold. */
+  fetchRecords: boolean;
+  /** `approve` holds a changed value's records back until someone approves; null takes the flow's own. */
+  onChange: "approve" | null;
+}
+
+/** One value a drafted type keeps of each record, as the loader read it. */
+export interface CacheTypeField {
+  name: string;
+  /** The path of the record it is read at; an attribute's definition, for one. */
+  path: string;
+  attribute: boolean;
+}
+
+/** A drafted type as the loader read it. */
+export interface CacheTypeRead {
+  name: string;
+  entityType: string;
+  kind: string;
+  query: string | null;
+  fetchRecords: boolean;
+  onChange: "auto" | "approve";
+  fields: CacheTypeField[];
+}
+
+/** A drafted cached type written as YAML and checked. */
+export interface CacheTypeCompose {
+  /** The item a cache flow lists under `types`, as it is copied. */
+  yaml: string;
+  lines: string[];
+  type: CacheTypeRead | null;
+  issues: DimensionDraftIssue[];
+  valid: boolean;
+  /** The cache flows of the catalog declaring a type of this name already. */
+  declaredBy: string[];
+}
+
+/** One value a sampled type keeps, with how many of the sampled records gave it. */
+export interface CacheSampleColumn {
+  name: string;
+  path: string;
+  attribute: boolean;
+  held: number;
+}
+
+/** The first records of a drafted cached type as the cache would keep them. */
+export interface CacheSample {
+  name: string;
+  entityType: string;
+  /** The records the kind (and the query) holds. */
+  total: number;
+  columns: CacheSampleColumn[];
+  records: { id: string; fields: Record<string, unknown> }[];
+  notes: string[];
+  /** The search service's own words when it refused the query; left out of the answer when it did not. */
+  refusal?: string | null;
+}
+
+/** A drafted cached type written as YAML and checked, against the cache flows of the catalog too. */
+export function composeCacheType(draft: CacheTypeDraft) {
+  return post<CacheTypeCompose>("/api/v1/delivery/explorer/cache/compose", { draft });
+}
+
+/** The first records of a drafted cached type as a refresh would cache them; refused while a refresh would refuse the draft. */
+export function previewCacheType(partition: string | null, draft: CacheTypeDraft) {
+  return post<ExplorerAnswer<CacheSample>>(`/api/v1/delivery/explorer/cache/preview${partitionQuery(partition)}`, { draft });
+}

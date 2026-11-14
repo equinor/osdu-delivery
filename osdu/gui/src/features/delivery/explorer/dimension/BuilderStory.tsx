@@ -1,14 +1,14 @@
 import { useId, useState } from "react";
-import { ArrowLeft, Check, Columns3, Layers, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Columns3, Layers, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { CopyButton } from "@/components/CopyButton";
 import { RichTooltip } from "@/components/RichTooltip";
 import { cn } from "@/lib/utils";
 import type { DimensionDraft, DimensionDraftIssue, DimensionKeyCandidate } from "../../../../api/explorer";
 import { failureText } from "../../answers";
+import { RecordsStep } from "./BuilderFrom";
 import { applyPlan, firstValueAt, MAX_ATTRIBUTES, type PickPlan } from "./dimensionDraft";
 import {
   PLAIN_STEPS, STEP_HELP, chainWords, cleanWords, kindTypeName, lastProperty, shortId, stepOfTarget, typeName, type StepState, type StoryStep,
@@ -52,84 +52,23 @@ export function BuilderSteps(props: StepProps & { startKind: string }) {
 /** The records the dimension reads: their kind, every version or one, and the query narrowing them. */
 function FromStep(props: StepProps & { startKind: string }) {
   const { build, draft, states, startKind } = props;
-  const ids = useId();
-  const segments = draft.kind.split(":");
-  const everyVersion = segments.length === 4 && segments[3] === "*";
-  const total = build.keys.data?.answer.total;
-  const facts = draft.kind === ""
-    ? null
-    : [
-      segments.length === 4 ? (everyVersion ? "every version" : `version ${segments[3]}`) : null,
-      total === undefined ? null : `${total.toLocaleString("en-US")} ${total === 1 ? "record" : "records"}`,
-      draft.query === null ? null : "narrowed by a query",
-    ].filter((fact) => fact !== null).join(" · ");
-  const elsewhere = startKind !== "" && startKind !== draft.kind ? startKind : null;
-
   return (
-    <StoryFrame
-      step="from"
+    <RecordsStep
       state={states.from}
-      lead="From"
-      answer={draft.kind === ""
-        ? <span className="font-normal text-muted-foreground">the records of one type</span>
-        : <><span data-testid="builder-kind">{kindTypeName(draft.kind)}</span> records</>}
-      facts={facts}
+      kind={draft.kind}
+      query={draft.query}
+      total={build.keys.data?.answer.total}
+      recordKind={build.recordKind}
       issues={issuesAt(props.issues, "from")}
       open={props.open === "from"}
-      onToggle={draft.kind === "" ? undefined : toggle(props, "from")}
-      hint={states.from === "next" ? "Pick a type on the left, or open a record: a dimension reads the records of one type." : undefined}
-    >
-      <div className="flex min-w-0 items-center gap-1">
-        <span className="min-w-0 truncate font-mono text-[12px]" title={draft.kind}>{draft.kind}</span>
-        <CopyButton iconOnly label="Copy the kind" text={draft.kind} testId="builder-kind-copy" />
-      </div>
-      {segments.length === 4 && (
-        <div className="flex items-start gap-2.5">
-          <Switch
-            id={`${ids}-versions`}
-            checked={everyVersion}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                build.update({ ...draft, kind: [...segments.slice(0, 3), "*"].join(":") });
-              } else if (build.recordKind !== null) {
-                build.update({ ...draft, kind: build.recordKind });
-              }
-            }}
-            disabled={everyVersion && build.recordKind === null}
-            className="mt-0.5"
-            data-testid="builder-every-version"
-          />
-          <Label htmlFor={`${ids}-versions`} className="flex flex-col items-start gap-0.5 text-[12.5px] font-normal">
-            Every version of the type
-            <span className="text-[12px] text-muted-foreground">
-              {everyVersion
-                ? build.recordKind === null ? "Open a record to read its version alone." : `Off, only ${build.recordKind.split(":")[3]}, the open record's version.`
-                : `Only ${segments[3]} is read.`}
-            </span>
-          </Label>
-        </div>
-      )}
-      <div className="flex flex-col gap-1">
-        <Label htmlFor={`${ids}-query`} className="text-[12.5px] font-normal">Narrow the records</Label>
-        <Input
-          id={`${ids}-query`}
-          value={draft.query ?? ""}
-          onChange={(event) => build.update({ ...draft, query: event.target.value === "" ? null : event.target.value })}
-          className="h-8 font-mono text-[12px] md:text-[12px]"
-          placeholder={'a search query, such as data.Source:"CPI"'}
-          data-testid="builder-query"
-        />
-        <span className="text-[12px] text-muted-foreground">Lucene, as the search service reads it; {"{partition}"} is the partition a build runs in.</span>
-      </div>
-      {elsewhere !== null && (
-        <div>
-          <Button variant="outline" size="sm" onClick={() => build.start(elsewhere)} data-testid="builder-start-elsewhere">
-            <RotateCcw />
-            {`Start over from ${kindTypeName(elsewhere)} records`}
-          </Button>
-        </div>
-      )}
-    </StoryFrame>
+      onToggle={toggle(props, "from")}
+      onKind={(kind) => build.update({ ...draft, kind })}
+      onQuery={(query) => build.update({ ...draft, query })}
+      startKind={startKind}
+      onStartElsewhere={build.start}
+      hint="Pick a type on the left, or open a record: a dimension reads the records of one type."
+      queryHelp="Lucene, as the search service reads it; {partition} is the partition a build runs in."
+    />
   );
 }
 

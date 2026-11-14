@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Layers, TableProperties, Telescope, Unplug } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Layers, Telescope, Unplug } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useAuth } from "@/auth/AuthContext";
@@ -17,6 +16,10 @@ import { useActivePartition } from "../activePartition";
 import { useLinkedPartition } from "../useLinkedPartition";
 import { WindowFrame } from "../WindowFrame";
 import { failureText } from "../answers";
+import { BuildButton, type BuildMode } from "./BuilderMode";
+import { CacheBuildPanel } from "./cache/CacheBuildPanel";
+import { CacheFieldActions } from "./cache/CacheFieldActions";
+import { useCacheBuild } from "./cache/useCacheBuild";
 import { ElementQueryButton } from "./ExplorerElementQuery";
 import { ExplorerProblem } from "./ExplorerProblem";
 import { ExplorerRecord } from "./ExplorerRecord";
@@ -26,6 +29,7 @@ import { ExplorerTypeRail } from "./ExplorerTypeRail";
 import { ExplorerWelcome } from "./ExplorerWelcome";
 import { BuildFieldActions } from "./dimension/BuildFieldActions";
 import { DimensionBuildPanel } from "./dimension/DimensionBuildPanel";
+import { emptyDraft } from "./dimension/dimensionDraft";
 import { useDimensionBuild } from "./dimension/useDimensionBuild";
 import { searchedInType, searchInChoices, useExplorerFields } from "./explorerFields";
 import {
@@ -37,7 +41,7 @@ import {
   searchInCondition, sortOf, useExplorerRead, type ExplorerScope, type RecentRecord,
 } from "./explorerModel";
 
-/** The kind a dimension built here reads from the explorer's place: a kind, or every version of a type; null for a group or every type. */
+/** The kind a dimension or a cached type built here reads from the explorer's place: a kind, or every version of a type; null for a group or every type. */
 function buildKind(scope: ExplorerScope): string | null {
   return scope.level === "kind" || scope.level === "type" ? scopeKind(scope) ?? null : null;
 }
@@ -131,10 +135,32 @@ export default function ExplorerPage() {
     const read = recordId === null ? undefined : queryClient.getQueryData<DeliveryOsduRead>(["explorer", "read", active, recordId, recordVersion]);
     return read?.found === true && typeof read.record?.kind === "string" ? read.record.kind : null;
   };
-  const startKind = buildKind(scope) ?? build.recordKind ?? "";
-  const building = build.draft !== null && connection.data?.available === true;
+  // A cached type is built the same way (osdu/docs/reference/concepts/explorer-cache-builder.md): one or the other at a
+  // time, and the + beside each value of a record offers what the value can be in the one being built.
+  const cache = useCacheBuild({ partition: active, reachable, scopeKind: buildKind(scope), recordId, recordVersion });
+  const mode: BuildMode | null = build.draft !== null ? "dimension" : cache.draft !== null ? "cache" : null;
+  const startKind = buildKind(scope) ?? build.recordKind ?? cache.recordKind ?? "";
+  const building = mode !== null && connection.data?.available === true;
   // The workbench's side bar is folded while the builder is docked, so the records and the builder share the width.
   useSideBarFold(building);
+  // Starts building one thing, leaving any build of the other: from the kind given, and the query narrowing its records.
+  const startBuild = (wanted: BuildMode, kind: string, query: string | null = null) => {
+    if (wanted === "dimension") {
+      cache.stop();
+      build.start(kind);
+      if (query !== null) {
+        build.update({ ...emptyDraft(kind), query });
+      }
+    } else {
+      build.stop();
+      cache.start(kind, query);
+    }
+  };
+  // The other thing, from the records the draft in hand reads: its kind and its query are kept, nothing else of it.
+  const switchBuild = (wanted: BuildMode) => {
+    const held = build.draft ?? cache.draft;
+    startBuild(wanted, held?.kind ?? startKind, held?.query ?? null);
+  };
 
   // The types are counted for the search and its values, never for the place: the list is what a place is picked from.
   const typesRequest: ExplorerSearchRequest = { text: text === "" ? undefined : text, lucene, filters };
@@ -268,17 +294,7 @@ export default function ExplorerPage() {
         testId="explorer-search"
       />
       {(browsing || recordId !== null) && <ExplorerRecent onOpen={openRecent} />}
-      {reachable && build.draft === null && (
-        <RichTooltip
-          title="Build a dimension"
-          body="Pick a dimension's key, value and attributes from the records as you browse them, following their links as far as a value is read, and get the YAML a dimension flow lists. The builder opens beside the records."
-        >
-          <Button variant="outline" size="sm" className="ml-auto" onClick={() => build.start(buildKind(scope) ?? openKind() ?? "")} data-testid="explorer-build-dimension">
-            <TableProperties />
-            Build a dimension
-          </Button>
-        </RichTooltip>
-      )}
+      {reachable && mode === null && <BuildButton onStart={(wanted) => startBuild(wanted, buildKind(scope) ?? openKind() ?? "")} />}
     </div>
   );
 
@@ -381,7 +397,8 @@ export default function ExplorerPage() {
               fieldActions={(field) => (
                 <span className="inline-flex items-center gap-1">
                   <ElementQueryButton field={field} onSearch={(kind, query) => navigate({ q: query, lq: "1", kind, f: null, id: null, v: null })} />
-                  {build.draft !== null && <BuildFieldActions field={field} build={build} />}
+                  {mode === "dimension" && <BuildFieldActions field={field} build={build} />}
+                  {mode === "cache" && <CacheFieldActions field={field} build={cache} />}
                 </span>
               )}
               follow={build.follow !== null && build.follow.root === recordId ? build.follow : null}
@@ -393,7 +410,7 @@ export default function ExplorerPage() {
     );
   }
 
-  // While a dimension is built, the builder docks beside whatever the explorer shows, in a frame of the same height.
+  // While a dimension or a cached type is built, its builder docks beside whatever the explorer shows, in a frame of the same height.
   if (building) {
     content = (
       <WindowFrame testId="explorer-build-frame">
@@ -405,7 +422,9 @@ export default function ExplorerPage() {
           <ResizableHandle />
           <ResizablePanel defaultSize="45" minSize={380} maxSize="55" className="flex min-h-0 flex-col pl-1">
             <Card className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden rounded-lg p-0">
-              <DimensionBuildPanel build={build} startKind={startKind} />
+              {mode === "cache"
+                ? <CacheBuildPanel build={cache} startKind={startKind} onSwitch={switchBuild} />
+                : <DimensionBuildPanel build={build} startKind={startKind} onSwitch={switchBuild} />}
             </Card>
           </ResizablePanel>
         </ResizablePanelGroup>

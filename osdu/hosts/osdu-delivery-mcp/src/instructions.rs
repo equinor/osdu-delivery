@@ -85,7 +85,7 @@ Which tool:
   A custom copy of a canonical kind, delivered beside it and linked to it both ways (the custom template's
   x-osdu-inheriting-from-kind, $parent in its mapping, $child in the canonical mapping): delivery-guide-linked-records.
 - Tests and dimensions: delivery_assertions, delivery_assertion_runs, delivery_dimensions. Retrievals: delivery_retrievals.
-  Writing a dimension flow file: delivery_dimension_flow for the patterns, then with the yaml until valid, then
+  Writing a dimension or a cache flow file: delivery_flow_file for the patterns, then with the yaml until valid, then
   propose_pipelines.
   Inventories and removal flows: delivery_inventories, delivery_removals (they read; a removal is made in the GUI).
 

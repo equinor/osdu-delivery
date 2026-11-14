@@ -129,7 +129,7 @@ public static partial class DeliveryDimensionEndpoints
         foreach (var pipeline in dimensionFlows.Take(MaxPatternFlows))
         {
             var yaml = texts.TryGetValue(pipeline.Id, out var text) ? text.Yaml : string.Empty;
-            var envelope = EnvelopeOf(yaml);
+            var envelope = EnvelopeOf(yaml, "dimensions", "views");
             var cut = envelope.Length > MaxEnvelopeLength;
             DimensionFlowDefinition? definition = null;
             string? problem = null;
@@ -161,6 +161,16 @@ public static partial class DeliveryDimensionEndpoints
                 problem));
         }
 
+        var listed = ConnectionsOf(pipelines.Select(p => (p.SourceServer, p.TargetServer, p.Kind)));
+        return TypedResults.Ok(new DeliveryDimensionFlowPatternsDto(flows, Math.Max(0, dimensionFlows.Count - MaxPatternFlows), listed, ModuleConnection));
+    }
+
+    /// <summary>
+    /// The connection references the flows read from and write to, each with how many flows of each kind do, the most written
+    /// first: where the estate keeps its data. A flow reading or writing files names no connection.
+    /// </summary>
+    internal static List<DeliveryDimensionFlowConnectionDto> ConnectionsOf(IEnumerable<(string? Source, string? Target, string Kind)> pipelines)
+    {
         var connections = new Dictionary<string, (Dictionary<string, int> Written, Dictionary<string, int> Read)>(StringComparer.OrdinalIgnoreCase);
         void Count(string? reference, string kind, bool written)
         {
@@ -179,13 +189,13 @@ public static partial class DeliveryDimensionEndpoints
             by[kind] = by.GetValueOrDefault(kind) + 1;
         }
 
-        foreach (var pipeline in pipelines)
+        foreach (var (source, target, kind) in pipelines)
         {
-            Count(pipeline.SourceServer, pipeline.Kind, written: false);
-            Count(pipeline.TargetServer, pipeline.Kind, written: true);
+            Count(source, kind, written: false);
+            Count(target, kind, written: true);
         }
 
-        var listed = connections
+        return connections
             .Select(c => new DeliveryDimensionFlowConnectionDto(
                 c.Key,
                 string.Equals(c.Key, ModuleConnection, StringComparison.OrdinalIgnoreCase),
@@ -195,8 +205,6 @@ public static partial class DeliveryDimensionEndpoints
             .ThenByDescending(c => c.ReadBy.Values.Sum())
             .ThenBy(c => c.Reference, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        return TypedResults.Ok(new DeliveryDimensionFlowPatternsDto(flows, Math.Max(0, dimensionFlows.Count - MaxPatternFlows), listed, ModuleConnection));
     }
 
     /// <summary>
@@ -263,7 +271,9 @@ public static partial class DeliveryDimensionEndpoints
                     Target: "name"));
         }
 
-        issues.AddRange(await PartitionIssuesAsync(definition, registry, ct).ConfigureAwait(false));
+        var named = definition.Partitions.Concat(definition.Dimensions.SelectMany(d => d.Partitions)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        issues.AddRange((await UnregisteredPartitionsAsync(named, registry, ct).ConfigureAwait(false))
+            .Select(message => new DeliveryDimensionFlowIssueDto(DimensionDraftIssue.Warning, message, Target: "partitions")));
         issues.AddRange(await TargetIssuesAsync(targetDto, db, ct).ConfigureAwait(false));
 
         var distinct = issues.DistinctBy(i => (i.Severity, i.Message, i.Dimension, i.Target)).ToList();
@@ -279,12 +289,14 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     /// <summary>
-    /// The document without its <c>dimensions</c> and <c>views</c> blocks: every top-level key's lines as written, comments
-    /// and all, but those two lists, which a new flow writes its own of.
+    /// The document without the blocks of the top-level keys <paramref name="without"/> names (a dimension flow's
+    /// <c>dimensions</c> and <c>views</c>, a cache flow's <c>types</c>): every other top-level key's lines as written,
+    /// comments and all, but those lists, which a new flow writes its own of.
     /// </summary>
-    internal static string EnvelopeOf(string yaml)
+    internal static string EnvelopeOf(string yaml, params string[] without)
     {
         ArgumentNullException.ThrowIfNull(yaml);
+        ArgumentNullException.ThrowIfNull(without);
         var kept = new StringBuilder();
         var skipping = false;
         foreach (var raw in yaml.Split('\n'))
@@ -292,7 +304,7 @@ public static partial class DeliveryDimensionEndpoints
             var line = raw.TrimEnd('\r');
             if (TopLevelKey.Match(line) is { Success: true } key)
             {
-                skipping = key.Groups[1].Value is "dimensions" or "views";
+                skipping = without.Contains(key.Groups[1].Value, StringComparer.Ordinal);
             }
 
             if (!skipping)
@@ -411,7 +423,7 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     /// <summary>The catalog's active flow named <paramref name="name"/>, of any kind: a file of that name replaces it, or collides with it.</summary>
-    private static async Task<DeliveryDimensionFlowExistingDto?> ExistingFlowAsync(string name, CatalogDbContext db, CancellationToken ct)
+    internal static async Task<DeliveryDimensionFlowExistingDto?> ExistingFlowAsync(string name, CatalogDbContext db, CancellationToken ct)
     {
         var found = await db.Pipelines.AsNoTracking()
             .Where(p => p.Active && p.Name == name)
@@ -427,11 +439,10 @@ public static partial class DeliveryDimensionEndpoints
         return new DeliveryDimensionFlowExistingDto(found.Id, found.RepoId, repository ?? string.Empty, found.RelativePath, found.Kind);
     }
 
-    /// <summary>The partitions the flow names that the registry does not hold: a run in one is refused until it is registered.</summary>
-    private static async Task<IReadOnlyList<DeliveryDimensionFlowIssueDto>> PartitionIssuesAsync(
-        DimensionFlowDefinition definition, IPartitionRegistry registry, CancellationToken ct)
+    /// <summary>What to say of each partition among <paramref name="named"/> the registry does not hold: a run in one is refused until it is registered.</summary>
+    internal static async Task<IReadOnlyList<string>> UnregisteredPartitionsAsync(
+        IReadOnlyList<string> named, IPartitionRegistry registry, CancellationToken ct)
     {
-        var named = definition.Partitions.Concat(definition.Dimensions.SelectMany(d => d.Partitions)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (named.Count == 0)
         {
             return [];
@@ -449,12 +460,9 @@ public static partial class DeliveryDimensionEndpoints
 
         return named
             .Where(p => registered.Find(p) is null)
-            .Select(p => new DeliveryDimensionFlowIssueDto(
-                DimensionDraftIssue.Warning,
-                registered.All.Count == 0
-                    ? $"Partition '{p}' is named, and no partition is registered with the catalog yet: a run in it is refused until it is."
-                    : $"Partition '{p}' is not registered with the catalog, which holds {PartitionNames.Listed(registered.Names)}: a run in it is refused until it is.",
-                Target: "partitions"))
+            .Select(p => registered.All.Count == 0
+                ? $"Partition '{p}' is named, and no partition is registered with the catalog yet: a run in it is refused until it is."
+                : $"Partition '{p}' is not registered with the catalog, which holds {PartitionNames.Listed(registered.Names)}: a run in it is refused until it is.")
             .ToList();
     }
 
@@ -512,7 +520,7 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     /// <summary>The connection references the catalog's active flows read from.</summary>
-    private static Task<List<string>> ReadServersAsync(CatalogDbContext db, CancellationToken ct)
+    internal static Task<List<string>> ReadServersAsync(CatalogDbContext db, CancellationToken ct)
         => db.Pipelines.AsNoTracking()
             .Where(p => p.Active && p.SourceServer != null)
             .Select(p => p.SourceServer!)
@@ -520,7 +528,7 @@ public static partial class DeliveryDimensionEndpoints
             .ToListAsync(ct);
 
     /// <summary>A loader's message without the document's name it starts with.</summary>
-    private static string WithoutSource(string message, string source)
+    internal static string WithoutSource(string message, string source)
     {
         var text = message.Trim();
         var prefix = source + ": ";

@@ -17,12 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The explorer builds a cached type as it builds a dimension.** **Build**, in the explorer's header, takes the place of
+  **Build a dimension** and offers both: a dimension, or a cached type, the item a cache flow lists under `types:`. The
+  cache builder docks beside the records and tells the type in steps (the records, what is kept of each, the attributes
+  read through the records they link to, how they are read, the type a mapping reads). The **+** beside a record's value
+  follows what is being built: **Keep in the cache** in a record of the type, **Add as an attribute** in a record a link
+  led to, where a dimension offers its key, its name and its columns. The head of a docked builder switches to the other
+  thing, from the same records. The draft is read back by the loader a cache flow is read by and compared with the
+  catalog's cache flows, which fill one type of a name together; **Preview** reads the first 25 records as a refresh
+  would cache them (`POST /api/v1/delivery/explorer/cache/compose`, `/cache/preview`). **Write the flow file** asks the
+  assistant for the whole cache flow file: `delivery_flow_file` takes `flowType: cache`, reading the estate's cache flows
+  (`GET /api/v1/delivery/cache/flow-patterns`) and checking a whole document
+  (`POST /api/v1/delivery/cache/flow-check`)
+  ([the cache builder](osdu/docs/reference/concepts/explorer-cache-builder.md),
+  [writing a cache flow file](osdu/docs/reference/guides/cache-flow-file.md)).
 - **The dimension builder's Write the flow file has the assistant write the whole dimension flow.** The builder wrote only
   the item a flow lists under `dimensions:`. Beside **Copy the YAML**, **Write the flow file** asks the assistant for the
   whole file holding it: modelled on the estate's dimension flows (their source, auth, partitions, parameters and
   schedule, as written), its tables kept in the database the estate's flows write their data to rather than the
-  catalog's, and checked before it is shown. The conversation opens in the builder's panel under **Flow file**. The
-  assistant's new `delivery_dimension_flow` tool reads the patterns (`GET /api/v1/delivery/dimensions/flow-patterns`)
+  catalog's, and checked before it is shown. The conversation opens in the assistant's panel, which slides in over the
+  records, wide and resizable, and leaves the builder in view. The
+  assistant's new `delivery_flow_file` tool reads the patterns (`GET /api/v1/delivery/dimensions/flow-patterns`)
   and checks a whole document by the loader, its templates, the tables other flows write, the registry's partitions and
   the target (`POST /api/v1/delivery/dimensions/flow-check`); both are open to an assistant run
   ([writing a dimension flow file](osdu/docs/reference/guides/dimension-flow-file.md)).

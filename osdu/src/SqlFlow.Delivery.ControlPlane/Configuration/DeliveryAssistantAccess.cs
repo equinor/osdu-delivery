@@ -34,7 +34,7 @@ public static class DeliveryAssistantAccess
         "delivery_mappings", "delivery_check_mapping", "delivery_scaffold_mapping",
         "delivery_templates", "delivery_osdu_schemas", "delivery_osdu_schema_compare",
         "delivery_assertions", "delivery_assertion_runs",
-        "delivery_dimensions", "delivery_dimension_flow",
+        "delivery_dimensions", "delivery_flow_file",
         "delivery_inventories", "delivery_removals",
     ];
 
@@ -81,8 +81,8 @@ public static class DeliveryAssistantAccess
         // delivery_dimensions: what a dimension is and how it was built, never its values.
         "GetDeliveryDimensionBoard", "GetDeliveryDimensionFlowBoard", "GetDeliveryDimension", "ListDeliveryDimensionBuilds",
         "GetDeliveryDimensionBlueprint",
-        // delivery_dimension_flow: the dimension flows and connections a new flow is modelled on.
-        "GetDeliveryDimensionFlowPatterns",
+        // delivery_flow_file: the dimension or cache flows and the connections a new flow is modelled on.
+        "GetDeliveryDimensionFlowPatterns", "GetDeliveryCacheFlowPatterns",
         // delivery_inventories and delivery_removals: what they read and how they went, never an id or a key.
         "ListDeliveryInventories", "GetDeliveryInventoryFlow",
         "ListDeliveryRemovalFlows", "GetDeliveryRemovalFlow", "ListDeliveryRemovalRuns",
@@ -90,14 +90,14 @@ public static class DeliveryAssistantAccess
 
     /// <summary>
     /// The endpoints opened to an assistant run whatever the method: the mapping builder's previews, which
-    /// <c>delivery_check_mapping</c> and <c>delivery_scaffold_mapping</c> post a draft to, and the dimension flow check,
-    /// which <c>delivery_dimension_flow</c> posts a whole flow document to. Each computes an answer from the templates,
+    /// <c>delivery_check_mapping</c> and <c>delivery_scaffold_mapping</c> post a draft to, and the dimension and cache flow
+    /// checks, which <c>delivery_flow_file</c> posts a whole flow document to. Each computes an answer from the templates,
     /// the documents and the catalog and stores nothing.
     /// </summary>
     public static IReadOnlySet<string> Previews { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         "CoverDeliveryMapping", "ShapeDeliveryMapping", "DraftDeliveryMapping", "ComposeDeliveryMapping",
-        "CheckDeliveryDimensionFlow",
+        "CheckDeliveryDimensionFlow", "CheckDeliveryCacheFlow",
     };
 
     /// <summary>

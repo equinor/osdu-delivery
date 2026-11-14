@@ -28,7 +28,7 @@ const ATTRIBUTE_FLOOR = 88;
  * A cell's text, cut short where the column ends (or at `max` pixels, for a column that does not share the width), with
  * the whole of it on hover; an id cut at its start, which its end tells apart.
  */
-function Cell({ text, fromEnd = false, strong = false, max }: { text: string | null; fromEnd?: boolean; strong?: boolean; max?: number }) {
+export function Cell({ text, fromEnd = false, strong = false, max }: { text: string | null; fromEnd?: boolean; strong?: boolean; max?: number }) {
   if (text === null) {
     return null;
   }

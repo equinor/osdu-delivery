@@ -29,9 +29,12 @@ pub struct DimensionsInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct DimensionFlowInput {
-    /// The whole dimension flow document to check, exactly as its file is to hold it. Omit it to read the patterns a new
-    /// flow follows first.
+pub struct FlowFileInput {
+    /// The kind of flow written: `dimension` (the default) or `cache`.
+    #[serde(rename = "flowType")]
+    pub flow_type: Option<String>,
+    /// The whole flow document to check, exactly as its file is to hold it. Omit it to read the patterns a new flow
+    /// follows first.
     pub yaml: Option<String>,
     /// With yaml: the file the document is meant for, relative to its repository (`flows/acme-wellbore-dimensions.yaml`),
     /// which the issues name.
@@ -113,16 +116,27 @@ running its flow with trigger_run."
     }
 
     #[tool(
-        description = "Write a whole dimension flow file and check it; this is how a new dimension flow starts. Without yaml: the \
-catalog's dimension flows, each with its envelope (the document without its dimensions and views, as written), \
-and the connections the estate's flows write their data through. Copy the nearest flow's envelope, references \
-and all; keep the tables in the estate's data database under target.connection, not the module's. With yaml: \
-loads, valid, issues, tables, and the flow it replaces. Run it until valid before showing the file. Writes \
-nothing."
+        description = "Write a whole dimension or cache flow file and check it; this is how a new one starts. flowType is dimension (the \
+default) or cache. Without yaml: the catalog's flows of that type, each with its envelope (the document without its \
+dimensions and views, or its types, as written), and the connections the estate's flows write their data through. \
+Copy the nearest flow's envelope, references and all. A dimension flow keeps its tables in the estate's data \
+database under target.connection, not the module's; a cached type goes with the cache flow that declares it \
+already, when one does. With yaml: loads, valid, issues, and the flow it replaces. Run it until valid before \
+showing the file. Writes nothing."
     )]
-    async fn delivery_dimension_flow(&self, Parameters(i): Parameters<DimensionFlowInput>) -> String {
+    async fn delivery_flow_file(&self, Parameters(i): Parameters<FlowFileInput>) -> String {
+        let cache = match text(i.flow_type).as_deref() {
+            None | Some("dimension") => false,
+            Some("cache") => true,
+            Some(other) => return refuse(format!("flowType is dimension or cache; '{other}' is neither.")),
+        };
         let Some(yaml) = i.yaml.filter(|yaml| !yaml.trim().is_empty()) else {
-            let mut patterns = match self.ctx.read("/api/v1/delivery/dimensions/flow-patterns", &[]).await {
+            let read = if cache {
+                self.ctx.read("/api/v1/delivery/cache/flow-patterns", &[]).await
+            } else {
+                self.ctx.read("/api/v1/delivery/dimensions/flow-patterns", &[]).await
+            };
+            let mut patterns = match read {
                 Ok(patterns) => patterns,
                 Err(error) => return refuse(format!("{error:#}")),
             };
@@ -136,21 +150,30 @@ nothing."
                 }
             }
             if let Value::Object(answer) = &mut patterns {
-                answer.insert(
-                    "readingThis".to_string(),
-                    json!(
-                        "flows are the catalog's dimension flows; envelope is each one's document without its dimensions \
-                         and views, as written, and envelopeCut says it was cut. target is null for a flow keeping its \
-                         tables in the module's database. connections are counted by the kind of flow writing or reading \
-                         them; module marks the module's own. moreFlows counts the flows left out."
-                    ),
-                );
+                let reading = if cache {
+                    "flows are the catalog's cache flows; envelope is each one's document without its types, as written, \
+                     and envelopeCut says it was cut. types name what each flow caches already: a type of a name is one \
+                     type in a partition's cache, so a new type of that name goes in that flow or agrees with it. \
+                     connection is what a flow's table types read. connections are counted by the kind of flow writing \
+                     or reading them. moreFlows counts the flows left out."
+                } else {
+                    "flows are the catalog's dimension flows; envelope is each one's document without its dimensions \
+                     and views, as written, and envelopeCut says it was cut. target is null for a flow keeping its \
+                     tables in the module's database. connections are counted by the kind of flow writing or reading \
+                     them; module marks the module's own. moreFlows counts the flows left out."
+                };
+                answer.insert("readingThis".to_string(), json!(reading));
             }
             return json_str(&patterns);
         };
 
         let request = json!({ "yaml": yaml, "path": text(i.path) });
-        let mut check = match self.ctx.send("/api/v1/delivery/dimensions/flow-check", request).await {
+        let checked = if cache {
+            self.ctx.send("/api/v1/delivery/cache/flow-check", request).await
+        } else {
+            self.ctx.send("/api/v1/delivery/dimensions/flow-check", request).await
+        };
+        let mut check = match checked {
             Ok(check) => check,
             Err(error) => return refuse(format!("{error:#}")),
         };
@@ -162,14 +185,16 @@ nothing."
             }
         }
         if let Value::Object(answer) = &mut check {
-            answer.insert(
-                "readingThis".to_string(),
-                json!(
-                    "valid is true when the document loads and no issue is an error; warnings do not stop it. Each \
-                     issue names the dimension it is about, when it is about one. dimensions[].table is where a build \
-                     writes each table. existing is the catalog's flow of the same name, null when there is none."
-                ),
-            );
+            let reading = if cache {
+                "valid is true when the document loads and no issue is an error; warnings do not stop it. Each issue \
+                 names the type it is about, when it is about one. types are what a refresh would cache, each under the \
+                 name a mapping reads it by. existing is the catalog's flow of the same name, null when there is none."
+            } else {
+                "valid is true when the document loads and no issue is an error; warnings do not stop it. Each \
+                 issue names the dimension it is about, when it is about one. dimensions[].table is where a build \
+                 writes each table. existing is the catalog's flow of the same name, null when there is none."
+            };
+            answer.insert("readingThis".to_string(), json!(reading));
         }
         json_str(&check)
     }

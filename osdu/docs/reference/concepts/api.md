@@ -353,6 +353,8 @@ the workbench header.
 | `POST /explorer/dimension/keys` | operate | body `kind`, `query`, `path`; `partition` | The commonest keys of a drafted dimension's path. |
 | `POST /explorer/dimension/compose` | operate | body `draft`, `example`; `partition` | A drafted dimension as YAML, checked; nothing is saved. |
 | `POST /explorer/dimension/preview` | operate | body `draft`; `partition` | The commonest keys of a drafted dimension made into the rows a build would make; nothing is saved. |
+| `POST /explorer/cache/compose` | operate | body `draft` | A drafted cached type as YAML, checked, with the cache flows caching the type already; nothing is saved. |
+| `POST /explorer/cache/preview` | operate | body `draft`; `partition` | The first records of a drafted cached type as a refresh would cache them; nothing is saved. |
 | `GET /search-terms` | read | `entityType`, `kind`, `orphans` | The search terms of an entity type, or of every one. |
 | `GET /search-terms/entity-types` | read | | The entity types with how many terms each has. |
 | `GET /search-terms/{termId}` | read | `entityType` | One term; 404 when unknown. |

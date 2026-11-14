@@ -75,8 +75,8 @@ function targetOf(layout: ReturnType<typeof layoutOf>, elements: BlueprintElemen
   return null;
 }
 
-/** The YAML of an item the loader did not read, line by line, with nothing linked. */
-function PlainYaml({ lines }: { lines: string[] }) {
+/** The YAML of an item line by line, with nothing linked: one the loader did not read, or a cached type's. */
+export function PlainYaml({ lines }: { lines: string[] }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-card" data-testid="builder-yaml-plain">
       <pre className="overflow-x-auto py-1.5 font-mono text-[12px] leading-5">
