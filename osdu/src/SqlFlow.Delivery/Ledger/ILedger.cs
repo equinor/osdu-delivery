@@ -2127,6 +2127,35 @@ public interface ILedger
     /// <exception cref="DeliveryException">The document is not missing, or no repository (or more than one) declares the flow; nothing was asked.</exception>
     Task<IReadOnlyList<LedgerMoveResult>> TakeOverLedgersAsync(LedgerTakeoverRequest request, string actor, CancellationToken ct = default);
 
+    /// <summary>
+    /// What deleting the missing document <paramref name="request"/> names would do in its partition, writing nothing
+    /// (<see cref="LedgerDeletes"/>): each of its orphaned ledgers there with what it holds, and why it cannot be deleted
+    /// now when it cannot (<see cref="LedgerDeleteStep.Refusal"/>).
+    /// </summary>
+    /// <exception cref="DeliveryException">The document left no orphaned ledger in the partition.</exception>
+    Task<IReadOnlyList<LedgerDeleteStep>> PreviewOrphanedLedgerDeleteAsync(LedgerDeleteRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes what the missing document <paramref name="request"/> names left behind in its partition, as
+    /// <paramref name="actor"/> (<see cref="LedgerDeletes"/>, osdu/docs/reference/concepts/renaming-a-pipeline.md): each
+    /// orphaned ledger as a deletion of its own, asked and carried out at once. A deletion removes history and never what
+    /// only the ledger knows of OSDU: a delivery ledger with a record OSDU may still hold, one whose access is restricted or
+    /// an item still to undo, an inventory ledger holding a removal, and a dimension a cache flow captures or another
+    /// flow's view reads are refused, and nothing of that ledger is touched. Nothing is asked of OSDU. Answers what came of
+    /// each: <c>completed</c>; <c>running</c> for one that waits for work in flight or that another process is deleting,
+    /// which the control plane's pass finishes; <c>failed</c> for one refused, with why. The ledger's audit trail, the
+    /// deletion in it, its entry in the directory and one line of each record of a delivery ledger stay.
+    /// </summary>
+    /// <exception cref="DeliveryException">The document left no orphaned ledger in the partition; nothing was asked.</exception>
+    Task<IReadOnlyList<LedgerDeleteResult>> DeleteOrphanedLedgersAsync(LedgerDeleteRequest request, string actor, CancellationToken ct = default);
+
+    /// <summary>
+    /// Carries out the deletions of orphaned ledgers asked and not done (<see cref="LedgerDeletes"/>), oldest first, for the
+    /// control plane's pass: one that stopped part way is taken up where it stopped, and one another process is deleting, or
+    /// one waiting for work in flight, is left to a later pass.
+    /// </summary>
+    Task<IReadOnlyList<LedgerDeleteResult>> CompleteLedgerDeletesAsync(CancellationToken ct = default);
+
     Task<SubmissionState?> GetSubmissionAsync(Guid submissionId, CancellationToken ct = default);
 
     /// <summary>Registers a submission. Returns the existing one when the id was seen before (idempotent).</summary>

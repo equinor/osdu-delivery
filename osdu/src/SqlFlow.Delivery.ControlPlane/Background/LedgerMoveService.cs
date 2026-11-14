@@ -12,7 +12,9 @@ namespace SqlFlow.Delivery.ControlPlane.Background;
 /// once, but a move waiting for work in flight on either ledger, one another process was making, and one a sync or a
 /// control plane stopped half way are left running. This pass takes each of them up again every few seconds, oldest first,
 /// a slice at a time under the move's own lock, until it is done; a run of the flow a ledger moves to finishes it first if it
-/// gets there earlier. A pass that fails (the module database not migrated yet, a lost connection) is tried again a minute on.
+/// gets there earlier. The pass then takes up the deletions of orphaned ledgers left running the same way
+/// (<see cref="LedgerDeletes"/>): one a request or a control plane stopped half way, and one that waited for work in flight.
+/// A pass that fails (the module database not migrated yet, a lost connection) is tried again a minute on.
 /// </summary>
 public sealed partial class LedgerMoveService : BackgroundService
 {
@@ -72,7 +74,7 @@ public sealed partial class LedgerMoveService : BackgroundService
         }
     }
 
-    /// <summary>One pass: every move asked and not done, oldest first.</summary>
+    /// <summary>One pass: every move asked and not done, oldest first, then every deletion of an orphaned ledger asked and not done.</summary>
     public async Task<IReadOnlyList<LedgerMoveResult>> PassAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
@@ -94,6 +96,22 @@ public sealed partial class LedgerMoveService : BackgroundService
             }
         }
 
+        foreach (var deleted in await ledger.CompleteLedgerDeletesAsync(ct).ConfigureAwait(false))
+        {
+            switch (deleted.Outcome)
+            {
+                case LedgerMoves.Completed:
+                    LogDeleted(deleted.Partition, deleted.Ledger, deleted.Summary);
+                    break;
+                case LedgerMoves.Failed:
+                    LogNotDeleted(deleted.Partition, deleted.Ledger, deleted.Summary);
+                    break;
+                default:
+                    LogDeleteWaiting(deleted.Partition, deleted.Ledger, deleted.Summary);
+                    break;
+            }
+        }
+
         return results;
     }
 
@@ -105,6 +123,15 @@ public sealed partial class LedgerMoveService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The move of ledger {From} to {To} in partition {Partition} waits: {Summary}")]
     private partial void LogWaiting(string partition, Guid from, Guid to, string summary);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Deleted orphaned ledger {Ledger} in partition {Partition}. {Summary}")]
+    private partial void LogDeleted(string partition, Guid ledger, string summary);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Did not delete orphaned ledger {Ledger} in partition {Partition}: {Summary}")]
+    private partial void LogNotDeleted(string partition, Guid ledger, string summary);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "The deletion of orphaned ledger {Ledger} in partition {Partition} waits: {Summary}")]
+    private partial void LogDeleteWaiting(string partition, Guid ledger, string summary);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The ledger move pass failed ({Message}); trying again in {Seconds} seconds.")]
     private partial void LogPassError(string message, int seconds);

@@ -94,7 +94,8 @@ public static class LedgerMoves
     /// registered it yet, and a <c>running</c> activity of kind <see cref="Kind"/> on it names both ledgers. Asking again for
     /// a move already asked changes nothing. A move asked while another one moves either ledger away, or into the ledger this
     /// one moves away, waits: one ledger's moves are made one after another, so a copy made and deleted between two syncs
-    /// never sends rows back while they are still on their way.
+    /// never sends rows back while they are still on their way. So does a move of a ledger a person is deleting, or into one
+    /// (<see cref="LedgerDeletes"/>).
     /// </summary>
     /// <returns>
     /// What came of it, with the move's activity when it is asked: <see cref="LedgerMoveAsk.Asked"/> when it is asked, or
@@ -133,6 +134,14 @@ public static class LedgerMoves
         }
 
         if (underWay.Exists(a => a.Move!.From == request.From || a.Move.From == request.To || a.Move.To == request.From))
+        {
+            return new(LedgerMoveAsk.Waits, 0);
+        }
+
+        // A ledger a person is deleting (LedgerDeletes) is neither moved away nor moved into until its deletion has ended:
+        // rows moved into it would go with it, and rows moved away would be a part of what it held.
+        var deleting = await LedgerDeletes.RunningAsync(context, request.PartitionId, ct).ConfigureAwait(false);
+        if (deleting.ContainsKey(request.From) || deleting.ContainsKey(request.To))
         {
             return new(LedgerMoveAsk.Waits, 0);
         }
@@ -309,7 +318,7 @@ public enum LedgerMoveAsk
     /// <summary>The move is asked, now or before.</summary>
     Asked,
 
-    /// <summary>Another move of either ledger is under way; the next sync asks, and a bind is refused for now.</summary>
+    /// <summary>Another move of either ledger is under way, or one of them is being deleted; the next sync asks, and a bind is refused for now.</summary>
     Waits,
 
     /// <summary>The same move was refused before; no sync asks it again.</summary>
