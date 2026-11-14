@@ -136,7 +136,7 @@ export function GridViewMenu({ columns, hidden, atFirst = [], onToggle, removed 
  * The foot of a grid read a page at a time: how many rows are in view, of how many when that is known, and what it is
  * doing while it reads the next page. The rows load as the grid is scrolled; the button reads the next page by hand.
  */
-export function GridFooter({ shown, total, noun, hasMore, loading, onMore, note, testId }: {
+export function GridFooter({ shown, total, noun, hasMore, loading, onMore, testId }: {
   shown: number;
   /** Every row there is, when the grid is not narrowed and the dimension says how many it holds. */
   total: number | null;
@@ -144,8 +144,6 @@ export function GridFooter({ shown, total, noun, hasMore, loading, onMore, note,
   hasMore: boolean;
   loading: boolean;
   onMore: () => void;
-  /** What else the foot says about the rows, after their count: when they were synced, say. */
-  note?: ReactNode;
   testId: string;
 }) {
   if (shown === 0) {
@@ -155,13 +153,10 @@ export function GridFooter({ shown, total, noun, hasMore, loading, onMore, note,
   const plural = `${noun}${shown === 1 && total === null ? "" : "s"}`;
   return (
     <div className="flex h-8 items-center justify-between gap-3 border-t border-border px-3 text-xs text-muted-foreground" data-testid={testId}>
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className="shrink-0 font-mono tabular-nums">
-          {total !== null && total > shown
-            ? `${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} ${plural}`
-            : `${shown.toLocaleString("en-US")} ${plural}${hasMore ? " so far" : ""}`}
-        </span>
-        {note !== undefined && <span className="min-w-0 truncate">{note}</span>}
+      <span className="font-mono tabular-nums">
+        {total !== null && total > shown
+          ? `${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} ${plural}`
+          : `${shown.toLocaleString("en-US")} ${plural}${hasMore ? " so far" : ""}`}
       </span>
       {hasMore && (
         <Button variant="ghost" size="xs" onClick={onMore} disabled={loading} data-testid={`${testId}-more`}>

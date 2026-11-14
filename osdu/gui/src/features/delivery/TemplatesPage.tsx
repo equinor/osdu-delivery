@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
+import { usePagedRows } from "@/hooks/useTablePaging";
 import { downloadText } from "@/lib/download";
 import { deliveryApi, type DeliveryTemplate } from "../../api/delivery";
 import { useAuth } from "@/auth/AuthContext";
@@ -17,8 +18,8 @@ import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { RelativeTime } from "@/components/RelativeTime";
 import { SearchInput } from "@/components/SearchInput";
+import { TablePager } from "@/components/TablePager";
 import { TruncatedText } from "@/components/TruncatedText";
-import { DimensionGrid, GridFooter } from "./dimensions/DimensionGrid";
 import { KindText } from "./KindText";
 import { ProblemsLine, RepositoryPicker } from "./RepositoryGrid";
 import { repositoryGrouping } from "./repositoryGrouping";
@@ -102,10 +103,11 @@ function KindCell({ row }: { row: DeliveryTemplate }) {
 /**
  * Templates (osdu/docs/reference/concepts/templates.md): the OSDU record schemas the synced repositories hold in their
  * template folders, folders named templates beside the documents that fill them, under a heading for each repository when
- * there are several. A repository adds and removes its templates, and its sync records which file holds which template;
- * each is read from its file, in the folder the repository was synced into, and nothing of it is kept in the database.
- * A file that holds no template says why in its row, and a line over the grid counts them. Browse OSDU reads the OSDU data
- * definitions (the Open Group's public repository of OSDU schemas) and downloads a kind as the file a template folder keeps.
+ * there are several, a page at a time. A repository adds and removes its templates, and its sync records which file
+ * holds which template; each is read from its file, in the folder the repository was synced into, and nothing of it is
+ * kept in the database. A file that holds no template says why in its row, and a line over the grid counts them. Browse
+ * OSDU reads the OSDU data definitions (the Open Group's public repository of OSDU schemas) and downloads a kind as the
+ * file a template folder keeps.
  */
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
@@ -197,6 +199,8 @@ export default function TemplatesPage() {
   const words = search.toLowerCase().split(/\s+/).filter((word) => word !== "");
   const rows = inRepository?.filter((row) => (!onlyEmpty || row.kind === null)
     && (words.length === 0 || words.every((word) => templateSearchText(row).includes(word))));
+  // A page of them at a time; a new search, repository or problem filter starts on the first.
+  const paged = usePagedRows(rows, JSON.stringify([search, repoId, onlyEmpty]));
 
   const grouping = repositoryGrouping(
     rows,
@@ -204,10 +208,9 @@ export default function TemplatesPage() {
     names,
     { one: "template file", many: "template files", failing: (count) => `${count} ${count === 1 ? "holds" : "hold"} no template` },
   );
-  const lastSeen = latestOf((rows ?? []).map((row) => row.seenUtc));
-  const footNote = grouping !== undefined
-    ? `in ${countOf(new Set(rows?.map((row) => row.repoId)).size, "repository", "repositories")}`
-    : lastSeen !== null ? <>{"synced "}<RelativeTime value={lastSeen} absolute={false} /></> : undefined;
+  // Files of one repository have no heading to say when its sync last saw them, so the foot of the grid says it.
+  const lastSeen = grouping === undefined ? latestOf((rows ?? []).map((row) => row.seenUtc)) : null;
+  const footNote = lastSeen !== null ? <>{"synced "}<RelativeTime value={lastSeen} absolute={false} /></> : undefined;
 
   const open = (row: DeliveryTemplate) => {
     download.reset();
@@ -295,40 +298,27 @@ export default function TemplatesPage() {
           )}
           {templates.isError && <ProblemView error={templates.error} testId="templates-error" />}
           {!templates.isError && (
-            <DimensionGrid testId="templates-grid">
-              <DataTable
-                columns={columns}
-                rows={rows}
-                rowKey={(row) => `${row.repoId} ${row.path}`}
-                onRowClick={open}
-                grouping={grouping}
-                toolbar={empty > 0 ? (
-                  <ProblemsLine
-                    problem={emptyFilesText(empty, onlyEmpty)}
-                    only={onlyEmpty}
-                    onOnly={setProblemsOnly}
-                    icon={<TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />}
-                    testId="templates-problems"
-                  />
-                ) : undefined}
-                footer={rows !== undefined ? (
-                  <GridFooter
-                    shown={rows.length}
-                    total={inRepository !== undefined && inRepository.length > rows.length ? inRepository.length : null}
-                    noun="template file"
-                    hasMore={false}
-                    loading={false}
-                    onMore={() => undefined}
-                    note={footNote}
-                    testId="templates-foot"
-                  />
-                ) : undefined}
-                emptyMessage={templates.data !== undefined && templates.data.length === 0
-                  ? "No synced repository holds a template yet. A template is a file in a folder named templates: download one from Browse OSDU, commit it to the repository beside the documents that fill it, and sync the repository."
-                  : `No template file matches '${searched}'. The search reads the kind, its parent, the version, the repository and the file.`}
-                data-testid="templates-table"
-              />
-            </DimensionGrid>
+            <DataTable
+              columns={columns}
+              rows={paged.rows}
+              rowKey={(row) => `${row.repoId} ${row.path}`}
+              onRowClick={open}
+              grouping={grouping}
+              toolbar={empty > 0 ? (
+                <ProblemsLine
+                  problem={emptyFilesText(empty, onlyEmpty)}
+                  only={onlyEmpty}
+                  onOnly={setProblemsOnly}
+                  icon={<TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />}
+                  testId="templates-problems"
+                />
+              ) : undefined}
+              footer={<TablePager {...paged.pager} note={footNote} testId="templates-foot" />}
+              emptyMessage={templates.data !== undefined && templates.data.length === 0
+                ? "No synced repository holds a template yet. A template is a file in a folder named templates: download one from Browse OSDU, commit it to the repository beside the documents that fill it, and sync the repository."
+                : `No template file matches '${searched}'. The search reads the kind, its parent, the version, the repository and the file.`}
+              data-testid="templates-table"
+            />
           )}
         </TabsContent>
         <TabsContent value="browse" forceMount className="data-[state=inactive]:hidden">

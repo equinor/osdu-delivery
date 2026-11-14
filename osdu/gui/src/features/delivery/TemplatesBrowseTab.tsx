@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { usePagedRows } from "@/hooks/useTablePaging";
 import { downloadText } from "@/lib/download";
 import { deliveryApi, type DeliveryOsduSchema } from "../../api/delivery";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -16,17 +17,14 @@ import { IconAction } from "@/components/IconAction";
 import { LinkRef } from "@/components/LinkRef";
 import { RelativeTime } from "@/components/RelativeTime";
 import { SearchInput } from "@/components/SearchInput";
+import { TablePager } from "@/components/TablePager";
 import { explorerApi } from "../../api/explorer";
 import { useActivePartition } from "./activePartition";
-import { DimensionGrid } from "./dimensions/DimensionGrid";
 import { TemplateCompareSheet, type CompareStart } from "./TemplateCompareSheet";
 import { BrowseSourcePicker, KindStatusCell, PartitionSchemaBrowse, type BrowseSource } from "./TemplatesPartitionBrowse";
 import { kindStem, osduTemplateFileQuery, templateFileName } from "./templateFormat";
 import { problemText } from "./problemText";
 import { ProblemView, TaskProgress, TemplateSheet } from "./TemplateSheet";
-
-/** The most rows the table renders at once; the search narrows the rest. */
-const MAX_ROWS = 200;
 
 /** A schema in the table, and how many versions of its entity type the release publishes. */
 interface BrowseRow {
@@ -290,7 +288,8 @@ function DefinitionsBrowse({ canOperate, sourcePicker, customIn }: {
     }
   }
 
-  const shownRows = rows?.slice(0, MAX_ROWS);
+  // A page of them at a time; another release, search or choice of versions starts on the first.
+  const paged = usePagedRows(rows, JSON.stringify([release, term, allVersions]));
   const typeCount = counts.size;
   const schemaCount = index.data?.schemas.length ?? 0;
   const listed = index.data?.release;
@@ -388,22 +387,16 @@ function DefinitionsBrowse({ canOperate, sourcePicker, customIn }: {
         )
         : <Skeleton className="h-64 w-full rounded-lg" />)}
 
-      {shownRows !== undefined && (
-        <DimensionGrid testId="templates-browse-grid">
-          <DataTable
-            columns={columns}
-            rows={shownRows}
-            rowKey={(row) => row.schema.kind}
-            onRowClick={(row) => view(row.schema.kind)}
-            emptyMessage={`No record kind in ${listed?.name ?? "the release"} matches the search.`}
-            footer={rows !== undefined && rows.length > MAX_ROWS ? (
-              <div className="flex h-8 items-center border-t border-border px-3 text-xs text-muted-foreground" data-testid="templates-browse-truncated">
-                {`Showing ${MAX_ROWS.toLocaleString()} of ${rows.length.toLocaleString()}. Narrow the search to see the rest.`}
-              </div>
-            ) : undefined}
-            data-testid="templates-browse-results"
-          />
-        </DimensionGrid>
+      {paged.rows !== undefined && (
+        <DataTable
+          columns={columns}
+          rows={paged.rows}
+          rowKey={(row) => row.schema.kind}
+          onRowClick={(row) => view(row.schema.kind)}
+          emptyMessage={`No record kind in ${listed?.name ?? "the release"} matches the search.`}
+          footer={<TablePager {...paged.pager} testId="templates-browse-foot" />}
+          data-testid="templates-browse-results"
+        />
       )}
 
       {comparing !== null && (

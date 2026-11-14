@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { usePagedRows } from "@/hooks/useTablePaging";
 import { downloadText } from "@/lib/download";
 import { DataTable, type Column } from "@/components/DataTable";
 import { FilterBar } from "@/components/FilterBar";
@@ -15,16 +16,13 @@ import { IconAction } from "@/components/IconAction";
 import { RelativeTime } from "@/components/RelativeTime";
 import { SearchInput } from "@/components/SearchInput";
 import { StatePill } from "@/components/StatusBadge";
+import { TablePager } from "@/components/TablePager";
 import { deliveryApi } from "../../api/delivery";
 import { explorerApi, type ExplorerSchemaKind } from "../../api/explorer";
-import { DimensionGrid } from "./dimensions/DimensionGrid";
 import { KindText } from "./KindText";
 import { kindStem, templateFileName } from "./templateFormat";
 import { problemText } from "./problemText";
 import { ProblemView, TaskProgress, TemplateSheet } from "./TemplateSheet";
-
-/** The most rows the table renders at once; the search narrows the rest. */
-const MAX_ROWS = 200;
 
 /** The authority of the platform's own schemas; a kind of any other is the partition's own. */
 const OSDU_AUTHORITY = "osdu";
@@ -276,7 +274,8 @@ export function PartitionSchemaBrowse({ partition, sourcePicker, customOnlyAtFir
     }
   }
 
-  const shownRows = rows?.slice(0, MAX_ROWS);
+  // A page of them at a time; another search, choice of versions or of custom schemas starts on the first.
+  const paged = usePagedRows(rows, JSON.stringify([term, allVersions, customOnly]));
   const read = file.data?.answer;
   // What the file says other than the service's text: the kind it names in place of the one the schema named.
   if (problem === null && read !== undefined && read.notes.length > 0) {
@@ -358,24 +357,18 @@ export function PartitionSchemaBrowse({ partition, sourcePicker, customOnlyAtFir
       )}
       {!listing.isError && listing.data === undefined && !listing.isFetching && <Skeleton className="h-64 w-full rounded-lg" />}
 
-      {shownRows !== undefined && (
-        <DimensionGrid testId="templates-partition-grid">
-          <DataTable
-            columns={columns}
-            rows={shownRows}
-            rowKey={(row) => row.schema.kind}
-            onRowClick={(row) => setViewing(row.schema.kind)}
-            emptyMessage={customOnly && customCount === 0
-              ? `Partition ${partition} has no custom schema registered: every kind it lists is of the osdu authority.`
-              : `No kind registered in partition ${partition} matches the search.`}
-            footer={rows !== undefined && rows.length > MAX_ROWS ? (
-              <div className="flex h-8 items-center border-t border-border px-3 text-xs text-muted-foreground" data-testid="templates-partition-truncated">
-                {`Showing ${MAX_ROWS.toLocaleString()} of ${rows.length.toLocaleString()}. Narrow the search to see the rest.`}
-              </div>
-            ) : undefined}
-            data-testid="templates-partition-results"
-          />
-        </DimensionGrid>
+      {paged.rows !== undefined && (
+        <DataTable
+          columns={columns}
+          rows={paged.rows}
+          rowKey={(row) => row.schema.kind}
+          onRowClick={(row) => setViewing(row.schema.kind)}
+          emptyMessage={customOnly && customCount === 0
+            ? `Partition ${partition} has no custom schema registered: every kind it lists is of the osdu authority.`
+            : `No kind registered in partition ${partition} matches the search.`}
+          footer={<TablePager {...paged.pager} testId="templates-partition-foot" />}
+          data-testid="templates-partition-results"
+        />
       )}
 
       <TemplateSheet

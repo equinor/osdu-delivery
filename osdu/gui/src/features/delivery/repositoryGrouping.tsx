@@ -20,7 +20,8 @@ interface RowNouns {
  * Rows of several repositories, each repository a node of the grid with its name, how many rows it holds, when its sync
  * last saw them, and how many of them are a problem. Rows of one repository need no node: undefined, and the grid lists
  * them flat. The rows must already be in repository order (`inRepositoryOrder`), since a node takes the rows next to
- * each other that share its repository.
+ * each other that share its repository. `rows` is every row the grid lists: a paged grid shows a page of them, and a
+ * repository's node on it still counts all of the repository's rows, on every page.
  */
 export function repositoryGrouping<T>(
   rows: readonly T[] | undefined,
@@ -32,17 +33,29 @@ export function repositoryGrouping<T>(
     return undefined;
   }
 
+  const byRepository = new Map<string, T[]>();
+  for (const row of rows) {
+    const id = read.repoId(row);
+    const held = byRepository.get(id);
+    if (held === undefined) {
+      byRepository.set(id, [row]);
+    } else {
+      held.push(row);
+    }
+  }
+
   return {
     levels: [{
       key: read.repoId,
       renderHeader: (group) => {
         const id = read.repoId(group[0]);
-        const failing = group.filter(read.failing).length;
+        const all = byRepository.get(id) ?? group;
+        const failing = all.filter(read.failing).length;
         return (
           <RepositoryHeading
             name={names.get(id) ?? id}
-            count={countOf(group.length, nouns.one, nouns.many)}
-            seenUtc={latestOf(group.map(read.seenUtc))}
+            count={countOf(all.length, nouns.one, nouns.many)}
+            seenUtc={latestOf(all.map(read.seenUtc))}
             problem={failing > 0 ? nouns.failing(failing) : null}
           />
         );

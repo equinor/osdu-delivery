@@ -46,11 +46,13 @@ builder). Each row gives the mapping's name, its description, the template it fi
 link to Templates), its source system and dataset key, and how many entries it has. The rows of several repositories are
 listed under a heading for each, naming the repository, how many mappings it holds, when its sync last saw them and how
 many do not load; a heading folds its rows away. A mapping that does not load says why in place of its description, and
-a line over the grid counts them, with **List only these**. The grid fits the window and scrolls inside it, its foot
-counting the rows listed. The search comes first and has the cursor when the page opens: it finds a mapping by anything the
-grid shows of it (name, description or why it does not load, kind, source, template version, path or repository), every
-word typed in any order, and Enter opens the first row listed. With more than one repository, **Every repository**
-narrows the list to one.
+a line over the grid counts them, with **List only these**. The grid lists a page of rows, as the audit trail does: its
+foot picks how many a page shows (**Rows per page**, 25, 50, 100 or 200; 50 at first), says which rows of how many are in
+view, and moves to the previous and next page; with one repository it also says when its sync last saw them. A heading
+counts every row of its repository, on whichever page they are. The search comes first and has the cursor when the page
+opens: it finds a mapping by anything the grid shows of it (name, description or why it does not load, kind, source,
+template version, path or repository), every word typed in any order, and Enter opens the first row in view. With more
+than one repository, **Every repository** narrows the list to one. A new search or filter starts on the first page.
 
 A mapping opens on a page of its own, at `/delivery/documents/{id}`, in a workbench tab named after it, so a link, a reload
 and Back land on it. The page fills the window and does not scroll. Its heading is the mapping's name, a click from a
@@ -169,12 +171,13 @@ records them. Two tabs:
   repository and path, the kind it is linked to, and each kind of the repository linked to it, as a **Child**;
   **Download** (on its row and in its sheet) saves it as a template file under its own name, to keep in another
   repository's template folder. A link naming a kind and version opens the file holding it, and says so when no
-  repository holds it.
+  repository holds it. The files are listed a page at a time, as on [Mappings](#mappings).
 - **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, searched by kind, by
   **Release**, with **Every version**. A kind's row opens it laid out as a template; a schema in development or obsolete
   says so beside its kind. Each row has its link to the kind's file in the repository, **Compare versions** and
   **Download** (also in its sheet: the kind's schema as the file a template folder keeps). **Sync with the repository**
-  reads the release list again and downloads the release in view.
+  reads the release list again and downloads the release in view. Every kind that matches is listed, a page at a time
+  as on [Mappings](#mappings), and another release, search or choice of versions starts on the first page.
 
 See [templates](templates.md).
 

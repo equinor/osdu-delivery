@@ -744,12 +744,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row with what it had to be and what the record holds), in the API and in a JSON report; a result recorded before a
   run kept them shows how many it judged until the assertion runs again
   ([what a check keeps](osdu/docs/reference/flow/assertion-sets.md#what-a-check-keeps)).
-- **The Mappings and Templates grids fit the window and say what is wrong first.** The rows of several repositories are
-  listed under a heading for each, with its count and when its sync last saw it, in place of a repository and a synced
-  column on every row; a mapping that does not load, or a file that holds no template, says why in its row, and a line
-  over the grid counts them with **List only these**. A mapping's row adds its description and links its template
-  version to Templates; Browse OSDU opens a kind from its row, marks only a schema that is not published, and puts its
-  search first. Neither grid scrolls sideways or makes the page scroll
+- **The Mappings and Templates grids page their rows as the audit trail does, and say what is wrong first.** Each lists
+  a page of rows, its foot picking how many a page shows and moving to the previous and next page, where a grid fitted
+  to the window scrolled inside itself and hid how many rows were below. The rows of several repositories are listed
+  under a heading for each, with its count and when its sync last saw it, in place of a repository and a synced column
+  on every row; a mapping that does not load, or a file that holds no template, says why in its row, and a line over
+  the grid counts them with **List only these**. A mapping's row adds its description and links its template version
+  to Templates; Browse OSDU opens a kind from its row, marks only a schema that is not published, puts its search
+  first, and pages through every kind of a release or a partition, where it listed the first 200
   ([the Build pages](osdu/docs/reference/concepts/gui-build.md#mappings)).
 - **Explain sits beside a page's title.** The question-mark button after a page's name (at the end of the lineage graph's
   toolbar) has the assistant explain the page; it no longer takes room at the end of the tab strip

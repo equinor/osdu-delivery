@@ -5,6 +5,7 @@ import { FileCode, OctagonAlert, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
+import { usePagedRows } from "@/hooks/useTablePaging";
 import { deliveryApi, type DeliveryMapping } from "../../api/delivery";
 import { repoApi } from "@/api/endpoints";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -14,8 +15,8 @@ import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { RelativeTime } from "@/components/RelativeTime";
 import { SearchInput } from "@/components/SearchInput";
+import { TablePager } from "@/components/TablePager";
 import { TruncatedText } from "@/components/TruncatedText";
-import { DimensionGrid, GridFooter } from "./dimensions/DimensionGrid";
 import { KindText } from "./KindText";
 import { MappingLineage } from "./MappingLineage";
 import { mappingRoute, matchingMappings, summaryText } from "./mappingSearch";
@@ -146,9 +147,9 @@ const mappingColumns: Column<DeliveryMapping>[] = [
 
 /**
  * The mapping documents the synced repositories hold, what every delivery flow renders with, under a heading for each
- * repository when there are several: find one by anything the grid shows of it, and it opens on a page of its own. The
- * field has the cursor when the page opens, and Enter opens the first row listed. A mapping that does not load says why
- * in its row, and a line over the grid counts them. The caches mappings read are on the Cache page.
+ * repository when there are several, a page at a time: find one by anything the grid shows of it, and it opens on a page
+ * of its own. The field has the cursor when the page opens, and Enter opens the first row listed. A mapping that does not
+ * load says why in its row, and a line over the grid counts them. The caches mappings read are on the Cache page.
  */
 export default function DeliveryDocumentsPage() {
   const navigate = useNavigate();
@@ -178,6 +179,8 @@ export default function DeliveryDocumentsPage() {
     const found = matchingMappings(inRepository, search, (mapping) => names.get(mapping.repoId) ?? "");
     return onlyFailing ? found.filter((mapping) => mapping.status !== "valid") : found;
   }, [inRepository, search, names, onlyFailing]);
+  // A page of them at a time; a new search, repository or problem filter starts on the first.
+  const paged = usePagedRows(rows, JSON.stringify([search, repoId, onlyFailing]));
 
   const grouping = repositoryGrouping(
     rows,
@@ -187,15 +190,13 @@ export default function DeliveryDocumentsPage() {
   );
 
   // Rows of one repository have no heading to say when its sync last saw them, so the foot of the grid says it.
-  const lastSeen = latestOf((rows ?? []).map((mapping) => mapping.lastSeenUtc));
-  const footNote = grouping !== undefined
-    ? `in ${countOf(new Set(rows?.map((mapping) => mapping.repoId)).size, "repository", "repositories")}`
-    : lastSeen !== null ? <>{"synced "}<RelativeTime value={lastSeen} absolute={false} /></> : undefined;
+  const lastSeen = grouping === undefined ? latestOf((rows ?? []).map((mapping) => mapping.lastSeenUtc)) : null;
+  const footNote = lastSeen !== null ? <>{"synced "}<RelativeTime value={lastSeen} absolute={false} /></> : undefined;
 
   const searchBox = useRef<HTMLDivElement>(null);
   useEffect(() => searchBox.current?.querySelector("input")?.focus(), []);
   const openFirst = (event: KeyboardEvent<HTMLDivElement>) => {
-    const first = rows?.[0];
+    const first = paged.rows?.[0];
     if (event.key === "Enter" && first !== undefined) {
       navigate(mappingRoute(first.id));
     }
@@ -231,40 +232,27 @@ export default function DeliveryDocumentsPage() {
       </FilterBar>
       {mappings.isError && <ProblemView error={mappings.error} testId="delivery-mappings-error" />}
       {!mappings.isError && (
-        <DimensionGrid testId="delivery-mappings-grid">
-          <DataTable
-            columns={mappingColumns}
-            rows={rows}
-            rowKey={(row) => row.id}
-            onRowClick={(row) => navigate(mappingRoute(row.id))}
-            grouping={grouping}
-            toolbar={failing > 0 ? (
-              <ProblemsLine
-                problem={failingText(failing, onlyFailing)}
-                only={onlyFailing}
-                onOnly={setProblemsOnly}
-                icon={<OctagonAlert className="size-3.5 shrink-0 text-destructive" aria-hidden />}
-                testId="delivery-mappings-problems"
-              />
-            ) : undefined}
-            footer={rows !== undefined ? (
-              <GridFooter
-                shown={rows.length}
-                total={inRepository !== undefined && inRepository.length > rows.length ? inRepository.length : null}
-                noun="mapping"
-                hasMore={false}
-                loading={false}
-                onMore={() => undefined}
-                note={footNote}
-                testId="delivery-mappings-foot"
-              />
-            ) : undefined}
-            emptyMessage={searched !== ""
-              ? `No mapping matches '${searched}'. The search reads the name, description, kind, source, template, path and repository.`
-              : "No mapping documents synced yet. A mapping is a YAML file with documentType: mapping under a repository's mappings directory, and the Mapping builder writes one."}
-            data-testid="delivery-mappings-table"
-          />
-        </DimensionGrid>
+        <DataTable
+          columns={mappingColumns}
+          rows={paged.rows}
+          rowKey={(row) => row.id}
+          onRowClick={(row) => navigate(mappingRoute(row.id))}
+          grouping={grouping}
+          toolbar={failing > 0 ? (
+            <ProblemsLine
+              problem={failingText(failing, onlyFailing)}
+              only={onlyFailing}
+              onOnly={setProblemsOnly}
+              icon={<OctagonAlert className="size-3.5 shrink-0 text-destructive" aria-hidden />}
+              testId="delivery-mappings-problems"
+            />
+          ) : undefined}
+          footer={<TablePager {...paged.pager} note={footNote} testId="delivery-mappings-foot" />}
+          emptyMessage={searched !== ""
+            ? `No mapping matches '${searched}'. The search reads the name, description, kind, source, template, path and repository.`
+            : "No mapping documents synced yet. A mapping is a YAML file with documentType: mapping under a repository's mappings directory, and the Mapping builder writes one."}
+          data-testid="delivery-mappings-table"
+        />
       )}
     </Page>
   );
