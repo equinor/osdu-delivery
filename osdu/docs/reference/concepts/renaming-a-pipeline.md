@@ -2,7 +2,7 @@
 id: delivery-concept-renaming-a-pipeline
 title: "Renaming, copying or deleting a flow: what happens to its ledger"
 type: concept
-summary: "A flow keeps its ledger under its name: a pure rename takes it along at the sync; any other change leaves it orphaned until a flow takes it over."
+summary: "A flow keeps its ledger under its name: a pure rename takes it along at the sync; any other change orphans it until a flow takes it over or it is deleted."
 keywords:
   - rename a pipeline
   - renamed flow
@@ -18,6 +18,9 @@ keywords:
   - which no repository declares any more
   - document hash
   - copied file
+  - delete an orphaned ledger
+  - delete-orphaned-ledger
+  - remove an orphaned ledger
 related:
   - delivery-flow-interfaces
   - delivery-concept-ledger
@@ -33,6 +36,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Bindings.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/LedgerDeletes.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Deletes.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Deletes.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs
   - osdu/src/SqlFlow.Delivery/Catalog/LedgerOwnership.cs
@@ -46,6 +52,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx
   - osdu/gui/src/features/delivery/TakeoverDialog.tsx
   - osdu/gui/src/features/delivery/BulkTakeoverDialog.tsx
+  - osdu/gui/src/features/delivery/DeleteOrphanedDialog.tsx
   - osdu/gui/src/features/delivery/OrphanedLedgersNotice.tsx
   - osdu/gui/src/features/delivery/RecordJourney.tsx
 ---
@@ -54,7 +61,8 @@ sourceRefs:
 
 Every flow that keeps a ledger keeps it under its name. Renaming the flow gives it a new ledger identity, while everything
 the old name kept stays under the old one. This page says, for every kind of flow, what the old ledger holds, what the
-repository sync does with it, and how a person hands it to the flow of their choice when the sync cannot.
+repository sync does with it, how a person hands it to the flow of their choice when the sync cannot, and how a person
+deletes it when no flow is to keep it.
 
 | Kind | What its ledger keeps | The ledger's identity |
 | --- | --- | --- |
@@ -77,7 +85,7 @@ whatever happens to the ledger.
 | Deleted a flow in one commit and added its replacement in a later one | The sync that saw it go found no replacement, so the old ledger is orphaned; the sync that finds the replacement moves it when the two are the same document. |
 | Copied a flow's file under another name | One document under two names: the copy, found last, owns the ledger, and the sync says so. Deleting the copy gives the ledger back. |
 | Moved a flow to another repository | Another document: its old ledger is orphaned until the flow takes it over. |
-| Deleted a flow for good | Its ledger is orphaned and stays as it is, records and OSDU ids included, until a flow takes it over. |
+| Deleted a flow for good | Its ledger is orphaned and stays as it is, records and OSDU ids included, until a flow takes it over or a person deletes it ([Deleting what a missing document left behind](#deleting-what-a-missing-document-left-behind)). |
 | A flow file that does not read or parse | Not gone: its rows are kept as they were, and no move takes its ledger. |
 
 A ledger kept before the sync recorded documents' hashes (a rename synced before this release) cannot be paired by its
@@ -175,8 +183,8 @@ flight a move waits for, and the closing summary counts what moved: `moved <n> a
 
 ## Missing documents and taking them over
 
-A ledger is **orphaned** when no flow a repository declares keeps it, it holds anything, and no move takes it away
-already. For a delivery ledger, that is no declared interface keeps its identity; for another kind, no repository declares
+A ledger is **orphaned** when no flow a repository declares keeps it, it holds anything, and no move takes it away and
+no deletion empties it already. For a delivery ledger, that is no declared interface keeps its identity; for another kind, no repository declares
 a flow of its kind by the name it was kept under. The orphaned ledgers of one flow are one **missing document**.
 
 The **Orphaned ledgers** page (the menu's Ledger group, `/delivery/ledgers/orphaned`; [The GUI](gui-ledger.md#orphaned-ledgers))
@@ -189,15 +197,18 @@ partition. They are ranked by what they share with the missing document, each sh
 
 | Shares | When |
 | --- | --- |
+| same file | Any kind declared in the file the missing one was last declared in, in the same repository: the flow renamed and changed where it is |
 | same mapping | A delivery flow whose interfaces pin a mapping the missing one's pinned |
 | same record table | A delivery flow that reads a record table the missing one read |
 | same interface | A delivery flow with an interface of a name the missing one had |
 | same folder | Any kind declared in the folder the missing one was last declared in, in the same repository |
 
-The one flow that alone ranks first is **suggested** and picked to start with, when it shares a mapping (another kind: its
-folder). A flow that would take only some of the ledgers says so (`takes 1 of 2 ledgers`), and **What goes where** shows,
+The one flow that alone ranks first is **suggested** and picked to start with, when it shares the file or a mapping
+(another kind: its folder). The file counts most: a flow renamed and changed in its own file is suggested even where
+several flows share the folder. A flow that would take only some of the ledgers says so (`takes 1 of 2 ledgers`), and **What goes where** shows,
 for the flow picked, the ledger each one goes to or that it stays orphaned. Nothing moves until **Take over** is pressed.
-The documents with a suggested flow can be selected and taken over together, each by its suggestion, one after another.
+Selected documents with a suggested flow can be taken over together, each by its suggestion, one after another; a
+selection can also be deleted ([below](#deleting-what-a-missing-document-left-behind)).
 
 A takeover hands each ledger of the missing document to the ledger the chosen flow keeps, or would keep, in its partition,
 as a move of its own, asked and made at once, and recorded as a `ledger-move` activity by the person who asked
@@ -215,6 +226,57 @@ plane finishes it), **Not taken over** (refused, as above) or **Stays orphaned**
 add the flow that replaces it, sync its repository, and take it over then.
 
 The API is `GET /api/v1/delivery/ledgers/orphaned` and `POST /api/v1/delivery/ledgers/orphaned/takeover`
+([Missing documents](api.md#missing-documents)).
+
+## Deleting what a missing document left behind
+
+A missing document no flow is to take over (a flow removed for good, a trial flow, history nobody needs) is deleted
+instead: **Delete** (the bin beside **Take over**) on its row, or **Delete what they left behind** for a selection. A
+deletion removes history from the ledger and asks nothing of OSDU. It never removes what only the ledger knows of OSDU,
+so a ledger that still knows something is refused, says why, and stays as it is.
+
+| Kind | What goes | Refused while |
+| --- | --- | --- |
+| delivery | Every record, each kept as one line in `osdu.PurgedRecord`, with its attempts and search entries, then its submissions, work batches, leases, lease events, watermarks and reversals, as [deleting the ledger](removal-and-reversal.md#deleting-the-ledger) deletes them | a record claimed an OSDU id and is not marked removed, so OSDU may still hold it; a record's access is restricted; an item an unfinished delivery left is still to undo. It waits while a run works on the ledger. |
+| retrieval | Its retrievals; the files they wrote stay where they are | never |
+| assertion | Its runs and their results | never |
+| dimension | Its dimensions with everything kept of them, each [as a removed dimension](../flow/dimension.md#removing-a-dimension), its table where no other partition writes it, and the flow's views once no other partition keeps a dimension of the flow | a cache flow captures one of its dimensions, or a view of another flow reads one's table |
+| inventory | Its inventories with their runs, ids, versions, scans, selections and duplicate checks (each check's `dup_` table too) | it holds a removal, the record of what one took out of OSDU and what a restore brings back |
+| download | Its downloads with their runs, scans and the records they list; the files they wrote stay where they are | never |
+
+To delete a delivery ledger refused for its records, have a declared flow take it over; or declare the flow again, sync
+its repository and delete its ledger from its Delivery tab, which removes its records from OSDU first. The refusals read:
+
+```text
+<n> record(s) of '<flow>' in partition '<partition>' claimed an OSDU id and are not marked removed, so OSDU may still hold them and the ledger is not deleted: it is the one place that accounts for them. Have a declared flow take the ledger over; or declare the flow again, sync its repository and delete its ledger from its Delivery tab, which removes its records from OSDU first.
+The inventories of '<flow>' in partition '<partition>' hold <n> removal(s), the record of what each took out of OSDU and what a restore brings back, so the ledger is not deleted. Have a declared inventory flow take it over.
+```
+
+What stays: the ledger's audit trail, the deletion in it, its entry in the directory, the lines of a delivery ledger's
+records and the artifacts its deliveries recorded. The deletion is a `delete-orphaned-ledger` activity of the ledger by the
+person who asked (`user:<name>`), closed with what went:
+`deleted the orphaned ledger of '<flow>', which no repository declares: <n> assertion run(s) with everything kept under them`.
+
+**The dialog.** A deletion is made, and confirmed, in one partition: the workbench's, or the one every selected ledger is
+kept in. Before anything goes, the dialog asks what each ledger holds and whether it can go
+(`POST /ledgers/orphaned/delete/preview`, which writes nothing), and lists each document with what it left and when, and
+under it each ledger that stays and why. It says when a document left less than a day ago, since a repository that synced
+the wrong branch, or a file on its way back, is put right by syncing again: a flow declared again keeps its ledger. The
+partition is typed back, and the button says what goes (**Delete 21 assertion runs**). Once asked, the documents are deleted
+one after another, and each says how it ended, with a link to the audit trail that keeps the deletion.
+
+**How it runs.** Each ledger is asked as a deletion of its own, under the lock every move's ask holds, so a deletion and a
+takeover, or a deletion and a sync's move, are never both asked of one ledger. From then on the ledger is not listed, no
+flow takes it over, and a move into it or out of it waits. It is deleted at once, 1,000 rows a statement, each committed on
+its own, the rows that name a row before the row they name, under the lock a move into the ledger takes. A deletion that
+stops (a restart, a request cut off) or that waits for a run is finished by the control plane's pass within 15 seconds
+([Background services](control-plane.md#background-services)). Each pass checks again first: a flow a repository declares
+again meanwhile keeps what is left, and the deletion closes `failed`:
+`not deleted whole: a repository declares '<flow>' again, or a move takes its ledger, so what the ledger still holds stays with it.`
+A deletion the database refuses closes `failed` too, saying why (`not deleted whole: <error>`); what it deleted stays
+deleted, and the document is listed again with what is left, to delete again.
+
+The API is `POST /api/v1/delivery/ledgers/orphaned/delete/preview` and `POST /api/v1/delivery/ledgers/orphaned/delete`
 ([Missing documents](api.md#missing-documents)).
 
 ## Until the ledger moves

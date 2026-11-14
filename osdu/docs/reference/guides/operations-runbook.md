@@ -243,8 +243,12 @@ stayed in the old one with the OSDU ids they claimed. Nothing was sent, and noth
   '<new>', ...`, and a `ledger-move` entry by `service:repository-sync` in the audit trail).
 - Otherwise (the flow was also changed, its file was deleted and added back in separate syncs, or the rename was synced
   before documents' hashes were recorded), open **Orphaned ledgers** in the menu's Ledger group, find the old
-  name, press **Take over** and pick the renamed flow, which is suggested when it pins the same mapping. Each ledger moves
-  at once, as you.
+  name, press **Take over** and pick the renamed flow, which is suggested when it pins the same mapping or is declared in
+  the file the old one was. Each ledger moves at once, as you.
+- A flow removed for good, whose history nobody needs: on **Orphaned ledgers**, press **Delete** on its row (or select
+  several and **Delete what they left behind**), check what stays and why, and type the partition. A delivery ledger whose
+  records OSDU may still hold is refused; declare the flow again and delete its ledger from its Delivery tab, which removes
+  them from OSDU first ([Deleting what a missing document left behind](../concepts/renaming-a-pipeline.md#deleting-what-a-missing-document-left-behind)).
 
 Then run the flow: the records it held give way to the old ones, and it sends only what changed, as updates of the ids
 they claimed ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)). When the sync warns that the two ledgers are in

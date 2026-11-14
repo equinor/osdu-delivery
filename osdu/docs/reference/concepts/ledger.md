@@ -186,7 +186,8 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
   back in OSDU), `inventory-repair`, `reassign-id`, `source-remove` (a removal flow taking out what the source no longer holds, in the
   delivery flow's ledger), `lift-removal` (an operator delivering such records again) and `ledger-move` (a ledger moved
   to another flow's identity: by the repository sync for a renamed flow, as `service:repository-sync`, or by a person
-  taking over an orphaned ledger).
+  taking over an orphaned ledger) and `delete-orphaned-ledger` (a person deleting an orphaned ledger no flow is to take
+  over, [Renaming a pipeline](renaming-a-pipeline.md#deleting-what-a-missing-document-left-behind)).
 
 Each row carries the actor (for a run, who asked for it or `schedule:<name>` for a run a schedule fired; `user:<name>` for
 an intervention from the GUI or the API and for a probe asked for, `cli:<user>@<machine>` for one from a workstation,

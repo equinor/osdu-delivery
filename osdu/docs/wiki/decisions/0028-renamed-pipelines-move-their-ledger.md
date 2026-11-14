@@ -13,6 +13,7 @@ keywords:
   - "document hash"
   - "copied file"
   - "repository sync"
+  - "delete an orphaned ledger"
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs
@@ -23,6 +24,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/LedgerBindings.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/LedgerDeletes.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Deletes.cs
   - osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs
@@ -40,7 +43,7 @@ related:
   - delivery-wiki-0021-adopting-occupied-records
   - delivery-wiki-0005-ledger-retention
   - delivery-wiki-0038-download-flow
-updated: 2026-10-30
+updated: 2026-11-14
 ---
 # 0028: The sync moves a renamed flow's ledger when only the name changed, and a person takes over every other orphan
 
@@ -51,6 +54,11 @@ own ledger to its new name.
 > **Amended by [0038](0038-download-flow.md).** A download flow keeps a ledger too. The sync records its hash in
 > `osdu.LedgerFlow` beside the retrieval, assertion, dimension and inventory flows', and its ledger moves, or is taken
 > over, by the rules below, as a dimension's or an inventory's is: a flow holds one download of each name.
+>
+> **Amended 2026-11-14: an orphan no flow is to keep is deleted.** The page offered only a takeover, so a flow removed for
+> good, or a trial flow, stayed listed for ever. A person now deletes a missing document's orphaned ledgers instead, as
+> the last section of the Decision says; and the file a missing flow was last declared in counts above its mapping when a
+> takeover is suggested.
 
 ## Context
 
@@ -106,6 +114,15 @@ missing and lets a person pick the new document that takes over each one's ledge
   commits, through a generic SQLFlow extension point for work after the commit (`ICatalogSyncExtension.CommittedAsync`),
   and says in its result what each move did. A move that waits for work in flight is finished by the control plane's
   pass, and a delivery run finishes a move into its ledger before it reads it, so no run reads half a ledger.
+- **What no flow is to keep, a person deletes, and only history goes.** A deletion is the same machinery as a takeover
+  turned the other way: one `delete-orphaned-ledger` activity per ledger, asked under the lock a move's ask holds, so a
+  deletion and a move of one ledger are never both asked; carried out in committed slices under the lock a move into the
+  ledger takes; finished by the same control-plane pass when it stops. The rule that decides what may go is that the
+  ledger is the product: a ledger is refused while it is the only record of something in OSDU (a delivery record that
+  claimed an id and is not marked removed, a restricted record, an item still to undo, an inventory's removal), since
+  deleting it would leave OSDU holding what nothing accounts for. Runs, results, dimensions and the rest of a flow's own
+  history go; the audit trail, the deletion in it and the lines of deleted records stay, so the deletion is itself
+  reconstructible. Nothing is asked of OSDU from this page.
 - **The ledger's rows move; the identity stays the name's.** Afterwards the owner's identity is its name, as every other
   flow's, and nothing anywhere looks an alias up. `ledger:` stays for a delivery flow that keeps another ledger by name.
 
@@ -115,6 +132,13 @@ missing and lets a person pick the new document that takes over each one's ledge
   exists, and had to be repeated in each environment. It stays as a choice.
 - **Pairing by the table and mapping two pipelines read.** A heuristic, with refusals where it could not tell pipelines
   apart, where a document's hash answers the question exactly.
+- **Removing a delivery ledger's records from OSDU from the Orphaned ledgers page.** Deleting a flow's ledger already
+  does that from the flow's Delivery tab, as a run of the flow with its route, credentials and undo; an orphan has no
+  declared flow to run, and a second removal path would bypass all of it. A delivery ledger OSDU may still hold records
+  of is refused and points at the two paths that exist: a takeover, or declaring the flow again and deleting its ledger.
+- **Deleting an orphan as soon as it is found, or after a timeout.** A flow leaves for reasons a sync cannot see (a wrong
+  branch synced, a file moved in two commits); a deletion is a person's decision, and the dialog says when a flow left
+  less than a day ago.
 - **Pairing a pre-hash rename by the delivery keys both ledgers hold.** It would have fixed the live estate without a
   click, but it links two documents that differ, which is a guess; the human asked for automatic linking only where it
   cannot be wrong, and a takeover is one confirmation per missing document.
@@ -136,6 +160,8 @@ missing and lets a person pick the new document that takes over each one's ledge
   before hashes were recorded, waits on the Orphaned ledgers page; meanwhile a delivery flow holds the records the old
   ledger claimed, so nothing reaches OSDU twice, and the hold says how to take it over.
 - A dimension or inventory flow is taken over before the renamed flow builds, or the takeover is refused.
+- A missing document no flow is to keep leaves the page when a person deletes it; one whose ledger still accounts for
+  something in OSDU stays until that is settled, and the deletion says how.
 - The old flow's SQLFlow run history stays under its old name in the catalog; the ledger's history moves.
 - A table that carries a ledger identity has to be one a move takes, points or leaves alone; a model test fails a table
   added without saying which.
