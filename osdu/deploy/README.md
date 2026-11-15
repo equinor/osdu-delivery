@@ -254,7 +254,8 @@ own identity. How the Kubernetes layout maps onto Container Apps:
   GUI's `SQLFLOW_API_BASE_URL` to the control plane URL and CORS-lists the GUI origin on the control plane. Put
   Front Door or Application Gateway in front of both apps to restore the one-host layout, then blank both.
 - **KEDA is built in**: `worker.bicep` reads the same scale-target endpoint as `worker-pool.yaml`, with
-  `minReplicas: 0` and the node credential as the scaler's credential. Add a pool with another deployment of it
+  `minReplicas: 0`, a 60 second cool-down (an idle pool goes to zero that long after the target last asked for a
+  worker) and the node credential as the scaler's credential. Add a pool with another deployment of it
   (`-p name=osdu-delivery-worker-<pool> pool=<pool>`).
 - **Secrets live in Key Vault, read by managed identity**: no secret value appears in the templates, the parameters or
   app configuration, and the same identities resolve `${keyvault:...}` references at run time
@@ -507,7 +508,8 @@ The layout and the reasoning behind it:
   the real client.
 - **Nodes scale 0 to N per pool on the control plane's replica target**: KEDA's metrics-api scaler reads
   `GET /api/v1/node/scale-target?pool=<name>` with the node token and scales the matching Deployment;
-  `minReplicaCount: 0` means an idle pool costs nothing. Copy `worker-pool.yaml` per pool (set
+  `minReplicaCount: 0` means an idle pool costs nothing, and `cooldownPeriod: 60` takes it to zero a minute after
+  the target last asked for a worker. Copy `worker-pool.yaml` per pool (set
   `SQLFLOW_WORKER_POOL` and the URL's `?pool=`).
 - **The partition is the control plane's configuration**: `controlplane.yaml` names one, `dev`, as
   `Osdu__Partitions__dev__...` variables with example values to replace (rename `dev` to your data-partition-id).

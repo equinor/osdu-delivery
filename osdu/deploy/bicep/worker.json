@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "9350317425932088938"
+      "templateHash": "14441628509413775129"
     }
   },
   "definitions": {
@@ -252,7 +252,7 @@
     },
     "app": {
       "type": "Microsoft.App/containerApps",
-      "apiVersion": "2024-03-01",
+      "apiVersion": "2025-01-01",
       "name": "[parameters('name')]",
       "location": "[parameters('location')]",
       "tags": "[parameters('tags')]",
@@ -286,6 +286,8 @@
           "scale": {
             "minReplicas": 0,
             "maxReplicas": "[parameters('maxReplicas')]",
+            "cooldownPeriod": 60,
+            "pollingInterval": 15,
             "rules": "[variables('scaleRules')]"
           }
         }

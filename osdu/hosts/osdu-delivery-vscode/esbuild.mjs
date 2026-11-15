@@ -2,10 +2,12 @@ import { build, context } from 'esbuild';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { languageClientOnMinimatch11 } from '../../../sqlflow/tools/sqlflow-vscode/languageClientMinimatch.mts';
 
 // The OSDU Delivery extension is SQLFlow's extension with the delivery module installed. SQLFlow's sources are compiled in
 // place from the vendored tree, never copied, as the GUI's are, and every package either tree imports resolves from this
-// build's node_modules, so sqlflow/tools/sqlflow-vscode needs no install of its own.
+// build's node_modules, so sqlflow/tools/sqlflow-vscode needs no install of its own. SQLFlow's bundle rewrites
+// vscode-languageclient's makeRe() checks for minimatch 11 (languageClientMinimatch.mts), and this one does the same.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, '..', '..', '..');
@@ -76,6 +78,7 @@ const options = {
     format: 'cjs',
     external: ['vscode'],
     nodePaths: [join(here, 'node_modules')],
+    plugins: [languageClientOnMinimatch11],
     sourcemap: !production,
     minify: production,
     logLevel: 'info',

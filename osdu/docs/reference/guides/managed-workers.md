@@ -120,7 +120,7 @@ starts no workers: the control plane runs runs on its own node, and the Nodes pa
 worker. `dev.bat managed` still names the default.
 
 At most 4 workers start unless `.sqlflow\env` sets `ControlPlane__ManagedWorkers__MaxWorkers`; any other
-`ControlPlane__ManagedWorkers__*` setting there applies as well (a lower `IdleMinutes` shows a worker leaving sooner).
+`ControlPlane__ManagedWorkers__*` setting there applies as well (`IdleMinutes`, 2 by default, is the idle time the workers a pool can spare share: one waits all of it, several leave sooner, none before a quarter of it).
 The workers end with the control plane. One left behind by a control plane that was killed is ended by the next
 `dev.bat`, and if it is still polling when a new control plane starts, it is asked to leave as a worker the launcher
 does not have.

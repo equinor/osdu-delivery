@@ -350,6 +350,17 @@ environment's variables and secrets.
 
 ## Scale-in, placement and the module's own settings
 
+- **An idle node is removed quickly, and a job in flight keeps its nodes.** An idle node is compute paid for nothing,
+  and a delivery split over many nodes leaves one per part behind. With an autoscaler, `worker.bicep` and
+  `worker-pool.yaml` take an idle pool to zero 60 seconds after the replica target last asked for a worker (the
+  platforms wait 300 by default); the target counts a node as busy from the run journal, so it reads zero only when
+  nothing is queued that could start and nothing runs. The autoscaler removes nodes itself, so the wait is one number
+  for the pool, and a pool that is only partly idle shrinks on the platform's own five minutes. With
+  [managed workers](managed-workers.md) the control plane picks the node and the moment: the idle workers a pool can
+  spare share `ControlPlane__ManagedWorkers__IdleMinutes` (2) between them, so one waits two minutes and of six, three
+  leave after 30 seconds, then one each after 40, 60 and 120, never sooner than 30 seconds and never below the pool's
+  minimum; and the workers the next wave of a running schedule needs are not spare
+  ([SQLFlow's deployment guide](../../../../sqlflow/docs/reference/guides/deployment.md#managed-workers-the-control-plane-starts-its-own-workers)).
 - **Drain.** A node draining on SIGTERM finishes the deliveries it holds for up to `SQLFLOW_WORKER_DRAIN_SECONDS` (540 by
   default), so the termination grace period has to be longer: `worker-pool.yaml` and `worker.bicep` set 600. A severed
   delivery loses no record (the ledger leases each record to one attempt), but it repeats work and consumes one of the
