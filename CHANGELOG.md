@@ -684,6 +684,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **`Dispatch:LongPollSeconds` and `Dispatch:NodeFlushSeconds` may add up to 50 at most.** A control plane set to more
+  (the defaults are 30 and 5) refuses to start and names both settings: a node's last poll reaches the Nodes page one
+  parked poll and one flush later, and past the 60 seconds a node counts as online for, every worker read offline between
+  polls and an autoscaler stopped counting the busy ones
+  ([configuration](sqlflow/docs/reference/concepts/control-plane.md#configuration)).
 - **The Schedule timeline opens on its latest two days, for planning where a new schedule fits.** One line over the chart
   gives the free window, the busiest hour, the average run, the runs and the active schedules, where six tiles in two
   rows pushed it below the fold; the free window is shaded on every day, and counts the hours a run executes in, not only
@@ -1141,6 +1146,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is leaving once its drain is over and its row goes on the next flush; one still listed offline went silent without
   leaving (killed, crashed or cut off) and is pruned after `Dispatch:NodeRetentionHours`, 24 by default
   ([the stopping node](sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)).
+- **A deployment no longer leaves its old workers on the Nodes page.** A stopping worker gave up on its goodbye after
+  seven seconds, sooner than the control plane hands dispatch over when both are swapped together, so the workers of
+  each deployment stayed listed offline. It now keeps trying for a quarter of a minute, and the rows of nodes long gone
+  are pruned as soon as a control plane takes dispatch over, where one restarted within the hour never reached the
+  hourly prune ([shutdown and the drain](sqlflow/docs/reference/cli/worker.md#shutdown-and-the-drain)).
+- **A managed worker that leaves is replaced at once, and is not listed as lost afterwards.** A worker stopped by
+  something other than the control plane (the platform, an operator) held its pool's minimum for two minutes as a
+  silent one, and every worker that had left came back on the Scaling tab as silent and then lost, for up to a day,
+  once the platform stopped listing it. A worker that says it is leaving stops counting at once and is forgotten, and a
+  fleet whose workers all left cleanly starts workers for queued runs instead of waiting as if it heard nobody
+  ([managed workers](sqlflow/docs/reference/guides/deployment.md#managed-workers-the-control-plane-starts-its-own-workers)).
+- **A worker finishing its runs keeps its run slots on the Nodes page.** While it drained it reported none, so the page
+  showed `2 / 0` and the run slots online dropped though the runs were still executing.
 - **The explorer opens a record of a partition's own type that names no group.** An id such as `dev:site-note:3b9c...`
   was refused as no OSDU record id, though the search listed it: the explorer's reads, checks and mentions now take any
   id the storage service takes (`ValidationDoc.RECORD_ID_REGEX`), and the search field opens one of the partition read.
