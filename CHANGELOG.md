@@ -684,6 +684,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The Schedule timeline opens on its latest two days, for planning where a new schedule fits.** One line over the chart
+  gives the free window, the busiest hour, the average run, the runs and the active schedules, where six tiles in two
+  rows pushed it below the fold; the free window is shaded on every day, and counts the hours a run executes in, not only
+  the hour it starts. The overview switches between the latest days and the whole window, a zoom now holds through the
+  page's refresh, and a disabled or paused schedule no longer marks a next fire
+  ([the menu](osdu/docs/reference/concepts/menu.md)).
 - **A flow renamed and changed in its own file is suggested to take its old ledger over.** The Orphaned ledgers page counts
   the file a missing flow was last declared in (**same file**) above its mapping and folder, so the flow now declared there
   is suggested even where several flows share the folder; and rows without a suggestion can be selected too, for a
@@ -1130,6 +1136,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A worker that stops cleanly leaves the Nodes page.** Every worker pod polls under a new name, and a stopped one was
+  listed offline for a day, so each revision and each scale-in added a page of dead rows to purge. A worker now says it
+  is leaving once its drain is over and its row goes on the next flush; one still listed offline went silent without
+  leaving (killed, crashed or cut off) and is pruned after `Dispatch:NodeRetentionHours`, 24 by default
+  ([the stopping node](sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)).
 - **The explorer opens a record of a partition's own type that names no group.** An id such as `dev:site-note:3b9c...`
   was refused as no OSDU record id, though the search listed it: the explorer's reads, checks and mentions now take any
   id the storage service takes (`ValidationDoc.RECORD_ID_REGEX`), and the search field opens one of the partition read.
