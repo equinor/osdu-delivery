@@ -281,11 +281,11 @@ public sealed class OsduStorageContributor : IStorageContributor
                 Group = Cache,
                 Title = "Render context of delivered records",
                 Verdict = StorageVerdict.Keep,
-                Holds = "The cached values each delivered record's current render read, each distinct set stored once, and every cache change that reached delivered records with its decision and rollout.",
+                Holds = "The cached values each delivered record's current render read, each distinct set stored once and each distinct value once for every set that holds it, and every cache change that reached delivered records with its decision and rollout.",
                 Reason = "A delivered record's render is reconstructible from its set after its cache version is gone, and a cache change finds the records it reaches through the sets. Only a record's current set is read, so a set no record points at is removed.",
                 Brief = "Unused sets removed hourly",
-                Lifecycle = "Every hour, a set no record points at that no render has used for a day is removed with its values; every set a record points at, and the change log, stay.",
-                Tables = [T("CacheSet"), T("CacheSetEntry"), T("UpdateTag")],
+                Lifecycle = "Every hour, a set no record points at that no render has used for a day is removed, and then every value no set holds; every set a record points at, and the change log, stay.",
+                Tables = [T("CacheSet"), T("CacheSetEntry"), T("CacheSetValue"), T("UpdateTag")],
             },
             new()
             {

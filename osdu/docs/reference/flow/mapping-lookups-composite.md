@@ -20,7 +20,7 @@ related:
   - delivery-concept-partition-cache
   - delivery-concept-change-detection
   - delivery-concept-preflight
-  - delivery-table-cache-set-entry
+  - delivery-table-cache-set-value
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
@@ -103,7 +103,7 @@ names instead, with the same result.
 - **Found**: the record the line found is recorded by each of its values, so a later version in which the record no
   longer holds one of them tags the records built from it `unmatched`.
 - **Not found**: the values no record met together are recorded together, of a lookup table as of a type of OSDU records
-  ([`osdu.CacheSetEntry`](../tables/cache-set-entry.md)). A later version holding a record that meets them all tags the
+  ([`osdu.CacheSetValue`](../tables/cache-set-value.md)). A later version holding a record that meets them all tags the
   records built without one `listed`, and a record sharing only some of the values reaches none of them. The Cache page
   lists them among what records were built without, as `well = Z-9 and mnemonic = NPHI`.
 - Values too long to be kept whole as one ledger key (512 characters, written as a JSON list) are not recorded, as a key

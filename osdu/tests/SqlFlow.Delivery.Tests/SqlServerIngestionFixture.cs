@@ -437,9 +437,11 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
         }
 
         await using var db = Context();
-        var sets = await db.DeliveryCacheSetEntries.Where(e => e.Scope == scope).Select(e => e.SetId).Distinct().ToListAsync().ConfigureAwait(false);
+        var values = db.DeliveryCacheSetValues.Where(v => v.Scope == scope).Select(v => v.ValueId);
+        var sets = await db.DeliveryCacheSetEntries.Where(e => values.Contains(e.ValueId)).Select(e => e.SetId).Distinct().ToListAsync().ConfigureAwait(false);
         await db.DeliveryCacheSetEntries.Where(e => sets.Contains(e.SetId)).ExecuteDeleteAsync().ConfigureAwait(false);
         await db.DeliveryCacheSets.Where(s => sets.Contains(s.SetId)).ExecuteDeleteAsync().ConfigureAwait(false);
+        await db.DeliveryCacheSetValues.Where(v => v.Scope == scope).ExecuteDeleteAsync().ConfigureAwait(false);
         await db.DeliveryUpdateTags.Where(t => t.Scope == scope).ExecuteDeleteAsync().ConfigureAwait(false);
         await db.DeliveryCacheMembers.Where(m => m.Scope == scope).ExecuteDeleteAsync().ConfigureAwait(false);
         await db.DeliveryCacheItems.Where(i => i.Scope == scope).ExecuteDeleteAsync().ConfigureAwait(false);

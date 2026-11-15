@@ -284,6 +284,10 @@ other packages adopt the same contract.
   why keys, record ids and collected texts are unique by their text rather than a SHA-256 of it, why a key keeps the hash
   of its objects and read-through attributes, why a dimension reading elements is keyed by id, and why a write says what
   it is doing.
+- [0059: a cached value a render read is kept once, and a set names it by its number](decisions/0059-cached-values-kept-once.md):
+  why the render context keeps each distinct value once under an identity, how two application locks order the sets
+  being written and the sweep, why the migration carries the context over instead of emptying it, and why the cache's own
+  tables stay clustered by partition.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

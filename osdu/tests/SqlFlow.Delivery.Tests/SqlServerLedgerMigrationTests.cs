@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
+using SqlFlow.Delivery.Snapshots;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -244,6 +245,137 @@ public sealed class SqlServerLedgerMigrationTests
         await database.MigrateAsync(BeforeLookups);
         Assert.Equal(1, await database.ScalarAsync("SELECT COUNT(*) FROM [osdu].[CacheDefinition] WHERE [Kind] = N'osdu:wks:reference-data--UnitOfMeasure:*'"));
         Assert.Equal(0, await database.ScalarAsync("SELECT COUNT(*) FROM sys.columns WHERE [object_id] = OBJECT_ID(N'[osdu].[CacheDefinition]') AND [name] = N'Origin'"));
+    }
+
+    [Fact]
+    public async Task The_render_context_is_carried_over_to_values_kept_once_row_for_row_and_the_migration_goes_back()
+    {
+        const string BeforeKeys = "20261115141705_DimensionTextKeys";
+        const string Metre = "dev:reference-data--UnitOfMeasure:m";
+        const string Composite = " [\"A-12\",\"GR\"]";
+        var named = SqlFlow.Delivery.Hashing.ContentHash.Of(Metre + ":");
+        var metre = SqlFlow.Delivery.Hashing.ContentHash.Of("metre");
+        var meter = SqlFlow.Delivery.Hashing.ContentHash.Of("meter");
+        var looked = SqlFlow.Delivery.Hashing.ContentHash.Of("[\"A-12\",\"GR\"]");
+        var zeros = new string('0', 64);
+        await using var database = await ScratchDatabase.CreateAsync();
+        await database.MigrateAsync(BeforeKeys);
+
+        // The render context as the ledger wrote it before: every value of every set with its partition, type, item, path
+        // and kind as text. Two sets read the same places, one value alike and one not, and one of them another partition's
+        // too; a third holds nothing; a row of a set that is not among the sets, whose item differs from another's by its
+        // case alone; and a hash no ledger wrote.
+        await database.ExecuteAsync(
+            """
+            SET IDENTITY_INSERT [osdu].[CacheSet] ON;
+            INSERT INTO [osdu].[CacheSet] ([SetId], [SetHash], [EntryCount], [Gated], [FirstSeenUtc], [LastSeenUtc])
+            VALUES (11, N'set-11', 3, 0, @now, @now), (12, N'set-12', 3, 1, @now, @now), (40, N'set-40', 0, 0, @now, @now);
+            SET IDENTITY_INSERT [osdu].[CacheSet] OFF;
+            INSERT INTO [osdu].[CacheSetEntry] ([SetId], [Scope], [TypeName], [ItemId], [Path], [Kind], [ValueHash], [ValueText])
+            VALUES
+                (11, N'dev', N'UnitOfMeasure', @item, N'id', N'match', @named, @item + N':'),
+                (11, N'dev', N'UnitOfMeasure', @item, N'Name', N'value', @metre, N'metre'),
+                (11, N'dev', N'CurveAlias', @composite, N'Well and Mnemonic', N'unlisted', @looked, N'["A-12","GR"]'),
+                (12, N'dev', N'UnitOfMeasure', @item, N'id', N'match', @named, @item + N':'),
+                (12, N'dev', N'UnitOfMeasure', @item, N'Name', N'value', @meter, N'meter'),
+                (12, N'test', N'UnitOfMeasure', @item, N'Name', N'value', N'not a hash', N'metre '),
+                (99, N'dev', N'UnitOfMeasure', UPPER(@item), N'Name', N'value', @metre, N'metre');
+            """,
+            ("item", Metre), ("composite", Composite), ("named", named), ("metre", metre), ("meter", meter), ("looked", looked));
+
+        await database.MigrateAsync(null);
+        string[] tables = ["CacheSetValue", "CacheSetEntry"];
+        await using (var db = database.Context())
+        {
+            // The tables are what the model declares, index for index, and the table replaced is gone.
+            Assert.Equal(ModelIndexes(db, tables), await database.IndexesAsync(tables));
+            Assert.Equal(["EntryId"], await database.PrimaryKeyAsync("CacheSetEntry"));
+            Assert.Equal(["ValueId"], await database.PrimaryKeyAsync("CacheSetValue"));
+            Assert.Equal(0, await database.ScalarAsync("SELECT COUNT(*) FROM sys.tables WHERE [name] LIKE N'CacheSetEntry_%' AND SCHEMA_NAME([schema_id]) = N'osdu';"));
+
+            // Seven rows held six values between them: the value two sets read alike is kept once, and each row names its value.
+            Assert.Equal(
+                [
+                    $"dev|CurveAlias|{Composite}|Well and Mnemonic|unlisted|[\"A-12\",\"GR\"]",
+                    $"dev|UnitOfMeasure|{Metre.ToUpperInvariant()}|Name|value|metre",
+                    $"dev|UnitOfMeasure|{Metre}|Name|value|meter",
+                    $"dev|UnitOfMeasure|{Metre}|Name|value|metre",
+                    $"dev|UnitOfMeasure|{Metre}|id|match|{Metre}:",
+                    $"test|UnitOfMeasure|{Metre}|Name|value|metre ",
+                ],
+                (await db.DeliveryCacheSetValues.AsNoTracking().ToListAsync())
+                    .Select(v => $"{v.Scope}|{v.TypeName}|{v.ItemId}|{v.Path}|{v.Kind}|{v.ValueText}").Order(StringComparer.Ordinal).ToList());
+            Assert.Equal(7, await db.DeliveryCacheSetEntries.CountAsync());
+
+            // What a set holds is written together, in the order of the sets.
+            Assert.Equal(
+                new long[] { 11, 11, 11, 12, 12, 12, 99 },
+                await db.DeliveryCacheSetEntries.AsNoTracking().OrderBy(e => e.EntryId).Select(e => e.SetId).ToListAsync());
+        }
+
+        // The ledger reads every set as it was written, and finds the sets holding a cached record through its values. The
+        // hash no ledger wrote reads as one no value has, so its value is told as changed, never as the same.
+        var ledger = new OsduLedger(database.Context);
+        Assert.Equal(
+            [
+                new CacheUse("dev", "CurveAlias", Composite, "Well and Mnemonic", CacheUsageKind.Unlisted, looked, "[\"A-12\",\"GR\"]"),
+                new CacheUse("dev", "UnitOfMeasure", Metre, "id", CacheUsageKind.Match, named, Metre + ":"),
+                new CacheUse("dev", "UnitOfMeasure", Metre, "Name", CacheUsageKind.Value, metre, "metre"),
+            ],
+            await ledger.ListCacheSetAsync(11));
+        Assert.Equal(
+            [
+                new CacheUse("dev", "UnitOfMeasure", Metre, "id", CacheUsageKind.Match, named, Metre + ":"),
+                new CacheUse("dev", "UnitOfMeasure", Metre, "Name", CacheUsageKind.Value, meter, "meter"),
+                new CacheUse("test", "UnitOfMeasure", Metre, "Name", CacheUsageKind.Value, zeros, "metre "),
+            ],
+            await ledger.ListCacheSetAsync(12));
+        Assert.Empty(await ledger.ListCacheSetAsync(40));
+        Assert.Equal([new CacheUse("dev", "UnitOfMeasure", Metre.ToUpperInvariant(), "Name", CacheUsageKind.Value, metre, "metre")], await ledger.ListCacheSetAsync(99));
+        Assert.Equal(
+            new long[] { 11, 11, 12, 12 },
+            (await ledger.FindCacheSetsAsync("dev", "UnitOfMeasure", [Metre])).Select(use => use.SetId).Order().ToArray());
+        Assert.Equal(new long[] { 11 }, (await ledger.FindCompositeMissesAsync("dev", "CurveAlias")).Select(use => use.SetId).ToArray());
+
+        // A set written after the migration names the values carried over, and keeps only what is new.
+        var written = await ledger.EnsureCacheSetAsync(
+            "dev",
+            [new CacheUsage("UnitOfMeasure", Metre, "Name", "metres", CacheUsageKind.Value), new CacheUsage("UnitOfMeasure", Metre, "Code", "m", CacheUsageKind.Value)]);
+        await using (var db = database.Context())
+        {
+            Assert.Equal(8, await db.DeliveryCacheSetValues.CountAsync());
+            Assert.Equal(2, await db.DeliveryCacheSetEntries.CountAsync(e => e.SetId == written));
+        }
+
+        // Going back gives every row the text of its value again, and its hash as the ledger wrote it.
+        await database.MigrateAsync(BeforeKeys);
+        Assert.Equal(["SetId", "Scope", "TypeName", "ItemId", "Path", "Kind"], await database.PrimaryKeyAsync("CacheSetEntry"));
+        Assert.Equal(0, await database.ScalarAsync("SELECT COUNT(*) FROM sys.tables WHERE [name] IN (N'CacheSetValue', N'CacheSetEntryLatter') AND SCHEMA_NAME([schema_id]) = N'osdu';"));
+        Assert.Equal(1, await database.ScalarAsync("SELECT COUNT(*) FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'[osdu].[CacheSetEntry]') AND [name] = N'IX_CacheSetEntry_Scope_TypeName_ItemId';"));
+        Assert.Equal(9, await database.ScalarAsync("SELECT COUNT(*) FROM [osdu].[CacheSetEntry];"));
+        Assert.Equal(
+            6,
+            await database.ScalarAsync(
+                """
+                SELECT COUNT(*) FROM [osdu].[CacheSetEntry] AS e
+                WHERE (e.[SetId] = 11 AND e.[Scope] = N'dev' AND e.[TypeName] = N'UnitOfMeasure' AND e.[ItemId] = @item AND e.[Path] = N'id' AND e.[Kind] = N'match' AND e.[ValueHash] = @named COLLATE Latin1_General_100_BIN2 AND e.[ValueText] = @item + N':')
+                   OR (e.[SetId] = 11 AND e.[Scope] = N'dev' AND e.[TypeName] = N'UnitOfMeasure' AND e.[ItemId] = @item AND e.[Path] = N'Name' AND e.[Kind] = N'value' AND e.[ValueHash] = @metre COLLATE Latin1_General_100_BIN2 AND e.[ValueText] = N'metre')
+                   OR (e.[SetId] = 11 AND e.[Scope] = N'dev' AND e.[TypeName] = N'CurveAlias' AND e.[ItemId] = @composite AND e.[Path] = N'Well and Mnemonic' AND e.[Kind] = N'unlisted' AND e.[ValueHash] = @looked COLLATE Latin1_General_100_BIN2 AND e.[ValueText] = N'["A-12","GR"]')
+                   OR (e.[SetId] = 12 AND e.[Scope] = N'dev' AND e.[TypeName] = N'UnitOfMeasure' AND e.[ItemId] = @item AND e.[Path] = N'id' AND e.[Kind] = N'match' AND e.[ValueHash] = @named COLLATE Latin1_General_100_BIN2 AND e.[ValueText] = @item + N':')
+                   OR (e.[SetId] = 12 AND e.[Scope] = N'dev' AND e.[TypeName] = N'UnitOfMeasure' AND e.[ItemId] = @item AND e.[Path] = N'Name' AND e.[Kind] = N'value' AND e.[ValueHash] = @meter COLLATE Latin1_General_100_BIN2 AND e.[ValueText] = N'meter')
+                   OR (e.[SetId] = 99 AND e.[Scope] = N'dev' AND e.[TypeName] = N'UnitOfMeasure' AND e.[ItemId] = UPPER(@item) AND e.[Path] = N'Name' AND e.[Kind] = N'value' AND e.[ValueHash] = @metre COLLATE Latin1_General_100_BIN2 AND e.[ValueText] = N'metre');
+                """,
+                ("item", Metre), ("composite", Composite), ("named", named), ("metre", metre), ("meter", meter), ("looked", looked)));
+        Assert.Equal(
+            1,
+            await database.ScalarAsync(
+                "SELECT COUNT(*) FROM [osdu].[CacheSetEntry] AS e WHERE e.[SetId] = 12 AND e.[Scope] = N'test' AND e.[ValueHash] = @zeros AND DATALENGTH(e.[ValueText]) = 12;",
+                ("zeros", zeros)));
+
+        // And forward again, over what going back wrote.
+        await database.MigrateAsync(null);
+        Assert.Equal(3, (await new OsduLedger(database.Context).ListCacheSetAsync(11)).Count);
+        Assert.Equal(2, (await new OsduLedger(database.Context).ListCacheSetAsync(written)).Count);
     }
 
     [Fact]

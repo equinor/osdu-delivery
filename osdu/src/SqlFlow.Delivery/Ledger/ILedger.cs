@@ -3365,7 +3365,8 @@ public interface ILedger
     /// <summary>
     /// Removes every set no record points at (as its current set or the set it is held on) that no render has used since
     /// <paramref name="unusedSinceUtc"/>, with the values it holds, a short transaction of a few thousand values at a time
-    /// (<see cref="CacheSetKeeping"/>). Safe to interrupt, to repeat and to run beside renders and other sweeps.
+    /// (<see cref="CacheSetKeeping"/>); then every value no set holds any more, each kept once for the sets that hold it.
+    /// Safe to interrupt, to repeat and to run beside renders and other sweeps.
     /// </summary>
     Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, CancellationToken ct = default);
 

@@ -2482,10 +2482,16 @@ public sealed class DeliveryCacheSet
     public DateTime LastSeenUtc { get; set; }
 }
 
-/// <summary>One cached value inside a set: what was read, and what it read at the time.</summary>
-public sealed class DeliveryCacheSetEntry
+/// <summary>
+/// A cached value as a render read it: what it was read from (the partition, the cached type, the cached record or the key
+/// looked up, the path, and how the render used it) and what it held. It is kept once however many sets hold it, so a set
+/// names it by its number (<see cref="DeliveryCacheSetEntry"/>), and a cache change finds the sets holding a cached record
+/// by seeking the record here. A value no set holds is read by nothing, and the render-context sweep removes it
+/// (<c>CacheSetKeeping</c>).
+/// </summary>
+public sealed class DeliveryCacheSetValue
 {
-    public long SetId { get; set; }
+    public long ValueId { get; set; }
 
     /// <summary>The partition whose cache the value was read from: the partition the delivery flow delivers to.</summary>
     public string Scope { get; set; } = string.Empty;
@@ -2493,7 +2499,7 @@ public sealed class DeliveryCacheSetEntry
     /// <summary>The cached type's short name (UnitOfMeasure).</summary>
     public string TypeName { get; set; } = string.Empty;
 
-    /// <summary>The cached record's OSDU id.</summary>
+    /// <summary>The cached record's OSDU id, or the key a lookup was asked for.</summary>
     public string ItemId { get; set; } = string.Empty;
 
     /// <summary>What the mapping read: <c>id</c>, <c>Name</c>, <c>NameAlias.AliasName</c>.</summary>
@@ -2506,10 +2512,22 @@ public sealed class DeliveryCacheSetEntry
     /// </summary>
     public string Kind { get; set; } = "value";
 
-    public string ValueHash { get; set; } = string.Empty;
+    /// <summary>The SHA-256 of the whole value consumed (<c>ContentHash</c>'s, as bytes): what tells two values of one place apart.</summary>
+    public byte[] ValueHash { get; set; } = [];
 
     /// <summary>The value as it was consumed, truncated for display.</summary>
     public string ValueText { get; set; } = string.Empty;
+}
+
+/// <summary>That a set holds a value (<see cref="DeliveryCacheSetValue"/>, by its number). A set holds a value once.</summary>
+public sealed class DeliveryCacheSetEntry
+{
+    public long EntryId { get; set; }
+
+    public long SetId { get; set; }
+
+    /// <summary>The value the set holds: what was read, and what it read at the time (<see cref="DeliveryCacheSetValue"/>).</summary>
+    public long ValueId { get; set; }
 }
 
 /// <summary>
@@ -5529,19 +5547,33 @@ public static class DeliveryModel
             e.HasIndex(c => c.Gated).HasFilter("[Gated] = 1");
         });
 
+        modelBuilder.Entity<DeliveryCacheSetValue>(e =>
+        {
+            e.ToTable("CacheSetValue", SchemaName);
+            // Kept in the order the values were first read (the identity), so the table's key is eight bytes that only grow.
+            e.HasKey(v => v.ValueId);
+            e.Property(v => v.Scope).HasMaxLength(200).IsRequired();
+            e.Property(v => v.TypeName).HasMaxLength(200).IsRequired();
+            OsduId(e.Property(v => v.ItemId)).HasMaxLength(512).IsRequired();
+            e.Property(v => v.Path).HasMaxLength(400).IsRequired();
+            e.Property(v => v.Kind).HasMaxLength(16).IsRequired();
+            e.Property(v => v.ValueHash).HasColumnType("binary(32)").IsRequired();
+            e.Property(v => v.ValueText).HasMaxLength(400).IsRequired();
+            // A value is kept once. The index's prefix is the impact query: the values read from a cached record of a
+            // partition's cache, and, by the prefix of their items, a type's values looked up together.
+            e.HasIndex(v => new { v.Scope, v.TypeName, v.ItemId, v.Path, v.Kind, v.ValueHash }).IsUnique();
+        });
+
         modelBuilder.Entity<DeliveryCacheSetEntry>(e =>
         {
             e.ToTable("CacheSetEntry", SchemaName);
-            e.Property(c => c.Scope).HasMaxLength(200).IsRequired();
-            e.Property(c => c.TypeName).HasMaxLength(200).IsRequired();
-            OsduId(e.Property(c => c.ItemId)).HasMaxLength(512).IsRequired();
-            e.Property(c => c.Path).HasMaxLength(400).IsRequired();
-            e.Property(c => c.Kind).HasMaxLength(16).IsRequired();
-            e.Property(c => c.ValueHash).HasMaxLength(64).IsRequired();
-            e.Property(c => c.ValueText).HasMaxLength(400).IsRequired();
-            e.HasKey(c => new { c.SetId, c.Scope, c.TypeName, c.ItemId, c.Path, c.Kind });
-            // The impact query: which sets hold this cached value of this partition's cache.
-            e.HasIndex(c => new { c.Scope, c.TypeName, c.ItemId });
+            // Kept in the order the sets were written (the identity), so the table's key is eight bytes that only grow,
+            // and each index below carries that alone to reach a row.
+            e.HasKey(c => c.EntryId);
+            // What a set holds, each value once: what a record's page reads and the sweep deletes a removed set by.
+            e.HasIndex(c => new { c.SetId, c.ValueId }).IsUnique();
+            // The sets holding a value: the second half of the impact query, and how the sweep tells a value no set holds.
+            e.HasIndex(c => c.ValueId);
         });
 
         modelBuilder.Entity<DeliveryPartition>(e =>

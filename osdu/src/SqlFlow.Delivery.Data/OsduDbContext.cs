@@ -16,7 +16,7 @@ public sealed class OsduDbContext : DbContext
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
     /// <summary>The module version the current migrations produce; written to <see cref="OsduSchemaVersion.ModuleVersion"/>.</summary>
-    public const string ModuleVersion = "1.72.0";
+    public const string ModuleVersion = "1.74.0";
 
     /// <summary>
     /// The oldest SQLFlow catalog migration this schema works with: the one that records the values the control plane
@@ -212,6 +212,8 @@ public sealed class OsduDbContext : DbContext
     public DbSet<SchemaLineageKind> SchemaLineageKinds => Set<SchemaLineageKind>();
 
     public DbSet<DeliveryCacheSet> DeliveryCacheSets => Set<DeliveryCacheSet>();
+
+    public DbSet<DeliveryCacheSetValue> DeliveryCacheSetValues => Set<DeliveryCacheSetValue>();
 
     public DbSet<DeliveryCacheSetEntry> DeliveryCacheSetEntries => Set<DeliveryCacheSetEntry>();
 

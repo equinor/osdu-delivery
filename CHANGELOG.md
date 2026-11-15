@@ -704,6 +704,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept by partition, key number and `id`, so its other indexes carry the row's `id` alone; `IX_key` (`partition`,
   `key_id`, `id`) is a unique nonclustered index a build's writes seek. A table laid out before is laid out again once, on
   its dimension's next build ([the dimension's table](osdu/docs/reference/flow/dimension-table.md)).
+- **The render context keeps each cached value once.** Every value of every set a delivered record was built from
+  repeated what it was read from, its hash and its text; a value is now one row
+  ([`osdu.CacheSetValue`](osdu/docs/reference/tables/cache-set-value.md)) however many sets hold it, and a set's entry is
+  the set's number beside the value's. On a reproduction of four million rows in 12,500 sets the tables went from
+  2,290 MB to 482 MB. The migration carries the context over row for row in its own transaction and checks the count, so
+  the first start after the update takes longer the more a ledger holds (31 seconds for those four million rows on a
+  workstation); the hourly sweep now also removes the values no set holds
+  ([The render context](osdu/docs/reference/concepts/storage-and-retention.md#the-render-context),
+  [decision 0059](osdu/docs/wiki/decisions/0059-cached-values-kept-once.md)).
 - **A dimension reading `elements` is keyed by `id`.** A key's objects are its own record's, numbered in the order the
   record holds them; a dimension declaring `elements` on another `path` is refused where its document is read, naming
   the rule ([elements](osdu/docs/reference/flow/dimension-elements.md)).

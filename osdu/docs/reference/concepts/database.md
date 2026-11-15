@@ -52,7 +52,9 @@ fails it, and so does one a page names that the model does not.
   [`osdu.LedgerPartition`](../tables/ledger-partition.md) gives each partition, so one partition's rows are one range of
   every clustered index, and every index that serves a listing leads with it.
 - **Cache tables** name their partition by its data-partition-id in `Scope`, and are clustered on it where a refresh
-  reads them, so refreshes of different partitions never wait on each other.
+  reads them, so refreshes of different partitions never wait on each other. The render context's tables
+  (`CacheSetValue`, `CacheSetEntry`) are clustered on an identity instead: nothing reads them a partition at a time, and
+  every statement that writes them seeks the rows it names.
 - **Dimension tables** (a dimension's members, keys, attribute names and values, elements, records, collected texts,
   builds and changes) are keyed on `PartitionId`, `DimensionId` and the row's number, so one dimension's rows are one
   range of each table and no index reads a partition's rows of every dimension. Every statement of a build's write, and
@@ -178,7 +180,8 @@ starts and dropped when it ends ([A dimension build's staging](../flow/dimension
 | [`osdu.CacheItem`](../tables/cache-item.md) | A cached record over a run of versions that held it unchanged |
 | [`osdu.CacheMember`](../tables/cache-member.md) | A cache flow whose last capture of a type held a record |
 | [`osdu.CacheSet`](../tables/cache-set.md) | A distinct set of cached values records were built from |
-| [`osdu.CacheSetEntry`](../tables/cache-set-entry.md) | A cached value inside a set |
+| [`osdu.CacheSetEntry`](../tables/cache-set-entry.md) | That a set holds a cached value |
+| [`osdu.CacheSetValue`](../tables/cache-set-value.md) | A cached value a render read, kept once for every set that holds it |
 | [`osdu.UpdateTag`](../tables/update-tag.md) | A cache change reaching delivered records, its decision and rollout |
 
 ### Repositories, templates and lineage

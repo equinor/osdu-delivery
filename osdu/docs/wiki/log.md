@@ -814,3 +814,15 @@ writes such a table with (`DimensionTables.ApplySql`), which seek the partition 
 
 Amended decision 0030 (a dimension's own table is clustered on `id`; `IX_key` a unique nonclustered index the writes
 seek); updated `delivery-flow-dimension-table`.
+
+## [2026-11-15] ingest | Cached values kept once, decision 0059
+
+Source: the owner's question whether the cache could take the simplification the dimension tables took (an identity as
+the clustered key, what a row is about held once), his direction that the cache may be rebuilt but must be changed
+fail-safe since mappings read it, a measurement of a development catalog's render context (4,603 rows holding 373
+distinct values), and the migration that clustered the cache's tables by partition (`ClusterCacheByPartition`).
+
+Added decision 0059 and `delivery-table-cache-set-value`; updated decision 0053, `delivery-table-cache-set-entry`,
+`delivery-table-cache-set`, `delivery-concept-storage-and-retention`, `delivery-concept-database`,
+`delivery-concept-ledger` and `delivery-flow-mapping-lookups-composite`. The cache's own tables were left clustered by
+partition, and the decision says why.

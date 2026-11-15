@@ -115,8 +115,9 @@ directory holds is refused, naming both. See [Partitions](partitions.md).
 Each table has a page of its own with every column, key and index ([The osdu schema](database.md) lists them all). The
 other tables of the schema are explained with what they serve:
 
-- `osdu.CacheVersion`, `osdu.CacheItem`, `osdu.CacheMember`, `osdu.CacheSet`, `osdu.CacheSetEntry`, `osdu.UpdateTag`,
-  `osdu.CacheDefinition`: the partition cache and its changes, in [The partition cache](partition-cache.md).
+- `osdu.CacheVersion`, `osdu.CacheItem`, `osdu.CacheMember`, `osdu.CacheSet`, `osdu.CacheSetEntry`,
+  `osdu.CacheSetValue`, `osdu.UpdateTag`, `osdu.CacheDefinition`: the partition cache and its changes, in
+  [The partition cache](partition-cache.md).
 - `osdu.RepositoryTemplate`: the files of the repositories' template folders, in [Templates](templates.md). `osdu.Mapping`: the synced mappings, in
   [The mapping document](../flow/mapping.md). `osdu.Interface`: the read model of sources and interfaces, in
   [The interface read model](../flow/interfaces.md#the-interface-read-model).

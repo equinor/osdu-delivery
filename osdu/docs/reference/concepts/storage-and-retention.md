@@ -92,7 +92,7 @@ an incident does.
 | Ledger directory | `Ledger`, `LedgerPartition`, `LedgerFlow`, `Interface` | Never removed; a flow that leaves its repository is marked inactive |
 | Activities and reversals | `Activity`, `ActivityRecord`, `Reversal`, `ReversalItem` | Activities never; reversals with the flow's ledger |
 | Partition cache | `CacheVersion`, `CacheItem`, `CacheMember`, `CacheDefinition` | Every refresh prunes the records of the versions older than the newest the partition keeps (3 by default, an admin's number) or replaced longer ago than the cache flow's `retentionDays` (7 by default), keeping the current version, the one it replaced and every pinned version ([Retention](partition-cache.md#retention)) |
-| Render context of delivered records | `CacheSet`, `CacheSetEntry`, `UpdateTag` | A set no record points at is removed once no render has used it for a day ([The render context](#the-render-context)); the change log is never removed |
+| Render context of delivered records | `CacheSet`, `CacheSetEntry`, `CacheSetValue`, `UpdateTag` | A set no record points at is removed once no render has used it for a day, and then every value no set holds ([The render context](#the-render-context)); the change log is never removed |
 | Dimensions | `Dimension`, `DimensionMember`, `DimensionValue`, `DimensionAttribute`, `DimensionAttributeName`, `DimensionElement`, `DimensionCollectedText`, `DimensionKeyRecord`, `DimensionRecord`, `DimensionView`, and every `dim_*` table | Rewritten by each build, which first deletes what the build before removed ([What a build keeps](../flow/dimension.md#what-a-build-keeps)); a dimension its flow no longer declares is removed with its table on the Dimensions page |
 | Dimension builds and changes | `DimensionRun`, `DimensionChange` | Removed with the dimension |
 | Inventories | `Inventory`, `InventoryRecord`, `InventoryVersion` | Rewritten by each build; gone ids stay until an operator removes them from the inventory |
@@ -140,14 +140,23 @@ set, and the one it left is read by nothing: a record's page, a cache change's i
 record all start from the set a record points at now, and no attempt or other history names a set. Left alone, those
 sets come to outweigh everything else the ledger holds, since a set holds every value a render read.
 
+The sets of an estate hold mostly the same values: every record that reads a unit reads the same name of it. So a value
+(what was read, and what it held) is kept once ([`osdu.CacheSetValue`](../tables/cache-set-value.md)) and a set's entry
+is the set's number beside the value's, two numbers a value held
+([decision 0059](../../wiki/decisions/0059-cached-values-kept-once.md)). A set being written keeps the values that are
+new first, then itself and its entries in one transaction.
+
 So every hour the control plane removes each set no record points at (as its set, or as the one it is held on) that no
-render has used for a day, with its values (`CacheSetSweepService`). A round looks at the next 200 sets in key order and
-removes at most 2,000 values, set row and values in one short transaction, judging each set again under the delete's
+render has used for a day, with its entries (`CacheSetSweepService`). A round looks at the next 200 sets in key order and
+removes at most 2,000 entries, set row and entries in one short transaction, judging each set again under the delete's
 own locks, so a pass of any size never holds the tables a render writes to. A ledger marks a set used whenever it hands
 it to a render and checks a set it remembers against the database at least every hour, so no set a render was given is
 removed before its record points at it, and a set removed while a ledger remembered it is minted again the next time
-a render needs it. The change log ([`osdu.UpdateTag`](../tables/update-tag.md)) stays: what changed, when, how many
-records it reached and what was decided ([decision 0053](../../wiki/decisions/0053-render-context-keeps-what-records-point-at.md)).
+a render needs it. The same pass then looks at the values, 2,000 a round, and removes each one no set holds: those only
+the removed sets held, and those of a set that was never written whole. It deletes them while no set is being written
+(an application lock a set's write shares and the delete takes alone), so an entry never names a value that is gone. The
+change log ([`osdu.UpdateTag`](../tables/update-tag.md)) stays: what changed, when, how many records it reached and what
+was decided ([decision 0053](../../wiki/decisions/0053-render-context-keeps-what-records-point-at.md)).
 
 ## Outside the database
 

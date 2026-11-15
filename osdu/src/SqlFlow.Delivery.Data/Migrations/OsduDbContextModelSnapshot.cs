@@ -801,45 +801,77 @@ namespace SqlFlow.Delivery.Data.Migrations
 
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryCacheSetEntry", b =>
                 {
+                    b.Property<long>("EntryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("EntryId"));
+
                     b.Property<long>("SetId")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("Scope")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                    b.Property<long>("ValueId")
+                        .HasColumnType("bigint");
 
-                    b.Property<string>("TypeName")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                    b.HasKey("EntryId");
+
+                    b.HasIndex("ValueId");
+
+                    b.HasIndex("SetId", "ValueId")
+                        .IsUnique();
+
+                    b.ToTable("CacheSetEntry", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryCacheSetValue", b =>
+                {
+                    b.Property<long>("ValueId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ValueId"));
 
                     b.Property<string>("ItemId")
+                        .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.Property<string>("Path")
-                        .HasMaxLength(400)
-                        .HasColumnType("nvarchar(400)");
-
                     b.Property<string>("Kind")
+                        .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
-                    b.Property<string>("ValueHash")
+                    b.Property<string>("Path")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("TypeName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("ValueHash")
+                        .IsRequired()
+                        .HasColumnType("binary(32)");
 
                     b.Property<string>("ValueText")
                         .IsRequired()
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
 
-                    b.HasKey("SetId", "Scope", "TypeName", "ItemId", "Path", "Kind");
+                    b.HasKey("ValueId");
 
-                    b.HasIndex("Scope", "TypeName", "ItemId");
+                    b.HasIndex("Scope", "TypeName", "ItemId", "Path", "Kind", "ValueHash")
+                        .IsUnique();
 
-                    b.ToTable("CacheSetEntry", "osdu");
+                    b.ToTable("CacheSetValue", "osdu");
                 });
 
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryCacheVersion", b =>

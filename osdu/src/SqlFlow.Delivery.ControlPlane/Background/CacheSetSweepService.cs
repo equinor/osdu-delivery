@@ -9,9 +9,10 @@ namespace SqlFlow.Delivery.ControlPlane.Background;
 /// <summary>
 /// Removes the render context nothing reads any more (osdu/docs/reference/concepts/storage-and-retention.md, The render
 /// context): every hour, the sets of cached values no record points at and no render has used for
-/// <see cref="CacheSetKeeping.UnusedFor"/>, with their values. A record's set is replaced whenever a render reads other
-/// values, so without this pass the sets of every earlier render stay, and they come to outweigh everything else the ledger
-/// holds. A pass that fails (the module database not migrated yet, a lost connection) is tried again a minute on.
+/// <see cref="CacheSetKeeping.UnusedFor"/>, and the values no set holds any more. A record's set is
+/// replaced whenever a render reads other values, so without this pass the sets of every earlier render stay, and they come
+/// to outweigh everything else the ledger holds. A pass that fails (the module database not migrated yet, a lost
+/// connection) is tried again a minute on.
 /// </summary>
 public sealed partial class CacheSetSweepService : BackgroundService
 {
@@ -55,9 +56,9 @@ public sealed partial class CacheSetSweepService : BackgroundService
             try
             {
                 var swept = await SweepAsync(stoppingToken).ConfigureAwait(false);
-                if (swept.Sets > 0)
+                if (swept.Sets > 0 || swept.Values > 0)
                 {
-                    LogSwept(swept.Sets, swept.Entries);
+                    LogSwept(swept.Sets, swept.Entries, swept.Values);
                 }
 
                 wait = SweepInterval;
@@ -79,7 +80,10 @@ public sealed partial class CacheSetSweepService : BackgroundService
         }
     }
 
-    /// <summary>One pass: every set no record points at and no render has used for a day, removed with its values.</summary>
+    /// <summary>
+    /// One pass: every set no record points at and no render has used for a day, removed with what it holds, and every
+    /// value no set holds.
+    /// </summary>
     public async Task<CacheSetSweep> SweepAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
@@ -87,8 +91,8 @@ public sealed partial class CacheSetSweepService : BackgroundService
         return await ledger.SweepCacheSetsAsync(_clock.GetUtcNow().UtcDateTime - CacheSetKeeping.UnusedFor, ct).ConfigureAwait(false);
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Render context: {Sets} set(s) no record points at removed, with {Entries} cached value(s).")]
-    private partial void LogSwept(long sets, long entries);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Render context: {Sets} set(s) no record points at removed, which held {Entries} cached value(s) between them; {Values} value(s) no set holds any more removed.")]
+    private partial void LogSwept(long sets, long entries, long values);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Sweeping the render context failed, and is tried again in {Seconds}s: {Error}")]
     private partial void LogPassError(string error, int seconds);

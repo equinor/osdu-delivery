@@ -6377,7 +6377,7 @@
         "delivery-concept-partition-cache",
         "delivery-concept-change-detection",
         "delivery-concept-preflight",
-        "delivery-table-cache-set-entry"
+        "delivery-table-cache-set-value"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
@@ -8750,7 +8750,7 @@
       "path": "tables/cache-set.md",
       "title": "osdu.CacheSet: each distinct combination of cached values that delivered records were built from",
       "type": "table",
-      "summary": "One row per distinct set of (type, cached record, path, value) a render consumed: what a record's CacheSetId names, and whether a change gates it.",
+      "summary": "One row per distinct set of cached values a render consumed: what a record's CacheSetId names, and whether a change gates it.",
       "keywords": [
         "osdu.CacheSet",
         "cache set table",
@@ -8764,6 +8764,7 @@
         "delivery-concept-database",
         "delivery-concept-partition-cache",
         "delivery-table-cache-set-entry",
+        "delivery-table-cache-set-value",
         "delivery-table-update-tag",
         "delivery-table-record"
       ],
@@ -8778,30 +8779,66 @@
       "id": "delivery-table-cache-set-entry",
       "corpus": "reference",
       "path": "tables/cache-set-entry.md",
-      "title": "osdu.CacheSetEntry: each cached value inside a cache set, what a render read and what it read at the time",
+      "title": "osdu.CacheSetEntry: that a cache set holds a cached value, the set's number beside the value's",
       "type": "table",
-      "summary": "One row per cached value in a cache set: the partition, type, cached record and path read, how it was used, and the value as it was consumed.",
+      "summary": "One row per cached value a cache set holds: the set and the value (osdu.CacheSetValue), each by its number, so a value many sets hold is kept once.",
       "keywords": [
         "osdu.CacheSetEntry",
         "cache set entry table",
         "cache dependency",
         "impact query",
         "cached value",
-        "match",
-        "lookup"
+        "render context",
+        "EntryId"
       ],
       "related": [
         "delivery-concept-database",
         "delivery-concept-partition-cache",
         "delivery-table-cache-set",
+        "delivery-table-cache-set-value",
         "delivery-table-update-tag"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261115192942_CacheSetValues.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-set-value",
+      "corpus": "reference",
+      "path": "tables/cache-set-value.md",
+      "title": "osdu.CacheSetValue: each cached value a render read, what it was read from and what it held, kept once",
+      "type": "table",
+      "summary": "One row per distinct cached value a render read: where it was read from, how it was used and what it held, kept once for every set that holds it.",
+      "keywords": [
+        "osdu.CacheSetValue",
+        "cache set value table",
+        "cache dependency",
+        "impact query",
+        "cached value",
+        "match",
+        "lookup",
+        "render context"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-concept-storage-and-retention",
+        "delivery-table-cache-set",
+        "delivery-table-cache-set-entry",
+        "delivery-table-update-tag"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs"
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261115192942_CacheSetValues.cs"
       ]
     },
     {
@@ -12158,7 +12195,8 @@
       ],
       "related": [
         "delivery-wiki-0029-storage-maintenance",
-        "delivery-wiki-0056-cache-keeps-its-newest-versions"
+        "delivery-wiki-0056-cache-keeps-its-newest-versions",
+        "delivery-wiki-0059-cached-values-kept-once"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs",
@@ -12327,6 +12365,40 @@
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionElementReader.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Spread.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0059-cached-values-kept-once",
+      "corpus": "wiki",
+      "path": "decisions/0059-cached-values-kept-once.md",
+      "title": "Decision 0059: a cached value a render read is kept once, and a set names it by its number",
+      "type": "decision",
+      "summary": "Why the render context keeps each cached value once and a set names it by number, and why the cache's own tables stay clustered by partition.",
+      "keywords": [
+        "render context",
+        "cache set",
+        "CacheSetValue",
+        "CacheSetEntry",
+        "identity clustered key",
+        "storage",
+        "application lock",
+        "migration"
+      ],
+      "related": [
+        "delivery-wiki-0053-render-context-keeps-what-records-point-at",
+        "delivery-wiki-0030-dimension-rows-one-range",
+        "delivery-wiki-0058-dimension-keys-by-their-text"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261115192942_CacheSetValues.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20260916125004_ClusterCacheByPartition.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/CacheSetKeeping.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/CacheSetSweepTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/CacheSetValuesScaleTests.cs"
       ]
     },
     {

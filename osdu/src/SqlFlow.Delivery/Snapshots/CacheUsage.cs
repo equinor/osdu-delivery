@@ -99,10 +99,10 @@ public sealed record CacheUsage(string TypeName, string ItemId, string Path, str
         return string.Join(ListedSeparator, ids.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
     }
 
-    /// <summary>The longest item id the ledger keeps whole (<c>osdu.CacheSetEntry.ItemId</c>).</summary>
+    /// <summary>The longest item id the ledger keeps whole (<c>osdu.CacheSetValue.ItemId</c>).</summary>
     public const int MaxItemIdLength = 512;
 
-    /// <summary>The longest path the ledger keeps whole (<c>osdu.CacheSetEntry.Path</c>).</summary>
+    /// <summary>The longest path the ledger keeps whole (<c>osdu.CacheSetValue.Path</c>).</summary>
     public const int MaxPathLength = 400;
 
     /// <summary>

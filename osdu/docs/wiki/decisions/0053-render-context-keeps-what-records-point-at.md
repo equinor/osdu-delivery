@@ -24,7 +24,8 @@ referenceRefs:
 related:
   - delivery-wiki-0029-storage-maintenance
   - delivery-wiki-0056-cache-keeps-its-newest-versions
-updated: 2026-11-13
+  - delivery-wiki-0059-cached-values-kept-once
+updated: 2026-11-15
 ---
 # 0053: The render context keeps only the sets of cached values a record points at
 
@@ -72,6 +73,8 @@ on, and no attempt or other history names a set.
 ## Consequences
 
 - The space the sweep frees goes back to the database for its tables to reuse; the data file keeps its size, and the
-  entries' second index stays sparse until it is rebuilt.
+  entries' second index stays sparse until it is rebuilt. Since [0059](0059-cached-values-kept-once.md) a value is kept
+  once and an entry is two numbers, so the sets that stay take a fraction of what they did, and the sweep removes the
+  values no set holds after the sets.
 - A burst still adds a set for every record it renders again, for the day until the sweep takes the sets the records
   left. The sets records point at keep each value once per set, which a later change can store once per estate.

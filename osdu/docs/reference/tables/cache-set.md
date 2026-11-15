@@ -2,7 +2,7 @@
 id: delivery-table-cache-set
 title: "osdu.CacheSet: each distinct combination of cached values that delivered records were built from"
 type: table
-summary: "One row per distinct set of (type, cached record, path, value) a render consumed: what a record's CacheSetId names, and whether a change gates it."
+summary: "One row per distinct set of cached values a render consumed: what a record's CacheSetId names, and whether a change gates it."
 keywords:
   - osdu.CacheSet
   - cache set table
@@ -15,6 +15,7 @@ related:
   - delivery-concept-database
   - delivery-concept-partition-cache
   - delivery-table-cache-set-entry
+  - delivery-table-cache-set-value
   - delivery-table-update-tag
   - delivery-table-record
 sourceRefs:
@@ -27,15 +28,16 @@ sourceRefs:
 # osdu.CacheSet: each distinct combination of cached values that delivered records were built from
 
 One distinct combination of cached values that records were built from: the set of (type, cached record, path, value) a
-render consumed, whose entries are [`osdu.CacheSetEntry`](cache-set-entry.md) rows. Records that read the same values
+render consumed. Each value is kept once ([`osdu.CacheSetValue`](cache-set-value.md)), and the set's entries
+([`osdu.CacheSetEntry`](cache-set-entry.md)) name the values it holds. Records that read the same values
 share a set; a record whose render reads other values (a changed unit name, another curve) points at another set, and
 the one it left is no longer read by anything. A record points at its set ([`osdu.Record`](record.md) `CacheSetId`, and
 `HeldCacheSetId` for what a held render missed); a cache change finds the sets that hold the changed value, and through
 them the records ([From a cache change to OSDU](../concepts/partition-cache.md#from-a-cache-change-to-osdu)).
 
 A set no record points at, as its set or as the one it is held on, is removed with its entries once no render has used it
-for a day ([The render context](../concepts/storage-and-retention.md#the-render-context)); a set a record points at is
-never removed.
+for a day, and the values no other set holds after it ([The render context](../concepts/storage-and-retention.md#the-render-context)); a set
+a record points at is never removed.
 
 ## Columns
 
@@ -58,8 +60,9 @@ never removed.
 
 ## Written and read by
 
-- **Written** by the ledger when it stages a rendered record (`OsduLedger.cs`), in one transaction with its
-  [`osdu.CacheSetEntry`](cache-set-entry.md) rows, so no run reads a set without its values. Two runs that mint the same
+- **Written** by the ledger when it stages a rendered record (`OsduLedger.cs`, `SqlServerLedgerBulk.CacheSets.cs`), in
+  one transaction with its [`osdu.CacheSetEntry`](cache-set-entry.md) rows, so no run reads a set without its values;
+  the values it holds that are not kept yet are written before it. Two runs that mint the same
   set at once (the parts of a split delivery plan at the same moment) both get the one the unique hash kept. It is gated
   and ungated as cache changes are tagged and decided.
 - **Read** by the planner, a record's `/cache` route, and a cache change's impact.

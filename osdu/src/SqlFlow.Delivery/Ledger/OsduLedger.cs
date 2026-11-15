@@ -1,5 +1,8 @@
 using System.Data.SqlTypes;
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.Delivery.Data;
@@ -2972,7 +2975,7 @@ public sealed partial class OsduLedger : ILedger
                 _cacheSets[hash] = new KnownCacheSet(setId, now);
                 return setId;
             }
-            catch (DbUpdateException ex) when (attempt < 3 && IsDuplicate(ex))
+            catch (SqlException ex) when (attempt < 3 && IsDuplicate(ex))
             {
                 // Another run minted the same set meanwhile (the parts of a split delivery plan at the same moment and
                 // render the same cached values): the set's unique hash refused this one, and the next attempt reads
@@ -2982,63 +2985,82 @@ public sealed partial class OsduLedger : ILedger
     }
 
     /// <summary>
-    /// Inserts a set and the values it stands for in one transaction, so no run reads a set without its values: a run
-    /// stopped between the two writes leaves neither, and a set another run is minting is seen only once it is whole.
+    /// Writes a set and what it holds in one transaction, so no run reads a set without its values: a run stopped between
+    /// the two writes leaves neither, and a set another run is minting is seen only once it is whole. A value is kept once
+    /// however many sets hold it (<c>osdu.CacheSetValue</c>), written first when it is new, and the set names it by its
+    /// number (<see cref="SqlServerLedgerBulk.MintCacheSetAsync"/>).
     /// </summary>
     private static async Task<long> MintCacheSetAsync(
         OsduDbContext db, string scope, string hash, IReadOnlyList<Snapshots.CacheUsage> entries, DateTime now, CancellationToken ct)
     {
-        var strategy = db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        // The database cuts a text longer than its column without a word, so each is checked or cut here, as its column is.
+        if (scope.Length > CacheSetScopeLength)
         {
-            // A retry of the strategy starts again from nothing, not from the rows a failed attempt added.
-            db.ChangeTracker.Clear();
-            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-            var set = new DeliveryCacheSet
-            {
-                SetHash = hash,
-                EntryCount = entries.Count,
-                FirstSeenUtc = now,
-                LastSeenUtc = now,
-            };
-            db.DeliveryCacheSets.Add(set);
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            throw new DeliveryException(
+                $"A set of cached values names partition '{scope}', longer than the {CacheSetScopeLength} characters a set's value keeps; a data-partition-id is at most {Snapshots.CacheScope.MaxLength}.");
+        }
 
-            foreach (var usage in entries)
+        var json = new StringBuilder((entries.Count * 160) + 2).Append('[');
+        for (var ordinal = 0; ordinal < entries.Count; ordinal++)
+        {
+            var usage = entries[ordinal];
+            if (usage.TypeName.Length > CacheSetTypeLength)
             {
-                db.DeliveryCacheSetEntries.Add(new DeliveryCacheSetEntry
-                {
-                    SetId = set.SetId,
-                    Scope = scope,
-                    TypeName = usage.TypeName,
-                    ItemId = Truncate(usage.ItemId, Snapshots.CacheUsage.MaxItemIdLength)!,
-                    Path = Truncate(usage.Path, Snapshots.CacheUsage.MaxPathLength)!,
-                    Kind = KindText(usage.Kind),
-                    ValueHash = usage.ValueHash,
-                    ValueText = usage.Display,
-                });
+                throw new DeliveryException(
+                    $"A set of cached values of partition '{scope}' names the cached type '{usage.TypeName}', longer than the {CacheSetTypeLength} characters a set's value keeps.");
             }
 
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            await tx.CommitAsync(ct).ConfigureAwait(false);
-            return set.SetId;
-        }).ConfigureAwait(false);
+            if (ordinal > 0)
+            {
+                json.Append(',');
+            }
+
+            json.Append(JsonSerializer.Serialize(
+                new object[]
+                {
+                    ordinal,
+                    usage.TypeName,
+                    Truncate(usage.ItemId, Snapshots.CacheUsage.MaxItemIdLength)!,
+                    Truncate(usage.Path, Snapshots.CacheUsage.MaxPathLength)!,
+                    KindText(usage.Kind),
+                    usage.ValueHash,
+                    usage.Display,
+                },
+                CacheSetJson));
+        }
+
+        var entriesJson = json.Append(']').ToString();
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(
+            () => SqlServerLedgerBulk.MintCacheSetAsync(db, scope, hash, entriesJson, entries.Count, now, ct)).ConfigureAwait(false);
     }
 
+    /// <summary>The longest partition name a set's value keeps (<c>osdu.CacheSetValue.Scope</c>).</summary>
+    private const int CacheSetScopeLength = 200;
+
+    /// <summary>The longest cached type name a set's value keeps (<c>osdu.CacheSetValue.TypeName</c>).</summary>
+    private const int CacheSetTypeLength = 200;
+
+    /// <summary>How a set's values are written for the database to read: every character as it is, none escaped away.</summary>
+    private static readonly JsonSerializerOptions CacheSetJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     public Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, CancellationToken ct = default)
-        => SweepCacheSetsAsync(unusedSinceUtc, CacheSetKeeping.SetsPerRound, CacheSetKeeping.EntriesPerRound, ct);
+        => SweepCacheSetsAsync(unusedSinceUtc, CacheSetKeeping.SetsPerRound, CacheSetKeeping.EntriesPerRound, CacheSetKeeping.ValuesPerRound, ct);
 
     /// <summary>
     /// <see cref="SweepCacheSetsAsync(DateTime, CancellationToken)"/> in rounds of at most <paramref name="setsPerRound"/>
-    /// sets and <paramref name="entriesPerRound"/> values, each its own short transaction, walking the sets in key order
-    /// until none is left past the last one looked at.
+    /// sets and <paramref name="entriesPerRound"/> entries, each its own short transaction, walking the sets in key order
+    /// until none is left past the last one looked at; then the values the same way, <paramref name="valuesPerRound"/> at a
+    /// time, removing those no set holds: the values only the sets just removed held, and those of a set that was never
+    /// written whole.
     /// </summary>
-    internal async Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, int setsPerRound, int entriesPerRound, CancellationToken ct)
+    internal async Task<CacheSetSweep> SweepCacheSetsAsync(DateTime unusedSinceUtc, int setsPerRound, int entriesPerRound, int valuesPerRound, CancellationToken ct)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(setsPerRound, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(entriesPerRound, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(valuesPerRound, 1);
         long sets = 0;
-        long values = 0;
+        long entries = 0;
         var after = long.MinValue;
         while (true)
         {
@@ -3047,10 +3069,26 @@ public sealed partial class OsduLedger : ILedger
             var round = await SqlServerLedgerBulk.SweepCacheSetsAsync(db, unusedSinceUtc, after, setsPerRound, entriesPerRound, ct)
                 .ConfigureAwait(false);
             sets += round.Sets;
-            values += round.Entries;
+            entries += round.Entries;
             if (round.Last is not { } last)
             {
-                return new CacheSetSweep(sets, values);
+                break;
+            }
+
+            after = last;
+        }
+
+        long values = 0;
+        after = long.MinValue;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            await using var db = Open();
+            var round = await SqlServerLedgerBulk.SweepCacheSetValuesAsync(db, after, valuesPerRound, ct).ConfigureAwait(false);
+            values += round.Values;
+            if (round.Last is not { } last)
+            {
+                return new CacheSetSweep(sets, entries, values);
             }
 
             after = last;
@@ -3063,13 +3101,59 @@ public sealed partial class OsduLedger : ILedger
     public async Task<IReadOnlyList<CacheUse>> ListCacheSetAsync(long setId, CancellationToken ct = default)
     {
         var rows = await ReadAsync(
-            db => db.DeliveryCacheSetEntries
-                .Where(e => e.SetId == setId)
-                .OrderBy(e => e.Scope).ThenBy(e => e.TypeName).ThenBy(e => e.Path)
+            db => CacheSetHeld(db)
+                .Where(v => v.SetId == setId)
+                .OrderBy(v => v.Scope).ThenBy(v => v.TypeName).ThenBy(v => v.Path).ThenBy(v => v.ItemId).ThenBy(v => v.Kind)
                 .ToListAsync(ct),
             ct).ConfigureAwait(false);
-        return rows.Select(e => new CacheUse(e.Scope, e.TypeName, e.ItemId, e.Path, ToKind(e.Kind), e.ValueHash, e.ValueText)).ToList();
+        return rows.Select(v => new CacheUse(v.Scope, v.TypeName, v.ItemId, v.Path, ToKind(v.Kind), HashText(v.ValueHash), v.ValueText)).ToList();
     }
+
+    /// <summary>A value a set holds: a row of <c>osdu.CacheSetEntry</c> with the value it names.</summary>
+    private sealed class CacheSetHeldValue
+    {
+        public long SetId { get; init; }
+
+        public string Scope { get; init; } = string.Empty;
+
+        public string TypeName { get; init; } = string.Empty;
+
+        public string ItemId { get; init; } = string.Empty;
+
+        public string Path { get; init; } = string.Empty;
+
+        public string Kind { get; init; } = string.Empty;
+
+        public byte[] ValueHash { get; init; } = [];
+
+        public string ValueText { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// What the sets hold: each entry with the value it names (<c>osdu.CacheSetValue</c>). A read that names a cached
+    /// record seeks the values by partition, type and item, and reaches the sets through the values' numbers; one that
+    /// names a set seeks the set's entries, and each one's value by its number.
+    /// </summary>
+    private static IQueryable<CacheSetHeldValue> CacheSetHeld(OsduDbContext db)
+        => from entry in db.DeliveryCacheSetEntries.AsNoTracking()
+           join value in db.DeliveryCacheSetValues.AsNoTracking() on entry.ValueId equals value.ValueId
+           select new CacheSetHeldValue
+           {
+               SetId = entry.SetId,
+               Scope = value.Scope,
+               TypeName = value.TypeName,
+               ItemId = value.ItemId,
+               Path = value.Path,
+               Kind = value.Kind,
+               ValueHash = value.ValueHash,
+               ValueText = value.ValueText,
+           };
+
+    /// <summary>A value's hash as the ledger hands it out: <c>ContentHash</c>'s lower-case hex of the bytes the database keeps.</summary>
+    private static string HashText(byte[] hash) => Convert.ToHexStringLower(hash);
+
+    private static CacheSetUse ToUse(CacheSetHeldValue v)
+        => new(v.SetId, v.Scope, v.TypeName, v.ItemId, v.Path, ToKind(v.Kind), HashText(v.ValueHash), v.ValueText);
 
     public async Task<IReadOnlyList<CacheSetUse>> FindCacheSetsAsync(string scope, string typeName, IReadOnlyList<string> itemIds, CancellationToken ct = default)
     {
@@ -3086,11 +3170,11 @@ public sealed partial class OsduLedger : ILedger
         {
             var ids = chunk.ToList();
             var rows = await ReadAsync(
-                db => db.DeliveryCacheSetEntries
-                    .Where(e => e.Scope == scope && e.TypeName == typeName && ids.Contains(e.ItemId))
+                db => CacheSetHeld(db)
+                    .Where(v => v.Scope == scope && v.TypeName == typeName && ids.Contains(v.ItemId))
                     .ToListAsync(ct),
                 ct).ConfigureAwait(false);
-            found.AddRange(rows.Select(e => new CacheSetUse(e.SetId, e.Scope, e.TypeName, e.ItemId, e.Path, ToKind(e.Kind), e.ValueHash, e.ValueText)));
+            found.AddRange(rows.Select(ToUse));
         }
 
         return found;
@@ -3102,13 +3186,13 @@ public sealed partial class OsduLedger : ILedger
         ArgumentException.ThrowIfNullOrWhiteSpace(typeName);
         var unlisted = KindText(Snapshots.CacheUsageKind.Unlisted);
         // A constant prefix is a range of the binary-collated item id, so the type's composite misses are read by a seek of
-        // IX_CacheSetEntry_Scope_TypeName_ItemId, never by a pass over every value its sets hold.
+        // the values (IX_CacheSetValue_Scope_TypeName_ItemId_Path_Kind_ValueHash), never by a pass over everything its sets hold.
         var rows = await ReadAsync(
-            db => db.DeliveryCacheSetEntries
-                .Where(e => e.Scope == scope && e.TypeName == typeName && e.ItemId.StartsWith(Snapshots.CacheUsage.CompositeMarker) && e.Kind == unlisted)
+            db => CacheSetHeld(db)
+                .Where(v => v.Scope == scope && v.TypeName == typeName && v.ItemId.StartsWith(Snapshots.CacheUsage.CompositeMarker) && v.Kind == unlisted)
                 .ToListAsync(ct),
             ct).ConfigureAwait(false);
-        return rows.Select(e => new CacheSetUse(e.SetId, e.Scope, e.TypeName, e.ItemId, e.Path, ToKind(e.Kind), e.ValueHash, e.ValueText)).ToList();
+        return rows.Select(ToUse).ToList();
     }
 
     public async Task<long> CountRecordsInSetsAsync(IReadOnlyList<long> setIds, CancellationToken ct = default)
@@ -3150,7 +3234,7 @@ public sealed partial class OsduLedger : ILedger
         return await ReadAsync(
             async db =>
             {
-                var entries = db.DeliveryCacheSetEntries.Where(e => e.Scope == scope
+                var entries = CacheSetHeld(db).Where(e => e.Scope == scope
                     && (e.Kind == unlisted || e.Kind == unverified || (e.Kind == listed && e.ValueText == string.Empty) || (empty && e.Kind == emptied)));
                 if (typeName is not null)
                 {
@@ -3185,7 +3269,7 @@ public sealed partial class OsduLedger : ILedger
                         continue;
                     }
 
-                    var found = await db.DeliveryCacheSetEntries
+                    var found = await CacheSetHeld(db)
                         .Where(e => e.Scope == scope && e.Kind == listed && e.ValueText != string.Empty && withListings.Contains(e.SetId))
                         .Select(e => new { e.SetId, e.TypeName, e.Path })
                         .Distinct()

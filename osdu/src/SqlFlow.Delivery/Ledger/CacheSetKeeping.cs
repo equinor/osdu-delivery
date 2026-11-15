@@ -6,7 +6,8 @@ namespace SqlFlow.Delivery.Ledger;
 /// start from the set a record points at, and no attempt or other history names a set. So a set no record points at is
 /// removed once no render has used it for <see cref="UnusedFor"/>, and a ledger checks a set it remembers against the
 /// database at least every <see cref="RecheckAfter"/>: a set it hands a render was used within that time, so it is never one
-/// the sweep may take before the render's record is written.
+/// the sweep may take before the render's record is written. A value is kept once for every set that holds it
+/// (<c>osdu.CacheSetValue</c>); a value no set holds any more is read by nothing either, and the same sweep removes it.
 /// </summary>
 public static class CacheSetKeeping
 {
@@ -20,11 +21,20 @@ public static class CacheSetKeeping
     internal const int SetsPerRound = 200;
 
     /// <summary>
-    /// The most values one round of the sweep removes (a set holding more is removed alone): few enough that a round's
+    /// The most entries one round of the sweep removes (a set holding more is removed alone): few enough that a round's
     /// transaction stays short and takes row locks, never a lock on the whole table the renders write to.
     /// </summary>
     internal const int EntriesPerRound = 2_000;
+
+    /// <summary>
+    /// The most values one round of the sweep's pass over the values looks at: each is one seek of the sets that hold it,
+    /// and a round that finds one unheld keeps renders from writing sets only while it deletes what it found.
+    /// </summary>
+    internal const int ValuesPerRound = 2_000;
 }
 
-/// <summary>What a sweep of the render context removed: the sets no record pointed at, and the values they held.</summary>
-public sealed record CacheSetSweep(long Sets, long Entries);
+/// <summary>
+/// What a sweep of the render context removed: the sets no record pointed at, the entries they held (each naming a value),
+/// and the values no set holds any more.
+/// </summary>
+public sealed record CacheSetSweep(long Sets, long Entries, long Values);
