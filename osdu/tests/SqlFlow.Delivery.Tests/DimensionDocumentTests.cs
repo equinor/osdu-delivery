@@ -116,7 +116,7 @@ public class DimensionDocumentTests
               - { name: Tiny, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
               - { name: Larger, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
             """);
-        var records = new Dictionary<string, long>(StringComparer.Ordinal) { ["Small"] = 10, ["Large"] = 90, ["Medium"] = 50, ["Tiny"] = 0, ["Larger"] = 100 };
+        var records = new Dictionary<string, double>(StringComparer.Ordinal) { ["Small"] = 10, ["Large"] = 90, ["Medium"] = 50, ["Tiny"] = 0, ["Larger"] = 100 };
 
         var parts = DimensionShares.Deal(flow.Dimensions, records, 2);
 
@@ -127,6 +127,80 @@ public class DimensionDocumentTests
             parts.Select(p => p.Select(d => d.Name).ToArray()).ToArray());
         Assert.Equal(5, DimensionShares.Deal(flow.Dimensions, records, 5).Count(p => p.Count == 1));
         Assert.Throws<ArgumentOutOfRangeException>(() => DimensionShares.Deal(flow.Dimensions, records, 6));
+    }
+
+    /// <summary>
+    /// A dimension is weighed by the records it reads times the seconds a record took in its last full build, so one that
+    /// writes many rows a record (a log's curves) outweighs one reading as many records and writing one row each; one never
+    /// built in full takes the flow's average, and with no full build at all the records alone weigh them.
+    /// </summary>
+    [Fact]
+    public void A_dimension_is_weighed_by_its_records_times_the_seconds_a_record_took_in_its_last_full_build()
+    {
+        var records = new Dictionary<string, long>(StringComparer.Ordinal) { ["Curves"] = 10_000, ["Acl"] = 10_000, ["Wellbores"] = 160_000, ["New"] = 1_000 };
+        var lastFull = new Dictionary<string, DimensionBuildCost>(StringComparer.Ordinal)
+        {
+            ["Curves"] = new(3_500, 10_000),
+            ["Acl"] = new(400, 10_000),
+            ["Wellbores"] = new(1_600, 160_000),
+            ["Gone"] = new(9_999, 1),
+        };
+
+        var costs = DimensionShares.Costs(records, lastFull);
+
+        Assert.Equal(3_500, costs["Curves"], 3);
+        Assert.Equal(400, costs["Acl"], 3);
+        Assert.Equal(1_600, costs["Wellbores"], 3);
+
+        // The flow's average over the dimensions the build reads: 5,500 seconds for 180,000 records. A dimension the build
+        // does not read ("Gone") weighs nothing in it.
+        Assert.Equal(1_000 * 5_500 / 180_000.0, costs["New"], 6);
+        Assert.Equal(records.Keys.Order(), costs.Keys.Order());
+
+        var none = DimensionShares.Costs(records, new Dictionary<string, DimensionBuildCost>(StringComparer.Ordinal));
+        Assert.Equal(160_000, none["Wellbores"]);
+        Assert.Equal(1_000, none["New"]);
+
+        // A last build that kept no records, or took no time, says nothing of a record's cost.
+        var empty = DimensionShares.Costs(records, new Dictionary<string, DimensionBuildCost>(StringComparer.Ordinal) { ["Curves"] = new(3_500, 0), ["Acl"] = new(0, 10_000) });
+        Assert.Equal(10_000, empty["Curves"]);
+    }
+
+    /// <summary>
+    /// Dealt by cost, the dimension whose rows are many goes to a part of its own and the first part, while the
+    /// dimensions reading more records and writing less share the others: the parts end near one another where dealing by
+    /// records alone left the curves beside other dimensions.
+    /// </summary>
+    [Fact]
+    public void Dealt_by_cost_the_dimension_writing_the_most_rows_has_a_part_of_its_own()
+    {
+        var flow = Parse(Head + """
+            dimensions:
+              - { name: Wellbore, kind: "osdu:wks:master-data--Wellbore:*", path: data.Name }
+              - { name: Well, kind: "osdu:wks:master-data--Well:*", path: data.Name }
+              - { name: CurveType, kind: "osdu:wks:reference-data--LogCurveType:*", path: data.Name }
+              - { name: LogCurve, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+              - { name: LogAcl, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+              - { name: LogAssurance, kind: "osdu:wks:work-product-component--WellLog:*", path: data.Name }
+            """);
+        var records = new Dictionary<string, long>(StringComparer.Ordinal)
+        {
+            ["Wellbore"] = 163_882, ["Well"] = 141_468, ["CurveType"] = 43_565, ["LogCurve"] = 10_602, ["LogAcl"] = 10_602, ["LogAssurance"] = 10_602,
+        };
+        var lastFull = new Dictionary<string, DimensionBuildCost>(StringComparer.Ordinal)
+        {
+            ["Wellbore"] = new(1_539, 163_882), ["Well"] = new(437, 141_468), ["CurveType"] = new(254, 43_565),
+            ["LogCurve"] = new(3_493, 10_602), ["LogAcl"] = new(399, 10_602), ["LogAssurance"] = new(229, 10_602),
+        };
+
+        var byRecords = DimensionShares.Deal(flow.Dimensions, records.ToDictionary(r => r.Key, r => (double)r.Value, StringComparer.Ordinal), 3);
+        var byCost = DimensionShares.Deal(flow.Dimensions, DimensionShares.Costs(records, lastFull), 3);
+
+        Assert.Equal(["Wellbore"], byRecords[0].Select(d => d.Name));
+        Assert.Contains(byRecords, part => part.Count > 1 && part.Any(d => d.Name == "LogCurve"));
+        Assert.Equal(["LogCurve"], byCost[0].Select(d => d.Name));
+        Assert.Equal(["Wellbore"], byCost[1].Select(d => d.Name));
+        Assert.Equal(["Well", "CurveType", "LogAcl", "LogAssurance"], byCost[2].Select(d => d.Name));
     }
 
     /// <summary>
@@ -432,10 +506,39 @@ public class DimensionDocumentTests
         Assert.NotEqual(bare, Hash("attributes: { Source: { path: data.Source, many: max } }"));
         Assert.NotEqual(bare, Hash("attributes: { Source: { path: data.Source, decode: url } }"));
         Assert.Equal(bare, Hash("attributes: { Source: { path: data.Source, many: first, decode: none } }"));
-        var field = Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join } } }");
-        Assert.NotEqual(field, Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join, decode: url } } }"));
-        Assert.Equal(field, Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join, decode: none } } }"));
-        Assert.NotEqual(field, Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: max } } }"));
+        string Elements(string declared) => Parse(Head + CurvesOfLogs + "\n    " + declared).Dimensions[0].DefinitionHash;
+        var field = Elements("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join } } }");
+        Assert.NotEqual(field, Elements("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join, decode: url } } }"));
+        Assert.Equal(field, Elements("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join, decode: none } } }"));
+        Assert.NotEqual(field, Elements("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: max } } }"));
+    }
+
+    /// <summary>A dimension of the well logs keyed by their ids, which a dimension reading elements is.</summary>
+    private const string CurvesOfLogs = """
+        dimensions:
+          - name: LogCurve
+            kind: "osdu:wks:work-product-component--WellLog:*"
+            path: id
+            columns: { key: WellLogID }
+        """;
+
+    /// <summary>
+    /// A key's objects are its own record's, numbered and compared as one, so a dimension reading elements is keyed by its
+    /// records' ids: one keyed by a property, a referenced record's id among them, is refused, naming the rule.
+    /// </summary>
+    [Theory]
+    [InlineData("data.Curves.Mnemonic")]
+    [InlineData("data.WellboreID")]
+    public void A_dimension_reading_elements_is_keyed_by_its_records_ids(string path)
+    {
+        var refused = Refused(Head + $$"""
+            dimensions:
+              - name: Curves
+                kind: "osdu:wks:work-product-component--WellLog:*"
+                path: {{path}}
+                elements: { path: data.Curves, fields: { Unit: CurveUnit } }
+            """);
+        Assert.Contains($"path is '{path}', and a dimension reading elements is keyed by its records' ids (path: id)", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -519,8 +622,8 @@ public class DimensionDocumentTests
 
         // Reading elements is part of the declaration, so a build knows the dimension changed.
         Assert.NotEqual(
-            Parse(Head + Curves).Dimensions[0].DefinitionHash,
-            Parse(Head + Curves + "\n    elements: { path: data.Curves, fields: { Unit: CurveUnit } }").Dimensions[0].DefinitionHash);
+            Parse(Head + CurvesOfLogs).Dimensions[0].DefinitionHash,
+            Parse(Head + CurvesOfLogs + "\n    elements: { path: data.Curves, fields: { Unit: CurveUnit } }").Dimensions[0].DefinitionHash);
     }
 
     [Theory]

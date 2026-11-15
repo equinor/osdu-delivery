@@ -190,9 +190,9 @@ public class DimensionViewDocumentEdgeCaseTests
         Assert.Contains("WHERE [b].[partition] = @partition AND ([b].[element] IS NOT NULL)\n) AS [r]", check, StringComparison.Ordinal);
         Assert.EndsWith("OPTION (MAX_GRANT_PERCENT = 10, USE HINT('ENABLE_PARALLEL_PLAN_PREFERENCE'));", check, StringComparison.Ordinal);
 
-        // The check reads the rows it groups joined on the key's text alone, where the view's own statement joins on its hash too.
+        // The check and the view's own statement both join on the key's text alone.
         Assert.DoesNotContain("HASHBYTES", check, StringComparison.Ordinal);
-        Assert.Contains("HASHBYTES", definition.CreateSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("HASHBYTES", definition.CreateSql, StringComparison.Ordinal);
 
         // A join's values that found nothing are read from the rows it is made over, before they are grouped.
         var unmatched = DimensionViews.UnmatchedSql(definition, definition.Joins[0]);
@@ -233,7 +233,7 @@ public class DimensionViewDocumentEdgeCaseTests
         Assert.True(Assert.Single(definition.Joins).View);
         Assert.Equal("v_dim_log_assurances", definition.Joins[0].Table);
 
-        // A view holds no key's hash: the join compares the partition and the column it groups by, exactly.
+        // A join of a view compares the partition and the column it groups by, exactly.
         Assert.Contains("LEFT JOIN [osdu].[v_dim_log_assurances] AS [j1]\n    ON [j1].[partition] = [b].[partition]\n   AND [j1].[WellLogID] COLLATE Latin1_General_100_BIN2 = [b].[WellLogID] COLLATE Latin1_General_100_BIN2", definition.FromSql, StringComparison.Ordinal);
         Assert.DoesNotContain("[j1].[key_hash]", definition.FromSql, StringComparison.Ordinal);
 
@@ -360,7 +360,7 @@ public class DimensionViewDocumentEdgeCaseTests
         Assert.Empty(definition.JoinedViews);
         Assert.Equal(DimensionViews.HashOf(definition.CreateSql), definition.Hash);
         Assert.StartsWith("FROM [osdu].[dim_LogCurve] AS [b]\nLEFT JOIN [osdu].[dim_WellLog] AS [j1]", definition.FromSql, StringComparison.Ordinal);
-        Assert.Contains("[j1].[key_hash]", definition.FromSql, StringComparison.Ordinal);
+        Assert.Contains("\n    ON [j1].[partition] = [b].[partition]\n   AND [j1].[WellLogID] COLLATE Latin1_General_100_BIN2 = [b].[WellLogID] COLLATE Latin1_General_100_BIN2", definition.FromSql, StringComparison.Ordinal);
         Assert.All(definition.Columns, c => Assert.Null(c.GroupSql));
     }
 

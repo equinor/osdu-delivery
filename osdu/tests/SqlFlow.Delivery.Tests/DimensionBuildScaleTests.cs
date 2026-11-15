@@ -752,6 +752,200 @@ public sealed class DimensionBuildScaleTests : IDisposable
         Assert.Null((await ledger.GetDimensionViewAsync("ScaleWellLogCurve"))!.Checks[0].ReusedFrom);
     }
 
+    /// <summary>The variable naming how many curves each log of the curve dimension's measurement holds.</summary>
+    private const string CurvesVariable = "SQLFLOW_DIMENSION_SCALE_CURVES";
+
+    /// <summary>The variable that, set to 1, leaves the log's ACL off every curve's row, to measure what copying it costs.</summary>
+    private const string NoAclVariable = "SQLFLOW_DIMENSION_SCALE_NO_ACL";
+
+    /// <summary>
+    /// The curve dimension of the well log estate alone, as its repository declares it: a row per curve with seventeen
+    /// fields, the log's whole ACL copied onto each, loading incrementally between weekly full loads.
+    /// </summary>
+    private const string LogCurveFlow = """
+        flowType: dimension
+        name: scale-log-curves
+        partitions: [dev]
+        source:
+          endpoint: http://localhost
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { recordsAtOnce: 4 }
+        incremental:
+          keyColumns: [id]
+          fullLoadAfterHours: 168
+
+        dimensions:
+          - name: LogCurve
+            kind: osdu:wks:work-product-component--WellLog:1.4.0
+            query: 'data.Name:("COMPOSITE" OR "CPI")'
+            path: id
+            label: data.Name
+            columns: { key: WellLogID, value: WellLogName }
+            unlabelled: Not specified
+            elements:
+              path: data.Curves
+              fields:
+                CurveID: CurveID
+                Mnemonic: Mnemonic
+                CurveDescription: CurveDescription
+                CurveVersion: CurveVersion
+                LogVersion: { path: LogVersion, up: 1 }
+                CurveUnit: CurveUnit
+                CurveUnitID: { path: CurveUnit, keep: id }
+                DepthUnit: DepthUnit
+                DepthUnitID: { path: DepthUnit, keep: id }
+                TopDepth: TopDepth
+                BaseDepth: BaseDepth
+                NumberOfColumns: NumberOfColumns
+                LogCurveFamilyID: { path: LogCurveFamilyID, keep: id }
+                LogCurveMainFamilyID: { path: LogCurveMainFamilyID, keep: id }
+                LogCurveTypeID: { path: LogCurveTypeID, keep: id }
+                Owners: { path: acl.owners, up: 2, many: all }
+                Viewers: { path: acl.viewers, up: 2, many: all }
+            maxValues: 5000000
+        """;
+
+    /// <summary>
+    /// <paramref name="logs"/> COMPOSITE and CPI well logs of <paramref name="curves"/> curves each, every field the curve
+    /// dimension reads filled, and an ACL of a production estate's length: four owner groups and twelve viewer groups.
+    /// </summary>
+    private void LogCurveEstate(int logs, int curves)
+    {
+        var owners = Enumerable.Range(0, 4).Select(g => $"data.welllog-{g:D2}.restricted.owners@dev.dataservices.energy").ToArray();
+        var viewers = Enumerable.Range(0, 12).Select(g => $"data.welllog-{g:D2}.restricted.viewers@dev.dataservices.energy").ToArray();
+        for (var i = 0; i < logs; i++)
+        {
+            var array = new JsonArray();
+            for (var c = 0; c < curves; c++)
+            {
+                array.Add(new JsonObject
+                {
+                    ["CurveID"] = $"C{c}",
+                    ["Mnemonic"] = c == 0 ? "DEPT" : $"M{(i + c) % 400:D3}",
+                    ["CurveDescription"] = $"curve {c} of log {i}",
+                    ["CurveVersion"] = "1",
+                    ["CurveUnit"] = $"dev:reference-data--UnitOfMeasure:U{(i + c) % 198 + 2:D3}:",
+                    ["DepthUnit"] = "dev:reference-data--UnitOfMeasure:m:",
+                    ["TopDepth"] = 100.5 + c,
+                    ["BaseDepth"] = 2500.25 + c,
+                    ["NumberOfColumns"] = 1,
+                    ["LogCurveFamilyID"] = $"dev:reference-data--LogCurveFamily:F{(i + c) % 100:D3}:",
+                    ["LogCurveMainFamilyID"] = $"dev:reference-data--LogCurveMainFamily:M{(i + c) % 20:D2}:",
+                    ["LogCurveTypeID"] = $"dev:reference-data--LogCurveType:T{(i + c) % 500:D3}:",
+                });
+            }
+
+            var record = _platform.Add($"dev:work-product-component--WellLog:{Guid(i, 9)}", WellLog, new JsonObject
+            {
+                ["Name"] = i % 3 == 0 ? "CPI" : "COMPOSITE",
+                ["LogVersion"] = "1",
+                ["Curves"] = array,
+            });
+            record["acl"] = new JsonObject
+            {
+                ["owners"] = new JsonArray(owners.Select(o => (JsonNode?)JsonValue.Create(o)).ToArray()),
+                ["viewers"] = new JsonArray(viewers.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray()),
+            };
+        }
+    }
+
+    [Fact]
+    public async Task A_curve_dimension_of_a_production_estates_shape_loads_in_full_again_at_scale()
+    {
+        var logs = Setting(LogsVariable, 1_000);
+        var curves = Setting(CurvesVariable, 11);
+        LogCurveEstate(logs, curves);
+        _platform.Latency = TimeSpan.FromMilliseconds(Setting(LatencyVariable, 1));
+        var ledger = _db.Ledger(_clock);
+        var engine = Samples.Engine(ledger, _clock);
+        var declared = Environment.GetEnvironmentVariable(NoAclVariable) == "1"
+            ? string.Join('\n', LogCurveFlow.Split('\n').Where(line => !line.Contains("acl.", StringComparison.Ordinal)))
+            : LogCurveFlow;
+        var flow = new DeliveryDocumentLoader().ParseDimension(declared, "flows/scale-log-curves.yaml").ForPartition("dev");
+
+        var first = new TimedLog();
+        var watch = Stopwatch.StartNew();
+        var built = await new DimensionRunner(engine, flow, new Dictionary<string, string>(), first, _platform, allowLoopback: true)
+            .BuildAsync([], System.Guid.NewGuid(), "scale", CancellationToken.None);
+        watch.Stop();
+        foreach (var line in first.Lines)
+        {
+            _output.WriteLine(line);
+        }
+
+        _output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{logs} logs of {curves} curves: first build in {watch.Elapsed.TotalSeconds:N1} s"));
+        Assert.Equal(0, built.Failed);
+
+        // A week on, nothing changed: the weekly full load reads every log again and writes what it already holds.
+        _clock.Advance(TimeSpan.FromHours(169));
+        var since = await ServerNowAsync();
+        var again = new TimedLog();
+        watch.Restart();
+        var full = await new DimensionRunner(engine, flow, new Dictionary<string, string>(), again, _platform, allowLoopback: true)
+            .BuildAsync([], System.Guid.NewGuid(), "scale", CancellationToken.None);
+        watch.Stop();
+        foreach (var line in again.Lines)
+        {
+            _output.WriteLine(line);
+        }
+
+        _output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{logs} logs of {curves} curves, nothing changed: full load in {watch.Elapsed.TotalSeconds:N1} s"));
+        foreach (var statement in await StatementsSinceAsync(since))
+        {
+            _output.WriteLine(statement);
+        }
+
+        Assert.Equal(0, full.Failed);
+        var curve = full.Dimensions.Single(d => d.Dimension == "LogCurve");
+        Assert.Equal(DimensionRunModes.Full, curve.Load);
+        Assert.Equal(0, curve.Changes.KeysAdded + curve.Changes.KeysRemoved);
+    }
+
+    /// <summary>The test server's clock, which the plan cache stamps a statement's last execution by.</summary>
+    private async Task<DateTime> ServerNowAsync()
+    {
+        await using var connection = new Microsoft.Data.SqlClient.SqlConnection(_db.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new Microsoft.Data.SqlClient.SqlCommand("SELECT SYSDATETIME();", connection);
+        return (DateTime)(await command.ExecuteScalarAsync())!;
+    }
+
+    /// <summary>
+    /// Every statement of a dimension write the server ran since <paramref name="since"/>, slowest first, with how long its
+    /// last run took, what it read and wrote, and its first words: where a write's time goes, statement by statement.
+    /// </summary>
+    private async Task<List<string>> StatementsSinceAsync(DateTime since)
+    {
+        await using var connection = new Microsoft.Data.SqlClient.SqlConnection(_db.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new Microsoft.Data.SqlClient.SqlCommand(
+            """
+            SELECT qs.[last_elapsed_time] / 1000, qs.[last_worker_time] / 1000, qs.[last_logical_reads], qs.[last_logical_writes], qs.[last_rows],
+                SUBSTRING(st.[text], qs.[statement_start_offset] / 2 + 1,
+                    (CASE qs.[statement_end_offset] WHEN -1 THEN DATALENGTH(st.[text]) ELSE qs.[statement_end_offset] END - qs.[statement_start_offset]) / 2 + 1)
+            FROM sys.dm_exec_query_stats AS qs CROSS APPLY sys.dm_exec_sql_text(qs.[sql_handle]) AS st
+            WHERE qs.[last_execution_time] >= @since
+              AND (st.[text] LIKE N'%#Dim%' OR st.[text] LIKE N'%dimstage%' OR st.[text] LIKE N'%[[]osdu].[[]Dimension%' OR st.[text] LIKE N'%dim[_]%')
+            ORDER BY qs.[last_elapsed_time] DESC;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@since", since);
+        var lines = new List<string>();
+        long total = 0;
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var elapsed = reader.GetInt64(0);
+            total += elapsed;
+            var text = System.Text.RegularExpressions.Regex.Replace(reader.GetString(5), @"\s+", " ").Trim();
+            lines.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{elapsed,9:N0} ms elapsed {reader.GetInt64(1),9:N0} ms cpu {reader.GetInt64(2),12:N0} reads {reader.GetInt64(3),10:N0} writes {reader.GetInt64(4),10:N0} rows  {text[..Math.Min(text.Length, 150)]}"));
+        }
+
+        lines.Add(string.Create(CultureInfo.InvariantCulture, $"{total,9:N0} ms in {lines.Count} statement(s)"));
+        return lines;
+    }
+
     /// <summary>A run's log, each line with the seconds since the first.</summary>
     private sealed class TimedLog : ILogger
     {

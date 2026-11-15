@@ -60,7 +60,7 @@ public sealed class DimensionStageTests : IDisposable
     {
         var keys = Enumerable.Range(0, count).Select(i => string.Create(CultureInfo.InvariantCulture, $"K{i:D6}")).ToList();
         await stage.AddKeysAsync(keys.Select(k => new KeyValuePair<string, long>(k, 1)).ToList(), CancellationToken.None);
-        await stage.AddValuesAsync(keys.Select((k, i) => ((long)i, new DimensionOriginalWrite(k, k, null, null, 1, true))).ToList(), CancellationToken.None);
+        await stage.AddValuesAsync(keys.Select((k, i) => ((long)i, new DimensionOriginalWrite(k, k, null, null, 1, true))).ToList(), [], CancellationToken.None);
         await stage.AddMembersAsync(keys.Select(k => new DimensionMemberWrite(k, 1, false, 1, 0, $"filter of {k}", 1)).ToList(), CancellationToken.None);
         await stage.FlushAsync(CancellationToken.None);
     }

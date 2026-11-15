@@ -3,6 +3,7 @@ using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
+using SqlFlow.Delivery.Snapshots;
 using Xunit;
 using static SqlFlow.Delivery.Tests.EnrichmentSuite;
 
@@ -336,8 +337,9 @@ public sealed class EnrichBindingTests
     public async Task A_runtime_for_target_operations_opens_without_its_mapping_and_its_worker_refuses_to_send_without_the_binding()
     {
         // Verify, delete and release write nothing an enrichment adds, so a mapping that does not read leaves them working; the
-        // worker writes what the enrichments add to each record, and says why it cannot.
-        var context = Samples.Engine(null);
+        // worker writes what the enrichments add to each record, and says why it cannot. Nothing here reads the cache, so it is
+        // an empty one held in memory and the test needs no database.
+        var context = Samples.Engine(null, cache: new FixedCacheStore("dev", "targeting", ReferenceSnapshot.Empty));
         using var runtime = FlowRuntime.ForTarget(context, Samples.Targeting(new FlowTarget { Endpoint = "http://localhost", Protocol = DeliveryProtocol.Storage }));
 
         Assert.Null(runtime.Flow.Enrich);

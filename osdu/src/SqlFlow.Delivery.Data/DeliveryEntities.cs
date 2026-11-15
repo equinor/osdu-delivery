@@ -3085,8 +3085,15 @@ public sealed class DeliveryDimensionMember
 /// </summary>
 public sealed class DeliveryDimensionValue
 {
-    /// <summary>The longest original kept; a longer one is counted and left out by the build.</summary>
+    /// <summary>The longest original kept in the columns that copy one (a change's, a dimension table's key column).</summary>
     public const int MaxOriginalLength = 1024;
+
+    /// <summary>
+    /// The longest key a dimension keeps, and the longest record id or record key it finds a key by: each is unique by its
+    /// text, and a unique index over the partition, the dimension and a text this long fits SQL Server's 1,700 bytes of an
+    /// index key. A longer key is counted and left out by the build. A key is an OSDU id, well under it.
+    /// </summary>
+    public const int MaxKeyLength = 800;
 
     /// <summary>The longest label kept; a longer one is cut, with a note.</summary>
     public const int MaxLabelLength = 1024;
@@ -3100,11 +3107,28 @@ public sealed class DeliveryDimensionValue
 
     public int DimensionId { get; set; }
 
-    /// <summary>The value exactly as the index holds it.</summary>
+    /// <summary>The value exactly as the index holds it, compared exactly: what an original is unique by in its dimension.</summary>
     public string Original { get; set; } = string.Empty;
 
-    /// <summary>SHA-256 of the original's UTF-8 bytes: what an original is unique by, exactly, however long it is.</summary>
-    public byte[] OriginalHash { get; set; } = [];
+    /// <summary>
+    /// The length of <see cref="Original"/> in bytes, computed by the database: SQL Server compares text as though the
+    /// shorter were padded with spaces, so an original is unique by its text and its length (<c>GR</c> and <c>GR </c> are two).
+    /// </summary>
+    public short OriginalBytes { get; private set; }
+
+    /// <summary>
+    /// SHA-256 of the objects of the key's nested array as the build that last wrote them staged them (each object's fields
+    /// in order, as JSON): a build that stages the same objects leaves the key's elements as they are. Null for a key the
+    /// last build wrote no object of.
+    /// </summary>
+    public byte[]? ElementsHash { get; set; }
+
+    /// <summary>
+    /// SHA-256 of the attribute values read through the record the key names, as the build that last wrote them staged them
+    /// (each name, value and where it was read, as JSON): a build that reads the same leaves those values as they are. Null
+    /// for a key the last build read none of.
+    /// </summary>
+    public byte[]? AttributesHash { get; set; }
 
     /// <summary>The member it belongs to, or null when cleaning left it out of every member.</summary>
     public long? MemberId { get; set; }
@@ -3368,11 +3392,11 @@ public sealed class DeliveryDimensionCollectedText
     /// <summary>The collected attribute, by its number (<see cref="DeliveryDimensionAttributeName.AttributeId"/>).</summary>
     public int AttributeId { get; set; }
 
-    /// <summary>SHA-256 of the text's UTF-8 bytes, which the row is unique by, since a text may be longer than a key holds.</summary>
-    public byte[] TextHash { get; set; } = [];
-
-    /// <summary>The text exactly as the index holds it, compared exactly.</summary>
+    /// <summary>The text exactly as the index holds it, compared exactly: what the row is unique by for its attribute.</summary>
     public string Text { get; set; } = string.Empty;
+
+    /// <summary>The length of <see cref="Text"/> in bytes, computed by the database, which the row is unique by beside it, as a key is.</summary>
+    public short TextBytes { get; private set; }
 
     /// <summary>The value it is shown as, compared exactly.</summary>
     public string Value { get; set; } = string.Empty;
@@ -3425,8 +3449,8 @@ public sealed class DeliveryDimensionKeyRecord
     /// <summary>The original read through the record (<see cref="DeliveryDimensionValue.ValueId"/>).</summary>
     public long ValueId { get; set; }
 
-    /// <summary>SHA-256 of the record's id without its version, as UTF-8: what a changed record is looked up by.</summary>
-    public byte[] RecordHash { get; set; } = [];
+    /// <summary>The record's id without its version, compared exactly: what a changed record is looked up by.</summary>
+    public string RecordId { get; set; } = string.Empty;
 
     /// <summary>The entity type the id names (<c>master-data--Wellbore</c>): the kinds an incremental load asks the search what changed in.</summary>
     public string EntityType { get; set; } = string.Empty;
@@ -3447,8 +3471,8 @@ public sealed class DeliveryDimensionRecord
 
     public int DimensionId { get; set; }
 
-    /// <summary>SHA-256 of the record's unique key, its columns' values joined, as UTF-8.</summary>
-    public byte[] RecordHash { get; set; } = [];
+    /// <summary>The record's unique key, its columns' values joined, compared exactly.</summary>
+    public string RecordKey { get; set; } = string.Empty;
 
     /// <summary>The original the record held (<see cref="DeliveryDimensionValue.ValueId"/>).</summary>
     public long ValueId { get; set; }
@@ -5127,16 +5151,18 @@ public static class DeliveryModel
             // or deadlocking with, them.
             e.HasKey(v => new { v.PartitionId, v.DimensionId, v.ValueId });
             e.Property(v => v.ValueId).ValueGeneratedOnAdd();
-            ExactText(e.Property(v => v.Original)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
-            e.Property(v => v.OriginalHash).HasMaxLength(32).IsFixedLength().IsRequired();
+            ExactText(e.Property(v => v.Original)).HasMaxLength(DeliveryDimensionValue.MaxKeyLength).IsRequired();
+            e.Property(v => v.OriginalBytes).HasComputedColumnSql("CAST(DATALENGTH([Original]) AS smallint)", stored: true);
+            e.Property(v => v.ElementsHash).HasMaxLength(32).IsFixedLength();
+            e.Property(v => v.AttributesHash).HasMaxLength(32).IsFixedLength();
             e.Property(v => v.LeftOut).HasMaxLength(16);
             e.Property(v => v.Note).HasMaxLength(400);
             e.Property(v => v.Label).HasMaxLength(DeliveryDimensionValue.MaxLabelLength);
             e.Property(v => v.LabelFrom).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength);
             e.Property(v => v.Filter).HasMaxLength(DeliveryDimensionValue.MaxFilterLength);
             e.HasIndex(v => v.ValueId).IsUnique();
-            // An original is one value of one dimension, once, compared by its hash so no length or collation blurs two.
-            e.HasIndex(v => new { v.PartitionId, v.DimensionId, v.OriginalHash }).IsUnique();
+            // An original is one value of one dimension, once, compared exactly, its length beside it: what a build matches the keys it read by.
+            e.HasIndex(v => new { v.PartitionId, v.DimensionId, v.Original, v.OriginalBytes }).IsUnique();
             // A member's originals.
             e.HasIndex(v => new { v.PartitionId, v.DimensionId, v.MemberId });
             // The originals most records hold first, a page at a time.
@@ -5235,12 +5261,12 @@ public static class DeliveryModel
             // rather than waiting on, or deadlocking with, them.
             e.HasKey(t => new { t.PartitionId, t.DimensionId, t.TextId });
             e.Property(t => t.TextId).ValueGeneratedOnAdd();
-            e.Property(t => t.TextHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            ExactText(e.Property(t => t.Text)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
+            ExactText(e.Property(t => t.Text)).HasMaxLength(DeliveryDimensionValue.MaxKeyLength).IsRequired();
+            e.Property(t => t.TextBytes).HasComputedColumnSql("CAST(DATALENGTH([Text]) AS smallint)", stored: true);
             ExactText(e.Property(t => t.Value)).HasMaxLength(DeliveryDimensionAttributeValue.MaxValueLength).IsRequired();
             e.HasIndex(t => t.TextId).IsUnique();
-            // A text of a collected attribute, once, by its hash, since a text may be longer than a key holds.
-            e.HasIndex(t => new { t.PartitionId, t.DimensionId, t.AttributeId, t.TextHash }).IsUnique();
+            // A text of a collected attribute, once, compared exactly, its length beside it.
+            e.HasIndex(t => new { t.PartitionId, t.DimensionId, t.AttributeId, t.Text, t.TextBytes }).IsUnique();
             // The texts of the values a search picks: one seek.
             e.HasIndex(t => new { t.PartitionId, t.DimensionId, t.AttributeId, t.Value });
         });
@@ -5253,13 +5279,13 @@ public static class DeliveryModel
             // waiting on, or deadlocking with, them.
             e.HasKey(x => new { x.PartitionId, x.DimensionId, x.KeyRecordId });
             e.Property(x => x.KeyRecordId).ValueGeneratedOnAdd();
-            e.Property(x => x.RecordHash).HasMaxLength(32).IsFixedLength().IsRequired();
+            ExactText(e.Property(x => x.RecordId)).HasMaxLength(DeliveryDimensionValue.MaxKeyLength).IsRequired();
             ExactText(e.Property(x => x.EntityType)).HasMaxLength(DeliveryDimensionKeyRecord.MaxEntityTypeLength).IsRequired();
             e.HasIndex(x => x.KeyRecordId).IsUnique();
             // A key's records, once each: what a write rewrites them by.
-            e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.ValueId, x.RecordHash }).IsUnique();
+            e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.ValueId, x.RecordId }).IsUnique();
             // The keys read through a record that changed: one seek a record.
-            e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.RecordHash });
+            e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.RecordId });
             // The entity types a dimension's keys were read through, which an update asks the search what changed in.
             e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.EntityType });
         });
@@ -5272,10 +5298,10 @@ public static class DeliveryModel
             // waiting on, or deadlocking with, them.
             e.HasKey(x => new { x.PartitionId, x.DimensionId, x.DimensionRecordId });
             e.Property(x => x.DimensionRecordId).ValueGeneratedOnAdd();
-            e.Property(x => x.RecordHash).HasMaxLength(32).IsFixedLength().IsRequired();
+            ExactText(e.Property(x => x.RecordKey)).HasMaxLength(DeliveryDimensionValue.MaxKeyLength).IsRequired();
             e.HasIndex(x => x.DimensionRecordId).IsUnique();
             // A record's keys, once each: what a load rewrites them by and an incremental load reads them by.
-            e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.RecordHash, x.ValueId }).IsUnique();
+            e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.RecordKey, x.ValueId }).IsUnique();
             // The records of a key: what goes with a key a load removes.
             e.HasIndex(x => new { x.PartitionId, x.DimensionId, x.ValueId });
         });

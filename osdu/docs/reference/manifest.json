@@ -4778,7 +4778,7 @@
         "target.database",
         "target.schema",
         "datatype",
-        "key_hash",
+        "IX_key_text",
         "incremental load",
         "full load",
         "keycolumns",
@@ -4937,7 +4937,11 @@
         "run.json",
         "dimension build memory",
         "out of memory",
-        "staging"
+        "staging",
+        "write steps",
+        "waits for the write lock",
+        "still merging",
+        "written in"
       ],
       "related": [
         "delivery-flow-dimension",
@@ -4955,6 +4959,8 @@
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionWriteSteps.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionWriteLog.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs"
       ]
     },
@@ -5149,11 +5155,10 @@
         "osdu.dim_",
         "dimension table",
         "column names",
-        "key_hash",
+        "IX_key_text",
         "schema evolution",
         "IX_key",
         "IX_value",
-        "IX_key_hash",
         "clustered by partition"
       ],
       "related": [
@@ -12182,7 +12187,8 @@
       "related": [
         "delivery-wiki-0011-dimension-flows",
         "delivery-wiki-0030-dimension-rows-one-range",
-        "delivery-wiki-0055-dimension-tables-kept-where-the-flow-says"
+        "delivery-wiki-0055-dimension-tables-kept-where-the-flow-says",
+        "delivery-wiki-0058-dimension-keys-by-their-text"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Purge.cs",
@@ -12212,7 +12218,8 @@
       "related": [
         "delivery-wiki-0011-dimension-flows",
         "delivery-wiki-0026-one-database-connection",
-        "delivery-wiki-0054-dimensions-keep-only-their-latest-state"
+        "delivery-wiki-0054-dimensions-keep-only-their-latest-state",
+        "delivery-wiki-0058-dimension-keys-by-their-text"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs",
@@ -12283,6 +12290,43 @@
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0058-dimension-keys-by-their-text",
+      "corpus": "wiki",
+      "path": "decisions/0058-dimension-keys-by-their-text.md",
+      "title": "Decision 0058: a dimension's keys are found by their text, and a build writes only the keys whose content changed",
+      "type": "decision",
+      "summary": "Why dimension keys are unique by their text, not a SHA-256 of it, and why a key keeps its content's hash so a build writes only what changed.",
+      "keywords": [
+        "dimension",
+        "OriginalHash",
+        "key_hash",
+        "content hash",
+        "ElementsHash",
+        "AttributesHash",
+        "full load",
+        "weekly full load",
+        "write steps",
+        "elements path id",
+        "spread by cost"
+      ],
+      "related": [
+        "delivery-wiki-0030-dimension-rows-one-range",
+        "delivery-wiki-0033-dimension-builds-at-scale",
+        "delivery-wiki-0054-dimensions-keep-only-their-latest-state",
+        "delivery-wiki-0055-dimension-tables-kept-where-the-flow-says"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionWriteSteps.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionElementReader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Spread.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs"
       ]
     },
     {

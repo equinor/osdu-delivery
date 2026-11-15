@@ -1,6 +1,9 @@
 using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Core.Data;
@@ -12,10 +15,11 @@ namespace SqlFlow.Delivery.Ledger;
 public sealed record StagedKey(long Seq, string Key, long Count);
 
 /// <summary>
-/// One object of a nested array a key's records hold, as a build read it: the record holding it, its place among that
-/// record's objects, and each of its fields that holds a value, by the field's name, as the field keeps it.
+/// The objects of a nested array one key's record holds, in the order the record holds them, as a build read them: each
+/// object's fields that hold a value, by the field's name, as the field keeps them. A dimension reading elements is keyed by
+/// its records' ids, so a key's objects are one record's.
 /// </summary>
-public sealed record StagedElement(string Key, string Record, int Ordinal, IReadOnlyList<KeyValuePair<string, string>> Values);
+public sealed record StagedElements(string Key, IReadOnlyList<IReadOnlyList<KeyValuePair<string, string>>> Objects);
 
 /// <summary>A key of a value a build lays out: the value, the key, how many records hold it, and whether a query can carry it.</summary>
 public sealed record StagedMemberKey(string Value, string Original, long Count, bool Filterable);
@@ -55,6 +59,7 @@ public sealed class DimensionStage : IAsyncDisposable
     private readonly StagedTable _records;
     private long _gone;
     private long _held;
+    private long _objects;
     private int _discarded;
 
     internal DimensionStage(Func<OsduDbContext> open, short partitionId, int dimensionId, long dimensionRunId, Guid flowId)
@@ -93,8 +98,11 @@ public sealed class DimensionStage : IAsyncDisposable
     /// <summary>The values staged.</summary>
     public long Members => _members.Staged;
 
-    /// <summary>The objects of a nested array staged.</summary>
-    public long Elements => _elements.Staged;
+    /// <summary>The objects of a nested array staged, every key's.</summary>
+    public long Elements => Interlocked.Read(ref _objects);
+
+    /// <summary>The values of collected attributes staged, a row each; the values read through a key's record travel with the key.</summary>
+    public long Attributes => _attributes.Staged;
 
     /// <summary>The keys a record read by its unique key holds, staged.</summary>
     public long Held => Interlocked.Read(ref _held);
@@ -106,15 +114,15 @@ public sealed class DimensionStage : IAsyncDisposable
     public ValueTask AddKeysAsync(IReadOnlyCollection<KeyValuePair<string, long>> keys, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(keys);
-        return _keys.AddAsync(keys.Select(k => Row(SqlServerDimensionStore.HashOf(k.Key), k.Key, k.Value, false)).ToList(), ct);
+        return _keys.AddAsync(keys.Select(k => Row(k.Key, k.Value, false)).ToList(), ct);
     }
 
     /// <summary>Stages keys an incremental load read again and found held by no record: its write removes them.</summary>
     public async ValueTask AddGoneAsync(IReadOnlyCollection<string> keys, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(keys);
-        var rows = keys.Where(k => k.Length <= DeliveryDimensionValue.MaxOriginalLength).Distinct(StringComparer.Ordinal)
-            .Select(k => Row(SqlServerDimensionStore.HashOf(k), k, 0L, true)).ToList();
+        var rows = keys.Where(k => k.Length <= DeliveryDimensionValue.MaxKeyLength).Distinct(StringComparer.Ordinal)
+            .Select(k => Row(k, 0L, true)).ToList();
         await _keys.AddAsync(rows, ct).ConfigureAwait(false);
         Interlocked.Add(ref _gone, rows.Count);
     }
@@ -169,61 +177,186 @@ public sealed class DimensionStage : IAsyncDisposable
 
     /// <summary>
     /// Stages keys as cleaned, each under its place in the order the build read its keys (<paramref name="values"/>' Seq): the
-    /// keys the write holds, with what each is under, its label and its filter. The note, the label and where it was read
-    /// from are cut to what a key keeps, and a filter longer than a key keeps is none.
+    /// keys the write holds, with what each is under, its label and its filter, and the attribute values read through the
+    /// record each names (<paramref name="readThrough"/>, by key), which travel with their key as one text with its hash
+    /// (<see cref="AttributesOf"/>), so a write leaves those of a key that read the same as they are. The note, the label and
+    /// where it was read from are cut to what a key keeps, and a filter longer than a key keeps is none.
     /// </summary>
-    /// <exception cref="ArgumentException">A key is longer than a dimension keeps.</exception>
-    public ValueTask AddValuesAsync(IReadOnlyList<(long Seq, DimensionOriginalWrite Original)> values, CancellationToken ct)
+    /// <exception cref="ArgumentException">A key is longer than a dimension keeps, or an attribute value is a collected one, or names no key staged here.</exception>
+    public ValueTask AddValuesAsync(
+        IReadOnlyList<(long Seq, DimensionOriginalWrite Original)> values, IReadOnlyList<(string Key, DimensionAttributeState Attribute)> readThrough, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(values);
+        ArgumentNullException.ThrowIfNull(readThrough);
+        var byKey = new Dictionary<string, List<DimensionAttributeState>>(StringComparer.Ordinal);
+        foreach (var (key, attribute) in readThrough)
+        {
+            if (attribute.Records is not null)
+            {
+                throw new ArgumentException(
+                    $"Attribute {attribute.Name} of key '{key}' is collected from the key's records; it is staged as a collected value (AddAttributesAsync), not with its key.", nameof(readThrough));
+            }
+
+            if (!byKey.TryGetValue(key, out var list))
+            {
+                byKey[key] = list = [];
+            }
+
+            list.Add(attribute);
+        }
+
         var rows = new List<object?[]>(values.Count);
         foreach (var (seq, value) in values)
         {
-            if (value.Original.Length > DeliveryDimensionValue.MaxOriginalLength)
+            if (value.Original.Length > DeliveryDimensionValue.MaxKeyLength)
             {
                 throw new ArgumentException(
-                    string.Create(CultureInfo.InvariantCulture, $"A key of dimension {DimensionId} is {value.Original.Length} characters, more than the {DeliveryDimensionValue.MaxOriginalLength} a dimension keeps; the build leaves such keys out before it stages them."),
+                    string.Create(CultureInfo.InvariantCulture, $"A key of dimension {DimensionId} is {value.Original.Length} characters, more than the {DeliveryDimensionValue.MaxKeyLength} a dimension keeps; the build leaves such keys out before it stages them."),
                     nameof(values));
             }
 
+            var (attributes, hash) = byKey.Remove(value.Original, out var read) ? AttributesOf(read) : (null, null);
             rows.Add(
             [
-                seq, SqlServerDimensionStore.HashOf(value.Original), value.Original, value.CleanValue, value.LeftOut,
+                seq, value.Original, value.CleanValue, value.LeftOut,
                 OsduLedger.Truncate(value.Note, 400), OsduLedger.Truncate(value.Label, DeliveryDimensionValue.MaxLabelLength),
                 OsduLedger.Truncate(value.LabelFrom, DeliveryDimensionValue.MaxOriginalLength),
                 value.Filter is { Length: > DeliveryDimensionValue.MaxFilterLength } ? null : value.Filter, value.Count, value.Filterable,
+                attributes, hash,
             ]);
+        }
+
+        if (byKey.Count > 0)
+        {
+            throw new ArgumentException(
+                $"{byKey.Count} key(s) have attribute values read through their records but are not among the keys staged with them, such as '{byKey.Keys.First()}'.", nameof(readThrough));
         }
 
         return _values.AddAsync(rows, keepSeq: true, ct);
     }
 
     /// <summary>
-    /// Stages attribute values of keys: each cut to what an attribute keeps, where it was read cut to what a key keeps, and
-    /// one that is empty or under a name longer than an attribute's left out. A value collected from a key's records is
-    /// staged with the records it counts; the write adds up the rows of one key, attribute and value.
+    /// The attribute values read through a key's record as the stage keeps them, and their SHA-256: each value cut to what an
+    /// attribute keeps and where it was read cut to what a key keeps, one that is empty or under a name longer than an
+    /// attribute's left out, each name and value once (the first where it was read), ordered by name, value and where it was
+    /// read, as a JSON array of <c>[name, value, read from]</c>. The same values give the same text and hash, whatever order
+    /// they were read in; a key with none has neither.
     /// </summary>
+    internal static (string? Json, byte[]? Hash) AttributesOf(IReadOnlyList<DimensionAttributeState> attributes)
+    {
+        ArgumentNullException.ThrowIfNull(attributes);
+        var kept = attributes
+            .Where(a => !string.IsNullOrEmpty(a.Value) && a.Name.Length <= DeliveryDimensionAttributeValue.MaxNameLength)
+            .Select(a => (a.Name, Value: OsduLedger.Truncate(a.Value, DeliveryDimensionAttributeValue.MaxValueLength)!, From: OsduLedger.Truncate(a.From, DeliveryDimensionValue.MaxOriginalLength)))
+            .OrderBy(a => a.Name, StringComparer.Ordinal).ThenBy(a => a.Value, StringComparer.Ordinal).ThenBy(a => a.From, StringComparer.Ordinal)
+            .DistinctBy(a => (a.Name, a.Value))
+            .ToList();
+        if (kept.Count == 0)
+        {
+            return (null, null);
+        }
+
+        using var buffer = new MemoryStream();
+        using (var json = new Utf8JsonWriter(buffer, Compact))
+        {
+            json.WriteStartArray();
+            foreach (var (name, value, from) in kept)
+            {
+                json.WriteStartArray();
+                json.WriteStringValue(name);
+                json.WriteStringValue(value);
+                if (from is null)
+                {
+                    json.WriteNullValue();
+                }
+                else
+                {
+                    json.WriteStringValue(from);
+                }
+
+                json.WriteEndArray();
+            }
+
+            json.WriteEndArray();
+        }
+
+        return Hashed(buffer);
+    }
+
+    /// <summary>
+    /// The objects of a key's nested array as the stage keeps them, and their SHA-256: in the order the record holds them,
+    /// each a JSON object of its fields in the order read, a field named twice keeping its first value, one that is empty or
+    /// under a name longer than a field's left out, and a value cut to what a field keeps; an object holding none of the
+    /// fields is an empty object, which the write makes one row with no field. The same objects give the same text and hash.
+    /// </summary>
+    internal static (string Json, byte[] Hash) ElementsOf(IReadOnlyList<IReadOnlyList<KeyValuePair<string, string>>> objects)
+    {
+        ArgumentNullException.ThrowIfNull(objects);
+        using var buffer = new MemoryStream();
+        using (var json = new Utf8JsonWriter(buffer, Compact))
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            json.WriteStartArray();
+            foreach (var fields in objects)
+            {
+                seen.Clear();
+                json.WriteStartObject();
+                foreach (var (name, value) in fields)
+                {
+                    if (name.Length > DeliveryDimensionAttributeValue.MaxNameLength || string.IsNullOrEmpty(value) || !seen.Add(name))
+                    {
+                        continue;
+                    }
+
+                    json.WriteString(name, OsduLedger.Truncate(value, DeliveryDimensionElement.MaxValueLength));
+                }
+
+                json.WriteEndObject();
+            }
+
+            json.WriteEndArray();
+        }
+
+        var (text, hash) = Hashed(buffer);
+        return (text!, hash!);
+    }
+
+    /// <summary>How the stage writes JSON: compact, and only what JSON itself must escape, so a text stays as short as its values.</summary>
+    private static readonly JsonWriterOptions Compact = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, Indented = false };
+
+    private static (string? Json, byte[]? Hash) Hashed(MemoryStream buffer)
+    {
+        var bytes = buffer.ToArray();
+        return (System.Text.Encoding.UTF8.GetString(bytes), SHA256.HashData(bytes));
+    }
+
+    /// <summary>
+    /// Stages values of collected attributes of keys, each with the records of the key holding it: each cut to what an
+    /// attribute keeps, where it was read cut to what a key keeps, and one that is empty or under a name longer than an
+    /// attribute's left out. The write adds up the rows of one key, attribute and value. A value read through a key's record
+    /// is staged with its key (<see cref="AddValuesAsync"/>).
+    /// </summary>
+    /// <exception cref="ArgumentException">A value is not a collected one: it counts no records.</exception>
     public ValueTask AddAttributesAsync(IReadOnlyList<(string Key, DimensionAttributeState Attribute)> attributes, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(attributes);
-        var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var rows = new List<object?[]>(attributes.Count);
         foreach (var (key, attribute) in attributes)
         {
-            if (string.IsNullOrEmpty(attribute.Value) || attribute.Name.Length > DeliveryDimensionAttributeValue.MaxNameLength)
+            if (attribute.Records is null)
+            {
+                throw new ArgumentException(
+                    $"Attribute {attribute.Name} of key '{key}' counts no records, so it is read through the key's record, and is staged with its key (AddValuesAsync).", nameof(attributes));
+            }
+
+            if (string.IsNullOrEmpty(attribute.Value) || attribute.Name.Length > DeliveryDimensionAttributeValue.MaxNameLength || key.Length > DeliveryDimensionValue.MaxKeyLength)
             {
                 continue;
             }
 
-            if (!hashes.TryGetValue(key, out var hash))
-            {
-                hash = SqlServerDimensionStore.HashOf(key);
-                hashes[key] = hash;
-            }
-
             rows.Add(
             [
-                0L, hash, attribute.Name, OsduLedger.Truncate(attribute.Value, DeliveryDimensionAttributeValue.MaxValueLength),
+                0L, key, attribute.Name, OsduLedger.Truncate(attribute.Value, DeliveryDimensionAttributeValue.MaxValueLength),
                 OsduLedger.Truncate(attribute.From, DeliveryDimensionValue.MaxOriginalLength), attribute.Records,
             ]);
         }
@@ -260,62 +393,46 @@ public sealed class DimensionStage : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(texts);
         var rows = texts
-            .Where(t => t.Text.Length <= DeliveryDimensionValue.MaxOriginalLength && t.Name.Length <= DeliveryDimensionAttributeValue.MaxNameLength && !string.IsNullOrEmpty(t.Value))
+            .Where(t => t.Text.Length <= DeliveryDimensionValue.MaxKeyLength && t.Name.Length <= DeliveryDimensionAttributeValue.MaxNameLength && !string.IsNullOrEmpty(t.Value))
             .Select(t => new object?[]
             {
-                0L, t.Name, SqlServerDimensionStore.HashOf(t.Text), t.Text,
-                OsduLedger.Truncate(t.Value, DeliveryDimensionAttributeValue.MaxValueLength), t.Records,
+                0L, t.Name, t.Text, OsduLedger.Truncate(t.Value, DeliveryDimensionAttributeValue.MaxValueLength), t.Records,
             })
             .ToList();
         return _texts.AddAsync(rows, ct);
     }
 
     /// <summary>
-    /// Stages objects of a nested array: each field named twice in one object keeps its first value, one that is empty or
-    /// under a name longer than a field's is left out, and a value is cut to what a field keeps; an object holding none of
-    /// the fields is one row with no field.
+    /// Stages the objects of a nested array of keys, one row a key holding its objects as one text with their hash
+    /// (<see cref="ElementsOf"/>), so a write leaves the elements of a key whose objects read the same as they are, and
+    /// numbers the others' from 1 in the order its record holds them. A key whose record holds none is staged with none.
     /// </summary>
-    /// <exception cref="ArgumentException">A record's id is longer than an object is staged under.</exception>
-    public ValueTask AddElementsAsync(IReadOnlyList<StagedElement> elements, CancellationToken ct)
+    /// <exception cref="ArgumentException">A key is longer than a dimension keeps.</exception>
+    public ValueTask AddElementsAsync(IReadOnlyList<StagedElements> elements, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(elements);
-        var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        var rows = new List<object?[]>(elements.Count * 4);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var rows = new List<object?[]>(elements.Count);
+        var objects = 0L;
         foreach (var element in elements)
         {
-            if (element.Record.Length > SqlServerDimensionStage.MaxRecordLength)
+            if (element.Key.Length > DeliveryDimensionValue.MaxKeyLength)
             {
                 throw new ArgumentException(
-                    string.Create(CultureInfo.InvariantCulture, $"Record '{element.Record[..60]}...' has an id of {element.Record.Length} characters, more than the {SqlServerDimensionStage.MaxRecordLength} its objects are staged under."),
+                    string.Create(CultureInfo.InvariantCulture, $"A key of dimension {DimensionId} is {element.Key.Length} characters, more than the {DeliveryDimensionValue.MaxKeyLength} a dimension keeps; the build leaves such keys out before it reads their elements."),
                     nameof(elements));
             }
 
-            if (!hashes.TryGetValue(element.Key, out var hash))
+            if (element.Objects.Count == 0)
             {
-                hash = SqlServerDimensionStore.HashOf(element.Key);
-                hashes[element.Key] = hash;
+                continue;
             }
 
-            seen.Clear();
-            var any = false;
-            foreach (var (name, value) in element.Values)
-            {
-                if (name.Length > DeliveryDimensionAttributeValue.MaxNameLength || string.IsNullOrEmpty(value) || !seen.Add(name))
-                {
-                    continue;
-                }
-
-                any = true;
-                rows.Add([0L, hash, element.Record, element.Ordinal, name, OsduLedger.Truncate(value, DeliveryDimensionElement.MaxValueLength)]);
-            }
-
-            if (!any)
-            {
-                rows.Add([0L, hash, element.Record, element.Ordinal, null, null]);
-            }
+            var (json, hash) = ElementsOf(element.Objects);
+            rows.Add([0L, element.Key, json, hash, element.Objects.Count]);
+            objects += element.Objects.Count;
         }
 
+        Interlocked.Add(ref _objects, objects);
         return _elements.AddAsync(rows, ct);
     }
 
@@ -331,13 +448,11 @@ public sealed class DimensionStage : IAsyncDisposable
         foreach (var (key, records) in keys)
         {
             seen.Clear();
-            byte[]? hash = null;
             foreach (var record in records)
             {
                 if (SqlServerDimensionStore.KeyRecordType(record) is { } type && seen.Add(record))
                 {
-                    hash ??= SqlServerDimensionStore.HashOf(key);
-                    rows.Add([0L, SqlServerDimensionStage.ReadThrough, SqlServerDimensionStore.HashOf(record), hash, type]);
+                    rows.Add([0L, SqlServerDimensionStage.ReadThrough, record, key, type]);
                 }
             }
         }
@@ -346,32 +461,25 @@ public sealed class DimensionStage : IAsyncDisposable
     }
 
     /// <summary>
-    /// Stages records read by their unique key (by the SHA-256 of it) and the keys each held: what a full load keeps for
-    /// incremental loads, or what an incremental load found its changed records hold. A key longer than a dimension keeps is
-    /// no key of it.
+    /// Stages records read by their unique key (<see cref="DeliveryDimensionRecord.RecordKey"/>) and the keys each held: what a
+    /// full load keeps for incremental loads, or what an incremental load found its changed records hold. A key, or a record's
+    /// unique key, longer than a dimension keeps is left out.
     /// </summary>
-    public async ValueTask AddRecordsAsync(IReadOnlyCollection<byte[]> read, IReadOnlyList<(byte[] Record, string Key)> held, CancellationToken ct)
+    public async ValueTask AddRecordsAsync(IReadOnlyCollection<string> read, IReadOnlyList<(string Record, string Key)> held, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(read);
         ArgumentNullException.ThrowIfNull(held);
-        var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var rows = new List<object?[]>(read.Count + held.Count);
-        rows.AddRange(read.Select(r => new object?[] { 0L, SqlServerDimensionStage.Read, r, null, null }));
+        rows.AddRange(read.Where(r => r.Length <= DeliveryDimensionValue.MaxKeyLength).Select(r => new object?[] { 0L, SqlServerDimensionStage.Read, r, null, null }));
         var pairs = 0;
         foreach (var (record, key) in held)
         {
-            if (key.Length > DeliveryDimensionValue.MaxOriginalLength)
+            if (key.Length > DeliveryDimensionValue.MaxKeyLength || record.Length > DeliveryDimensionValue.MaxKeyLength)
             {
                 continue;
             }
 
-            if (!hashes.TryGetValue(key, out var hash))
-            {
-                hash = SqlServerDimensionStore.HashOf(key);
-                hashes[key] = hash;
-            }
-
-            rows.Add([0L, SqlServerDimensionStage.Held, record, hash, null]);
+            rows.Add([0L, SqlServerDimensionStage.Held, record, key, null]);
             pairs++;
         }
 
@@ -493,7 +601,7 @@ public sealed class DimensionStage : IAsyncDisposable
 
     private StagedTable[] Tables() => [_values, _keys, _members, _attributes, _texts, _elements, _records];
 
-    private static object?[] Row(byte[] hash, string key, long count, bool gone) => [0L, hash, key, count, gone];
+    private static object?[] Row(string key, long count, bool gone) => [0L, key, count, gone];
 
     /// <summary>
     /// One staging table of the build: rows held in memory until a batch fills (<see cref="MaxRows"/> rows, or about
@@ -679,37 +787,35 @@ internal static class SqlServerDimensionStage
     /// <summary>The kind of a staged record row: a key a record read by its unique key holds.</summary>
     internal const byte Held = 3;
 
-    /// <summary>The longest record id an object of a nested array is staged under.</summary>
-    internal const int MaxRecordLength = 1024;
-
     /// <summary>The collation of every staged text compared exactly, the one the dimension's tables compare it in.</summary>
     private const string Exact = DeliveryModel.OsduIdCollation;
 
-    internal static readonly string[] KeyColumns = ["Seq", "KeyHash", "Key", "Count", "Gone"];
-    internal static readonly Type[] KeyTypes = [typeof(long), typeof(byte[]), typeof(string), typeof(long), typeof(bool)];
+    internal static readonly string[] KeyColumns = ["Seq", "Key", "Count", "Gone"];
+    internal static readonly Type[] KeyTypes = [typeof(long), typeof(string), typeof(long), typeof(bool)];
 
-    internal static readonly string[] ValueColumns = ["Seq", "OriginalHash", "Original", "CleanValue", "LeftOut", "Note", "Label", "LabelFrom", "Filter", "Count", "Filterable"];
+    internal static readonly string[] ValueColumns =
+        ["Seq", "Original", "CleanValue", "LeftOut", "Note", "Label", "LabelFrom", "Filter", "Count", "Filterable", "Attributes", "AttributesHash"];
 
     internal static readonly Type[] ValueTypes =
     [
-        typeof(long), typeof(byte[]), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string),
-        typeof(long), typeof(bool),
+        typeof(long), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string),
+        typeof(long), typeof(bool), typeof(string), typeof(byte[]),
     ];
 
     internal static readonly string[] MemberColumns = ["Seq", "Value", "Records", "RecordsExact", "Originals", "Unfilterable", "Filter", "FilterParts"];
     internal static readonly Type[] MemberTypes = [typeof(long), typeof(string), typeof(long), typeof(bool), typeof(int), typeof(int), typeof(string), typeof(int)];
 
-    internal static readonly string[] AttributeColumns = ["Seq", "KeyHash", "Name", "Value", "ValueFrom", "Records"];
-    internal static readonly Type[] AttributeTypes = [typeof(long), typeof(byte[]), typeof(string), typeof(string), typeof(string), typeof(long)];
+    internal static readonly string[] AttributeColumns = ["Seq", "Key", "Name", "Value", "ValueFrom", "Records"];
+    internal static readonly Type[] AttributeTypes = [typeof(long), typeof(string), typeof(string), typeof(string), typeof(string), typeof(long)];
 
-    internal static readonly string[] TextColumns = ["Seq", "Name", "TextHash", "Text", "Value", "Records"];
-    internal static readonly Type[] TextTypes = [typeof(long), typeof(string), typeof(byte[]), typeof(string), typeof(string), typeof(long)];
+    internal static readonly string[] TextColumns = ["Seq", "Name", "Text", "Value", "Records"];
+    internal static readonly Type[] TextTypes = [typeof(long), typeof(string), typeof(string), typeof(string), typeof(long)];
 
-    internal static readonly string[] ElementColumns = ["Seq", "KeyHash", "Record", "Ordinal", "Name", "Value"];
-    internal static readonly Type[] ElementTypes = [typeof(long), typeof(byte[]), typeof(string), typeof(int), typeof(string), typeof(string)];
+    internal static readonly string[] ElementColumns = ["Seq", "Key", "Elements", "ElementsHash", "Objects"];
+    internal static readonly Type[] ElementTypes = [typeof(long), typeof(string), typeof(string), typeof(byte[]), typeof(int)];
 
-    internal static readonly string[] RecordColumns = ["Seq", "Kind", "RecordHash", "KeyHash", "EntityType"];
-    internal static readonly Type[] RecordTypes = [typeof(long), typeof(byte), typeof(byte[]), typeof(byte[]), typeof(string)];
+    internal static readonly string[] RecordColumns = ["Seq", "Kind", "Record", "Key", "EntityType"];
+    internal static readonly Type[] RecordTypes = [typeof(long), typeof(byte), typeof(string), typeof(string), typeof(string)];
 
     /// <summary>
     /// Each staging table's columns, as the statements reading them name them: each the size of the dimension's column it is
@@ -718,36 +824,38 @@ internal static class SqlServerDimensionStage
     private static readonly IReadOnlyDictionary<string, string> Columns = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [KeyTable] = string.Create(CultureInfo.InvariantCulture, $"""
-            [Seq] bigint NOT NULL, [KeyHash] binary(32) NOT NULL, [Key] nvarchar({DeliveryDimensionValue.MaxOriginalLength}) COLLATE {Exact} NOT NULL,
+            [Seq] bigint NOT NULL, [Key] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
             [Count] bigint NOT NULL, [Gone] bit NOT NULL
             """),
         [ValueTable] = string.Create(CultureInfo.InvariantCulture, $"""
-            [Seq] bigint NOT NULL, [OriginalHash] binary(32) NOT NULL, [Original] nvarchar({DeliveryDimensionValue.MaxOriginalLength}) COLLATE {Exact} NOT NULL,
+            [Seq] bigint NOT NULL, [Original] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
             [CleanValue] nvarchar(256) COLLATE {Exact} NULL, [LeftOut] nvarchar(16) NULL, [Note] nvarchar(400) NULL,
             [Label] nvarchar({DeliveryDimensionValue.MaxLabelLength}) NULL, [LabelFrom] nvarchar({DeliveryDimensionValue.MaxOriginalLength}) NULL,
-            [Filter] nvarchar({DeliveryDimensionValue.MaxFilterLength}) NULL, [Count] bigint NOT NULL, [Filterable] bit NOT NULL
+            [Filter] nvarchar({DeliveryDimensionValue.MaxFilterLength}) NULL, [Count] bigint NOT NULL, [Filterable] bit NOT NULL,
+            [Attributes] nvarchar(max) NULL, [AttributesHash] binary(32) NULL
             """),
         [MemberTable] = string.Create(CultureInfo.InvariantCulture, $"""
             [Seq] bigint NOT NULL, [Value] nvarchar(256) COLLATE {Exact} NOT NULL, [Records] bigint NOT NULL,
             [RecordsExact] bit NOT NULL, [Originals] int NOT NULL, [Unfilterable] int NOT NULL, [Filter] nvarchar(max) NULL, [FilterParts] int NOT NULL
             """),
         [AttributeTable] = string.Create(CultureInfo.InvariantCulture, $"""
-            [Seq] bigint NOT NULL, [KeyHash] binary(32) NOT NULL, [Name] nvarchar({DeliveryDimensionAttributeValue.MaxNameLength}) COLLATE {Exact} NOT NULL,
+            [Seq] bigint NOT NULL, [Key] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
+            [Name] nvarchar({DeliveryDimensionAttributeValue.MaxNameLength}) COLLATE {Exact} NOT NULL,
             [Value] nvarchar({DeliveryDimensionAttributeValue.MaxValueLength}) COLLATE {Exact} NOT NULL,
             [ValueFrom] nvarchar({DeliveryDimensionValue.MaxOriginalLength}) NULL, [Records] bigint NULL
             """),
         [TextTable] = string.Create(CultureInfo.InvariantCulture, $"""
-            [Seq] bigint NOT NULL, [Name] nvarchar({DeliveryDimensionAttributeValue.MaxNameLength}) COLLATE {Exact} NOT NULL, [TextHash] binary(32) NOT NULL,
-            [Text] nvarchar({DeliveryDimensionValue.MaxOriginalLength}) COLLATE {Exact} NOT NULL,
+            [Seq] bigint NOT NULL, [Name] nvarchar({DeliveryDimensionAttributeValue.MaxNameLength}) COLLATE {Exact} NOT NULL,
+            [Text] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
             [Value] nvarchar({DeliveryDimensionAttributeValue.MaxValueLength}) COLLATE {Exact} NOT NULL, [Records] bigint NOT NULL
             """),
         [ElementTable] = string.Create(CultureInfo.InvariantCulture, $"""
-            [Seq] bigint NOT NULL, [KeyHash] binary(32) NOT NULL, [Record] nvarchar({MaxRecordLength}) COLLATE {Exact} NOT NULL,
-            [Ordinal] int NOT NULL, [Name] nvarchar({DeliveryDimensionAttributeValue.MaxNameLength}) COLLATE {Exact} NULL,
-            [Value] nvarchar({DeliveryDimensionElement.MaxValueLength}) COLLATE {Exact} NULL
+            [Seq] bigint NOT NULL, [Key] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
+            [Elements] nvarchar(max) NOT NULL, [ElementsHash] binary(32) NOT NULL, [Objects] int NOT NULL
             """),
         [RecordTable] = string.Create(CultureInfo.InvariantCulture, $"""
-            [Seq] bigint NOT NULL, [Kind] tinyint NOT NULL, [RecordHash] binary(32) NOT NULL, [KeyHash] binary(32) NULL,
+            [Seq] bigint NOT NULL, [Kind] tinyint NOT NULL, [Record] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
+            [Key] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NULL,
             [EntityType] nvarchar({DeliveryDimensionKeyRecord.MaxEntityTypeLength}) COLLATE {Exact} NULL
             """),
     };
@@ -764,62 +872,64 @@ internal static class SqlServerDimensionStage
 
     /// <summary>
     /// The staging copied into the write's temporary tables (<c>SqlServerDimensionStore</c>'s stage), as the merge reads them:
-    /// the keys as cleaned; the values; each key's value of an attribute once, its records added up and where it was read
-    /// the first, exactly, of the rows naming it (one for a value read through the key's record, the first text for a
-    /// collected one); each text once, its records added up; each key's objects numbered from 1 in the order of their records'
-    /// ids and then of the objects in each, an object holding no field one row of the table's first element column; the
-    /// records each key was read through; the keys an incremental load removes; and the records read and the keys they hold.
-    /// Only the keys the write holds have attributes, objects and records read through.
+    /// the keys as cleaned, each with the attribute values read through its record and their hash; the values; each key's
+    /// value of a collected attribute once, its records added up and where it was read the first, exactly, of the rows naming
+    /// it; each text once, its records added up; each key's objects with their hash; the records each key was read through;
+    /// the keys an incremental load removes; and the records read and the keys they hold. Only the keys the write holds have
+    /// attributes, objects and records read through. Every row is matched by its key's text, exactly.
     /// </summary>
     internal static string CopySql(DimensionStage stage) => $"""
-        INSERT INTO #DimValue ([Seq], [Original], [OriginalHash], [CleanValue], [LeftOut], [Note], [Label], [LabelFrom], [Filter], [Count], [Filterable])
-        SELECT CONVERT(int, s.[Seq]), s.[Original], s.[OriginalHash], s.[CleanValue], s.[LeftOut], s.[Note], s.[Label], s.[LabelFrom], s.[Filter], s.[Count], s.[Filterable]
-        FROM {Of(stage, ValueTable)} AS s
-        ORDER BY s.[OriginalHash];
+        INSERT INTO #DimValue ([Seq], [Original], [CleanValue], [LeftOut], [Note], [Label], [LabelFrom], [Filter], [Count], [Filterable], [Attributes], [AttributesHash])
+        SELECT CONVERT(int, s.[Seq]), s.[Original], s.[CleanValue], s.[LeftOut], s.[Note], s.[Label], s.[LabelFrom], s.[Filter], s.[Count], s.[Filterable],
+            s.[Attributes], s.[AttributesHash]
+        FROM {Of(stage, ValueTable)} AS s;
 
         INSERT INTO #DimMember ([Value], [Records], [RecordsExact], [Originals], [Unfilterable], [Filter], [FilterParts])
         SELECT m.[Value], m.[Records], m.[RecordsExact], m.[Originals], m.[Unfilterable], m.[Filter], m.[FilterParts]
         FROM {Of(stage, MemberTable)} AS m
         ORDER BY m.[Value];
 
-        INSERT INTO #DimAttr ([OriginalHash], [Name], [Value], [ValueFrom], [Records])
-        SELECT a.[KeyHash], a.[Name], a.[Value], MIN(a.[ValueFrom] COLLATE Latin1_General_100_BIN2), SUM(a.[Records])
+        INSERT INTO #DimAttr ([Original], [Name], [Value], [ValueFrom], [Records])
+        SELECT a.[Key], a.[Name], a.[Value], MIN(a.[ValueFrom] COLLATE Latin1_General_100_BIN2), SUM(a.[Records])
         FROM {Of(stage, AttributeTable)} AS a
-        WHERE EXISTS (SELECT 1 FROM #DimValue AS v WHERE v.[OriginalHash] = a.[KeyHash])
-        GROUP BY a.[KeyHash], a.[Name], a.[Value];
+        WHERE EXISTS (SELECT 1 FROM #DimValue AS v WHERE v.[Original] = a.[Key] AND v.[OriginalBytes] = DATALENGTH(a.[Key]))
+        GROUP BY a.[Key], DATALENGTH(a.[Key]), a.[Name], a.[Value];
 
-        INSERT INTO #DimText ([Name], [TextHash], [Text], [Value], [Records])
-        SELECT t.[Name], t.[TextHash], MIN(t.[Text]), MIN(t.[Value]), SUM(t.[Records])
+        INSERT INTO #DimText ([Name], [Text], [Value], [Records])
+        SELECT t.[Name], t.[Text], MIN(t.[Value]), SUM(t.[Records])
         FROM {Of(stage, TextTable)} AS t
-        GROUP BY t.[Name], t.[TextHash];
+        GROUP BY t.[Name], t.[Text], DATALENGTH(t.[Text]);
 
+        -- A key's objects are one record's, staged once; a record the search handed out twice is kept once.
         IF @elements = 1
-            INSERT INTO #DimElem ([OriginalHash], [Seq], [Name], [Value])
-            SELECT e.[KeyHash], CONVERT(int, DENSE_RANK() OVER (PARTITION BY e.[KeyHash] ORDER BY e.[Record], e.[Ordinal])), ISNULL(e.[Name], @firstElement), e.[Value]
+            INSERT INTO #DimElem ([Original], [Elements], [ElementsHash], [Objects])
+            SELECT e.[Key], e.[Elements], e.[ElementsHash], e.[Objects]
             FROM {Of(stage, ElementTable)} AS e
-            WHERE EXISTS (SELECT 1 FROM #DimValue AS v WHERE v.[OriginalHash] = e.[KeyHash]);
+            WHERE EXISTS (SELECT 1 FROM #DimValue AS v WHERE v.[Original] = e.[Key] AND v.[OriginalBytes] = DATALENGTH(e.[Key]));
 
-        INSERT INTO #DimRead ([OriginalHash], [RecordHash], [EntityType])
-        SELECT r.[KeyHash], r.[RecordHash], MIN(r.[EntityType])
+        INSERT INTO #DimRead ([Original], [Record], [EntityType])
+        SELECT r.[Key], r.[Record], MIN(r.[EntityType])
         FROM {Of(stage, RecordTable)} AS r
         WHERE r.[Kind] = {ReadThrough}
-          AND EXISTS (SELECT 1 FROM #DimValue AS v WHERE v.[OriginalHash] = r.[KeyHash])
-        GROUP BY r.[KeyHash], r.[RecordHash];
+          AND EXISTS (SELECT 1 FROM #DimValue AS v WHERE v.[Original] = r.[Key] AND v.[OriginalBytes] = DATALENGTH(r.[Key]))
+        GROUP BY r.[Key], DATALENGTH(r.[Key]), r.[Record];
 
-        INSERT INTO #DimGone ([OriginalHash])
-        SELECT DISTINCT k.[KeyHash]
+        INSERT INTO #DimGone ([Original])
+        SELECT k.[Key]
         FROM {Of(stage, KeyTable)} AS k
-        WHERE k.[Gone] = 1;
+        WHERE k.[Gone] = 1
+        GROUP BY k.[Key], DATALENGTH(k.[Key]);
 
-        INSERT INTO #DimRecRead ([RecordHash])
-        SELECT DISTINCT r.[RecordHash]
+        INSERT INTO #DimRecRead ([Record])
+        SELECT DISTINCT r.[Record]
         FROM {Of(stage, RecordTable)} AS r
         WHERE r.[Kind] = {Read};
 
-        INSERT INTO #DimRecHeld ([RecordHash], [OriginalHash])
-        SELECT DISTINCT r.[RecordHash], r.[KeyHash]
+        INSERT INTO #DimRecHeld ([Record], [Original])
+        SELECT r.[Record], r.[Key]
         FROM {Of(stage, RecordTable)} AS r
-        WHERE r.[Kind] = {Held};
+        WHERE r.[Kind] = {Held}
+        GROUP BY r.[Record], r.[Key], DATALENGTH(r.[Key]);
         """;
 
     /// <summary>
@@ -912,8 +1022,8 @@ internal static class SqlServerDimensionStage
         """;
 
     private static string EveryKeySql(DimensionStage stage) => $"""
-        INSERT INTO {Of(stage, AttributeTable)} ([Seq], [KeyHash], [Name], [Value], [ValueFrom], [Records])
-        SELECT @first + ROW_NUMBER() OVER (ORDER BY k.[Seq]) - 1, k.[KeyHash], @name, @value, NULL, k.[Count]
+        INSERT INTO {Of(stage, AttributeTable)} ([Seq], [Key], [Name], [Value], [ValueFrom], [Records])
+        SELECT @first + ROW_NUMBER() OVER (ORDER BY k.[Seq]) - 1, k.[Key], @name, @value, NULL, k.[Count]
         FROM {Of(stage, KeyTable)} AS k
         WHERE k.[Gone] = 0;
         """;
@@ -929,11 +1039,16 @@ internal static class SqlServerDimensionStage
     // and the dimension's others under the value that it does not hold again (nor removes), each by seeks of the dimension.
     private static string PartialMemberKeysSql(DimensionStage stage) => $"""
         SET NOCOUNT ON;
-        CREATE TABLE #Leaving ([Hash] binary(32) NOT NULL PRIMARY KEY);
-        INSERT INTO #Leaving ([Hash])
-        SELECT s.[OriginalHash] FROM {Of(stage, ValueTable)} AS s
-        UNION
-        SELECT k.[KeyHash] FROM {Of(stage, KeyTable)} AS k WHERE k.[Gone] = 1;
+        CREATE TABLE #Leaving (
+            [Original] nvarchar({DeliveryDimensionValue.MaxKeyLength}) COLLATE {Exact} NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED,
+            PRIMARY KEY NONCLUSTERED ([Original], [OriginalBytes]));
+        INSERT INTO #Leaving ([Original])
+        SELECT l.[Original] FROM (
+            SELECT s.[Original] FROM {Of(stage, ValueTable)} AS s
+            UNION ALL
+            SELECT k.[Key] FROM {Of(stage, KeyTable)} AS k WHERE k.[Gone] = 1) AS l
+        GROUP BY l.[Original], DATALENGTH(l.[Original]);
 
         CREATE TABLE #Affected ([Value] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY);
         INSERT INTO #Affected ([Value])
@@ -942,7 +1057,8 @@ internal static class SqlServerDimensionStage
         UNION
         SELECT m.[Value]
         FROM #Leaving AS l
-        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = l.[Hash]
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+            ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[Original] = l.[Original] AND v.[OriginalBytes] = l.[OriginalBytes]
         INNER JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[MemberId] = v.[MemberId]
         WHERE v.[RemovedRunId] IS NULL;
 
@@ -955,7 +1071,7 @@ internal static class SqlServerDimensionStage
         INNER JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[Value] = a.[Value]
         INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[MemberId] = m.[MemberId]
         WHERE m.[RemovedRunId] IS NULL AND v.[RemovedRunId] IS NULL
-          AND NOT EXISTS (SELECT 1 FROM #Leaving AS l WHERE l.[Hash] = v.[OriginalHash])
+          AND NOT EXISTS (SELECT 1 FROM #Leaving AS l WHERE l.[Original] = v.[Original] AND l.[OriginalBytes] = v.[OriginalBytes])
         ORDER BY 1, 2;
         """;
 
@@ -974,8 +1090,8 @@ internal static class SqlServerDimensionStage
 
     private static string KeysWithElementsSql(DimensionStage stage) => $"""
         SELECT COUNT_BIG(*)
-        FROM (SELECT DISTINCT e.[KeyHash] FROM {Of(stage, ElementTable)} AS e) AS h
-        WHERE EXISTS (SELECT 1 FROM {Of(stage, KeyTable)} AS k WHERE k.[Gone] = 0 AND k.[KeyHash] = h.[KeyHash]);
+        FROM (SELECT DISTINCT e.[Key] FROM {Of(stage, ElementTable)} AS e WHERE e.[Objects] > 0) AS h
+        WHERE EXISTS (SELECT 1 FROM {Of(stage, KeyTable)} AS k WHERE k.[Gone] = 0 AND k.[Key] = h.[Key]);
         """;
 
     /// <summary>The statements that drop every staging table of build <paramref name="build"/> of the stage's dimension the database holds.</summary>

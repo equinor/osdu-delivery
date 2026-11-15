@@ -14,6 +14,10 @@ keywords:
   - dimension build memory
   - out of memory
   - staging
+  - write steps
+  - waits for the write lock
+  - still merging
+  - written in
 related:
   - delivery-flow-dimension
   - delivery-flow-dimension-nodes
@@ -29,6 +33,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionWriteSteps.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionWriteLog.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs
 ---
 
@@ -74,8 +80,8 @@ For each dimension, in the run's partition:
    than `aggregationSize` is complete; one answered with that many is split at a key it returned and each half is asked
    again, until every range answers whole. A range that cannot be split is read record by record through the search
    cursor. Ranges are asked `recordsAtOnce` at a time, and each range's keys are staged as it completes. A text value
-   over 256 characters is not in the `keyword` field and is counted, never a key; a key over 1,024 characters is counted
-   and left out.
+   over 256 characters is not in the `keyword` field and is counted, never a key; a key over 800 characters is counted
+   and left out (an OSDU id is about a hundred).
 3. **Labels, attributes and collected values**, read side by side when the dimension has both.
 4. **Values and filters.** Each key is cleaned into its value. A key's filter is written the way the index holds the
    field; a value's filter holds at most 500 keys a query, and a value with more has its filter in parts. A key no query
@@ -84,10 +90,11 @@ For each dimension, in the run's partition:
 5. **The write**, in one transaction under a lock per dimension: the build's staging is copied where the database holds
    it, then new keys and values are added, changed ones rewritten, what the build no longer found marked removed (keeping
    its id should a later build find it again), every key that arrived, left, moved or came back logged, and the
-   dimension's table brought to the same rows: every row by a full load, the rows of the keys it read again by an
-   incremental one ([The dimension's table](dimension-table.md)). A full load's write grows with the dimension (one of
-   well log curves stages a row for every field of every curve), an incremental load's with what it read again; neither
-   has a time limit, so each takes as long as its rows do, and cancelling the run stops it with nothing written.
+   dimension's table brought to the same rows, those of the keys the write changed ([The dimension's table](dimension-table.md)).
+   A key's objects and the attribute values read through its record are staged with their hash, and a key whose hash is
+   the one it kept is left as it is ([decision 0058](../../wiki/decisions/0058-dimension-keys-by-their-text.md)): a full
+   load of a dimension that did not change writes few rows, however many it read. Neither load has a time limit, so each
+   takes as long as its rows do, and cancelling the run stops it with nothing written.
    Writes of different dimensions run side by side: each locks only its own rows, every table holding a dimension's rows
    keeping them together and taking no page lock, so neither waits for the other. A statement writing 5,000 rows or
    more of one table (a large dimension's first load) can have SQL Server lock that table whole until its build commits,
@@ -104,6 +111,36 @@ so this build wrote nothing. Build it again when the other has finished.`
 
 A build reads the index as it stands: a record written seconds before may not be in it yet. When the counts read do not
 add up to the records holding a value, the build keeps what it read and says so in its notes.
+
+### What the trace says of a write
+
+A write takes three steps, and the run's trace says when each starts and ends, with what it worked on, what it did and
+how long it took, so a write that works, one that waits and one that is stuck read apart from the trace alone:
+
+```text
+dimension LogCurve: deleting what earlier builds removed: the keys and values earlier builds removed
+dimension LogCurve: deleting what earlier builds removed took 0.1 s: 0 key(s) and 0 value(s) deleted
+dimension LogCurve: merging: 10602 key(s), 2 value(s), 0 collected value(s) and 116622 element object(s) staged
+dimension LogCurve: still merging after 60.0 s; its INSERT is working, waiting on PAGEIOLATCH_SH, 1,204,113 page(s) read and 22,410 written so far
+dimension LogCurve: merging took 71.3 s: 0 key(s) arrived, 0 left, 0 moved and 0 came back; 0 attribute value(s) and 0 element field(s) added, rewritten or dropped
+dimension LogCurve: writing its table: osdu.dim_LogCurve, the rows of the keys the write changed
+dimension LogCurve: writing its table took 0.2 s: 0 row(s) added, rewritten or deleted
+```
+
+- **Deleting what earlier builds removed**: the keys and values the build before marked removed, a few keys a
+  transaction ([What a build keeps](dimension.md#what-a-build-keeps)).
+- **Merging**: the staging copied into the dimension in one transaction, as above.
+- **Writing its table**: the dimension's table brought to what the merge kept, where the flow's target keeps it; every
+  row of a table behind its dimension, else those of the keys the write changed.
+
+A step that waits for the dimension's write lock, which another build of the dimension holds, says so
+(`merging waits for the dimension's write lock, which another build of it holds, for up to two minutes`) and then how
+long it waited. A step still running after a minute says so, and again at doubling intervals up to every ten minutes,
+with what its statement is doing as the database reports it: working, with the wait it is in and the pages it has read
+and written so far, or waiting for a lock another session holds, naming the session. A database that shows the module
+none of its sessions' requests leaves that part out. The build's notes end with the same timings
+(`Written in 71.6 s: deleting what earlier builds removed 0.1 s (0 key(s) and 0 value(s) deleted); merging 71.3 s (...);
+writing its table 0.2 s (...)`), which the Dimensions page shows with the build.
 
 ## What a build holds
 

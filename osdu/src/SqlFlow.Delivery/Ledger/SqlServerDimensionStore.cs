@@ -1,7 +1,5 @@
 using System.Data;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -51,11 +49,15 @@ internal static partial class SqlServerDimensionStore
     /// <summary>How many times a write the database chose as a deadlock victim is made again.</summary>
     private const int DeadlockAttempts = 3;
 
-    private const string StageSql = """
+    // The write's own tables, which what the build staged is copied into and the merge reads. Every key, record and text is
+    // matched by its text, exactly; none is wider than a key a dimension keeps (DeliveryDimensionValue.MaxKeyLength), and every
+    // index over one is nonclustered, whose key holds 1,700 bytes. SQL Server compares text as though the shorter were padded
+    // with spaces, so a key or a text is matched by its length too ([OriginalBytes], [TextBytes]): 'GR' and 'GR ' are two keys.
+    private static readonly string StageSql = $$"""
         CREATE TABLE #DimValue (
             [Seq] int NOT NULL,
-            [Original] nvarchar(1024) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            [OriginalHash] binary(32) NOT NULL PRIMARY KEY,
+            [Original] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED,
             [CleanValue] nvarchar(256) COLLATE Latin1_General_100_BIN2 NULL,
             [LeftOut] nvarchar(16) NULL,
             [Note] nvarchar(400) NULL,
@@ -64,7 +66,12 @@ internal static partial class SqlServerDimensionStore
             [Filter] nvarchar(4000) NULL,
             [Count] bigint NOT NULL,
             [Filterable] bit NOT NULL,
-            [MemberId] bigint NULL);
+            [Attributes] nvarchar(max) NULL,
+            [AttributesHash] binary(32) NULL,
+            [MemberId] bigint NULL,
+            [ValueId] bigint NULL,
+            [AttributesChanged] bit NOT NULL DEFAULT (0),
+            PRIMARY KEY NONCLUSTERED ([Original], [OriginalBytes]));
         CREATE TABLE #DimMember (
             [Value] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY,
             [Records] bigint NOT NULL,
@@ -78,8 +85,13 @@ internal static partial class SqlServerDimensionStore
             [Change] nvarchar(16) NOT NULL,
             [FromMemberId] bigint NULL,
             [ToMemberId] bigint NULL);
+        CREATE TABLE #DimTouched (
+            [ValueId] bigint NOT NULL);
+        CREATE TABLE #DimCollected (
+            [AttributeId] int NOT NULL PRIMARY KEY);
         CREATE TABLE #DimAttr (
-            [OriginalHash] binary(32) NOT NULL,
+            [Original] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED,
             [Name] nvarchar(64) COLLATE Latin1_General_100_BIN2 NOT NULL,
             [Value] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
             [ValueFrom] nvarchar(1024) NULL,
@@ -93,45 +105,45 @@ internal static partial class SqlServerDimensionStore
             PRIMARY KEY ([ValueId], [AttributeId], [Value]));
         CREATE TABLE #DimText (
             [Name] nvarchar(64) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            [TextHash] binary(32) NOT NULL,
-            [Text] nvarchar(1024) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [Text] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [TextBytes] AS CAST(DATALENGTH([Text]) AS smallint) PERSISTED,
             [Value] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            [Records] bigint NOT NULL,
-            PRIMARY KEY ([Name], [TextHash]));
+            [Records] bigint NOT NULL);
         CREATE TABLE #DimElem (
-            [OriginalHash] binary(32) NOT NULL,
-            [Seq] int NOT NULL,
-            [Name] nvarchar(64) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            [Value] nvarchar(4000) COLLATE Latin1_General_100_BIN2 NULL,
-            PRIMARY KEY ([OriginalHash], [Seq], [Name]));
-        CREATE TABLE #DimElemKeyed (
-            [ValueId] bigint NOT NULL,
-            [Seq] int NOT NULL,
-            [AttributeId] int NOT NULL,
-            [Value] nvarchar(4000) COLLATE Latin1_General_100_BIN2 NULL,
-            PRIMARY KEY ([ValueId], [Seq], [AttributeId]));
+            [Original] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED,
+            [Elements] nvarchar(max) NOT NULL,
+            [ElementsHash] binary(32) NOT NULL,
+            [Objects] int NOT NULL,
+            PRIMARY KEY NONCLUSTERED ([Original], [OriginalBytes]) WITH (IGNORE_DUP_KEY = ON));
+        CREATE TABLE #DimElemChanged (
+            [ValueId] bigint NOT NULL PRIMARY KEY,
+            [Elements] nvarchar(max) NULL,
+            [ElementsHash] binary(32) NULL);
         CREATE TABLE #DimRead (
-            [OriginalHash] binary(32) NOT NULL,
-            [RecordHash] binary(32) NOT NULL,
-            [EntityType] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            PRIMARY KEY ([OriginalHash], [RecordHash]));
+            [Original] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED,
+            [Record] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [EntityType] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL);
         CREATE TABLE #DimReadKeyed (
             [ValueId] bigint NOT NULL,
-            [RecordHash] binary(32) NOT NULL,
+            [Record] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
             [EntityType] nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            PRIMARY KEY ([ValueId], [RecordHash]));
+            PRIMARY KEY NONCLUSTERED ([ValueId], [Record]));
         CREATE TABLE #DimGone (
-            [OriginalHash] binary(32) NOT NULL PRIMARY KEY);
+            [Original] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED,
+            PRIMARY KEY NONCLUSTERED ([Original], [OriginalBytes]));
         CREATE TABLE #DimRecRead (
-            [RecordHash] binary(32) NOT NULL PRIMARY KEY);
+            [Record] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY NONCLUSTERED);
         CREATE TABLE #DimRecHeld (
-            [RecordHash] binary(32) NOT NULL,
-            [OriginalHash] binary(32) NOT NULL,
-            PRIMARY KEY ([RecordHash], [OriginalHash]));
+            [Record] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [Original] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
+            [OriginalBytes] AS CAST(DATALENGTH([Original]) AS smallint) PERSISTED);
         CREATE TABLE #DimRecKeyed (
-            [RecordHash] binary(32) NOT NULL,
+            [Record] nvarchar({{DeliveryDimensionValue.MaxKeyLength}}) COLLATE Latin1_General_100_BIN2 NOT NULL,
             [ValueId] bigint NOT NULL,
-            PRIMARY KEY ([RecordHash], [ValueId]));
+            PRIMARY KEY NONCLUSTERED ([Record], [ValueId]));
         """ + "\n" + NameStageSql;
 
     // The attributes the dimension declares, each with its place among them: what a write that knows the declaration
@@ -202,10 +214,11 @@ internal static partial class SqlServerDimensionStore
     // The dimension laid out as its table holds it (osdu/docs/reference/flow/dimension-table.md, The dimension's table): a
     // row per key the dimension holds now and value it collects, each attribute in the column of its place, read from
     // what the write has just kept and joined by the attributes' numbers (DimensionTables.RowsSql, made for the table's
-    // own columns, so a dimension of a few attributes lays out those alone), into #DimRow. An incremental load's write
-    // changes the rows of the keys it read again and of those it removed, and no other (its every statement above reads
-    // #DimValue and #DimChange alone), so it lays out and compares those keys' rows alone (#DimScope): its table write
-    // takes as long as what changed, not as the dimension. A table whose rows are written anew (@rewrite: the attribute
+    // own columns, so a dimension of a few attributes lays out those alone), into #DimRow. A write changes the rows of the
+    // keys it changed and no other: an incremental load's, the keys it read again and those it removed; a full load's, the
+    // keys that arrived, left, moved or came back, and those whose own row, attribute values or objects it wrote (#DimTouched).
+    // It lays out and compares those keys' rows alone (#DimScope), so its table write takes as long as what changed, not as
+    // the dimension. A table whose rows are written anew (@rewrite: the attribute
     // that makes its rows changed, or rows made per element are held where the declaration reads none, which the write
     // checked on the table before it began, @elementRows), or a table behind the dimension (@behind: the write before
     // did not reach it, or it moves to another database or schema), is laid out whole.
@@ -217,14 +230,13 @@ internal static partial class SqlServerDimensionStore
         ORDER BY n.[Ordinal];
 
         DECLARE @rewrite bit = CASE WHEN ISNULL(@collectedWas, N'') <> ISNULL(@collectedNow, N'') OR @elementRows = 1 THEN 1 ELSE 0 END;
-        DECLARE @scoped bit = CASE WHEN @partial = 1 AND @rewrite = 0 AND @behind = 0 THEN 1 ELSE 0 END;
+        DECLARE @scoped bit = CASE WHEN @rewrite = 0 AND @behind = 0 THEN 1 ELSE 0 END;
         DELETE FROM #DimScope;
         IF @scoped = 1
             INSERT INTO #DimScope ([ValueId])
-            SELECT v.[ValueId]
-            FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
-            INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
-            WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d
+            SELECT s.[ValueId] FROM #DimValue AS s WHERE @partial = 1 AND s.[ValueId] IS NOT NULL
+            UNION
+            SELECT t.[ValueId] FROM #DimTouched AS t
             UNION
             SELECT c.[ValueId] FROM #DimChange AS c;
 
@@ -328,19 +340,22 @@ internal static partial class SqlServerDimensionStore
             ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[Value] = s.[CleanValue];
 
         -- An original found again after a build that did not find it is restored; one under another member (or under none
-        -- where it had one, or one where it had none) moved.
+        -- where it had one, or one where it had none) moved. A key is matched by its text, exactly, which a dimension's keys
+        -- are unique by.
         INSERT INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
         SELECT v.[ValueId], CASE WHEN v.[RemovedRunId] IS NOT NULL THEN N'restored' ELSE N'moved' END, v.[MemberId], s.[MemberId]
-        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) INNER JOIN #DimValue AS s ON v.[OriginalHash] = s.[OriginalHash]
+        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) INNER JOIN #DimValue AS s ON v.[Original] = s.[Original] AND v.[OriginalBytes] = s.[OriginalBytes]
         WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d
           AND (v.[RemovedRunId] IS NOT NULL OR ISNULL(v.[MemberId], -1) <> ISNULL(s.[MemberId], -1));
 
+        -- A key whose own row changed may have a row of the dimension's table that did: the table step lays it out.
         UPDATE v SET v.[MemberSinceRunId] = CASE WHEN v.[RemovedRunId] IS NOT NULL OR ISNULL(v.[MemberId], -1) <> ISNULL(s.[MemberId], -1)
                 THEN @run ELSE v.[MemberSinceRunId] END,
             v.[MemberId] = s.[MemberId], v.[LeftOut] = s.[LeftOut], v.[Note] = s.[Note], v.[Count] = s.[Count], v.[Filterable] = s.[Filterable],
             v.[Label] = s.[Label], v.[LabelFrom] = s.[LabelFrom], v.[Filter] = s.[Filter],
             v.[RemovedRunId] = NULL, v.[RemovedUtc] = NULL
-        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) INNER JOIN #DimValue AS s ON v.[OriginalHash] = s.[OriginalHash]
+        OUTPUT inserted.[ValueId] INTO #DimTouched ([ValueId])
+        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) INNER JOIN #DimValue AS s ON v.[Original] = s.[Original] AND v.[OriginalBytes] = s.[OriginalBytes]
         WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d
           AND (v.[RemovedRunId] IS NOT NULL OR ISNULL(v.[MemberId], -1) <> ISNULL(s.[MemberId], -1) OR v.[Count] <> s.[Count]
                OR v.[Filterable] <> s.[Filterable] OR ISNULL(v.[LeftOut], N'') <> ISNULL(s.[LeftOut], N'')
@@ -351,13 +366,15 @@ internal static partial class SqlServerDimensionStore
                OR ISNULL(v.[LabelFrom], N'') <> ISNULL(s.[LabelFrom], N'')
                OR ISNULL(v.[Filter], N'') <> ISNULL(s.[Filter], N''));
 
-        INSERT INTO [osdu].[DimensionValue] ([PartitionId], [DimensionId], [Original], [OriginalHash], [MemberId], [LeftOut], [Note], [Count],
+        INSERT INTO [osdu].[DimensionValue] ([PartitionId], [DimensionId], [Original], [MemberId], [LeftOut], [Note], [Count],
             [Filterable], [Label], [LabelFrom], [Filter], [FirstSeenRunId], [FirstSeenUtc], [MemberSinceRunId])
         OUTPUT inserted.[ValueId], N'added', NULL, inserted.[MemberId] INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
-        SELECT @p, @d, s.[Original], s.[OriginalHash], s.[MemberId], s.[LeftOut], s.[Note], s.[Count], s.[Filterable], s.[Label], s.[LabelFrom],
+        SELECT @p, @d, s.[Original], s.[MemberId], s.[LeftOut], s.[Note], s.[Count], s.[Filterable], s.[Label], s.[LabelFrom],
             s.[Filter], @run, @now, @run
         FROM #DimValue AS s
-        WHERE NOT EXISTS (SELECT 1 FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = s.[OriginalHash])
+        WHERE NOT EXISTS (
+            SELECT 1 FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+            WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[Original] = s.[Original] AND v.[OriginalBytes] = s.[OriginalBytes])
         -- The new originals take their ids in the order the build listed them, so arrival order within a build is the build's.
         ORDER BY s.[Seq];
 
@@ -367,7 +384,7 @@ internal static partial class SqlServerDimensionStore
             OUTPUT inserted.[ValueId], N'removed', deleted.[MemberId], NULL INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
             FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
             WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[RemovedRunId] IS NULL
-              AND NOT EXISTS (SELECT 1 FROM #DimValue AS s WHERE s.[OriginalHash] = v.[OriginalHash]);
+              AND NOT EXISTS (SELECT 1 FROM #DimValue AS s WHERE s.[Original] = v.[Original] AND s.[OriginalBytes] = v.[OriginalBytes]);
         END
         ELSE
         BEGIN
@@ -376,7 +393,7 @@ internal static partial class SqlServerDimensionStore
             UPDATE v SET v.[RemovedRunId] = @run, v.[RemovedUtc] = @now
             OUTPUT inserted.[ValueId], N'removed', deleted.[MemberId], NULL INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
             FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
-            INNER JOIN #DimGone AS g ON g.[OriginalHash] = v.[OriginalHash]
+            INNER JOIN #DimGone AS g ON g.[Original] = v.[Original] AND g.[OriginalBytes] = v.[OriginalBytes]
             WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[RemovedRunId] IS NULL;
 
             -- A value every original it held left (each read again and now under another, or under none, or removed) holds
@@ -392,14 +409,34 @@ internal static partial class SqlServerDimensionStore
             SET @membersRemoved = @@ROWCOUNT;
         END;
 
+        -- Every key the write holds under its number, looked up once: every row of the key below is matched by it.
+        UPDATE s SET s.[ValueId] = v.[ValueId]
+        FROM #DimValue AS s
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+            ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[Original] = s.[Original] AND v.[OriginalBytes] = s.[OriginalBytes];
+
+        -- The attribute values read through a key's record travel with the key, with their hash: a key whose hash is the one
+        -- its last write kept read the same, and its values stay as they are; the others' are written again below.
+        UPDATE s SET s.[AttributesChanged] = 1
+        FROM #DimValue AS s
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = s.[ValueId]
+        WHERE v.[AttributesHash] <> s.[AttributesHash]
+           OR (v.[AttributesHash] IS NULL AND s.[AttributesHash] IS NOT NULL)
+           OR (v.[AttributesHash] IS NOT NULL AND s.[AttributesHash] IS NULL);
+
         -- Every attribute the build read has its number: an attribute's values are kept and joined by it, never by its
         -- name. A name read that the declaration does not hold (a write that carries none) still gets one.
         INSERT INTO #DimName ([Name], [Ordinal], [Collected])
-        SELECT t.[Name], NULL, t.[Collected]
-        FROM (SELECT [Name], CAST(MAX(CASE WHEN [Records] IS NULL THEN 0 ELSE 1 END) AS bit) AS [Collected] FROM #DimAttr GROUP BY [Name]
-              UNION
-              SELECT [Name], CAST(1 AS bit) FROM #DimText WHERE [Name] NOT IN (SELECT [Name] FROM #DimAttr)) AS t
-        WHERE NOT EXISTS (SELECT 1 FROM #DimName AS s WHERE s.[Name] = t.[Name]);
+        SELECT t.[Name], NULL, CAST(MAX(t.[Collected]) AS bit)
+        FROM (SELECT DISTINCT [Name], 1 AS [Collected] FROM #DimAttr
+              UNION ALL
+              SELECT DISTINCT [Name], 1 FROM #DimText
+              UNION ALL
+              SELECT DISTINCT j.[Name] COLLATE Latin1_General_100_BIN2, 0
+              FROM #DimValue AS s CROSS APPLY OPENJSON(s.[Attributes]) WITH ([Name] nvarchar(64) '$[0]') AS j
+              WHERE s.[AttributesChanged] = 1 AND s.[Attributes] IS NOT NULL) AS t
+        WHERE NOT EXISTS (SELECT 1 FROM #DimName AS s WHERE s.[Name] = t.[Name])
+        GROUP BY t.[Name];
 
         """ + "\n" + NamesSql + "\n\n" + """
         -- The numbers are looked up once, beside the few names, and every row below is joined to them: a row of the
@@ -407,25 +444,32 @@ internal static partial class SqlServerDimensionStore
         UPDATE s SET s.[AttributeId] = n.[AttributeId]
         FROM #DimName AS s INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Name] = s.[Name];
 
-        -- Each attribute value the build read, under the numbers it is kept by: its key's and its attribute's. The rows
+        -- The attributes collected from a key's own records: their values are compared with those kept, a row each; every
+        -- other attribute's values are read through the key's record and travel with the key.
+        INSERT INTO #DimCollected ([AttributeId])
+        SELECT n.[AttributeId] FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK)
+        WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Collected] = 1;
+
+        -- Each collected value the build read, under the numbers it is kept by: its key's and its attribute's. The rows
         -- kept are then matched to them on those numbers and the value, which name one row on either side. Matched
-        -- through the key's hash and the attribute's name instead, the only thing the two sides share directly is the
+        -- through the key's text and the attribute's name instead, the only thing the two sides share directly is the
         -- value, and the server is free to pair them by it: every key holding a value (a country) with every other key
         -- holding it, which is millions of pairs for a few thousand keys.
         INSERT INTO #DimAttrKeyed ([ValueId], [AttributeId], [Value], [ValueFrom], [Records])
-        SELECT v.[ValueId], dn.[AttributeId], t.[Value], t.[ValueFrom], t.[Records]
+        SELECT s.[ValueId], dn.[AttributeId], t.[Value], t.[ValueFrom], t.[Records]
         FROM #DimAttr AS t
         INNER JOIN #DimName AS dn ON dn.[Name] = t.[Name]
-        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = t.[OriginalHash];
+        INNER JOIN #DimValue AS s ON s.[Original] = t.[Original] AND s.[OriginalBytes] = t.[OriginalBytes];
 
-        -- The attribute values of every original the build found are what it read: one no longer read is dropped, one read
+        -- The collected values of every original the build found are what it read: one no longer read is dropped, one read
         -- again rewritten only when where it was read or how many records hold it changed, and a new one added. An original
-        -- the build did not find keeps what its last build read.
+        -- the build did not find keeps what its last build read. A key any of it changed for has its table rows laid out.
         DELETE a
+        OUTPUT deleted.[ValueId] INTO #DimTouched ([ValueId])
         FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
-        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = a.[ValueId]
-        INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
+        INNER JOIN #DimValue AS s ON s.[ValueId] = a.[ValueId]
         WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d
+          AND a.[AttributeId] IN (SELECT c.[AttributeId] FROM #DimCollected AS c)
           AND NOT EXISTS (
               SELECT 1 FROM #DimAttrKeyed AS t
               WHERE t.[ValueId] = a.[ValueId] AND t.[AttributeId] = a.[AttributeId] AND t.[Value] = a.[Value]);
@@ -433,6 +477,7 @@ internal static partial class SqlServerDimensionStore
 
         -- Where a value was read is compared exactly, byte for byte, as an id is.
         UPDATE a SET a.[ValueFrom] = t.[ValueFrom], a.[Records] = t.[Records]
+        OUTPUT inserted.[ValueId] INTO #DimTouched ([ValueId])
         FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
         INNER JOIN #DimAttrKeyed AS t ON t.[ValueId] = a.[ValueId] AND t.[AttributeId] = a.[AttributeId] AND t.[Value] = a.[Value]
         WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d
@@ -443,6 +488,7 @@ internal static partial class SqlServerDimensionStore
         SET @attributesChanged += @@ROWCOUNT;
 
         INSERT INTO [osdu].[DimensionAttribute] ([PartitionId], [DimensionId], [ValueId], [AttributeId], [Value], [ValueFrom], [Records])
+        OUTPUT inserted.[ValueId] INTO #DimTouched ([ValueId])
         SELECT @p, @d, t.[ValueId], t.[AttributeId], t.[Value], t.[ValueFrom], t.[Records]
         FROM #DimAttrKeyed AS t
         WHERE NOT EXISTS (
@@ -451,99 +497,135 @@ internal static partial class SqlServerDimensionStore
         ORDER BY t.[ValueId], t.[AttributeId], t.[Value];
         SET @attributesChanged += @@ROWCOUNT;
 
-        -- The elements of every key the build found are what it read, matched on the key, the element's place and the
-        -- field: one no longer read is dropped, one read otherwise rewritten, a new one added. A declaration that reads no
-        -- elements keeps none of them. A write that carries no declaration leaves them as they are.
+        -- The values read through the record of a key whose hash changed are written again from what the build read, and the
+        -- key keeps the hash; every other key's stay as they are.
+        DELETE a
+        FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
+        INNER JOIN #DimValue AS s ON s.[ValueId] = a.[ValueId]
+        WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d AND s.[AttributesChanged] = 1
+          AND a.[AttributeId] NOT IN (SELECT c.[AttributeId] FROM #DimCollected AS c);
+        SET @attributesChanged += @@ROWCOUNT;
+
+        INSERT INTO [osdu].[DimensionAttribute] ([PartitionId], [DimensionId], [ValueId], [AttributeId], [Value], [ValueFrom], [Records])
+        SELECT @p, @d, s.[ValueId], dn.[AttributeId], j.[Value], j.[ValueFrom], NULL
+        FROM #DimValue AS s
+        CROSS APPLY OPENJSON(s.[Attributes]) WITH ([Name] nvarchar(64) '$[0]', [Value] nvarchar(256) '$[1]', [ValueFrom] nvarchar(1024) '$[2]') AS j
+        INNER JOIN #DimName AS dn ON dn.[Name] = j.[Name] COLLATE Latin1_General_100_BIN2
+        WHERE s.[AttributesChanged] = 1 AND s.[Attributes] IS NOT NULL
+          AND dn.[AttributeId] NOT IN (SELECT c.[AttributeId] FROM #DimCollected AS c)
+        ORDER BY s.[ValueId], dn.[AttributeId];
+        SET @attributesChanged += @@ROWCOUNT;
+
+        UPDATE v SET v.[AttributesHash] = s.[AttributesHash]
+        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+        INNER JOIN #DimValue AS s ON s.[ValueId] = v.[ValueId]
+        WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND s.[AttributesChanged] = 1;
+
+        INSERT INTO #DimTouched ([ValueId]) SELECT s.[ValueId] FROM #DimValue AS s WHERE s.[AttributesChanged] = 1;
+
+        -- The objects of a key travel with their hash too: a key whose objects' hash is the one its last write kept read the
+        -- same, and its elements stay as they are. Any other key the write holds (one whose record holds none now has none) is
+        -- written again from what the build read, each object numbered from 1 in the order its record holds them, an object
+        -- holding none of the fields one row of the first element field with no value. A declaration that reads no elements
+        -- keeps none of them. A write that carries no declaration leaves them as they are.
+        DECLARE @elementsChanged bigint = 0;
         IF @tableName IS NOT NULL
         BEGIN
-            INSERT INTO #DimElemKeyed ([ValueId], [Seq], [AttributeId], [Value])
-            SELECT v.[ValueId], t.[Seq], dn.[AttributeId], t.[Value]
-            FROM #DimElem AS t
-            INNER JOIN #DimName AS dn ON dn.[Name] = t.[Name]
-            INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = t.[OriginalHash];
-
             IF @elements = 0
+            BEGIN
                 DELETE e FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK) WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d;
+                SET @elementsChanged = @@ROWCOUNT;
+                UPDATE v SET v.[ElementsHash] = NULL
+                FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+                WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ElementsHash] IS NOT NULL;
+            END
             ELSE
             BEGIN
+                INSERT INTO #DimElemChanged ([ValueId], [Elements], [ElementsHash])
+                SELECT s.[ValueId], x.[Elements], x.[ElementsHash]
+                FROM #DimValue AS s
+                INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = s.[ValueId]
+                LEFT JOIN #DimElem AS x ON x.[Original] = s.[Original] AND x.[OriginalBytes] = s.[OriginalBytes]
+                WHERE v.[ElementsHash] <> x.[ElementsHash]
+                   OR (v.[ElementsHash] IS NULL AND x.[ElementsHash] IS NOT NULL)
+                   OR (v.[ElementsHash] IS NOT NULL AND x.[ElementsHash] IS NULL);
+
                 DELETE e
                 FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
-                INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = e.[ValueId]
-                INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
-                WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d
-                  AND NOT EXISTS (
-                      SELECT 1 FROM #DimElemKeyed AS t
-                      WHERE t.[ValueId] = e.[ValueId] AND t.[Seq] = e.[Seq] AND t.[AttributeId] = e.[AttributeId]);
-
-                UPDATE e SET e.[Value] = t.[Value]
-                FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
-                INNER JOIN #DimElemKeyed AS t ON t.[ValueId] = e.[ValueId] AND t.[Seq] = e.[Seq] AND t.[AttributeId] = e.[AttributeId]
-                WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d
-                  AND (ISNULL(e.[Value], N'') COLLATE Latin1_General_100_BIN2 <> ISNULL(t.[Value], N'') COLLATE Latin1_General_100_BIN2
-                       OR (e.[Value] IS NULL AND t.[Value] IS NOT NULL)
-                       OR (e.[Value] IS NOT NULL AND t.[Value] IS NULL));
+                INNER JOIN #DimElemChanged AS c ON c.[ValueId] = e.[ValueId]
+                WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d;
+                SET @elementsChanged = @@ROWCOUNT;
 
                 INSERT INTO [osdu].[DimensionElement] ([PartitionId], [DimensionId], [ValueId], [Seq], [AttributeId], [Value])
-                SELECT @p, @d, t.[ValueId], t.[Seq], t.[AttributeId], t.[Value]
-                FROM #DimElemKeyed AS t
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
-                    WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d AND e.[ValueId] = t.[ValueId] AND e.[Seq] = t.[Seq] AND e.[AttributeId] = t.[AttributeId])
-                ORDER BY t.[ValueId], t.[Seq], t.[AttributeId];
+                SELECT @p, @d, c.[ValueId], CONVERT(int, o.[key]) + 1, dn.[AttributeId], f.[value]
+                FROM #DimElemChanged AS c
+                CROSS APPLY OPENJSON(c.[Elements]) AS o
+                OUTER APPLY OPENJSON(o.[value]) AS f
+                INNER JOIN #DimName AS dn ON dn.[Name] = ISNULL(f.[key], @firstElement) COLLATE Latin1_General_100_BIN2
+                WHERE c.[Elements] IS NOT NULL
+                ORDER BY c.[ValueId], CONVERT(int, o.[key]), dn.[AttributeId];
+                SET @elementsChanged += @@ROWCOUNT;
+
+                UPDATE v SET v.[ElementsHash] = c.[ElementsHash]
+                FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+                INNER JOIN #DimElemChanged AS c ON c.[ValueId] = v.[ValueId]
+                WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d;
+
+                INSERT INTO #DimTouched ([ValueId]) SELECT c.[ValueId] FROM #DimElemChanged AS c;
             END;
         END;
 
         -- The records each key the write holds was read through are what it read, matched on the key and the record: one no
         -- longer read is dropped and a new one added. A key a load removes keeps none, since no incremental load reads it
         -- again for a record it was read through.
-        INSERT INTO #DimReadKeyed ([ValueId], [RecordHash], [EntityType])
-        SELECT v.[ValueId], r.[RecordHash], r.[EntityType]
+        INSERT INTO #DimReadKeyed ([ValueId], [Record], [EntityType])
+        SELECT s.[ValueId], r.[Record], r.[EntityType]
         FROM #DimRead AS r
-        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = r.[OriginalHash];
+        INNER JOIN #DimValue AS s ON s.[Original] = r.[Original] AND s.[OriginalBytes] = r.[OriginalBytes];
 
         DELETE k
         FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK)
-        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = k.[ValueId]
-        INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
+        INNER JOIN #DimValue AS s ON s.[ValueId] = k.[ValueId]
         WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d
-          AND NOT EXISTS (SELECT 1 FROM #DimReadKeyed AS t WHERE t.[ValueId] = k.[ValueId] AND t.[RecordHash] = k.[RecordHash]);
+          AND NOT EXISTS (SELECT 1 FROM #DimReadKeyed AS t WHERE t.[ValueId] = k.[ValueId] AND t.[Record] = k.[RecordId]);
 
         DELETE k
         FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK)
         INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = k.[ValueId]
         WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND v.[RemovedRunId] = @run;
 
-        INSERT INTO [osdu].[DimensionKeyRecord] ([PartitionId], [DimensionId], [ValueId], [RecordHash], [EntityType])
-        SELECT @p, @d, t.[ValueId], t.[RecordHash], t.[EntityType]
+        INSERT INTO [osdu].[DimensionKeyRecord] ([PartitionId], [DimensionId], [ValueId], [RecordId], [EntityType])
+        SELECT @p, @d, t.[ValueId], t.[Record], t.[EntityType]
         FROM #DimReadKeyed AS t
         WHERE NOT EXISTS (
             SELECT 1 FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK)
-            WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND k.[ValueId] = t.[ValueId] AND k.[RecordHash] = t.[RecordHash])
-        ORDER BY t.[ValueId], t.[RecordHash];
+            WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND k.[ValueId] = t.[ValueId] AND k.[RecordId] = t.[Record])
+        ORDER BY t.[ValueId], t.[Record];
 
         -- The keys each record held when the load read it, by the record's unique key: a full load's replace every row the
         -- dimension kept, an incremental load's replace those of the records it read. A full load that kept none (its flow
         -- loads in full) leaves none, and a key the load removes keeps none.
-        INSERT INTO #DimRecKeyed ([RecordHash], [ValueId])
-        SELECT h.[RecordHash], v.[ValueId]
+        INSERT INTO #DimRecKeyed ([Record], [ValueId])
+        SELECT h.[Record], v.[ValueId]
         FROM #DimRecHeld AS h
-        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = h.[OriginalHash];
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+            ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[Original] = h.[Original] AND v.[OriginalBytes] = h.[OriginalBytes];
 
         IF @records = 1
         BEGIN
             DELETE r
             FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK)
             WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d
-              AND (@partial = 0 OR EXISTS (SELECT 1 FROM #DimRecRead AS s WHERE s.[RecordHash] = r.[RecordHash]))
-              AND NOT EXISTS (SELECT 1 FROM #DimRecKeyed AS k WHERE k.[RecordHash] = r.[RecordHash] AND k.[ValueId] = r.[ValueId]);
+              AND (@partial = 0 OR EXISTS (SELECT 1 FROM #DimRecRead AS s WHERE s.[Record] = r.[RecordKey]))
+              AND NOT EXISTS (SELECT 1 FROM #DimRecKeyed AS k WHERE k.[Record] = r.[RecordKey] AND k.[ValueId] = r.[ValueId]);
 
-            INSERT INTO [osdu].[DimensionRecord] ([PartitionId], [DimensionId], [RecordHash], [ValueId])
-            SELECT @p, @d, k.[RecordHash], k.[ValueId]
+            INSERT INTO [osdu].[DimensionRecord] ([PartitionId], [DimensionId], [RecordKey], [ValueId])
+            SELECT @p, @d, k.[Record], k.[ValueId]
             FROM #DimRecKeyed AS k
             WHERE NOT EXISTS (
                 SELECT 1 FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK)
-                WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND r.[RecordHash] = k.[RecordHash] AND r.[ValueId] = k.[ValueId])
-            ORDER BY k.[RecordHash], k.[ValueId];
+                WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND r.[RecordKey] = k.[Record] AND r.[ValueId] = k.[ValueId])
+            ORDER BY k.[Record], k.[ValueId];
         END
         ELSE IF @partial = 0
             DELETE r FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d;
@@ -560,12 +642,12 @@ internal static partial class SqlServerDimensionStore
         BEGIN
             IF @partial = 0
                 DELETE c FROM [osdu].[DimensionCollectedText] AS c WITH (FORCESEEK) WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d;
-            INSERT INTO [osdu].[DimensionCollectedText] ([PartitionId], [DimensionId], [AttributeId], [TextHash], [Text], [Value], [Records])
-            SELECT @p, @d, dn.[AttributeId], t.[TextHash], t.[Text], t.[Value], t.[Records]
+            INSERT INTO [osdu].[DimensionCollectedText] ([PartitionId], [DimensionId], [AttributeId], [Text], [Value], [Records])
+            SELECT @p, @d, dn.[AttributeId], t.[Text], t.[Value], t.[Records]
             FROM #DimText AS t INNER JOIN #DimName AS dn ON dn.[Name] = t.[Name]
             WHERE NOT EXISTS (
                 SELECT 1 FROM [osdu].[DimensionCollectedText] AS c WITH (FORCESEEK)
-                WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d AND c.[AttributeId] = dn.[AttributeId] AND c.[TextHash] = t.[TextHash])
+                WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d AND c.[AttributeId] = dn.[AttributeId] AND c.[Text] = t.[Text] AND c.[TextBytes] = t.[TextBytes])
             ORDER BY dn.[AttributeId], t.[Value], t.[Text];
         END;
 
@@ -613,7 +695,7 @@ internal static partial class SqlServerDimensionStore
             (SELECT COUNT_BIG(*) FROM #DimChange WHERE [Change] = N'moved'),
             (SELECT COUNT_BIG(*) FROM #DimChange WHERE [Change] = N'restored'),
             @membersAdded, @membersRemoved, @membersRestored, @members, @originals, @attributesChanged, @leftOut, @unfilterable,
-            ISNULL(@rewrite, CAST(0 AS bit)), ISNULL(@scoped, CAST(0 AS bit));
+            ISNULL(@rewrite, CAST(0 AS bit)), ISNULL(@scoped, CAST(0 AS bit)), @elementsChanged;
         """;
 
     // A dimension's rows, table by table, a batch at a time, each batch its own statement so no one transaction holds millions
@@ -1308,8 +1390,9 @@ internal static partial class SqlServerDimensionStore
     /// <summary>
     /// Makes a table a view reads ready for the view (osdu/docs/reference/flow/dimension-views.md): one no build has made
     /// yet is made, empty, as a build makes it, so the view's join finds nothing until its dimension is built; one a build
-    /// made is given the key's hash column and its index when it was made before tables kept one. Its other columns are
-    /// its builds' to settle: a column the document names that the table does not have yet fails the view's write, saying so.
+    /// made is given the index its joins find a key's rows by, and loses the key's hash, when it was made before keys were
+    /// found by their text. Its other columns are its builds' to settle: a column the document names that the table does
+    /// not have yet fails the view's write, saying so.
     /// </summary>
     /// <exception cref="DeliveryException">The table cannot be made or given the column.</exception>
     internal static async Task EnsureViewTableAsync(SqlConnection connection, DimensionTableDatabase home, DimensionTableSpec table, CancellationToken ct)
@@ -1335,15 +1418,7 @@ internal static partial class SqlServerDimensionStore
                 return;
             }
 
-            var literal = qualified.Replace("'", "''", StringComparison.Ordinal);
-            await using var column = new SqlCommand(
-                $"""
-                IF COL_LENGTH(N'{literal}', N'{DimensionTables.KeyHashColumn}') IS NULL
-                    ALTER TABLE {qualified} ADD [{DimensionTables.KeyHashColumn}] binary(32) NULL;
-                """,
-                home.Connection) { CommandTimeout = CommandTimeoutSeconds };
-            await column.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            await using var index = new SqlCommand(DimensionTables.KeyHashIndexSql(table.Name, home.Target), home.Connection) { CommandTimeout = CommandTimeoutSeconds };
+            await using var index = new SqlCommand(DimensionTables.KeyIndexSql(table.Name, table.KeyColumn, home.Target), home.Connection) { CommandTimeout = CommandTimeoutSeconds };
             await index.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
         catch (SqlException ex) when (ex.Number is ObjectExists or ColumnExists or IndexExists)
@@ -1431,12 +1506,12 @@ internal static partial class SqlServerDimensionStore
     /// </summary>
     private static async Task<long> WriteTableAsync(
         SqlConnection connection, DimensionTableDatabase home, short partitionId, int dimensionId, string partition, PreparedTable prepared,
-        bool rewrite, bool scoped, long? runId, CancellationToken ct)
+        bool rewrite, bool scoped, long? runId, DimensionWriteClock? clock, CancellationToken ct)
     {
         var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
         await using (transaction.ConfigureAwait(false))
         {
-            await LockAsync(connection, transaction, partitionId, dimensionId, ct).ConfigureAwait(false);
+            await LockAsync(connection, transaction, partitionId, dimensionId, clock, DimensionWriteStep.Table, ct).ConfigureAwait(false);
             long changed;
             if (home.InCatalog)
             {
@@ -1567,7 +1642,7 @@ internal static partial class SqlServerDimensionStore
                 await tx.CommitAsync(ct).ConfigureAwait(false);
             }
 
-            await WriteTableAsync(connection, home, partitionId, dimensionId, partition, prepared, rewrite, scoped, runId: null, ct).ConfigureAwait(false);
+            await WriteTableAsync(connection, home, partitionId, dimensionId, partition, prepared, rewrite, scoped, runId: null, clock: null, ct).ConfigureAwait(false);
             return prepared.Changed;
         }
         catch (Exception ex) when (StoppedBy(ex, ct))
@@ -1698,48 +1773,52 @@ internal static partial class SqlServerDimensionStore
     /// What a write changed, and what the dimension holds after it: the attributes it added, rewrote or dropped among them,
     /// and its originals under no member and those under one that no query can carry.
     /// </summary>
-    public sealed record Written(DimensionChangeCounts Changes, long Members, long Originals, long AttributesChanged, long LeftOut, long Unfilterable);
-
-    /// <summary>The hash an original is unique by: SHA-256 of its UTF-8 bytes.</summary>
-    public static byte[] HashOf(string original)
+    public sealed record Written(DimensionChangeCounts Changes, long Members, long Originals, long AttributesChanged, long LeftOut, long Unfilterable)
     {
-        ArgumentNullException.ThrowIfNull(original);
-        return SHA256.HashData(Encoding.UTF8.GetBytes(original));
+        /// <summary>The fields of keys' elements the write added, rewrote or dropped.</summary>
+        public long ElementsChanged { get; init; }
+    }
+
+    /// <summary>The server process id of the session <paramref name="connection"/> holds, which the write's progress reports ask the database about.</summary>
+    private static async Task<int> SessionOfAsync(SqlConnection connection, CancellationToken ct)
+    {
+        await using var command = new SqlCommand("SELECT CAST(@@SPID AS int);", connection) { CommandTimeout = CommandTimeoutSeconds };
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
     }
 
     /// <summary>
     /// The keys dimension <paramref name="dimensionId"/> holds now that were read through one of <paramref name="recordIds"/>,
-    /// each looked up by its hash: a seek a record, however many keys the dimension holds. At most a lookup chunk of ids.
+    /// each looked up by its id: a seek a record, however many keys the dimension holds. At most a lookup chunk of ids.
     /// </summary>
     public static async Task<List<string>> KeysReadThroughAsync(OsduDbContext db, short partitionId, int dimensionId, IReadOnlyList<string> recordIds, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(recordIds);
-        var hashes = recordIds.Where(id => id.Length <= DeliveryDimensionValue.MaxOriginalLength).Select(HashOf).ToList();
-        if (hashes.Count == 0)
+        var ids = recordIds.Where(id => id.Length <= DeliveryDimensionValue.MaxKeyLength).Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0)
         {
             return [];
         }
 
         var sql = "SELECT DISTINCT v.[Original] FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK) "
             + "INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = k.[ValueId] "
-            + "WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND v.[RemovedRunId] IS NULL AND k.[RecordHash] IN ("
-            + string.Join(", ", hashes.Select((_, i) => "@h" + i.ToString(CultureInfo.InvariantCulture))) + ");";
+            + "WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND v.[RemovedRunId] IS NULL AND k.[RecordId] IN ("
+            + Named(ids.Count) + ");";
         var keys = new List<string>();
-        await LookupAsync(db, partitionId, dimensionId, sql, hashes, reader => keys.Add(reader.GetString(0)), ct).ConfigureAwait(false);
+        await LookupAsync(db, partitionId, dimensionId, sql, ids, reader => keys.Add(reader.GetString(0)), ct).ConfigureAwait(false);
         return keys;
     }
 
     /// <summary>
     /// The originals of dimension <paramref name="dimensionId"/> named, removed ones included, each with its member's clean
-    /// value, each looked up by its hash. At most a lookup chunk of originals.
+    /// value, each looked up by its text, exactly. At most a lookup chunk of originals.
     /// </summary>
     public static async Task<List<DimensionValueState>> OriginalsAsync(OsduDbContext db, short partitionId, int dimensionId, IReadOnlyList<string> originals, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(originals);
-        var hashes = originals.Select(HashOf).ToList();
-        if (hashes.Count == 0)
+        var named = originals.Where(o => o.Length <= DeliveryDimensionValue.MaxKeyLength).Distinct(StringComparer.Ordinal).ToList();
+        if (named.Count == 0)
         {
             return [];
         }
@@ -1748,10 +1827,11 @@ internal static partial class SqlServerDimensionStore
             + "v.[Filterable], v.[FirstSeenRunId], v.[FirstSeenUtc], v.[MemberSinceRunId], v.[RemovedRunId], v.[RemovedUtc] "
             + "FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) "
             + "LEFT JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[MemberId] = v.[MemberId] "
-            + "WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] IN ("
-            + string.Join(", ", hashes.Select((_, i) => "@h" + i.ToString(CultureInfo.InvariantCulture))) + ");";
-        var found = new List<DimensionValueState>(originals.Count);
-        await LookupAsync(db, partitionId, dimensionId, sql, hashes, reader => found.Add(new DimensionValueState
+            + "WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[Original] IN ("
+            + Named(named.Count) + ");";
+        var asked = named.ToHashSet(StringComparer.Ordinal);
+        var found = new List<DimensionValueState>(named.Count);
+        await LookupAsync(db, partitionId, dimensionId, sql, named, reader => found.Add(new DimensionValueState
         {
             ValueId = reader.GetInt64(0),
             DimensionId = dimensionId,
@@ -1771,34 +1851,42 @@ internal static partial class SqlServerDimensionStore
             RemovedRunId = reader.IsDBNull(14) ? null : reader.GetInt64(14),
             RemovedUtc = reader.IsDBNull(15) ? null : DateTime.SpecifyKind(reader.GetDateTime(15), DateTimeKind.Utc),
         }), ct).ConfigureAwait(false);
-        return found;
+        return found.Where(v => asked.Contains(v.Original)).ToList();
     }
 
     /// <summary>
-    /// The keys the records of dimension <paramref name="dimensionId"/> named by <paramref name="recordHashes"/> held when a
-    /// load last read them, among those the dimension holds now. At most a lookup chunk of records.
+    /// The keys the records of dimension <paramref name="dimensionId"/> named by <paramref name="recordKeys"/> (each record's
+    /// unique key, <see cref="DeliveryDimensionRecord.RecordKey"/>) held when a load last read them, among those the dimension
+    /// holds now. At most a lookup chunk of records.
     /// </summary>
-    public static async Task<List<string>> RecordKeysAsync(OsduDbContext db, short partitionId, int dimensionId, IReadOnlyList<byte[]> recordHashes, CancellationToken ct)
+    public static async Task<List<string>> RecordKeysAsync(OsduDbContext db, short partitionId, int dimensionId, IReadOnlyList<string> recordKeys, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
-        ArgumentNullException.ThrowIfNull(recordHashes);
-        if (recordHashes.Count == 0)
+        ArgumentNullException.ThrowIfNull(recordKeys);
+        var named = recordKeys.Where(r => r.Length <= DeliveryDimensionValue.MaxKeyLength).Distinct(StringComparer.Ordinal).ToList();
+        if (named.Count == 0)
         {
             return [];
         }
 
         var sql = "SELECT DISTINCT v.[Original] FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) "
             + "INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = r.[ValueId] "
-            + "WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND v.[RemovedRunId] IS NULL AND r.[RecordHash] IN ("
-            + string.Join(", ", recordHashes.Select((_, i) => "@h" + i.ToString(CultureInfo.InvariantCulture))) + ");";
+            + "WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND v.[RemovedRunId] IS NULL AND r.[RecordKey] IN ("
+            + Named(named.Count) + ");";
         var keys = new List<string>();
-        await LookupAsync(db, partitionId, dimensionId, sql, recordHashes, reader => keys.Add(reader.GetString(0)), ct).ConfigureAwait(false);
+        await LookupAsync(db, partitionId, dimensionId, sql, named, reader => keys.Add(reader.GetString(0)), ct).ConfigureAwait(false);
         return keys;
     }
 
-    /// <summary>Runs a lookup by hashes, <c>@h0</c> onwards, each binary(32), over one dimension, handing each row to <paramref name="row"/>.</summary>
+    /// <summary>The parameters a lookup of <paramref name="count"/> texts names, <c>@k0</c> onwards.</summary>
+    private static string Named(int count) => string.Join(", ", Enumerable.Range(0, count).Select(i => "@k" + i.ToString(CultureInfo.InvariantCulture)));
+
+    /// <summary>
+    /// Runs a lookup by texts, <c>@k0</c> onwards, each as long as a key a dimension keeps and compared exactly, over one
+    /// dimension, handing each row to <paramref name="row"/>.
+    /// </summary>
     private static async Task LookupAsync(
-        OsduDbContext db, short partitionId, int dimensionId, string sql, IReadOnlyList<byte[]> hashes, Action<SqlDataReader> row, CancellationToken ct)
+        OsduDbContext db, short partitionId, int dimensionId, string sql, IReadOnlyList<string> texts, Action<SqlDataReader> row, CancellationToken ct)
     {
         await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
         try
@@ -1806,9 +1894,9 @@ internal static partial class SqlServerDimensionStore
             await using var command = new SqlCommand(sql, (SqlConnection)db.Database.GetDbConnection()) { CommandTimeout = CommandTimeoutSeconds };
             command.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
             command.Parameters.Add(new SqlParameter("@d", SqlDbType.Int) { Value = dimensionId });
-            for (var i = 0; i < hashes.Count; i++)
+            for (var i = 0; i < texts.Count; i++)
             {
-                command.Parameters.Add(new SqlParameter("@h" + i.ToString(CultureInfo.InvariantCulture), SqlDbType.Binary, 32) { Value = hashes[i] });
+                command.Parameters.Add(new SqlParameter("@k" + i.ToString(CultureInfo.InvariantCulture), SqlDbType.NVarChar, DeliveryDimensionValue.MaxKeyLength) { Value = texts[i] });
             }
 
             await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1834,17 +1922,19 @@ internal static partial class SqlServerDimensionStore
     /// <exception cref="DimensionTableWriteException">The dimension was written and its table was not.</exception>
     public static async Task<Written> WriteAsync(
         OsduDbContext db, string partition, DimensionStage stage, DimensionStagedWrite write, Func<Written, DeliveryDimensionRun, Task> close,
-        Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, CancellationToken ct)
+        Func<SqlConnection, DimensionTableTarget, CancellationToken, Task<DimensionTableDatabase>> open, DimensionWriteClock clock, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(stage);
         ArgumentNullException.ThrowIfNull(write);
         ArgumentNullException.ThrowIfNull(close);
         ArgumentNullException.ThrowIfNull(open);
+        ArgumentNullException.ThrowIfNull(clock);
         await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
         try
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
+            clock.Session = await SessionOfAsync(connection, ct).ConfigureAwait(false);
             DimensionTableDatabase? home = null;
             try
             {
@@ -1856,29 +1946,42 @@ internal static partial class SqlServerDimensionStore
                     elementRows = await ElementRowsAsync(home, declared, partition, ct).ConfigureAwait(false);
                 }
 
-                Merged merged;
-                for (var attempt = 1; ; attempt++)
-                {
-                    try
+                var merged = await clock.TimeAsync(
+                    DimensionWriteStep.Merge,
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"{stage.Values} key(s), {stage.Members} value(s), {stage.Attributes} collected value(s) and {stage.Elements} element object(s) staged{(write.Partial ? ", an incremental load's" : string.Empty)}"),
+                    async () =>
                     {
-                        merged = await MergeOnceAsync(db, connection, partition, stage, write, close, elementRows, ct).ConfigureAwait(false);
-                        break;
-                    }
-                    catch (Exception ex) when (StoppedBy(ex, ct))
-                    {
-                        throw new OperationCanceledException(
-                            string.Create(CultureInfo.InvariantCulture, $"The write of dimension {stage.DimensionId} was cancelled with its run, and wrote nothing."), ex, ct);
-                    }
-                    catch (Exception ex) when (attempt < DeadlockAttempts && SqlServerLedgerBulk.IsDeadlock(ex))
-                    {
-                        db.ChangeTracker.Clear();
-                        await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(50, 200) * attempt), ct).ConfigureAwait(false);
-                    }
-                }
+                        for (var attempt = 1; ; attempt++)
+                        {
+                            try
+                            {
+                                return await MergeOnceAsync(db, connection, partition, stage, write, close, elementRows, clock, ct).ConfigureAwait(false);
+                            }
+                            catch (Exception ex) when (StoppedBy(ex, ct))
+                            {
+                                throw new OperationCanceledException(
+                                    string.Create(CultureInfo.InvariantCulture, $"The write of dimension {stage.DimensionId} was cancelled with its run, and wrote nothing."), ex, ct);
+                            }
+                            catch (Exception ex) when (attempt < DeadlockAttempts && SqlServerLedgerBulk.IsDeadlock(ex))
+                            {
+                                db.ChangeTracker.Clear();
+                                await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(50, 200) * attempt), ct).ConfigureAwait(false);
+                            }
+                        }
+                    },
+                    m => string.Create(CultureInfo.InvariantCulture,
+                        $"{m.Written.Changes.OriginalsAdded} key(s) arrived, {m.Written.Changes.OriginalsRemoved} left, {m.Written.Changes.OriginalsMoved} moved and {m.Written.Changes.OriginalsRestored} came back; {m.Written.AttributesChanged} attribute value(s) and {m.Written.ElementsChanged} element field(s) added, rewritten or dropped"),
+                    ct).ConfigureAwait(false);
 
                 if (write.Table is { } table && home is not null)
                 {
-                    await WriteBuiltTableAsync(connection, home, stage, partition, table, merged, ct).ConfigureAwait(false);
+                    await clock.TimeAsync(
+                        DimensionWriteStep.Table,
+                        home.Target.Shown(table.Name) + (merged.Scoped ? ", the rows of the keys the write changed" : ", every row"),
+                        () => WriteBuiltTableAsync(connection, home, stage, partition, table, merged, clock, ct),
+                        changed => string.Create(CultureInfo.InvariantCulture, $"{changed} row(s) added, rewritten or deleted"),
+                        ct).ConfigureAwait(false);
                 }
 
                 return merged.Written;
@@ -1985,8 +2088,9 @@ internal static partial class SqlServerDimensionStore
     /// The table step of a build: the table made ready where it is kept, then brought to the rows the merge laid out, a
     /// deadlock tried again from the same layout. A failure says the dimension was written and the table was not.
     /// </summary>
-    private static async Task WriteBuiltTableAsync(
-        SqlConnection connection, DimensionTableDatabase home, DimensionStage stage, string partition, DimensionTableSpec table, Merged merged, CancellationToken ct)
+    private static async Task<long> WriteBuiltTableAsync(
+        SqlConnection connection, DimensionTableDatabase home, DimensionStage stage, string partition, DimensionTableSpec table, Merged merged, DimensionWriteClock clock,
+        CancellationToken ct)
     {
         try
         {
@@ -1995,9 +2099,8 @@ internal static partial class SqlServerDimensionStore
             {
                 try
                 {
-                    await WriteTableAsync(connection, home, stage.PartitionId, stage.DimensionId, partition, prepared, merged.Rewrite, merged.Scoped, stage.DimensionRunId, ct)
+                    return await WriteTableAsync(connection, home, stage.PartitionId, stage.DimensionId, partition, prepared, merged.Rewrite, merged.Scoped, stage.DimensionRunId, clock, ct)
                         .ConfigureAwait(false);
-                    return;
                 }
                 catch (Exception ex) when (attempt < DeadlockAttempts && SqlServerLedgerBulk.IsDeadlock(ex))
                 {
@@ -2021,11 +2124,11 @@ internal static partial class SqlServerDimensionStore
 
     private static async Task<Merged> MergeOnceAsync(
         OsduDbContext db, SqlConnection connection, string partition, DimensionStage stage, DimensionStagedWrite write,
-        Func<Written, DeliveryDimensionRun, Task> close, bool elementRows, CancellationToken ct)
+        Func<Written, DeliveryDimensionRun, Task> close, bool elementRows, DimensionWriteClock clock, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
         var transaction = (SqlTransaction)tx.GetDbTransaction();
-        await LockAsync(connection, transaction, stage.PartitionId, stage.DimensionId, ct).ConfigureAwait(false);
+        await LockAsync(connection, transaction, stage.PartitionId, stage.DimensionId, clock, DimensionWriteStep.Merge, ct).ConfigureAwait(false);
         await CheckStagedAsync(connection, transaction, stage, ct).ConfigureAwait(false);
         await ExecuteAsync(connection, transaction, StageSql, ct).ConfigureAwait(false);
         await ExecuteAsync(connection, transaction, LayoutTablesSql, ct).ConfigureAwait(false);
@@ -2033,11 +2136,10 @@ internal static partial class SqlServerDimensionStore
 
         // The staging, copied into the write's own tables where the database holds it: no row of the build passes
         // through the process writing it.
+        var first = write.Table?.Columns.FirstOrDefault(c => c.Element)?.Name;
         await using (var copy = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CopySql(stage), stage))
         {
-            var first = write.Table?.Columns.FirstOrDefault(c => c.Element)?.Name;
             copy.Parameters.Add(new SqlParameter("@elements", SqlDbType.Bit) { Value = write.Table is { HasElements: true } && first is not null });
-            copy.Parameters.Add(new SqlParameter("@firstElement", SqlDbType.NVarChar, DeliveryDimensionAttributeValue.MaxNameLength) { Value = (object?)first ?? DBNull.Value });
             await copy.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
 
@@ -2055,6 +2157,7 @@ internal static partial class SqlServerDimensionStore
             command.Parameters.Add(new SqlParameter("@collected", SqlDbType.NVarChar, -1) { Value = (object?)write.CollectedJson ?? DBNull.Value });
             command.Parameters.Add(new SqlParameter("@partial", SqlDbType.Bit) { Value = write.Partial });
             command.Parameters.Add(new SqlParameter("@records", SqlDbType.Bit) { Value = write.KeepsRecords });
+            command.Parameters.Add(new SqlParameter("@firstElement", SqlDbType.NVarChar, DeliveryDimensionAttributeValue.MaxNameLength) { Value = (object?)first ?? DBNull.Value });
             AddTable(command, write.Table, partition, elementRows, write.TableTarget);
             await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -2071,7 +2174,10 @@ internal static partial class SqlServerDimensionStore
                     reader.GetInt64(8),
                     reader.GetInt64(9),
                     reader.GetInt64(10),
-                    reader.GetInt64(11)),
+                    reader.GetInt64(11))
+                {
+                    ElementsChanged = reader.GetInt64(14),
+                },
                 reader.GetBoolean(12),
                 reader.GetBoolean(13));
         }
@@ -2118,12 +2224,26 @@ internal static partial class SqlServerDimensionStore
     private static bool StoppedBy(Exception ex, CancellationToken ct)
         => ct.IsCancellationRequested && ex is SqlException or InvalidOperationException;
 
-    private static async Task LockAsync(SqlConnection connection, SqlTransaction transaction, short partitionId, int dimensionId, CancellationToken ct)
+    private static Task LockAsync(SqlConnection connection, SqlTransaction transaction, short partitionId, int dimensionId, CancellationToken ct)
+        => LockAsync(connection, transaction, partitionId, dimensionId, null, DimensionWriteStep.Merge, ct);
+
+    /// <summary>
+    /// Takes dimension <paramref name="dimensionId"/>'s write lock in <paramref name="transaction"/>, waiting up to
+    /// <see cref="LockTimeoutMs"/> for another build of it to finish writing; with a <paramref name="clock"/>, a wait is
+    /// told to its listener and kept in the build's notes as part of <paramref name="step"/>.
+    /// </summary>
+    private static async Task LockAsync(
+        SqlConnection connection, SqlTransaction transaction, short partitionId, int dimensionId, DimensionWriteClock? clock, DimensionWriteStep step, CancellationToken ct)
     {
-        await using var command = Command(connection, transaction, LockSql);
-        command.Parameters.Add(new SqlParameter("@resource", SqlDbType.NVarChar, 255) { Value = string.Create(CultureInfo.InvariantCulture, $"osdu-dimension:{partitionId}:{dimensionId}") });
-        command.Parameters.Add(new SqlParameter("@timeout", SqlDbType.Int) { Value = LockTimeoutMs });
-        var granted = Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        async Task<int> TakeAsync(bool wait)
+        {
+            await using var command = Command(connection, transaction, LockSql);
+            command.Parameters.Add(new SqlParameter("@resource", SqlDbType.NVarChar, 255) { Value = string.Create(CultureInfo.InvariantCulture, $"osdu-dimension:{partitionId}:{dimensionId}") });
+            command.Parameters.Add(new SqlParameter("@timeout", SqlDbType.Int) { Value = wait ? LockTimeoutMs : 0 });
+            return Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        }
+
+        var granted = clock is null ? await TakeAsync(wait: true).ConfigureAwait(false) : await clock.LockAsync(step, TakeAsync).ConfigureAwait(false);
         if (granted < 0)
         {
             throw new DeliveryException(
@@ -2139,7 +2259,7 @@ internal static partial class SqlServerDimensionStore
     public static string? KeyRecordType(string recordId)
     {
         ArgumentNullException.ThrowIfNull(recordId);
-        if (recordId.Length > DeliveryDimensionValue.MaxOriginalLength)
+        if (recordId.Length > DeliveryDimensionValue.MaxKeyLength || recordId.Length == 0 || char.IsWhiteSpace(recordId[0]) || char.IsWhiteSpace(recordId[^1]))
         {
             return null;
         }

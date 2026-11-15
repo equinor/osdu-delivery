@@ -80,18 +80,23 @@ internal static partial class SqlServerDimensionStore
     /// short transaction under the dimension's write lock, until nothing removed is left. Safe to interrupt and to repeat: a
     /// round deletes a key and everything naming it together, and the next write takes up what a stopped one left.
     /// </summary>
-    public static async Task<DimensionPurge> PurgeRemovedAsync(OsduDbContext db, short partitionId, int dimensionId, CancellationToken ct)
+    public static async Task<DimensionPurge> PurgeRemovedAsync(OsduDbContext db, short partitionId, int dimensionId, DimensionWriteClock? clock, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
         try
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
+            if (clock is not null)
+            {
+                clock.Session = await SessionOfAsync(connection, ct).ConfigureAwait(false);
+            }
+
             long keys = 0;
             long values = 0;
             while (true)
             {
-                var round = await PurgeRoundAsync(connection, partitionId, dimensionId, ct).ConfigureAwait(false);
+                var round = await PurgeRoundAsync(connection, partitionId, dimensionId, clock, ct).ConfigureAwait(false);
                 keys += round.Keys;
                 values += round.Values;
                 if (round.Keys == 0 && round.Values == 0)
@@ -106,14 +111,14 @@ internal static partial class SqlServerDimensionStore
         }
     }
 
-    private static async Task<DimensionPurge> PurgeRoundAsync(SqlConnection connection, short partitionId, int dimensionId, CancellationToken ct)
+    private static async Task<DimensionPurge> PurgeRoundAsync(SqlConnection connection, short partitionId, int dimensionId, DimensionWriteClock? clock, CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
         {
             await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
             try
             {
-                await LockAsync(connection, transaction, partitionId, dimensionId, ct).ConfigureAwait(false);
+                await LockAsync(connection, transaction, partitionId, dimensionId, clock, DimensionWriteStep.Purge, ct).ConfigureAwait(false);
                 DimensionPurge round;
                 await using (var command = Command(connection, transaction, PurgeRemovedSql))
                 {

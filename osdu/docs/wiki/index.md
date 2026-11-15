@@ -279,6 +279,10 @@ other packages adopt the same contract.
 - [0057: compute usage is measured on the node, in compute units, and charged to the team a repository document names](decisions/0057-compute-usage-measured-on-the-node.md):
   why a node's work is timed on its own line to the control plane rather than summed from run rows, why cores are shared
   over slots, why a team is a tag in YAML stamped on each row, and why no licence, price or tamper proofing comes with it.
+- [0058: a dimension's keys are found by their text, and a build writes only the keys whose content changed](decisions/0058-dimension-keys-by-their-text.md):
+  why keys, record ids and collected texts are unique by their text rather than a SHA-256 of it, why a key keeps the hash
+  of its objects and read-through attributes, why a dimension reading elements is keyed by id, and why a write says what
+  it is doing.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

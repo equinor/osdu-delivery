@@ -73,8 +73,14 @@ public static class DimensionTables
     /// <summary>The collation text is matched exactly by, whatever the database compares by.</summary>
     internal const string Exact = "Latin1_General_100_BIN2";
 
-    /// <summary>The column every dimension table keeps its key's hash in: SHA-256 of the key's text as SQL Server's <c>HASHBYTES</c> gives it.</summary>
-    public const string KeyHashColumn = "key_hash";
+    /// <summary>
+    /// The column tables made before keys were found by their text kept the key's hash in, which a build drops with its
+    /// index (<see cref="KeyIndexSql"/>).
+    /// </summary>
+    internal const string FormerKeyHashColumn = "key_hash";
+
+    /// <summary>The index a view's join finds a key's rows by: the partition, then the key's text.</summary>
+    internal const string KeyIndex = "IX_key_text";
 
     /// <summary>The key SQLFlow's schema evolution holds a table to: a change to it is refused, never applied.</summary>
     internal static readonly IReadOnlySet<string> KeyColumns = new HashSet<string>(["id"], StringComparer.OrdinalIgnoreCase);
@@ -142,11 +148,6 @@ public static class DimensionTables
             new() { Name = table.ValueColumn, DataType = Text(256), IsNullable = false },
             new() { Name = "records", DataType = Type("bigint"), IsNullable = false },
             new() { Name = "filter", DataType = Text(DeliveryDimensionValue.MaxFilterLength), IsNullable = true },
-
-            // The key's hash, which a view's join finds a row by (osdu/docs/reference/flow/dimension-views.md): the
-            // key itself is too long for an index key. A column the build writes, not a computed one, so the key's
-            // column can still be renamed.
-            new() { Name = KeyHashColumn, DataType = new SqlDataType { BaseType = "binary", Length = 32 }, IsNullable = true },
         };
         if (table.HasElements)
         {
@@ -184,7 +185,7 @@ public static class DimensionTables
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key' AND [type] = 1)
             BEGIN
                 DROP INDEX IF EXISTS [IX_value] ON {table};
-                DROP INDEX IF EXISTS [IX_key_hash] ON {table};
+                DROP INDEX IF EXISTS [{KeyIndex}] ON {table};
                 DROP INDEX IF EXISTS [IX_key] ON {table};
                 DECLARE @key sysname = (SELECT [name] FROM sys.key_constraints WHERE [parent_object_id] = OBJECT_ID(N'{literal}', N'U') AND [type] = 'PK');
                 IF @key IS NOT NULL
@@ -198,38 +199,31 @@ public static class DimensionTables
             END;
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_value')
                 CREATE INDEX [IX_value] ON {table} ([partition], {Quoted(spec.ValueColumn)}, [id]);
-            {KeyHashIndexSql(spec.Name, target)}
-            """;
-    }
-
-    /// <summary>The index a view's join finds a key's row by, made when the table has none of the name.</summary>
-    internal static string KeyHashIndexSql(string name, DimensionTableTarget target)
-    {
-        ArgumentNullException.ThrowIfNull(target);
-        var table = target.Qualified(name);
-        var literal = table.Replace("'", "''", StringComparison.Ordinal);
-        return $"""
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key_hash')
-                CREATE INDEX [IX_key_hash] ON {table} ([partition], [{KeyHashColumn}]);
+            {KeyIndexSql(spec.Name, spec.KeyColumn, target)}
             """;
     }
 
     /// <summary>
-    /// The statement that gives every row of <paramref name="table"/> without a key hash its hash, in every partition or in
-    /// <c>@partition</c>'s alone: rows a build wrote before tables kept one. <paramref name="keyColumn"/> is the key's column
-    /// as the table names it now. One partition's rows are reached by a seek of the partition, so no other partition's rows
-    /// are read; every index of the table leads with it.
+    /// The index a view's join finds a key's rows by, the partition then the key's text (<see cref="KeyIndex"/>), made when
+    /// the table has none of the name and holds the key's column <paramref name="keyColumn"/>; and, in a table made before
+    /// keys were found by their text, the key's hash and its index dropped. A key is at most
+    /// <see cref="DeliveryDimensionValue.MaxOriginalLength"/> characters, so the index holds every key a build writes.
     /// </summary>
-    internal static string FillKeyHashSql(string table, string keyColumn, bool onePartition, DimensionTableTarget target)
+    internal static string KeyIndexSql(string name, string keyColumn, DimensionTableTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
-        return onePartition
-            ? $"UPDATE t SET t.[{KeyHashColumn}] = {KeyHash("t." + Quoted(keyColumn))} FROM {target.Qualified(table)} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[{KeyHashColumn}] IS NULL;"
-            : $"UPDATE {target.Qualified(table)} SET [{KeyHashColumn}] = {KeyHash(Quoted(keyColumn))} WHERE [{KeyHashColumn}] IS NULL;";
+        var table = target.Qualified(name);
+        var literal = table.Replace("'", "''", StringComparison.Ordinal);
+        var column = keyColumn.Replace("'", "''", StringComparison.Ordinal);
+        return $"""
+            DROP INDEX IF EXISTS [IX_key_hash] ON {table};
+            IF COL_LENGTH(N'{literal}', N'{FormerKeyHashColumn}') IS NOT NULL
+                ALTER TABLE {table} DROP COLUMN [{FormerKeyHashColumn}];
+            IF COL_LENGTH(N'{literal}', N'{column}') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'{KeyIndex}')
+                CREATE INDEX [{KeyIndex}] ON {table} ([partition], {Quoted(keyColumn)});
+            """;
     }
-
-    /// <summary>The hash of a key's text, as a view's join computes the hash of the value it joins on.</summary>
-    internal static string KeyHash(string keySql) => $"CAST(HASHBYTES('SHA2_256', {keySql}) AS binary(32))";
 
     /// <summary>
     /// The statement that lays out the rows a dimension's table holds into <c>#DimRow</c>, made for a table of
@@ -334,7 +328,7 @@ public static class DimensionTables
             $"ELSE\nBEGIN\n    DELETE t\n    FROM {target} AS t WITH (FORCESEEK)\n    WHERE t.[partition] = @partition\n      AND NOT EXISTS (SELECT 1 FROM #DimRow AS s WHERE {same});\n    SET @changed += @@ROWCOUNT;\nEND;\n\n");
 
         sql.Append(CultureInfo.InvariantCulture,
-            $"UPDATE t SET t.{key} = s.[Key], t.[{KeyHashColumn}] = {KeyHash("s.[Key]")}, t.{value} = s.[Value], t.[records] = s.[Records], t.[filter] = s.[Filter]");
+            $"UPDATE t SET t.{key} = s.[Key], t.{value} = s.[Value], t.[records] = s.[Records], t.[filter] = s.[Filter]");
         foreach (var attribute in attributes)
         {
             sql.Append(CultureInfo.InvariantCulture, $", t.{attribute.Column} = s.{attribute.Slot}");
@@ -367,7 +361,7 @@ public static class DimensionTables
         sql.Append(");\nSET @changed += @@ROWCOUNT;\n\n");
 
         // New rows take their numbers in the table's own order: by value, then key, then the value collected or the element.
-        sql.Append(CultureInfo.InvariantCulture, $"INSERT INTO {target} ([partition], [key_id], {key}, [{KeyHashColumn}], {value}, [records], [filter]");
+        sql.Append(CultureInfo.InvariantCulture, $"INSERT INTO {target} ([partition], [key_id], {key}, {value}, [records], [filter]");
         if (table.HasElements)
         {
             sql.Append(CultureInfo.InvariantCulture, $", {element}");
@@ -378,7 +372,7 @@ public static class DimensionTables
             sql.Append(CultureInfo.InvariantCulture, $", {attribute.Column}");
         }
 
-        sql.Append(CultureInfo.InvariantCulture, $")\nSELECT @partition, s.[ValueId], s.[Key], {KeyHash("s.[Key]")}, s.[Value], s.[Records], s.[Filter]");
+        sql.Append(CultureInfo.InvariantCulture, $")\nSELECT @partition, s.[ValueId], s.[Key], s.[Value], s.[Records], s.[Filter]");
         if (table.HasElements)
         {
             sql.Append(", s.[Element]");
@@ -391,7 +385,6 @@ public static class DimensionTables
 
         sql.Append(CultureInfo.InvariantCulture,
             $"\nFROM #DimRow AS s\nWHERE NOT EXISTS (SELECT 1 FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND {same})\nORDER BY s.[Value], s.[Key], {(table.HasElements ? "s.[Element]" : "s.[Part]")};\nSET @changed += @@ROWCOUNT;");
-        sql.Append("\n\n").Append(FillKeyHashSql(table.Name, table.KeyColumn, onePartition: true, kept));
         return sql.ToString();
     }
 

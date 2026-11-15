@@ -363,7 +363,7 @@ public class DimensionSamplerTests
 
         Assert.DoesNotContain(preview.Rows, r => r.Key == tooLong);
         Assert.Equal(3, preview.Keys);
-        Assert.Contains(preview.Notes, n => n.Contains("1 key(s) are longer than the 1024 characters", StringComparison.Ordinal));
+        Assert.Contains(preview.Notes, n => n.Contains($"1 key(s) are longer than the {DimensionSpec.MaxOriginalLength} characters", StringComparison.Ordinal));
         Assert.Contains(preview.Notes, n => n.Contains("more than the 2 the dimension's maxValues allows, so a build fails", StringComparison.Ordinal));
     }
 

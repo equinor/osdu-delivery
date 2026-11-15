@@ -104,9 +104,9 @@ the rows the view holds, its `where` applied.
   path; a `keep: id` column joins a dimension keyed by `id`; two dimensions keyed by `id` read kinds of one entity type.
 - A dimension with `elements` or a collected attribute holds several rows a key, and is refused as a join: it would
   repeat the view's rows. Make it the view's `from`.
-- Joins stay inside one flow, so one run settles every table a view reads. Each compares the partition, the key's
-  SHA-256 (`key_hash`, which every dimension table keeps and indexes) and the key's text under a binary collation, so
-  ids that differ only in case never meet, whatever the database's collation.
+- Joins stay inside one flow, so one run settles every table a view reads. Each compares the partition and the key's
+  text under a binary collation, which every dimension table indexes (`IX_key_text`), so ids that differ only in case
+  never meet, whatever the database's collation.
 
 **Expressions.** A column is a T-SQL scalar expression, read by SQL Server's own parser and written into the view by the
 module from what it read. It uses numbers, `'text'`, `N'text'`, `NULL`, `+ - * / %`, comparisons, `AND`, `OR`, `NOT`,
@@ -143,9 +143,8 @@ how many rows found theirs and some values that found none, and for each convert
 convert, with examples (the row's `id` and the text). The run's result says so (`CurveUnitID: 1,204 of 88,310 rows name
 no row of RefUnitOfMeasure`, `TopDepth: 37 value(s) did not convert, for example '12,5'`). A value no expression could be
 written around (an arithmetic overflow) fails the build, naming the view and the column, so the pipelines ordered after
-the flow do not read a view that cannot be read. The check reads every row of the partition, so it joins on the key's
-text alone, which finds the same rows as the view's joins without computing a hash for each row of each join, and asks
-SQL Server for a plan over several processors, with at most a tenth of its query memory.
+the flow do not read a view that cannot be read. The check reads every row of the partition, joined as the view joins
+them, and asks SQL Server for a plan over several processors, with at most a tenth of its query memory.
 
 **A check kept.** A build whose tables a view reads hold what they held at the view's last check of the partition does
 not read the view again: the check keeps the last one's findings, and the run says so (`view Curve (osdu.v_dim_Curve):
@@ -243,7 +242,7 @@ the join meets. The examples of a join's values that found nothing come from tho
 
 A view joins a view of its flow declared before it (`join: [{ on: WellLogID, view: LogAssurances, as: TA }]`) when that
 view groups by one column holding a key and lists that column bare, not converted, so the join meets at most one of its
-rows. The join compares the partition and that column exactly, under a binary collation (a view holds no `key_hash`); the
+rows. The join compares the partition and that column exactly, under a binary collation; the
 column joined on holds a key that meets it as a join to a dimension does. The joined view's columns are read by the
 alias with their kinds of value (`TA.Count + 1` is a number), and a view that joins a view lists its columns.
 

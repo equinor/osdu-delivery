@@ -190,14 +190,12 @@ public static class DimensionViews
     public sealed record JoinSql(string Table, string SqlAlias, string KeyColumn, string OnSql, bool View = false);
 
     /// <summary>
-    /// The view's <c>FROM</c> clause: <paramref name="fromTable"/>, every join left, compared on the partition, the key's
-    /// hash (a dimension's table only, which keeps one) and the key's text exactly, then the values computed once each
-    /// (<paramref name="applies"/>, which the columns converting them read). Without <paramref name="hashed"/> the hash is
-    /// left out: the rows joined are the same, since a key's hash is the hash of its text, and a statement reading every row
-    /// of a partition (the check) joins on the text alone rather than computing a hash for every row of every join, which
-    /// only a statement seeking a few rows gains by.
+    /// The view's <c>FROM</c> clause: <paramref name="fromTable"/>, every join left, compared on the partition and the key's
+    /// text exactly, which a dimension's table is indexed by (<see cref="DimensionTables.KeyIndex"/>), its length too (SQL
+    /// Server compares text as though the shorter were padded with spaces), then the values computed once each
+    /// (<paramref name="applies"/>, which the columns converting them read).
     /// </summary>
-    public static string FromSql(DimensionTableTarget kept, string fromTable, IReadOnlyList<JoinSql> joins, IReadOnlyList<string> applies, bool hashed = true)
+    public static string FromSql(DimensionTableTarget kept, string fromTable, IReadOnlyList<JoinSql> joins, IReadOnlyList<string> applies)
     {
         ArgumentNullException.ThrowIfNull(kept);
         ArgumentNullException.ThrowIfNull(fromTable);
@@ -209,13 +207,10 @@ public static class DimensionViews
         {
             sql.Append(CultureInfo.InvariantCulture, $"\nLEFT JOIN {kept.Qualified(join.Table)} AS [{join.SqlAlias}]");
             sql.Append(CultureInfo.InvariantCulture, $"\n    ON [{join.SqlAlias}].[partition] = [{FromSqlAlias}].[partition]");
-            if (!join.View && hashed)
-            {
-                sql.Append(CultureInfo.InvariantCulture, $"\n   AND [{join.SqlAlias}].[{DimensionTables.KeyHashColumn}] = {DimensionTables.KeyHash(join.OnSql)}");
-            }
-
             sql.Append(CultureInfo.InvariantCulture,
                 $"\n   AND [{join.SqlAlias}].{DimensionViewExpressions.Quoted(join.KeyColumn)} COLLATE {DimensionTables.Exact} = {join.OnSql} COLLATE {DimensionTables.Exact}");
+            sql.Append(CultureInfo.InvariantCulture,
+                $"\n   AND DATALENGTH([{join.SqlAlias}].{DimensionViewExpressions.Quoted(join.KeyColumn)}) = DATALENGTH({join.OnSql})");
         }
 
         foreach (var apply in applies)

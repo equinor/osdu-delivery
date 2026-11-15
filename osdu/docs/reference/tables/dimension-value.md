@@ -39,8 +39,10 @@ the next build's write deletes it with its attributes, elements and records ([Wh
 | `PartitionId` | `smallint` | no | The partition the row belongs to, as [`osdu.LedgerPartition`](ledger-partition.md) numbers it: the first column of the key. |
 | `ValueId` | `bigint` identity | no | The original's id, unique on its own: what attributes, elements, records and changes name it by, and the `key_id` of its row in the dimension's table. |
 | `DimensionId` | `int` | no | The dimension ([`osdu.Dimension`](dimension.md)). |
-| `Original` | `nvarchar(1024)` | no | Collation `Latin1_General_100_BIN2`. The key exactly as the index holds it, at most 1,024 characters. |
-| `OriginalHash` | `binary(32)` | no | SHA-256 of the original's UTF-8 bytes: what an original is unique by, exactly, however long it is. |
+| `Original` | `nvarchar(800)` | no | Collation `Latin1_General_100_BIN2`. The key exactly as the index holds it, at most 800 characters, compared exactly: what an original is unique by in its dimension, with its length. |
+| `OriginalBytes` | `smallint` | no | The length of `Original` in bytes, computed and kept by the database (`DATALENGTH`). SQL Server compares text as though the shorter were padded with spaces, so a key is matched by its text and its length: `GR` and `GR ` are two keys. |
+| `ElementsHash` | `binary(32)` | yes | SHA-256 of the key's objects of a nested array as the build that last wrote them staged them, one JSON text: a build that stages the same leaves the key's [elements](dimension-element.md) as they are. Null when the last build wrote none. |
+| `AttributesHash` | `binary(32)` | yes | SHA-256 of the attribute values read through the record the key names, as the build that last wrote them staged them: a build that reads the same leaves those [attribute values](dimension-attribute.md) as they are. Null when the last build read none. |
 | `MemberId` | `bigint` | yes | The member it belongs to, or null when cleaning left it out of every member. |
 | `LeftOut` | `nvarchar(16)` | yes | Why it belongs to no member: `empty`, `tooLong`, `dropped` or `failed`; null when it has a member. |
 | `Note` | `nvarchar(400)` | yes | What cleaning had to say about it. |
@@ -61,13 +63,15 @@ the next build's write deletes it with its attributes, elements and records ([Wh
 | --- | --- | --- | --- | --- | --- |
 | `PK_DimensionValue` | `PartitionId`, `DimensionId`, `ValueId` | primary key | none | none | A dimension's keys together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionValue_ValueId` | `ValueId` | unique | none | none | An original named by its id. |
-| `IX_DimensionValue_PartitionId_DimensionId_OriginalHash` | `PartitionId`, `DimensionId`, `OriginalHash` | unique | none | none | An original is one value of one dimension, once, compared by its hash so no length or collation blurs two. |
+| `IX_DimensionValue_PartitionId_DimensionId_Original_OriginalBytes` | `PartitionId`, `DimensionId`, `Original`, `OriginalBytes` | unique | none | none | An original is one value of one dimension, once, compared exactly, its length beside it: what a build matches the keys it read by. |
 | `IX_DimensionValue_PartitionId_DimensionId_MemberId` | `PartitionId`, `DimensionId`, `MemberId` | index | none | none | A member's originals. |
 | `IX_DimensionValue_PartitionId_DimensionId_Count_ValueId` | `PartitionId`, `DimensionId`, `Count` DESC, `ValueId` | index | none | none | The originals most records hold first, a page at a time. |
 
 ## Written and read by
 
-- **Written** by a build's merge, in one transaction under the dimension's lock (`SqlServerDimensionStore.cs`).
+- **Written** by a build's merge, in one transaction under the dimension's lock (`SqlServerDimensionStore.cs`); the two
+  hashes are written with the elements and attribute values they stand for, so a key's are rewritten only when they
+  moved ([decision 0058](../../wiki/decisions/0058-dimension-keys-by-their-text.md)).
 - **Deleted** when removed, by the next build's write, a few keys a round with everything naming them
   (`SqlServerDimensionStore.Purge.cs`).
 - **Read** by the dimension's keys page, `sqlflow dimensions`, a composed search, a cache flow capturing the dimension,

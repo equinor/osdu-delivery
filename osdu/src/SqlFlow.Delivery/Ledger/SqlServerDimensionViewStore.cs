@@ -111,7 +111,7 @@ internal static class SqlServerDimensionViewStore
         try
         {
             // The tables a view reads are settled before its transaction, as a build's are: one no build has made yet is
-            // made empty, and one made before tables kept a key's hash is given the column.
+            // made empty, and one made before keys were found by their text is given the index its joins seek.
             foreach (var table in item.Tables)
             {
                 await SqlServerDimensionStore.EnsureViewTableAsync(connection, home, table, ct).ConfigureAwait(false);
@@ -223,15 +223,7 @@ internal static class SqlServerDimensionViewStore
                     : $"{shown} is in the database as an object of type {objectType}, not the view a build made, so it is not written over. Drop it so the next build writes the view.");
             }
 
-            // The rows of the tables a view reads carry their key's hash, which its joins find them by; a table written
-            // before tables kept one is given them, in every partition when the view is written anew, else in the run's.
             var writes = recordId is null || recordHash != definition.Hash || objectType is null || moved;
-            foreach (var table in item.Tables)
-            {
-                await using var fill = Command(home.Connection, home.Joining(transaction), DimensionTables.FillKeyHashSql(table.Name, table.KeyColumn, onePartition: !writes, home.Target));
-                fill.Parameters.Add(new SqlParameter("@partition", SqlDbType.NVarChar, 256) { Value = write.Partition });
-                await fill.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
 
             if (writes)
             {

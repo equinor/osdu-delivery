@@ -9,12 +9,13 @@ using SqlFlow.Delivery.Search;
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
 /// <summary>
-/// What a pass over a dimension's records read of them: each record identified, by the SHA-256 of its unique key
-/// (<see cref="DimensionRecordReader.RecordHash"/>); each key each such record holds; the records read; those holding no
-/// single value at a key column, which cannot be told apart and are left out; and the pages read.
+/// What a pass over a dimension's records read of them: each record identified, by its unique key's text
+/// (<see cref="DimensionRecordReader.RecordKey"/>); each key each such record holds; the records read; those holding no
+/// single value at a key column, or a unique key longer than a dimension finds a record by, which cannot be told apart and
+/// are left out; and the pages read.
 /// </summary>
 internal sealed record RecordRead(
-    IReadOnlyList<byte[]> Records, IReadOnlyList<(byte[] Record, string Original)> Held, long Read, long Unidentified, int Pages, int Ranges);
+    IReadOnlyList<string> Records, IReadOnlyList<(string Record, string Original)> Held, long Read, long Unidentified, int Pages, int Ranges);
 
 /// <summary>What a pass over a dimension's records staged: the records read, those left out, the keys they hold, and the pages and ranges read.</summary>
 internal sealed record RecordsStaged(long Read, long Unidentified, long Held, int Pages, int Ranges);
@@ -32,14 +33,14 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
     /// <summary>The most keys a full load keeps by record between all a dimension's records: past it, the dimension is loaded in full only.</summary>
     public const long MaxHeld = 20_000_000;
 
-    /// <summary>What separates the values of a unique key of several columns before it is hashed: a character no id holds.</summary>
+    /// <summary>What separates the values of a unique key of several columns in its text: a character no id holds.</summary>
     private const char Separator = '\u001F';
 
-    /// <summary>The SHA-256 a record is kept by: of its key columns' values, in order, joined.</summary>
-    public static byte[] RecordHash(IReadOnlyList<string> values)
+    /// <summary>The text a record is kept by (<see cref="SqlFlow.Delivery.Data.DeliveryDimensionRecord.RecordKey"/>): its key columns' values, in order, joined.</summary>
+    public static string RecordKey(IReadOnlyList<string> values)
     {
         ArgumentNullException.ThrowIfNull(values);
-        return SqlServerDimensionStore.HashOf(string.Join(Separator, values));
+        return string.Join(Separator, values);
     }
 
     /// <summary>
@@ -79,7 +80,7 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
         log.LogInformation(
             "dimension {Dimension}: {Records} record(s) read by their unique key with {Held} key(s) between them in {Pages} page(s) over {Ranges} range(s){Unidentified}",
             dimension.Name, read, stage.Held, pages, work.Count,
-            unidentified > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {unidentified} hold no single value at a key column and are left out") : string.Empty);
+            unidentified > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {unidentified} hold no single value at a key column, white space at an end of one, or a unique key longer than {SqlFlow.Delivery.Data.DeliveryDimensionValue.MaxKeyLength} characters, and are left out") : string.Empty);
         return new RecordsStaged(read, unidentified, stage.Held, pages, work.Count);
     }
 
@@ -90,8 +91,8 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
         ArgumentNullException.ThrowIfNull(dimension);
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
         ArgumentNullException.ThrowIfNull(keyField);
-        var records = new List<byte[]>();
-        var held = new List<(byte[] Record, string Original)>();
+        var records = new List<string>();
+        var held = new List<(string Record, string Original)>();
         var canonical = new Dictionary<string, string>(StringComparer.Ordinal);
         long read = 0;
         long unidentified = 0;
@@ -106,14 +107,14 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
                 read += page.Read;
                 unidentified += page.Unidentified;
                 records.AddRange(page.Records);
-                foreach (var (hash, key) in page.Held)
+                foreach (var (record, key) in page.Held)
                 {
                     if (!canonical.TryGetValue(key, out var kept))
                     {
                         canonical[key] = kept = key;
                     }
 
-                    held.Add((hash, kept));
+                    held.Add((record, kept));
                 }
 
                 if (held.Count > MaxHeld)
@@ -128,12 +129,12 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
         log.LogInformation(
             "dimension {Dimension}: {Records} record(s) read by their unique key with {Held} key(s) between them in {Pages} page(s) over 1 range(s){Unidentified}",
             dimension.Name, read, held.Count, pages,
-            unidentified > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {unidentified} hold no single value at a key column and are left out") : string.Empty);
+            unidentified > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {unidentified} hold no single value at a key column, white space at an end of one, or a unique key longer than {SqlFlow.Delivery.Data.DeliveryDimensionValue.MaxKeyLength} characters, and are left out") : string.Empty);
         return new RecordRead(records, held, read, unidentified, pages, 1);
     }
 
     /// <summary>What one page of a pass read: its records identified, the keys each held, and the records read and left out.</summary>
-    private sealed record PageRead(List<byte[]> Records, List<(byte[] Record, string Original)> Held, long Read, long Unidentified);
+    private sealed record PageRead(List<string> Records, List<(string Record, string Original)> Held, long Read, long Unidentified);
 
     /// <summary>Reads every pass's records through the search cursor, the passes side by side, handing each page as it is read to <paramref name="take"/>.</summary>
     private async Task PassAsync(
@@ -162,8 +163,8 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
                 // The reader hands each record out once and every record of the range, or fails the load.
                 await foreach (var page in search.PagesAsync(request, OsduSearch.MaxPage, token).ConfigureAwait(false))
                 {
-                    var pageRecords = new List<byte[]>(page.Hits.Count);
-                    var pageHeld = new List<(byte[] Record, string Original)>();
+                    var pageRecords = new List<string>(page.Hits.Count);
+                    var pageHeld = new List<(string Record, string Original)>();
                     var pageUnidentified = 0;
                     foreach (var hit in page.Hits)
                     {
@@ -173,11 +174,17 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
                             continue;
                         }
 
-                        var hash = RecordHash(identity);
-                        pageRecords.Add(hash);
+                        var record = RecordKey(identity);
+                        if (record.Length > SqlFlow.Delivery.Data.DeliveryDimensionValue.MaxKeyLength)
+                        {
+                            pageUnidentified++;
+                            continue;
+                        }
+
+                        pageRecords.Add(record);
                         foreach (var key in DimensionCollector.TextsOf(hit, keyField).Where(pass.Keeps))
                         {
-                            pageHeld.Add((hash, key));
+                            pageHeld.Add((record, key));
                         }
                     }
 
@@ -190,19 +197,23 @@ internal sealed class DimensionRecordReader(OsduSearch search, ILogger log, int 
         => new(string.Create(CultureInfo.InvariantCulture,
             $"The records of dimension {dimension.Name} hold more than {MaxHeld:N0} keys between them, more than a load keeps by record for incremental loads. Narrow its query, split it over dimensions with narrower queries, or take out the flow's incremental block to load it in full only."));
 
-    /// <summary>The values of a record's key columns, in order; null when one holds no single value, so the record cannot be told apart.</summary>
+    /// <summary>
+    /// The values of a record's key columns, in order; null when one holds no single value, or one with white space at an
+    /// end, which a record's text cannot be told apart by (SQL Server compares text as though the shorter were padded with
+    /// spaces), so the record cannot be told apart.
+    /// </summary>
     private static IReadOnlyList<string>? Identity(JsonElement hit, IReadOnlyList<OsduField> keyColumns)
     {
         var values = new List<string>(keyColumns.Count);
         foreach (var column in keyColumns)
         {
             var held = DimensionCollector.TextsOf(hit, column);
-            if (held.Count != 1)
+            if (held.Count != 1 || held.First() is not { Length: > 0 } value || char.IsWhiteSpace(value[0]) || char.IsWhiteSpace(value[^1]))
             {
                 return null;
             }
 
-            values.Add(held.First());
+            values.Add(value);
         }
 
         return values;

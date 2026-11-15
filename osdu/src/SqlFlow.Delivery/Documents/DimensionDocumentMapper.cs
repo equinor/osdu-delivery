@@ -336,6 +336,14 @@ internal static class DimensionMapper
                 $"{source}: {where}: the table's column '{taken}' would be the {DimensionElementsSpec.Column} column a dimension with elements numbers each key's objects by. Name it otherwise: columns: {{ key: <name>, value: <name> }}.");
         }
 
+        // A key's objects are its own record's, numbered in the order the record holds them and compared by their hash as one,
+        // so a dimension reading elements is keyed by its records' ids.
+        if (elements is not null && !string.Equals(path.Trim(), "id", StringComparison.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{source}: {where}: path is '{path}', and a dimension reading elements is keyed by its records' ids (path: id): a key's objects are its own record's. Key the dimension by id, and read '{path}' as an attribute of it.");
+        }
+
         var dimension = new DimensionSpec
         {
             Name = name,

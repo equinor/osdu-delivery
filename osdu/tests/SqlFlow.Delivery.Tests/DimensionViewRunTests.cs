@@ -248,8 +248,8 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal((long?)1L, check.Columns.Single(c => c.Name == "TopDepth").Unconverted);
         Assert.Equal((long?)0L, check.Columns.Single(c => c.Name == "Interval").Unconverted);
 
-        // The joined table is read through the index on its key's hash.
-        Assert.Equal(["1"], await SqlAsync("SELECT COUNT(*) FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'[osdu].[dim_TestUnit]') AND [name] = N'IX_key_hash';"));
+        // The joined table is read through the index on its key's text.
+        Assert.Equal(["1"], await SqlAsync("SELECT COUNT(*) FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'[osdu].[dim_TestUnit]') AND [name] = N'IX_key_text';"));
     }
 
     [Fact]
@@ -415,18 +415,28 @@ public sealed class DimensionViewRunTests : IDisposable
     }
 
     [Fact]
-    public async Task Rows_written_before_tables_kept_their_key_s_hash_are_given_it_and_joined()
+    public async Task A_table_made_when_keys_were_found_by_their_hash_is_joined_by_its_key_s_text()
     {
         Logs();
         var (runner, _, _) = Runner(Flow(CurveView));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        await SqlAsync("UPDATE [osdu].[dim_TestUnit] SET [key_hash] = NULL;");
-        Assert.Equal(["(null)", "(null)", "(null)", "(null)"], await SqlAsync("SELECT [Unit] FROM [osdu].[v_dim_TestCurveView] ORDER BY [Unit];"));
 
-        // A build that does not rebuild the unit's dimension still gives its rows their hash before the view is checked.
+        // As a build before keys were found by their text left the unit's table: the key's hash, and the index over it.
+        await SqlAsync("""
+            DROP INDEX [IX_key_text] ON [osdu].[dim_TestUnit];
+            ALTER TABLE [osdu].[dim_TestUnit] ADD [key_hash] binary(32) NULL;
+            """);
+        await SqlAsync("CREATE INDEX [IX_key_hash] ON [osdu].[dim_TestUnit] ([partition], [key_hash]);");
+
+        // A build that does not rebuild the unit's dimension still gives its table the index on the key's text, and takes
+        // the hash away, before the view is written and checked; the view joins it as before.
         await runner.BuildAsync(["TestLog"], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal(["(null)", "(null)", "gAPI", "m"], await SqlAsync("SELECT [Unit] FROM [osdu].[v_dim_TestCurveView] ORDER BY [Unit];"));
+        Assert.Equal(
+            ["IX_key_text"],
+            await SqlAsync("SELECT [name] FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'[osdu].[dim_TestUnit]') AND [name] LIKE N'IX[_]key[_]%' ORDER BY [name];"));
+        Assert.Equal(["0"], await SqlAsync("SELECT COUNT(*) FROM sys.columns WHERE [object_id] = OBJECT_ID(N'[osdu].[dim_TestUnit]') AND [name] = N'key_hash';"));
     }
 
     [Fact]

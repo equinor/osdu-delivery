@@ -47,38 +47,67 @@ public sealed record DimensionBuildSpread
 }
 
 /// <summary>
-/// How a build's dimensions are dealt into parts: the dimension reading the most records first, each to the part reading
-/// the fewest so far, so the parts end near one another, and the first part (the one the splitting run builds) holds the
-/// dimension reading the most.
+/// How a build's dimensions are dealt into parts (osdu/docs/reference/flow/dimension-build.md, Spread over nodes): each
+/// weighed by what it is expected to cost, the heaviest first, each to the part carrying the least so far, so the parts end
+/// near one another, and the first part (the one the splitting run builds) holds the heaviest.
 /// </summary>
 public static class DimensionShares
 {
     /// <summary>
-    /// <paramref name="dimensions"/> dealt into <paramref name="parts"/> parts by the records each reads
-    /// (<paramref name="records"/>, by name). Ties go by the order the flow declares the dimensions, and each part lists its
-    /// dimensions in that order. A part is never empty: there are never more parts than dimensions.
+    /// What a dimension is expected to cost, in seconds where the ledger has seen the flow build: the records it reads now
+    /// times the seconds a record took in its last full build. A record of a dimension that writes many rows of each (a
+    /// well log's curves) costs more than one of a dimension that writes one, and its last full build, read and write
+    /// together, says by how much. A dimension with no full build yet is weighed at the flow's average over the dimensions
+    /// that have one; when none has, every dimension is weighed by its records alone.
     /// </summary>
-    public static IReadOnlyList<IReadOnlyList<DimensionSpec>> Deal(IReadOnlyList<DimensionSpec> dimensions, IReadOnlyDictionary<string, long> records, int parts)
+    /// <param name="records">The records each dimension reads now, by name.</param>
+    /// <param name="lastFull">Each dimension's last full build, by name: how long it took and how many records it read.</param>
+    public static IReadOnlyDictionary<string, double> Costs(IReadOnlyDictionary<string, long> records, IReadOnlyDictionary<string, DimensionBuildCost> lastFull)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(lastFull);
+        var known = lastFull.Where(b => records.ContainsKey(b.Key) && b.Value is { Records: > 0, Seconds: > 0 }).ToDictionary(b => b.Key, b => b.Value, StringComparer.Ordinal);
+        if (known.Count == 0)
+        {
+            return records.ToDictionary(r => r.Key, r => (double)r.Value, StringComparer.Ordinal);
+        }
+
+        var average = known.Values.Sum(b => b.Seconds) / known.Values.Sum(b => (double)b.Records);
+        return records.ToDictionary(
+            r => r.Key,
+            r => r.Value * (known.TryGetValue(r.Key, out var build) ? build.Seconds / build.Records : average),
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// <paramref name="dimensions"/> dealt into <paramref name="parts"/> parts by what each is expected to cost
+    /// (<paramref name="costs"/>, by name; see <see cref="Costs"/>). Ties go by the order the flow declares the dimensions,
+    /// and each part lists its dimensions in that order. A part is never empty: there are never more parts than dimensions.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<DimensionSpec>> Deal(IReadOnlyList<DimensionSpec> dimensions, IReadOnlyDictionary<string, double> costs, int parts)
     {
         ArgumentNullException.ThrowIfNull(dimensions);
-        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(costs);
         ArgumentOutOfRangeException.ThrowIfLessThan(parts, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(parts, Math.Max(1, dimensions.Count));
         var declared = dimensions.Select((d, i) => (Dimension: d, Order: i)).ToList();
         var dealt = Enumerable.Range(0, parts).Select(_ => new List<(DimensionSpec Dimension, int Order)>()).ToList();
-        var load = new long[parts];
-        foreach (var (dimension, order) in declared.OrderByDescending(d => records.GetValueOrDefault(d.Dimension.Name)).ThenBy(d => d.Order))
+        var load = new double[parts];
+        foreach (var (dimension, order) in declared.OrderByDescending(d => costs.GetValueOrDefault(d.Dimension.Name)).ThenBy(d => d.Order))
         {
-            // The emptiest part first, so no part is left with nothing while another holds two; then the one reading the
-            // fewest records, then the first.
+            // The emptiest part first, so no part is left with nothing while another holds two; then the one carrying the
+            // least, then the first.
             var to = Enumerable.Range(0, parts).OrderBy(p => dealt[p].Count == 0 ? 0 : 1).ThenBy(p => load[p]).ThenBy(p => p).First();
             dealt[to].Add((dimension, order));
-            load[to] += records.GetValueOrDefault(dimension.Name);
+            load[to] += costs.GetValueOrDefault(dimension.Name);
         }
 
         return dealt.Select(part => (IReadOnlyList<DimensionSpec>)part.OrderBy(d => d.Order).Select(d => d.Dimension).ToList()).ToList();
     }
 }
+
+/// <summary>A dimension's last full build as the deal weighs it: how long it took, its read and its write, and the records it read.</summary>
+public sealed record DimensionBuildCost(double Seconds, long Records);
 
 // A build spread over the fleet (osdu/docs/reference/flow/dimension-build.md, Spread over nodes). The build run counts the
 // records each dimension reads, as a plan does, and from them how many parts it is split into (parallelism.nodes at most, a
@@ -142,8 +171,14 @@ public sealed partial class DimensionRunner
             return null;
         }
 
-        var shares = DimensionShares.Deal(building, records, parts);
+        var lastFull = await LastFullBuildsAsync(scope, building, ct).ConfigureAwait(false);
+        var costs = DimensionShares.Costs(records, lastFull);
+        var shares = DimensionShares.Deal(building, costs, parts);
         var members = shares.Skip(1).Select(share => PartParameters(spread, scope.Partition, share, parts)).ToList();
+        string Share(IReadOnlyList<DimensionSpec> share)
+            => lastFull.Count == 0
+                ? Names(share)
+                : string.Create(CultureInfo.InvariantCulture, $"{Names(share)} (about {Took(share.Sum(d => costs.GetValueOrDefault(d.Name)))})");
 
         // Every part shares the flow's rate limit, this run's among them, so the build as a whole keeps to the rate.
         http.RateLimit.Share(parts);
@@ -157,9 +192,11 @@ public sealed partial class DimensionRunner
         }
 
         _log.LogInformation(
-            "Spread the build of {Dimensions} dimension(s), {Records} record(s) to read, over {Parts} parts (group {GroupId}), each on a node of its own. This run builds {Own}; {Queued}.",
-            building.Count, total, parts, handle.GroupId, Names(shares[0]),
-            string.Join("; ", shares.Skip(1).Select((share, i) => string.Create(CultureInfo.InvariantCulture, $"part {i + 2} (run {handle.RunIds[i]}) builds {Names(share)}"))));
+            "Spread the build of {Dimensions} dimension(s), {Records} record(s) to read, over {Parts} parts (group {GroupId}), each on a node of its own, dealt by {Weighed}. This run builds {Own}; {Queued}.",
+            building.Count, total, parts, handle.GroupId,
+            lastFull.Count == 0 ? "the records each reads, since none has a full build yet" : "the time each is expected to take, from its last full build",
+            Share(shares[0]),
+            string.Join("; ", shares.Skip(1).Select((share, i) => string.Create(CultureInfo.InvariantCulture, $"part {i + 2} (run {handle.RunIds[i]}) builds {Share(share)}"))));
 
         List<DimensionBuildSummary> summaries;
         FanOutWaitResult wait;
@@ -249,6 +286,36 @@ public sealed partial class DimensionRunner
         }
 
         return records;
+    }
+
+    /// <summary>
+    /// The last full build of each dimension of <paramref name="building"/> the ledger holds in the run's partition, by name:
+    /// how long it took and the records it read, which the deal weighs a dimension by (<see cref="DimensionShares.Costs"/>).
+    /// A dimension never built in full, or whose last full build kept no count of its records, has none.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, DimensionBuildCost>> LastFullBuildsAsync(BuildScope scope, IReadOnlyList<DimensionSpec> building, CancellationToken ct)
+    {
+        var names = building.Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
+        var dimensions = (await scope.Ledger.ListDimensionsAsync(scope.Partition, _flow.LedgerId, ct).ConfigureAwait(false))
+            .Where(d => names.Contains(d.Name) && d.LastFullRunId is not null)
+            .ToDictionary(d => d.LastFullRunId!.Value, d => d.Name);
+        if (dimensions.Count == 0)
+        {
+            return new Dictionary<string, DimensionBuildCost>(StringComparer.Ordinal);
+        }
+
+        return (await scope.Ledger.GetDimensionRunsAsync(dimensions.Keys, ct).ConfigureAwait(false))
+            .Where(b => b.Status == DimensionRunStatus.Completed && b.CompletedUtc is not null && b.Read.Records is > 0)
+            .ToDictionary(b => dimensions[b.DimensionRunId], b => new DimensionBuildCost((b.CompletedUtc!.Value - b.StartedUtc).TotalSeconds, b.Read.Records!.Value), StringComparer.Ordinal);
+    }
+
+    /// <summary>A number of seconds as an operator reads a duration: <c>40 s</c>, <c>12 min</c>, <c>1 h 5 min</c>.</summary>
+    private static string Took(double seconds)
+    {
+        var span = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return span.TotalMinutes < 1 ? string.Create(CultureInfo.InvariantCulture, $"{span.TotalSeconds:0} s")
+            : span.TotalHours < 1 ? string.Create(CultureInfo.InvariantCulture, $"{span.TotalMinutes:0} min")
+            : string.Create(CultureInfo.InvariantCulture, $"{(int)span.TotalHours} h {span.Minutes} min");
     }
 
     /// <summary>

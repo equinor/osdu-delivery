@@ -1434,15 +1434,14 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)")
+                        .HasMaxLength(800)
+                        .HasColumnType("nvarchar(800)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.Property<byte[]>("TextHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
+                    b.Property<short>("TextBytes")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("smallint")
+                        .HasComputedColumnSql("CAST(DATALENGTH([Text]) AS smallint)", true);
 
                     b.Property<string>("Value")
                         .IsRequired()
@@ -1455,10 +1454,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.HasIndex("TextId")
                         .IsUnique();
 
-                    b.HasIndex("PartitionId", "DimensionId", "AttributeId", "TextHash")
-                        .IsUnique();
-
                     b.HasIndex("PartitionId", "DimensionId", "AttributeId", "Value");
+
+                    b.HasIndex("PartitionId", "DimensionId", "AttributeId", "Text", "TextBytes")
+                        .IsUnique();
 
                     b.ToTable("DimensionCollectedText", "osdu");
                 });
@@ -1522,11 +1521,11 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.Property<byte[]>("RecordHash")
+                    b.Property<string>("RecordId")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
+                        .HasMaxLength(800)
+                        .HasColumnType("nvarchar(800)")
+                        .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
@@ -1538,9 +1537,9 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.HasIndex("PartitionId", "DimensionId", "EntityType");
 
-                    b.HasIndex("PartitionId", "DimensionId", "RecordHash");
+                    b.HasIndex("PartitionId", "DimensionId", "RecordId");
 
-                    b.HasIndex("PartitionId", "DimensionId", "ValueId", "RecordHash")
+                    b.HasIndex("PartitionId", "DimensionId", "ValueId", "RecordId")
                         .IsUnique();
 
                     b.ToTable("DimensionKeyRecord", "osdu");
@@ -1626,11 +1625,11 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("DimensionRecordId"));
 
-                    b.Property<byte[]>("RecordHash")
+                    b.Property<string>("RecordKey")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
+                        .HasMaxLength(800)
+                        .HasColumnType("nvarchar(800)")
+                        .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
@@ -1642,7 +1641,7 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.HasIndex("PartitionId", "DimensionId", "ValueId");
 
-                    b.HasIndex("PartitionId", "DimensionId", "RecordHash", "ValueId")
+                    b.HasIndex("PartitionId", "DimensionId", "RecordKey", "ValueId")
                         .IsUnique();
 
                     b.ToTable("DimensionRecord", "osdu");
@@ -1832,8 +1831,18 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ValueId"));
 
+                    b.Property<byte[]>("AttributesHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
                     b.Property<long>("Count")
                         .HasColumnType("bigint");
+
+                    b.Property<byte[]>("ElementsHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
 
                     b.Property<string>("Filter")
                         .HasMaxLength(4000)
@@ -1872,15 +1881,14 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<string>("Original")
                         .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)")
+                        .HasMaxLength(800)
+                        .HasColumnType("nvarchar(800)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.Property<byte[]>("OriginalHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
+                    b.Property<short>("OriginalBytes")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("smallint")
+                        .HasComputedColumnSql("CAST(DATALENGTH([Original]) AS smallint)", true);
 
                     b.Property<long?>("RemovedRunId")
                         .HasColumnType("bigint");
@@ -1895,11 +1903,11 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.HasIndex("PartitionId", "DimensionId", "MemberId");
 
-                    b.HasIndex("PartitionId", "DimensionId", "OriginalHash")
-                        .IsUnique();
-
                     b.HasIndex("PartitionId", "DimensionId", "Count", "ValueId")
                         .IsDescending(false, false, true, false);
+
+                    b.HasIndex("PartitionId", "DimensionId", "Original", "OriginalBytes")
+                        .IsUnique();
 
                     b.ToTable("DimensionValue", "osdu");
                 });

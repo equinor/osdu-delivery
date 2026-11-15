@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Ledger;
 using Xunit;
 
@@ -90,7 +91,9 @@ public sealed class DimensionStoreTests : IDisposable
         Assert.Equal(DimensionRunStatus.Completed, run.Status);
         Assert.Equal((2L, 4L, 1L), (run.Members, run.Originals, run.LeftOut));
         Assert.Equal(new DimensionChangeCounts(2, 0, 0, 4, 0, 0, 0), run.Changes);
-        Assert.Equal(["a note"], run.Read.Notes);
+        // The build's notes, and what its write took last.
+        Assert.Equal(["a note"], run.Read.Notes.Take(run.Read.Notes.Count - 1));
+        Assert.StartsWith("Written in ", run.Read.Notes[^1], StringComparison.Ordinal);
         Assert.Equal((2L, 4L, run.DimensionRunId), (dimension.Members, dimension.Originals, dimension.LastRunId));
         Assert.Equal(Field, dimension.Field);
         Assert.Equal("dev", dimension.Partition);
@@ -191,7 +194,7 @@ public sealed class DimensionStoreTests : IDisposable
         Assert.Null(back.RemovedRunId);
         var removed = Assert.Single(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(removal.DimensionRunId, null, null, null, null, 100)));
         Assert.Equal(("DT", DimensionChangeKinds.Removed, "DT", (string?)null), (removed.Original, removed.Change, removed.FromValue, removed.ToValue));
-        Assert.Contains("1 key(s) and 1 value(s) an earlier build removed were deleted", Assert.Single(run.Read.Notes, n => n.Contains("earlier build", StringComparison.Ordinal)), StringComparison.Ordinal);
+        Assert.Contains("1 key(s) and 1 value(s) an earlier build removed were deleted", Assert.Single(run.Read.Notes, n => n.Contains("an earlier build removed", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -254,7 +257,7 @@ public sealed class DimensionStoreTests : IDisposable
         var ledger = await LedgerAsync();
 
         // Case makes two members; a trailing space makes two originals, which SQL Server would compare as one text.
-        var (dimension, run) = await BuildAsync(ledger, Original("GR", "GR"), Original("gr", "gr"), Original("GR ", "GR"), Original(new string('x', 1024), "long"));
+        var (dimension, run) = await BuildAsync(ledger, Original("GR", "GR"), Original("gr", "gr"), Original("GR ", "GR"), Original(new string('x', DeliveryDimensionValue.MaxKeyLength), "long"));
 
         Assert.Equal((3L, 4L), (run.Members, run.Originals));
         var originals = await ledger.MemberOriginalsAsync(dimension.DimensionId, (await MembersAsync(ledger, dimension.DimensionId)).Select(m => m.MemberId).ToList());
@@ -274,7 +277,7 @@ public sealed class DimensionStoreTests : IDisposable
             DimensionId = dimension.DimensionId,
             FlowId = FlowId,
             Field = Field,
-            Originals = [Original(new string('x', 1025), "x")],
+            Originals = [Original(new string('x', DeliveryDimensionValue.MaxKeyLength + 1), "x")],
             Members = [Member("x", 1, 1)],
             Read = DimensionReadCounts.None,
             CompletedUtc = _clock.GetUtcNow().UtcDateTime,

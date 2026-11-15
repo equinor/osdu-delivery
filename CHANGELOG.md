@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A dimension build's trace says what its write is doing.** Each step of the write (deleting what earlier builds
+  removed, merging, writing the table) logs when it starts and ends with its counts and how long it took; a wait for
+  another build's write lock is logged with how long it waited; and a step still running after a minute logs again, at
+  doubling intervals up to ten minutes, with what its statement is doing as the database reports it, a lock it waits for
+  among it. The build's notes on the Dimensions page end with the same timings (`Written in ...`)
+  ([what the trace says of a write](osdu/docs/reference/flow/dimension-build.md#what-the-trace-says-of-a-write)).
 - **What a flow no repository declares left behind can be deleted.** **Delete** on a row of Orphaned ledgers, or **Delete
   what they left behind** for a selection, deletes the orphaned ledgers no flow is to take over, in one partition, once
   the partition is typed back. The dialog first lists what each holds and what stays and why: nothing is asked of OSDU,
@@ -684,11 +690,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A dimension's full load writes only the keys whose content changed.** A key, a record id and a collected text are
+  found by their text under a unique index, where they were found by a SHA-256 of it, and a key keeps the hash of its
+  objects and of the attribute values read through its record: a build writes only the keys whose hash moved, and lays
+  out the dimension's table rows of those keys alone. A weekly full load of a dimension that did not change writes few
+  rows however many it reads: on a reproduction of a well log curve dimension (10,602 logs, 116,622 curves of 17 fields),
+  the write went from 43 seconds to 3 and the full load from 67 to 21. The `dim_` tables lose their `key_hash` column and a view joins a table on its key's text (`IX_key_text`). A key longer
+  than 800 characters is left out, where 1,024 were kept; an OSDU id is about a hundred. The migration empties the
+  records keys were read through and held by, so every dimension's next build loads in full and lays its table out
+  whole ([decision 0058](osdu/docs/wiki/decisions/0058-dimension-keys-by-their-text.md),
+  [staging](osdu/docs/reference/flow/dimension-staging.md)).
+- **A dimension reading `elements` is keyed by `id`.** A key's objects are its own record's, numbered in the order the
+  record holds them; a dimension declaring `elements` on another `path` is refused where its document is read, naming
+  the rule ([elements](osdu/docs/reference/flow/dimension-elements.md)).
+- **A spread dimension build deals its dimensions by the time each is expected to take.** A dimension is weighed by the
+  records it reads times the seconds a record took in its last full build, so one that writes many rows a record (a log's
+  curves) has a part of its own; the spread's log line says how the dimensions were weighed and about how long each part
+  is expected to take ([builds over nodes](osdu/docs/reference/flow/dimension-nodes.md#how-the-dimensions-are-dealt)).
 - **Idle workers are removed after two minutes at most, and sooner the more of them are idle.** An idle worker is
   compute paid for nothing, and a delivery split over many nodes leaves one per part behind. With managed workers, the
   idle workers a pool can spare now share `IdleMinutes` (2 by default, where each waited 5): one waits two minutes, and
-  of six, three leave after 30 seconds, then one each after 40, 60 and 120, never sooner than 30 seconds. The workers
-  the next wave of a running schedule needs are not spare, so a job in flight keeps them. With an autoscaler, the worker
+  of six, three leave after 30 seconds, then one each after 40, 60 and 120, never sooner than 30 seconds. A running job
+  keeps its workers: while a schedule still has steps waiting to start no idle worker leaves, and while runs are
+  executing each idle worker waits the whole two minutes, so the shorter, shared wait applies only once a pool has
+  nothing queued or running. With an autoscaler, the worker
   templates take an idle pool to zero a minute after its last work, where the platforms waited five; this applies once
   the worker template is deployed again
   ([managed workers](sqlflow/docs/reference/guides/deployment.md#managed-workers-the-control-plane-starts-its-own-workers),

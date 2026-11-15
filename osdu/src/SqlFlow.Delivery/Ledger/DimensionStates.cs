@@ -511,6 +511,9 @@ public sealed record DimensionStagedWrite
     /// </summary>
     public SqlFlow.Core.Secrets.ISecretResolver? Secrets { get; init; }
 
+    /// <summary>Hears the write's steps as it takes them, for the build's trace; null tells no one, and the build's notes still say what each took.</summary>
+    public IDimensionWriteListener? Listener { get; init; }
+
     /// <summary>
     /// Whether the write keeps the keys records held, by each record's unique key: a full load's replace every row the
     /// dimension kept, an incremental load's those of the records it read. False for a full load of a flow that loads in full,
@@ -614,10 +617,10 @@ public sealed record DimensionWrite
 }
 
 /// <summary>
-/// The keys records held when a load read them (<see cref="DimensionWrite.Records"/>): the records read, each by the
-/// SHA-256 of its unique key, and each key a record held, a pair each. A record that holds no key is read with no pair.
+/// The keys records held when a load read them (<see cref="DimensionWrite.Records"/>): the records read, each by its
+/// unique key's text, and each key a record held, a pair each. A record that holds no key is read with no pair.
 /// </summary>
-public sealed record DimensionRecordsWrite(IReadOnlyCollection<byte[]> Read, IReadOnlyList<(byte[] Record, string Original)> Held);
+public sealed record DimensionRecordsWrite(IReadOnlyCollection<string> Read, IReadOnlyList<(string Record, string Original)> Held);
 
 /// <summary>A member as a page or a filter reads it.</summary>
 public sealed record DimensionMemberState

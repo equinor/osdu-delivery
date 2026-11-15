@@ -154,7 +154,7 @@ fails where [What a build does](../flow/dimension-build.md#what-a-build-does) sa
 from: `key_id`, the key's column and `filter` from the key; the value's column from the label's last step, or from the key
 when the dimension reads no label; `records` from the key and each collected attribute; an attribute from its last step,
 or from its collected read. The blueprint lays out the key, the label and the attributes; the `element` column and an
-element's fields, and the `key_hash` column views join on, are not among its columns.
+element's fields are not among its columns.
 
 `coverage` gives, for each attribute any key the dimension holds now has a value read for, how many of those keys
 (`keys`) and how many distinct values (`values`), counted from the index on attribute and value. A key given the

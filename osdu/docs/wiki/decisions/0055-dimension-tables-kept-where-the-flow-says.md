@@ -29,6 +29,7 @@ related:
   - delivery-wiki-0011-dimension-flows
   - delivery-wiki-0026-one-database-connection
   - delivery-wiki-0054-dimensions-keep-only-their-latest-state
+  - delivery-wiki-0058-dimension-keys-by-their-text
 updated: 2026-11-13
 ---
 # 0055: A dimension flow keeps its tables and views where its target says, written after the merge

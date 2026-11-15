@@ -32,7 +32,7 @@ keywords:
   - target.database
   - target.schema
   - datatype
-  - key_hash
+  - IX_key_text
   - incremental load
   - full load
   - keycolumns

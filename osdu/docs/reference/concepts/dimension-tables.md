@@ -55,13 +55,13 @@ with: a **member** (`DimensionMember`) is a dimension's value, and an **original
 | [`Dimension`](../tables/dimension.md) | dimension of a flow in a partition | `DimensionId`; `PartitionId`, `FlowId`, `Name` |
 | [`DimensionRun`](../tables/dimension-run.md) | build | `DimensionRunId` |
 | [`DimensionMember`](../tables/dimension-member.md) | value | `PartitionId`, `DimensionId`, `Value` |
-| [`DimensionValue`](../tables/dimension-value.md) | key | `PartitionId`, `DimensionId`, `OriginalHash` (SHA-256 of the key) |
+| [`DimensionValue`](../tables/dimension-value.md) | key | `PartitionId`, `DimensionId`, `Original` (the key's text, at most 800 characters), `OriginalBytes` (its length, so `GR` and `GR ` are two) |
 | [`DimensionAttributeName`](../tables/dimension-attribute-name.md) | attribute or element field of a dimension | `PartitionId`, `DimensionId`, `Name` |
 | [`DimensionAttribute`](../tables/dimension-attribute.md) | key, attribute and value | `PartitionId`, `DimensionId`, `ValueId`, `AttributeId`, `Value` |
-| [`DimensionCollectedText`](../tables/dimension-collected-text.md) | collected attribute and text | `PartitionId`, `DimensionId`, `AttributeId`, `TextHash` |
+| [`DimensionCollectedText`](../tables/dimension-collected-text.md) | collected attribute and text | `PartitionId`, `DimensionId`, `AttributeId`, `Text`, `TextBytes` |
 | [`DimensionElement`](../tables/dimension-element.md) | field of an object of a key's elements | `PartitionId`, `DimensionId`, `ValueId`, `Seq`, `AttributeId` |
-| [`DimensionKeyRecord`](../tables/dimension-key-record.md) | key and record its label and attributes were read through | `PartitionId`, `DimensionId`, `ValueId`, `RecordHash` |
-| [`DimensionRecord`](../tables/dimension-record.md) | record and key it held | `PartitionId`, `DimensionId`, `RecordHash`, `ValueId` |
+| [`DimensionKeyRecord`](../tables/dimension-key-record.md) | key and record its label and attributes were read through | `PartitionId`, `DimensionId`, `ValueId`, `RecordId` |
+| [`DimensionRecord`](../tables/dimension-record.md) | record and key it held | `PartitionId`, `DimensionId`, `RecordKey`, `ValueId` |
 | [`DimensionChange`](../tables/dimension-change.md) | change to a key | `ChangeId` |
 | [`DimensionView`](../tables/dimension-view.md) | view in the database | `Name`; `ViewName` |
 | [`DimensionViewCheck`](../tables/dimension-view-check.md) | check of a view in a partition | `CheckId` |

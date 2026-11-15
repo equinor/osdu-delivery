@@ -125,18 +125,21 @@ public sealed partial class OsduLedger
         ArgumentNullException.ThrowIfNull(write);
         foreach (var original in write.Originals)
         {
-            if (original.Original.Length > DeliveryDimensionValue.MaxOriginalLength)
+            if (original.Original.Length > DeliveryDimensionValue.MaxKeyLength)
             {
                 throw new DeliveryException(
-                    string.Create(CultureInfo.InvariantCulture, $"A key of dimension {write.DimensionId} is {original.Original.Length} characters, more than the {DeliveryDimensionValue.MaxOriginalLength} a dimension keeps; the build leaves such values out before it writes."));
+                    string.Create(CultureInfo.InvariantCulture, $"A key of dimension {write.DimensionId} is {original.Original.Length} characters, more than the {DeliveryDimensionValue.MaxKeyLength} a dimension keeps; the build leaves such values out before it writes."));
             }
         }
 
         await using var stage = await StageDimensionAsync(write.FlowId, write.DimensionId, write.DimensionRunId, ct).ConfigureAwait(false);
         try
         {
-            await stage.AddValuesAsync(write.Originals.Select((o, seq) => ((long)seq, o)).ToList(), ct).ConfigureAwait(false);
-            await stage.AddAttributesAsync(write.Originals.SelectMany(o => (o.Attributes ?? []).Select(a => (o.Original, a))).ToList(), ct).ConfigureAwait(false);
+            // A value read through a key's record (it counts no records) travels with its key; a collected one is staged apart.
+            var attributes = write.Originals.SelectMany(o => (o.Attributes ?? []).Select(a => (o.Original, a))).ToList();
+            await stage.AddValuesAsync(
+                write.Originals.Select((o, seq) => ((long)seq, o)).ToList(), attributes.Where(a => a.a.Records is null).ToList(), ct).ConfigureAwait(false);
+            await stage.AddAttributesAsync(attributes.Where(a => a.a.Records is not null).ToList(), ct).ConfigureAwait(false);
             await stage.AddMembersAsync(write.Members, ct).ConfigureAwait(false);
             await stage.AddTextsAsync(write.CollectedTexts, ct).ConfigureAwait(false);
             await stage.AddReadThroughAsync(write.KeyRecords.ToList(), ct).ConfigureAwait(false);
@@ -167,10 +170,16 @@ public sealed partial class OsduLedger
         var partitionName = await PartitionNameAsync(stage.PartitionId, ct).ConfigureAwait(false) ?? string.Empty;
 
         await using var db = Open();
+        var clock = new DimensionWriteClock(write.Listener, SessionStateAsync);
 
         // A dimension keeps only its latest state: what the build before removed goes first, with everything naming it, and
         // the changes that removed it still say what it was.
-        var purged = await SqlServerDimensionStore.PurgeRemovedAsync(db, stage.PartitionId, stage.DimensionId, ct).ConfigureAwait(false);
+        var purged = await clock.TimeAsync(
+            DimensionWriteStep.Purge,
+            "the keys and values earlier builds removed",
+            () => SqlServerDimensionStore.PurgeRemovedAsync(db, stage.PartitionId, stage.DimensionId, clock, ct),
+            p => string.Create(CultureInfo.InvariantCulture, $"{p.Keys} key(s) and {p.Values} value(s) deleted"),
+            ct).ConfigureAwait(false);
         var flowName = await db.DeliveryDimensions.AsNoTracking()
             .Where(d => d.PartitionId == stage.PartitionId && d.DimensionId == stage.DimensionId)
             .Select(d => d.FlowName)
@@ -216,8 +225,43 @@ public sealed partial class OsduLedger
             run.Error = null;
             closed = run;
             return Task.CompletedTask;
-        }, (connection, target, opening) => OpenTableDatabaseAsync(db, connection, target, flowName, write.Secrets, opening), ct).ConfigureAwait(false);
-        return ToState(closed!);
+        }, (connection, target, opening) => OpenTableDatabaseAsync(db, connection, target, flowName, write.Secrets, opening), clock, ct).ConfigureAwait(false);
+
+        // The table step follows the merge's transaction, so the build's notes take what the write took once it has all
+        // been written, and the build ends then.
+        var build = closed!;
+        await using (var noted = Open())
+        {
+            var run = await noted.DeliveryDimensionRuns
+                .FirstAsync(r => r.PartitionId == stage.PartitionId && r.DimensionId == stage.DimensionId && r.DimensionRunId == stage.DimensionRunId, ct)
+                .ConfigureAwait(false);
+            var notes = run.Notes is null ? [] : JsonSerializer.Deserialize<List<string>>(run.Notes) ?? [];
+            notes = [.. notes.Take(MaxDimensionNotes - 1), clock.Note()];
+            run.Notes = JsonSerializer.Serialize(notes);
+            run.CompletedUtc = Now < build.CompletedUtc ? build.CompletedUtc : Now;
+            await noted.SaveChangesAsync(ct).ConfigureAwait(false);
+            build = run;
+        }
+
+        return ToState(build);
+    }
+
+    /// <summary>
+    /// What a dimension write's session is doing, as the database reports it to the module (<see cref="DimensionWriteClock.SessionStateAsync"/>),
+    /// asked on a connection of its own while the write's statement runs.
+    /// </summary>
+    private async Task<string?> SessionStateAsync(int session, CancellationToken ct)
+    {
+        await using var db = Open();
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await DimensionWriteClock.SessionStateAsync((SqlConnection)db.Database.GetDbConnection(), session, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -365,16 +409,16 @@ public sealed partial class OsduLedger
         return found.Order(StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<string>> DimensionRecordKeysAsync(int dimensionId, IReadOnlyCollection<byte[]> recordHashes, CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> DimensionRecordKeysAsync(int dimensionId, IReadOnlyCollection<string> recordKeys, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(recordHashes);
-        if (recordHashes.Count == 0 || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
+        ArgumentNullException.ThrowIfNull(recordKeys);
+        if (recordKeys.Count == 0 || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
             return [];
         }
 
         var found = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var chunk in recordHashes.Chunk(LookupChunk))
+        foreach (var chunk in recordKeys.Distinct(StringComparer.Ordinal).Chunk(LookupChunk))
         {
             found.UnionWith(await ReadAsync(db => SqlServerDimensionStore.RecordKeysAsync(db, partition, dimensionId, chunk, ct), ct).ConfigureAwait(false));
         }
@@ -391,7 +435,7 @@ public sealed partial class OsduLedger
         }
 
         var found = new List<DimensionValueState>(originals.Count);
-        foreach (var chunk in originals.Distinct(StringComparer.Ordinal).Where(o => o.Length <= DeliveryDimensionValue.MaxOriginalLength).Chunk(LookupChunk))
+        foreach (var chunk in originals.Distinct(StringComparer.Ordinal).Where(o => o.Length <= DeliveryDimensionValue.MaxKeyLength).Chunk(LookupChunk))
         {
             found.AddRange(await ReadAsync(db => SqlServerDimensionStore.OriginalsAsync(db, partition, dimensionId, chunk, ct), ct).ConfigureAwait(false));
         }

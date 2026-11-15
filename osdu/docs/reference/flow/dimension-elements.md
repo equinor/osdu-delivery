@@ -29,9 +29,11 @@ sourceRefs:
 A [dimension](dimension.md) with `elements` makes a row of every object of a nested array of each record, beside the key of the record holding it.
 
 `elements` makes a row of every object of a nested array, beside the key of the record holding it, with every field of
-one object on its row: what a collected attribute cannot do, since it collects one value a row. On a dimension keyed by a
-well log's `id`, `elements: { path: data.Curves, ... }` is a table of curves, each curve's mnemonic, unit and depths
-together:
+one object on its row: what a collected attribute cannot do, since it collects one value a row. A dimension reading
+elements is keyed by its records' ids (`path: id`), so a key's objects are its own record's; one keyed by another path is
+refused where the document is read, naming the rule, and reads that path as an attribute instead
+([decision 0058](../../wiki/decisions/0058-dimension-keys-by-their-text.md)). On a dimension keyed by a well log's `id`,
+`elements: { path: data.Curves, ... }` is a table of curves, each curve's mnemonic, unit and depths together:
 
 ```yaml
 - name: LogCurve
@@ -60,9 +62,10 @@ together:
 | `fields.<name>.trim` | `true` | `false` keeps each value as the record holds it, white space at its ends too, as an attribute's `trim` says. Only with `keep: value`. |
 | `nulls` | `skip` | What a null in the array is: `skip`, no element; `keep`, an element whose every field is null (a field read up the path still reads the object holding the array), as Spark's explode keeps one. A null a filter compares, and one on the way to the elements, is never one. |
 
-The table gains an `element` column: each key's objects numbered from 1, in the order of the records' ids and then of
-the objects in each record, so the same records number the same way build after build and a row keeps its `id`. A key
-whose records hold no object is one row with no element; a view leaves such rows out with `where: element IS NOT NULL`.
+The table gains an `element` column: each key's objects numbered from 1, in the order its record holds them, so the same
+record numbers the same way build after build and a row keeps its `id`. A key's objects are staged as one text with
+their hash, and a build whose objects of a key read the same leaves that key's rows as they are. A key whose record holds
+no object is one row with no element; a view leaves such rows out with `where: element IS NOT NULL`.
 A field keeps up to 4,000 characters, where an attribute keeps 256: no index holds a field, so a curve's description or a
 list joined by `many: join` is kept whole. A field reaching no value is null on its row; a number reads
 as written (`203.149`), a boolean as `true` or `false`; a null in the array is no element unless `nulls: keep`.

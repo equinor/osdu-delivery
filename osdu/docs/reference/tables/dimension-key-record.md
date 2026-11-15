@@ -38,7 +38,7 @@ names ([Full and incremental loads](../flow/dimension-incremental.md)).
 | `KeyRecordId` | `bigint` identity | no | The row's own number, which the table is stored in the order of. |
 | `DimensionId` | `int` | no | The dimension ([`osdu.Dimension`](dimension.md)). |
 | `ValueId` | `bigint` | no | The original read through the record ([`osdu.DimensionValue`](dimension-value.md)). |
-| `RecordHash` | `binary(32)` | no | SHA-256 of the record's id without its version, as UTF-8: what a changed record is looked up by. |
+| `RecordId` | `nvarchar(800)` | no | Collation `Latin1_General_100_BIN2`. The record's id without its version, compared exactly: what a changed record is looked up by. |
 | `EntityType` | `nvarchar(256)` | no | Collation `Latin1_General_100_BIN2`. The entity type the id names (`master-data--Wellbore`): the kinds an incremental load asks the search what changed in. |
 
 ## Keys and indexes
@@ -47,8 +47,8 @@ names ([Full and incremental loads](../flow/dimension-incremental.md)).
 | --- | --- | --- | --- | --- | --- |
 | `PK_DimensionKeyRecord` | `PartitionId`, `DimensionId`, `KeyRecordId` | primary key | none | none | A dimension's keys' records together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionKeyRecord_KeyRecordId` | `KeyRecordId` | unique | none | none | A row named by its number. |
-| `IX_DimensionKeyRecord_PartitionId_DimensionId_ValueId_RecordHash` | `PartitionId`, `DimensionId`, `ValueId`, `RecordHash` | unique | none | none | A key's records, once each: what a write rewrites them by. |
-| `IX_DimensionKeyRecord_PartitionId_DimensionId_RecordHash` | `PartitionId`, `DimensionId`, `RecordHash` | index | none | none | The keys read through a record that changed: one seek a record. |
+| `IX_DimensionKeyRecord_PartitionId_DimensionId_ValueId_RecordId` | `PartitionId`, `DimensionId`, `ValueId`, `RecordId` | unique | none | none | A key's records, once each: what a write rewrites them by. |
+| `IX_DimensionKeyRecord_PartitionId_DimensionId_RecordId` | `PartitionId`, `DimensionId`, `RecordId` | index | none | none | The keys read through a record that changed: one seek a record. |
 | `IX_DimensionKeyRecord_PartitionId_DimensionId_EntityType` | `PartitionId`, `DimensionId`, `EntityType` | index | none | none | The entity types a dimension's keys were read through, which an incremental load asks the search what changed in. |
 
 ## Written and read by

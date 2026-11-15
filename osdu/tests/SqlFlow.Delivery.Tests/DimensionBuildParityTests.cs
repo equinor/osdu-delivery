@@ -26,7 +26,7 @@ namespace SqlFlow.Delivery.Tests;
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
-public sealed class DimensionBuildParityTests : IDisposable
+public sealed partial class DimensionBuildParityTests : IDisposable
 {
     private const string WellLog = Samples.WellLogKind;
 
@@ -660,9 +660,15 @@ public sealed class DimensionBuildParityTests : IDisposable
             "AttributeId" when table == "DimensionAttributeName" => "-",
             "AttributeId" => names.Attributes[Convert.ToInt64(value, CultureInfo.InvariantCulture)],
             "RunId" => names.Runs[(Guid)value],
+
+            // A build's notes end with how long each step of its write took, which no two runs share.
+            "Notes" when table == "DimensionRun" && value is string notes => Plain(Durations().Replace(notes, "_ s")),
             _ => Plain(value),
         };
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b\d+\.\d s\b")]
+    private static partial System.Text.RegularExpressions.Regex Durations();
 
     private static string Plain(object? value) => value switch
     {

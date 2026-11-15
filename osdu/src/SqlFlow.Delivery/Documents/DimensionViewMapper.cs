@@ -335,7 +335,7 @@ internal static class DimensionViewMapper
             var createSql = DimensionViews.CreateSql(kept, flow, viewName, all, fromSql, whereSql);
             definition = new DimensionViewDefinition(
                 viewName, tables, all, joinDefinitions, fromSql, createSql, DimensionViews.HashOf(createSql, joinedViews.Select(j => j.Spec.Definition.Hash)), whereSql,
-                viewsRead.Count == 0 ? null : viewsRead, CheckFromSql: DimensionViews.FromSql(kept, fromTable, joinSql, applies, hashed: false));
+                viewsRead.Count == 0 ? null : viewsRead, CheckFromSql: DimensionViews.FromSql(kept, fromTable, joinSql, applies));
         }
         else
         {
@@ -350,7 +350,7 @@ internal static class DimensionViewMapper
             all.AddRange(columns);
             var fromSql = DimensionViews.GroupedFromSql(rowsSql, whereSql, groupedBy.Select(g => g.Sql).ToList(), columns);
             var createSql = DimensionViews.CreateSql(kept, flow, viewName, all, fromSql, null);
-            var checkRowsSql = DimensionViews.FromSql(kept, fromTable, joinSql, [], hashed: false);
+            var checkRowsSql = DimensionViews.FromSql(kept, fromTable, joinSql, []);
             definition = new DimensionViewDefinition(
                 viewName, tables, all, joinDefinitions, fromSql, createSql, DimensionViews.HashOf(createSql, joinedViews.Select(j => j.Spec.Definition.Hash)), null,
                 viewsRead.Count == 0 ? null : viewsRead, rowsSql, whereSql,

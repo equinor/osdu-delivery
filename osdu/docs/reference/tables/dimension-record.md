@@ -37,7 +37,7 @@ incremental load rewrites those of the records it read
 | `PartitionId` | `smallint` | no | The partition the row belongs to, as [`osdu.LedgerPartition`](ledger-partition.md) numbers it: the first column of the key. |
 | `DimensionRecordId` | `bigint` identity | no | The row's own number, which the table is stored in the order of. |
 | `DimensionId` | `int` | no | The dimension ([`osdu.Dimension`](dimension.md)). |
-| `RecordHash` | `binary(32)` | no | SHA-256 of the record's unique key, its columns' values joined, as UTF-8. |
+| `RecordKey` | `nvarchar(800)` | no | Collation `Latin1_General_100_BIN2`. The record's unique key, its columns' values joined, compared exactly; a record whose unique key is longer is not kept. |
 | `ValueId` | `bigint` | no | The original the record held ([`osdu.DimensionValue`](dimension-value.md)). |
 
 ## Keys and indexes
@@ -46,7 +46,7 @@ incremental load rewrites those of the records it read
 | --- | --- | --- | --- | --- | --- |
 | `PK_DimensionRecord` | `PartitionId`, `DimensionId`, `DimensionRecordId` | primary key | none | none | A dimension's records' keys together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionRecord_DimensionRecordId` | `DimensionRecordId` | unique | none | none | A row named by its number. |
-| `IX_DimensionRecord_PartitionId_DimensionId_RecordHash_ValueId` | `PartitionId`, `DimensionId`, `RecordHash`, `ValueId` | unique | none | none | A record's keys, once each: what a load rewrites them by and an incremental load reads them by. |
+| `IX_DimensionRecord_PartitionId_DimensionId_RecordKey_ValueId` | `PartitionId`, `DimensionId`, `RecordKey`, `ValueId` | unique | none | none | A record's keys, once each: what a load rewrites them by and an incremental load reads them by. |
 | `IX_DimensionRecord_PartitionId_DimensionId_ValueId` | `PartitionId`, `DimensionId`, `ValueId` | index | none | none | The records of a key: what goes with a key a load removes. |
 
 ## Written and read by

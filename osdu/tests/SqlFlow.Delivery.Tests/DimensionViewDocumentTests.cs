@@ -135,12 +135,12 @@ public class DimensionViewDocumentTests
             definition.Columns.Select(c => c.Type));
         Assert.Equal("When the log was made, in UTC.", definition.Columns[^1].Description);
 
-        // Every join compares the partition, the key's hash and the key's text exactly; a joined dimension is joined left.
+        // Every join compares the partition and the key's text exactly, which the table is indexed by; a joined dimension is joined left.
         var create = definition.CreateSql;
         Assert.StartsWith("CREATE OR ALTER VIEW [osdu].[v_dim_Curve] ([partition], [id], [WellLogID], [Log]", create, StringComparison.Ordinal);
         Assert.Contains("FROM [osdu].[dim_LogCurve] AS [b]", create, StringComparison.Ordinal);
         Assert.Contains("LEFT JOIN [osdu].[dim_Domain] AS [j2]", create, StringComparison.Ordinal);
-        Assert.Contains("AND [j2].[key_hash] = CAST(HASHBYTES('SHA2_256', [j1].[SamplingDomainTypeID]) AS binary(32))", create, StringComparison.Ordinal);
+        Assert.DoesNotContain("HASHBYTES", create, StringComparison.Ordinal);
         Assert.Contains("AND [j2].[DomainID] COLLATE Latin1_General_100_BIN2 = [j1].[SamplingDomainTypeID] COLLATE Latin1_General_100_BIN2", create, StringComparison.Ordinal);
         Assert.DoesNotContain("*", create, StringComparison.Ordinal);
 

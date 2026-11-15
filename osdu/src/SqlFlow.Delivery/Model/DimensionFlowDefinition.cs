@@ -387,7 +387,7 @@ public sealed record DimensionSpec
     public const int MaxCleanLength = 256;
 
     /// <summary>The longest original a dimension keeps; a longer one is counted and left out.</summary>
-    public const int MaxOriginalLength = 1024;
+    public const int MaxOriginalLength = SqlFlow.Delivery.Data.DeliveryDimensionValue.MaxKeyLength;
 
     /// <summary>The most clean steps one dimension applies.</summary>
     public const int MaxCleanSteps = 20;

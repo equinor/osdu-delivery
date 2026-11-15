@@ -3590,10 +3590,10 @@ public interface ILedger
     Task<IReadOnlyList<string>> DimensionKeysReadThroughAsync(int dimensionId, IReadOnlyCollection<string> recordIds, CancellationToken ct = default);
 
     /// <summary>
-    /// The keys the dimension holds now that the records <paramref name="recordHashes"/> names (each by the SHA-256 of its
-    /// unique key) held when a load last read them: what an incremental load reads again besides what they hold now.
+    /// The keys the dimension holds now that the records <paramref name="recordKeys"/> names (each by its unique key's text)
+    /// held when a load last read them: what an incremental load reads again besides what they hold now.
     /// </summary>
-    Task<IReadOnlyList<string>> DimensionRecordKeysAsync(int dimensionId, IReadOnlyCollection<byte[]> recordHashes, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> DimensionRecordKeysAsync(int dimensionId, IReadOnlyCollection<string> recordKeys, CancellationToken ct = default);
 
     /// <summary>
     /// The originals <paramref name="originals"/> names as the dimension holds them, removed ones included, each with its

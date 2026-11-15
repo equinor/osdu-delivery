@@ -50,17 +50,21 @@ beside one whose process stopped, stage without waiting on each other.
 ## The tables
 
 Every text compared exactly has the collation `Latin1_General_100_BIN2`, and each column is the size of the dimension's
-column it is written to. `Seq` is a row's place in the order the build staged its table's rows, from 0.
+column it is written to. `Seq` is a row's place in the order the build staged its table's rows, from 0. A key, a record
+id or unique key and a collected text are staged as their text, at most 800 characters, and the write matches each by it
+exactly. A key's objects and the attribute values read through its record are staged with their SHA-256, which the write
+compares with the one the key kept, so it writes only the keys whose content moved
+([decision 0058](../../wiki/decisions/0058-dimension-keys-by-their-text.md)).
 
 | Table | One row is | Columns |
 | --- | --- | --- |
-| `key` | A key the build read, as each range of keys completes; for an incremental load also a key it read again and found held by no record | `Seq`, `KeyHash` (SHA-256 of the key as UTF-8), `Key` (`nvarchar(1024)`, exactly as the index holds it), `Count` (the records or objects holding it), `Gone` (held by no record now: the write removes it) |
-| `value` | A key as the build cleaned it | `Seq` (the key's place, which new keys take their ids in), `OriginalHash`, `Original`, `CleanValue` (null when it belongs to no value), `LeftOut` (`empty`, `tooLong`, `dropped` or `failed`), `Note`, `Label`, `LabelFrom` (the record the label was read from), `Filter`, `Count`, `Filterable` |
+| `key` | A key the build read, as each range of keys completes; for an incremental load also a key it read again and found held by no record | `Seq`, `Key` (`nvarchar(800)`, exactly as the index holds it), `Count` (the records or objects holding it), `Gone` (held by no record now: the write removes it) |
+| `value` | A key as the build cleaned it, with the attribute values read through the record it names | `Seq` (the key's place, which new keys take their ids in), `Original`, `CleanValue` (null when it belongs to no value), `LeftOut` (`empty`, `tooLong`, `dropped` or `failed`), `Note`, `Label`, `LabelFrom` (the record the label was read from), `Filter`, `Count`, `Filterable`, `Attributes` (`nvarchar(max)`: a JSON array of `[name, value, read from]`, each name and value once, in order; null when none was read), `AttributesHash` (its SHA-256) |
 | `member` | A value laid out from the keys | `Seq`, `Value`, `Records`, `RecordsExact` (set once a search of its filter counted them), `Originals`, `Unfilterable`, `Filter` (`nvarchar(max)`, when it fits one query), `FilterParts` |
-| `attribute` | An attribute value of a key, read through the record the key names or collected from records holding it; the write adds up the rows of one key, attribute and value | `Seq`, `KeyHash`, `Name`, `Value`, `ValueFrom` (the record read, or the collected text), `Records` (for a collected value) |
-| `text` | A text collected, with the value it is shown as; the write adds up the rows of one text | `Seq`, `Name`, `TextHash`, `Text`, `Value`, `Records` |
-| `element` | A field of an object of a nested array a key's records hold; an object holding none of the fields is one row with no field | `Seq`, `KeyHash`, `Record` (the record holding the object), `Ordinal` (its place among the record's objects), `Name`, `Value` (`nvarchar(4000)`) |
-| `record` | A record met: `Kind` 1 a record a key's label or attributes were read through, 2 a record read by its unique key, 3 a key such a record holds | `Seq`, `Kind`, `RecordHash`, `KeyHash` (null for kind 2), `EntityType` (for kind 1) |
+| `attribute` | A value of a collected attribute of a key, with the records holding it; the write adds up the rows of one key, attribute and value | `Seq`, `Key`, `Name`, `Value`, `ValueFrom` (the collected text), `Records` |
+| `text` | A text collected, with the value it is shown as; the write adds up the rows of one text | `Seq`, `Name`, `Text` (`nvarchar(800)`), `Value`, `Records` |
+| `element` | The objects of a nested array one key's record holds, one row a key | `Seq`, `Key`, `Elements` (`nvarchar(max)`: a JSON array of the objects in the order the record holds them, each an object of its fields' values, a value at most 4,000 characters; an object holding none of the fields is `{}`), `ElementsHash` (its SHA-256), `Objects` |
+| `record` | A record met: `Kind` 1 a record a key's label or attributes were read through, 2 a record read by its unique key, 3 a key such a record holds | `Seq`, `Kind`, `Record` (the id, or the unique key's columns joined, `nvarchar(800)`), `Key` (null for kind 2), `EntityType` (for kind 1) |
 
 ## When they go
 

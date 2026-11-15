@@ -41,12 +41,12 @@ internal sealed record ElementRead(long Elements, int Cut, int TooLong, int Page
 
 /// <summary>
 /// Reads the objects of a dimension's nested array (<see cref="DimensionElementsSpec"/>): one pass over the dimension's
-/// records through the search cursor, each record's key, id and objects read together, every field of an object kept as the
-/// field keeps it, and a page's objects staged together (<see cref="DimensionStage"/>). The pass is cut into ranges of the
-/// dimension's keys read side by side, as a collected attribute's pass is (<see cref="DimensionScope.Ranges"/>); a record
-/// holding keys of two ranges is read in both and kept under the keys of each range alone. The build's write numbers a key's
-/// objects from 1 in the order of their records' ids and then of the objects in each record, so the same records give the
-/// same numbers build after build.
+/// records through the search cursor, each record's key and objects read together, every field of an object kept as the
+/// field keeps it, and a page's records staged together (<see cref="DimensionStage"/>), a key's objects as one row. The pass
+/// is cut into ranges of the dimension's keys read side by side, as a collected attribute's pass is
+/// (<see cref="DimensionScope.Ranges"/>). A dimension reading elements is keyed by its records' ids, so a key's objects are
+/// one record's; the build's write numbers them from 1 in the order the record holds them, so the same record gives the same
+/// numbers build after build.
 /// </summary>
 internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int concurrency)
 {
@@ -90,12 +90,13 @@ internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int
 
                 await foreach (var page in search.PagesAsync(request, OsduSearch.MaxPage, token).ConfigureAwait(false))
                 {
-                    var read = new List<StagedElement>();
+                    var read = new List<StagedElements>();
+                    var pageObjects = 0L;
                     var pageCut = 0;
                     var pageTooLong = 0;
                     foreach (var hit in page.Hits)
                     {
-                        if (!hit.TryGetProperty("id", out var idElement) || idElement.ValueKind != JsonValueKind.String || idElement.GetString() is not { Length: > 0 } record)
+                        if (!hit.TryGetProperty("id", out var idElement) || idElement.ValueKind != JsonValueKind.String || idElement.GetString() is not { Length: > 0 })
                         {
                             continue;
                         }
@@ -108,9 +109,9 @@ internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int
 
                         var objects = new List<(JsonNode Element, IReadOnlyList<JsonObject> Ancestors)>();
                         Walk(JsonObject.Create(hit), path, 0, [], objects, elements.KeepNulls);
-                        for (var ordinal = 0; ordinal < objects.Count; ordinal++)
+                        var fields = new List<IReadOnlyList<KeyValuePair<string, string>>>(objects.Count);
+                        foreach (var (element, ancestors) in objects)
                         {
-                            var (element, ancestors) = objects[ordinal];
                             var values = new List<KeyValuePair<string, string>>(fieldReaders.Count);
                             foreach (var field in fieldReaders)
                             {
@@ -123,12 +124,18 @@ internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int
                                 }
                             }
 
-                            read.AddRange(held.Select(key => new StagedElement(key, record, ordinal, values)));
+                            fields.Add(values);
+                        }
+
+                        if (fields.Count > 0)
+                        {
+                            read.AddRange(held.Select(key => new StagedElements(key, fields)));
+                            pageObjects += (long)fields.Count * held.Count;
                         }
                     }
 
                     // The read stops past the most objects a build reads, before it stages them.
-                    if (Interlocked.Add(ref total, read.Count) > DimensionElementsSpec.MaxElements)
+                    if (Interlocked.Add(ref total, pageObjects) > DimensionElementsSpec.MaxElements)
                     {
                         throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
                             $"Dimension {dimension.Name} reads more than {DimensionElementsSpec.MaxElements:N0} objects at {elements.Path}, the most a build reads. Narrow its query, or split it over dimensions with narrower queries."));

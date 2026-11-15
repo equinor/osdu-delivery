@@ -359,7 +359,9 @@ environment's variables and secrets.
   [managed workers](managed-workers.md) the control plane picks the node and the moment: the idle workers a pool can
   spare share `ControlPlane__ManagedWorkers__IdleMinutes` (2) between them, so one waits two minutes and of six, three
   leave after 30 seconds, then one each after 40, 60 and 120, never sooner than 30 seconds and never below the pool's
-  minimum; and the workers the next wave of a running schedule needs are not spare
+  minimum. A running job keeps its workers: while a schedule still has steps waiting to start, no idle worker leaves,
+  and while runs are executing each idle worker waits the whole two minutes, so the shared, shorter wait applies only
+  once the pool has nothing queued or running
   ([SQLFlow's deployment guide](../../../../sqlflow/docs/reference/guides/deployment.md#managed-workers-the-control-plane-starts-its-own-workers)).
 - **Drain.** A node draining on SIGTERM finishes the deliveries it holds for up to `SQLFLOW_WORKER_DRAIN_SECONDS` (540 by
   default), so the termination grace period has to be longer: `worker-pool.yaml` and `worker.bicep` set 600. A severed

@@ -66,15 +66,20 @@ that found little changed reads few records, so a nightly build usually stays on
 
 ## How the dimensions are dealt
 
-The dimension reading the most records goes first, each to the part reading the fewest so far, and no part is left empty;
-ties go by the order the flow declares them. The first part, holding the dimension that reads the most, is built by the
-run that split the build, which starts at once; every other part is queued as a run of the same flow, asking for a node to
-itself, so the autoscaler starts a node for each part no idle node takes. The run log names which part builds which
-dimensions:
+Each dimension is weighed by the time it is expected to take: the records it reads now times the seconds a record took in
+its last full build, read and write together, which the ledger keeps. A dimension writing many rows a record (a log's
+curves) outweighs one reading as many records and writing one row each; a dimension with no full build yet is weighed at
+the flow's average over those that have one, and with no full build at all every dimension is weighed by its records
+alone. The heaviest goes first, each to the part carrying the least so far, and no part is left empty; ties go by the
+order the flow declares them. The first part, holding the heaviest dimension, is built by the run that split the build,
+which starts at once; every other part is queued as a run of the same flow, asking for a node to itself, so the
+autoscaler starts a node for each part no idle node takes. The run log names how the dimensions were weighed, which part
+builds which, and, where the ledger had full builds to go by, about how long each part is expected to take:
 
 ```text
-Spread the build of 12 dimension(s), 640000 record(s) to read, over 8 parts (group ...), each on a node of its own.
-This run builds Wellbore; part 2 (run ...) builds Well; part 3 (run ...) builds LogCurve; ...
+Spread the build of 12 dimension(s), 640000 record(s) to read, over 8 parts (group ...), each on a node of its own, dealt
+by the time each is expected to take, from its last full build. This run builds LogCurve (about 58 min); part 2 (run ...)
+builds Wellbore (about 26 min); part 3 (run ...) builds Well, LogAcl (about 14 min); ...
 ```
 
 ## What a part does

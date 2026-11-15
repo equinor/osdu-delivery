@@ -972,13 +972,12 @@ public sealed partial class DimensionRunner
         return (value, ReadThrough(dimension, key.Key, labels));
     }
 
-    /// <summary>Stages a batch of keys as cleaned: their values, the attributes read through their records, and those records.</summary>
+    /// <summary>Stages a batch of keys as cleaned: their values with the attributes read through their records, and those records.</summary>
     private static async Task StageCleanedAsync(
         DimensionStage stage, IReadOnlyList<(long Seq, DimensionOriginalWrite Original)> values, IReadOnlyList<(string Key, DimensionAttributeState Attribute)> attributes,
         IReadOnlyList<KeyValuePair<string, IReadOnlyList<string>>> records, CancellationToken ct)
     {
-        await stage.AddValuesAsync(values, ct).ConfigureAwait(false);
-        await stage.AddAttributesAsync(attributes, ct).ConfigureAwait(false);
+        await stage.AddValuesAsync(values, attributes, ct).ConfigureAwait(false);
         await stage.AddReadThroughAsync(records, ct).ConfigureAwait(false);
     }
 
@@ -1400,6 +1399,7 @@ public sealed partial class DimensionRunner
             CompletedUtc = Now,
             TableTarget = _tableTarget,
             Secrets = _context.Secrets,
+            Listener = new DimensionWriteLog(_log, dimension.Name),
         };
 
     /// <summary>The write of a build that read nothing, its field unsettled: the dimension keeps what it had, its table brought to it.</summary>
