@@ -700,6 +700,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records keys were read through and held by, so every dimension's next build loads in full and lays its table out
   whole ([decision 0058](osdu/docs/wiki/decisions/0058-dimension-keys-by-their-text.md),
   [staging](osdu/docs/reference/flow/dimension-staging.md)).
+- **A dimension's `dim_` table is clustered on its `id`.** Its rows are kept in the order of the identity, where they were
+  kept by partition, key number and `id`, so its other indexes carry the row's `id` alone; `IX_key` (`partition`,
+  `key_id`, `id`) is a unique nonclustered index a build's writes seek. A table laid out before is laid out again once, on
+  its dimension's next build ([the dimension's table](osdu/docs/reference/flow/dimension-table.md)).
 - **A dimension reading `elements` is keyed by `id`.** A key's objects are its own record's, numbered in the order the
   record holds them; a dimension declaring `elements` on another `path` is refused where its document is read, naming
   the rule ([elements](osdu/docs/reference/flow/dimension-elements.md)).

@@ -5159,7 +5159,7 @@
         "schema evolution",
         "IX_key",
         "IX_value",
-        "clustered by partition"
+        "clustered on id"
       ],
       "related": [
         "delivery-flow-dimension",

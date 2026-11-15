@@ -26,7 +26,7 @@ referenceRefs:
 related:
   - delivery-wiki-0011-dimension-flows
   - delivery-wiki-0032-dimension-builds-stage-in-the-database
-updated: 2026-10-26
+updated: 2026-11-15
 ---
 # 0030: A dimension's rows are one range of every table, and a build's statements seek them
 
@@ -94,6 +94,18 @@ lays out once, on its next build, a table made before; `DimensionConcurrentWrite
 at once and checks the plans of those statements too. A removal's batches stay unhinted, since a removal can meet a table
 no build has laid out since: it reads its own partition through the indexes every table has, and is run again if it
 fails.
+
+## Amended again: a dimension's own table is clustered on its id
+
+On 2026-11-15 the owner directed that every dimension's own table be clustered on its identity, `id`: a clustered key
+should be small and grow as rows are added, and a composite one makes every other index of the table carry it, so
+`IX_value` and `IX_key_text` each held the partition's name and the key's number beside their own columns. The table is
+now clustered on `id` (its key), and `IX_key` (`partition`, `key_id`, `id`) is a unique nonclustered index. What the
+amendment above was for still holds: every statement writing a partition's rows seeks that partition through `IX_key`,
+then each row by its `id`, so builds of one dimension in two partitions at once read and lock their own rows alone, which
+`DimensionConcurrentWriteTests` checks in the plans. The cost is a lookup by `id` for each row a statement reads beyond
+`IX_key`'s columns, paid by the rows a write changes; a table laid out by partition is laid out again once, on its next
+build.
 
 ## What remains
 

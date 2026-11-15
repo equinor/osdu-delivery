@@ -165,14 +165,18 @@ public static class DimensionTables
 
     /// <summary>
     /// The order a table keeps its rows in and the indexes it is read through, each made when the table has none of the
-    /// name: a partition's rows together and a key's rows together within it (<c>IX_key</c>, the clustered index), which a
-    /// build matches the rows it writes by and seeks by its partition, so builds of the dimension in two partitions at
-    /// once read and lock their own partition's rows alone, and a join on the key's number seeks; the rows of a partition
-    /// in value order, which a page reads and a count counts; and a key's row by its hash, which a view's join seeks. A
-    /// table made before its rows were kept by partition (its key on <c>id</c> clustered, <c>IX_key</c> a secondary index)
-    /// is laid out once: its secondary indexes go first and come back last, so each is built once, and its key on
-    /// <c>id</c> stays, nonclustered. An index follows a column that is renamed, so each is named after what its column is
-    /// for, not after the column. The statement runs under the table's lock, so two builds never lay a table out at once.
+    /// name. The rows are kept in the order of <c>id</c>, the table's key and identity, so the clustered key is small and
+    /// grows as rows are added, and every other index carries the eight bytes of a row's <c>id</c> alone. A partition's
+    /// rows and a key's rows within it are found through <c>IX_key</c> (unique, <c>partition</c>, <c>key_id</c>,
+    /// <c>id</c>), which a build matches the rows it writes by and every statement writing a partition's rows seeks, so
+    /// builds of the dimension in two partitions at once read and lock their own partition's rows alone, then each row by
+    /// its <c>id</c>; and a join on the key's number seeks. The rows of a partition in value order, which a page reads and a
+    /// count counts, are <c>IX_value</c>; a key's rows by its text, which a view's join seeks, are <see cref="KeyIndex"/>. A
+    /// table laid out before its rows were kept by <c>id</c> (<c>IX_key</c> the clustered index, its key on <c>id</c>
+    /// nonclustered) is laid out once: its secondary indexes and its key go first, then <c>IX_key</c>, the key comes back
+    /// clustered under its own name, and the indexes are made again, so each is built once. An index follows a column
+    /// that is renamed, so each is named after what its column is for, not after the column. The statement runs under the
+    /// table's lock, so two builds never lay a table out at once.
     /// </summary>
     internal static string IndexSql(DimensionTableSpec spec, DimensionTableTarget target)
     {
@@ -182,21 +186,22 @@ public static class DimensionTables
         var literal = table.Replace("'", "''", StringComparison.Ordinal);
         var key = ("PK_" + spec.Name).Replace("'", "''", StringComparison.Ordinal);
         return $"""
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key' AND [type] = 1)
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [is_primary_key] = 1 AND [type] = 1)
             BEGIN
                 DROP INDEX IF EXISTS [IX_value] ON {table};
                 DROP INDEX IF EXISTS [{KeyIndex}] ON {table};
-                DROP INDEX IF EXISTS [IX_key] ON {table};
                 DECLARE @key sysname = (SELECT [name] FROM sys.key_constraints WHERE [parent_object_id] = OBJECT_ID(N'{literal}', N'U') AND [type] = 'PK');
                 IF @key IS NOT NULL
                 BEGIN
                     DECLARE @dropKey nvarchar(1000) = N'ALTER TABLE {literal} DROP CONSTRAINT ' + QUOTENAME(@key) + N';';
                     EXEC sys.sp_executesql @dropKey;
                 END;
-                CREATE UNIQUE CLUSTERED INDEX [IX_key] ON {table} ([partition], [key_id], [id]);
-                DECLARE @addKey nvarchar(1000) = N'ALTER TABLE {literal} ADD CONSTRAINT ' + QUOTENAME(ISNULL(@key, N'{key}')) + N' PRIMARY KEY NONCLUSTERED ([id]);';
+                DROP INDEX IF EXISTS [IX_key] ON {table};
+                DECLARE @addKey nvarchar(1000) = N'ALTER TABLE {literal} ADD CONSTRAINT ' + QUOTENAME(ISNULL(@key, N'{key}')) + N' PRIMARY KEY CLUSTERED ([id]);';
                 EXEC sys.sp_executesql @addKey;
             END;
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key')
+                CREATE UNIQUE INDEX [IX_key] ON {table} ([partition], [key_id], [id]);
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_value')
                 CREATE INDEX [IX_value] ON {table} ([partition], {Quoted(spec.ValueColumn)}, [id]);
             {KeyIndexSql(spec.Name, spec.KeyColumn, target)}

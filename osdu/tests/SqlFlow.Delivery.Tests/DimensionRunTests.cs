@@ -811,19 +811,20 @@ public sealed class DimensionRunTests : IDisposable
         const string Table = "dim_Wellbore";
         var (runner, ledger, flow) = Runner(Head + Declared);
 
-        // The first build makes the table: the dimension as one table, named after the dimension, keyed by an identity,
-        // its rows kept by partition and key, with a column for each attribute it declares. Any SQL client reads it and
-        // joins on its numbers.
+        // The first build makes the table: the dimension as one table, named after the dimension, keyed and clustered by an
+        // identity, its rows found by partition and key, with a column for each attribute it declares. Any SQL client reads
+        // it and joins on its numbers.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(Table, wellbores.TableName);
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "Country"], await ColumnsAsync(Table));
         Assert.Equal(
             [
-                "IX_key|CLUSTERED|0|partition, key_id, id|1", "IX_key_text|NONCLUSTERED|0|partition, WellboreID|0",
-                "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1", "PK_" + Table + "|NONCLUSTERED|1|id|1",
+                "PK_" + Table + "|CLUSTERED|1|id|1", "IX_key|NONCLUSTERED|0|partition, key_id, id|1",
+                "IX_key_text|NONCLUSTERED|0|partition, WellboreID|0", "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1",
             ],
             await IndexesAsync(Table));
+        Assert.Equal(["IX_key"], await SqlAsync($"SELECT i.[name] FROM sys.indexes AS i WHERE i.[object_id] = OBJECT_ID(N'[osdu].[{Table}]') AND i.[is_unique] = 1 AND i.[is_primary_key] = 0;"));
         var keys = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original[^2..^1], StringComparer.Ordinal);
         Assert.Equal(
@@ -948,7 +949,7 @@ public sealed class DimensionRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_table_made_before_its_rows_were_kept_by_partition_is_laid_out_again_keeping_every_row_and_its_number()
+    public async Task A_table_made_before_its_rows_were_kept_by_their_id_is_laid_out_again_keeping_every_row_and_its_number()
     {
         foreach (var (wellbore, name) in new[] { ("A", "MX A"), ("B", "MX B") })
         {
@@ -973,15 +974,15 @@ public sealed class DimensionRunTests : IDisposable
         var rows = await SqlAsync($"SELECT [id], [key_id], [FacilityName] FROM [osdu].[{Table}] ORDER BY [id];");
         Assert.Equal(2, rows.Count);
 
-        // The table as a build made it before its rows were kept by partition: clustered on its id, a key's rows found
-        // through an index of their own, and a view's join through the key's hash.
+        // The table as a build made it before its rows were kept by their id: clustered on partition, key and id, its key
+        // on id nonclustered, and a view's join through the key's hash.
         await SqlAsync($"""
             DROP INDEX [IX_key_text] ON [osdu].[{Table}];
             DROP INDEX [IX_value] ON [osdu].[{Table}];
             ALTER TABLE [osdu].[{Table}] DROP CONSTRAINT [PK_{Table}];
             DROP INDEX [IX_key] ON [osdu].[{Table}];
-            ALTER TABLE [osdu].[{Table}] ADD CONSTRAINT [PK_{Table}] PRIMARY KEY CLUSTERED ([id]);
-            CREATE INDEX [IX_key] ON [osdu].[{Table}] ([partition], [key_id]);
+            CREATE UNIQUE CLUSTERED INDEX [IX_key] ON [osdu].[{Table}] ([partition], [key_id], [id]);
+            ALTER TABLE [osdu].[{Table}] ADD CONSTRAINT [PK_{Table}] PRIMARY KEY NONCLUSTERED ([id]);
             CREATE INDEX [IX_value] ON [osdu].[{Table}] ([partition], [FacilityName], [id]);
             ALTER TABLE [osdu].[{Table}] ADD [key_hash] binary(32) NULL;
             """);
@@ -991,27 +992,27 @@ public sealed class DimensionRunTests : IDisposable
             """);
         Assert.Equal(
             [
-                "PK_" + Table + "|CLUSTERED|1|id|1", "IX_key|NONCLUSTERED|0|partition, key_id|0", "IX_key_hash|NONCLUSTERED|0|partition, key_hash|0",
-                "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1",
-            ],
-            await IndexesAsync(Table));
-
-        // The next build lays it out by partition, once, writes what it found into the same rows under the same numbers, and
-        // finds a key's rows by its text: the key's hash and its index go.
-        _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:master-data--Wellbore:B")["data"]!["FacilityName"] = "MX B2";
-        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal(
-            [
-                "IX_key|CLUSTERED|0|partition, key_id, id|1", "IX_key_text|NONCLUSTERED|0|partition, WellboreID|0",
+                "IX_key|CLUSTERED|0|partition, key_id, id|1", "IX_key_hash|NONCLUSTERED|0|partition, key_hash|0",
                 "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1", "PK_" + Table + "|NONCLUSTERED|1|id|1",
             ],
             await IndexesAsync(Table));
+
+        // The next build lays it out by its id, once, writes what it found into the same rows under the same numbers, and
+        // finds a key's rows by its text: the key's hash and its index go.
+        _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:master-data--Wellbore:B")["data"]!["FacilityName"] = "MX B2";
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        string[] laidOut =
+        [
+            "PK_" + Table + "|CLUSTERED|1|id|1", "IX_key|NONCLUSTERED|0|partition, key_id, id|1",
+            "IX_key_text|NONCLUSTERED|0|partition, WellboreID|0", "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1",
+        ];
+        Assert.Equal(laidOut, await IndexesAsync(Table));
         Assert.DoesNotContain("key_hash", await ColumnsAsync(Table));
         Assert.Equal([rows[0], rows[1].Replace("|MX B", "|MX B2", StringComparison.Ordinal)], await SqlAsync($"SELECT [id], [key_id], [FacilityName] FROM [osdu].[{Table}] ORDER BY [id];"));
 
         // And a build that finds it laid out leaves it as it is.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal("IX_key|CLUSTERED|0|partition, key_id, id|1", (await IndexesAsync(Table))[0]);
+        Assert.Equal(laidOut, await IndexesAsync(Table));
     }
 
     [Fact]

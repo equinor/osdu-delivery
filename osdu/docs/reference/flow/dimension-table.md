@@ -11,7 +11,7 @@ keywords:
   - schema evolution
   - IX_key
   - IX_value
-  - clustered by partition
+  - clustered on id
 related:
   - delivery-flow-dimension
   - delivery-flow-dimension-target
@@ -76,13 +76,14 @@ partition's rows are written again under new numbers. A write that changes a row
 ([`osdu.Dimension`](../tables/dimension.md)'s `TableVersion`), which tells a view's check whether the rows it read changed
 ([A check kept](dimension-views.md)).
 
-The table keeps a partition's rows together, and a key's rows together within it: `IX_key` (`partition`, `key_id`, `id`)
-is its clustered index, and `id` its key, a nonclustered one. Every statement of a build's write seeks the partition it
-writes, so builds of the dimension in two partitions at once read and lock their own partition's rows alone. The table is
-read through two more indexes the build makes: `IX_value` (`partition`, the value's column, `id`), which a page reads in
-value order, and `IX_key_text` (`partition`, the key's column), which a view's join seeks; a key is at most 800
-characters, which the index holds. A table made before keys were found by their text loses its `key_hash` column and the
-index over it on its next build. A table a build made before its rows
-were kept by partition (clustered on `id`) is laid out once, on its next build, keeping every row and its `id`: its
-secondary indexes are built again on the new order, which takes time and log space in proportion to its rows, and a build
-of the dimension in another partition waits for it.
+The table keeps its rows in the order of `id`, its key and identity, the clustered index: a small key that grows as rows
+are added, so every other index carries a row's eight-byte `id` alone. A partition's rows, and a key's rows within it, are
+found through `IX_key` (`partition`, `key_id`, `id`, unique). Every statement of a build's write seeks the partition it
+writes through it, then each row by its `id`, so builds of the dimension in two partitions at once read and lock their own
+partition's rows alone. The table is read through two more indexes the build makes: `IX_value` (`partition`, the value's
+column, `id`), which a page reads in value order, and `IX_key_text` (`partition`, the key's column), which a view's join
+seeks; a key is at most 800 characters, which the index holds. A table made before keys were found by their text loses
+its `key_hash` column and the index over it on its next build. A table a build laid out before its rows were kept by `id`
+(`IX_key` its clustered index, `id` a nonclustered key) is laid out once, on its next build, keeping every row and its
+`id`: its indexes are built again on the new order, which takes time and log space in proportion to its rows, and a
+build of the dimension in another partition waits for it.

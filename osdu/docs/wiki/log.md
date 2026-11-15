@@ -794,3 +794,23 @@ Amended decision 0028 with why a deletion refuses a ledger that is the only reco
 nothing of OSDU; updated `delivery-concept-renaming-a-pipeline`, `delivery-concept-api`, `delivery-concept-gui-ledger`,
 `delivery-concept-ledger`, `delivery-concept-control-plane`, `delivery-guide-operations-runbook` and the activity table
 page.
+
+## [2026-11-15] ingest | Dimension keys by their text, decision 0058
+
+Source: a weekly full load of the well log estate's metadata dimensions that took 88 minutes, 81 of them the curves of
+10,602 logs; a local reproduction of its shape that timed every statement of the write; and the owner's direction that a
+dimension's key is an OSDU id, unique by its text, and that no binary hash of it be kept.
+
+Added decision 0058; updated `delivery-flow-dimension-build`, `delivery-flow-dimension-staging`,
+`delivery-flow-dimension-table`, `delivery-flow-dimension-views`, `delivery-flow-dimension-elements`,
+`delivery-flow-dimension-nodes`, `delivery-flow-dimension`, `delivery-concept-dimension-tables`,
+`delivery-concept-dimension-blueprint` and the dimension value, key record, record and collected text table pages.
+
+## [2026-11-15] ingest | A dimension's own table clustered on its id, decision 0030 amended
+
+Source: the owner's direction, on seeing a `dim_` table whose identity was not its clustered key, that every dimension
+table be clustered on its identity, small and growing, with no composite clustered key, and the statements a build
+writes such a table with (`DimensionTables.ApplySql`), which seek the partition through an index of their own.
+
+Amended decision 0030 (a dimension's own table is clustered on `id`; `IX_key` a unique nonclustered index the writes
+seek); updated `delivery-flow-dimension-table`.
