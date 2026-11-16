@@ -322,8 +322,14 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       setDetailsOpen(false);
     },
     leftOut: onProperties,
+    // A right click on a part picks it, as a click does. The menu takes the pointer from the part as it opens, which puts out
+    // what pointing lit; picked, the part the menu is on stays lit while it is open and after, not what was picked before.
     menu: (target, at) => {
       menuOpen.current = true;
+      if (target.type === "row" || target.type === "field" || target.type === "card") {
+        setPicked(target);
+      }
+
       setMenu({ target, ...at });
     },
   });

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
+import { E2E } from "../playwright.config";
 import { REPO_NAME, SOURCE } from "./global-setup";
 import { expect, test } from "./helpers";
 
@@ -460,6 +461,71 @@ test.describe.serial("templates and the mapping builder", () => {
     await adminPage.mouse.move(0, 0);
     await adminPage.keyboard.press("Escape");
     await expect(yamlPane.getByTestId("mapping-overview-yaml-mark")).toHaveCount(0);
+  });
+
+  test("a right click on a mapping's overview lights what its menu is on, not what was picked before", async ({ adminPage }) => {
+    // The YAML has a menu of its own only while the assistant is configured, which the e2e host's is not: the page is told it
+    // is, and asks it nothing.
+    await adminPage.route(`${E2E.apiBaseUrl}/api/v1/chat/capabilities`, (route) => route.fulfill({
+      status: 200,
+      headers: {
+        "access-control-allow-origin": route.request().headers()["origin"] ?? "*",
+        "access-control-allow-credentials": "true",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true, provider: "e2e", model: "e2e", disclosure: "Answers are written by an AI language model and can be wrong.",
+        images: false, transcription: false, maxImages: 0, maxImageBytes: 0, questionConfirmation: false,
+      }),
+    }));
+    // The capabilities are read as the app loads, so it loads again here.
+    await adminPage.goto("/delivery/documents");
+    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: "WellLog@1.4.0" }).first();
+    await expect(row).toContainText(WELLLOG_VERSION, { timeout: 30_000 });
+    await row.click();
+
+    const detail = adminPage.getByTestId("delivery-mapping-detail");
+    const overview = detail.getByTestId("mapping-overview");
+    await expect(detail.getByTestId("mapping-overview-lead")).toContainText("becomes one WellLog record", { timeout: 30_000 });
+    const logId = overview.getByTestId("mapping-overview-field-dataset-log_id");
+    const logRun = overview.getByTestId("mapping-overview-field-dataset-log_run");
+
+    // A column picked, then another right-clicked: the menu takes the pointer as it is moved onto it, and the column it is on
+    // stays lit and is picked, not the one picked before.
+    await logId.click();
+    await expect(logId).toHaveAttribute("data-picked", "true");
+    await logRun.click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-menu-details").hover();
+    await expect(logRun).toHaveAttribute("data-picked", "true");
+    await expect(logRun).toHaveAttribute("data-lit", "on");
+    await expect(logId).toHaveAttribute("data-lit", "off");
+    await expect(logId).not.toHaveAttribute("data-picked");
+    // Closed, it stays lit as what was picked, once the pointer is off whatever it was left over.
+    await adminPage.keyboard.press("Escape");
+    await expect(adminPage.getByTestId("mapping-overview-menu")).toHaveCount(0);
+    await adminPage.mouse.move(0, 0);
+    await expect(logRun).toHaveAttribute("data-lit", "on");
+
+    // In the YAML, the lines a right click is over stay lit while its menu is open, and the canvas lights what they write.
+    // Nothing is picked there, so what was picked comes back once the menu closes.
+    await detail.getByTestId("mapping-overview-toggle-yaml").click();
+    const yamlPane = overview.getByTestId("mapping-overview-yaml");
+    await expect(yamlPane).toContainText("documentType: mapping");
+    await logId.click();
+    await expect(logId).toHaveAttribute("data-picked", "true");
+    const logRunLine = yamlPane.getByTestId("mapping-overview-yaml-line").filter({ hasText: "LogRun: { $from: log_run }" });
+    await logRunLine.click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-yaml-menu-copy").hover();
+    await expect(logRunLine).toHaveAttribute("data-lit", "true");
+    await expect(logRun).toHaveAttribute("data-lit", "on");
+    await expect(logId).toHaveAttribute("data-lit", "off");
+    await expect(logId).toHaveAttribute("data-picked", "true");
+    await adminPage.keyboard.press("Escape");
+    await expect(adminPage.getByTestId("mapping-overview-yaml-menu")).toHaveCount(0);
+    await adminPage.mouse.move(0, 0);
+    await expect(logRunLine).not.toHaveAttribute("data-lit");
+    await expect(logId).toHaveAttribute("data-lit", "on");
   });
 
   test("a synced mapping opens in the builder and passes the check against the cache its flow reads", async ({ adminPage }) => {

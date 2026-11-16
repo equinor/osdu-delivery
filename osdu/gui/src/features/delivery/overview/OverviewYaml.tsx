@@ -106,6 +106,10 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
   const lines = useMemo(() => yamlLines(yaml).map(runsOf), [yaml]);
   const box = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<MenuTarget>({ range: null, named: null, columns: [] });
+  // The lines the menu is over, lit in place of what the canvas lights while it is open; null while it is closed, or open over
+  // the whole mapping.
+  const [held, setHeld] = useState<LineRange | null>(null);
+  const shown = (line: number) => (held === null ? lit.has(line) : held.start <= line && line <= held.end);
 
   useEffect(() => {
     // Inside the pane alone: anything larger would move the page around it.
@@ -131,9 +135,23 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
     return blockOf(line) ?? { range: { start: line, end: line }, named: null };
   };
 
+  // The menu takes the pointer from the line as it opens, which would put out what pointing lit and leave what was picked
+  // before lit in its place. The lines it is over stay lit instead, and the line right-clicked stays pointed at for the canvas,
+  // until it closes. Nothing is picked: a pick brings its lines into view, which would move them under the menu.
   const aimMenu = (target: EventTarget) => {
     const aimed = aimedAt(target);
+    const row = target instanceof Element ? target.closest<HTMLElement>("[data-line]") : null;
+    if (row !== null) {
+      onLine(Number(row.dataset.line));
+    }
+
     setMenu({ ...aimed, columns: onExplainLineage === null ? [] : columnsOf(aimed.range).slice(0, MAX_MENU_COLUMNS) });
+    setHeld(aimed.range);
+  };
+
+  const closedMenu = () => {
+    setHeld(null);
+    onLine(null);
   };
 
   const copyMenu = () => {
@@ -169,9 +187,9 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-card" data-testid="mapping-overview-yaml">
       <YamlHeading file={file} first={null} last={null} copy={yaml} copyLabel="Copy the mapping's YAML" copyTestId="mapping-overview-yaml-copy" actions={explain} />
       {/* Without the assistant there is nothing of the pane's own to offer, and the browser's menu stays. */}
-      <ContextMenu>
+      <ContextMenu onOpenChange={(open) => !open && closedMenu()}>
         <ContextMenuTrigger asChild disabled={onExplain === null} onContextMenu={(event) => aimMenu(event.target)}>
-          <div ref={box} className="min-h-0 flex-1 overflow-auto py-1.5" onMouseLeave={() => onLine(null)}>
+          <div ref={box} className="min-h-0 flex-1 overflow-auto py-1.5" onMouseLeave={() => held === null && onLine(null)}>
             <pre className="min-w-max font-mono text-[12px] leading-5">
               {lines.map((runs, index) => {
                 const number = index + 1;
@@ -180,7 +198,8 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
                   <div
                     key={number}
                     data-line={number}
-                    className={cn("flex cursor-pointer border-l-2 pr-4 hover:bg-accent/60", lit.has(number) ? "border-primary bg-primary/[0.06]" : "border-transparent")}
+                    className={cn("flex cursor-pointer border-l-2 pr-4 hover:bg-accent/60", shown(number) ? "border-primary bg-primary/[0.06]" : "border-transparent")}
+                    data-lit={shown(number) ? "true" : undefined}
                     onMouseEnter={() => onLine(number)}
                     onClick={() => onPick(number)}
                     data-testid="mapping-overview-yaml-line"

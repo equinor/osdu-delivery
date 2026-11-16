@@ -1222,6 +1222,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A right-click on a mapping's overview lights what its menu is on.** The light fell back to whatever had been
+  clicked before as soon as the pointer moved onto the menu. A right-click on a part of the canvas now picks it, as a
+  click does, and a right-click in the YAML keeps the lines its menu is over lit while it is open
+  ([mapping overview](osdu/docs/reference/concepts/mapping-overview.md)).
 - **A worker that stops cleanly leaves the Nodes page.** Every worker pod polls under a new name, and a stopped one was
   listed offline for a day, so each revision and each scale-in added a page of dead rows to purge. A worker now says it
   is leaving once its drain is over and its row goes on the next flush; one still listed offline went silent without

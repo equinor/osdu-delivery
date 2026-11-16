@@ -139,7 +139,7 @@ on stays lit while it is on.
 | Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it, from the columns looked up in it to the properties they fill. A line counts as what it comes from, a line off the shelf as its table, and is lit down to the last row lit on it. |
 | Keep a part lit | Click it, or press Space on it. A property, a column, a table or a line from one stays lit and shaded once the pointer leaves it, and nothing opens over the canvas. A click on another part moves the light; Escape or a click on the canvas puts it out. |
 | See how a property is filled | Double-click it, or press Enter on it (**Details** on its menu does the same). A panel slides in from the right with the way its value takes ([below](#the-way-a-value-is-filled)), its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. While the panel is open, a click on another part shows that part's. Escape closes it and leaves the part lit; a click on the canvas closes it and puts the light out. |
-| Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). |
+| Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). A right-click picks the part as a click does, so what the menu is on is what is lit, while the menu is open and after it. |
 | See where a part is populated from | **Open in lineage** on its menu, or the lineage button on its panel, opens the [lineage graph](lineage.md) on its node: a table's, its cache type's, the kind it searches, or for a property each node its value comes from ([below](#opening-a-part-in-lineage)). |
 | Ask where a column's value comes from | **Explain its lineage** on a column's menu, or the button on its panel, asks the assistant to trace the column back to its source ([below](#explaining-a-columns-lineage)). |
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
@@ -272,7 +272,8 @@ read. A search that finds nothing says how it looked. Escape in the field clears
 With the [assistant](../../../../sqlflow/docs/reference/guides/chat-assistant.md#explain) configured, the YAML's heading
 offers **Explain**, as every code window does: it asks about the lines selected, each line whole, or the whole mapping when
 nothing is selected. A right-click on a line offers **Explain this** over the lines selected, or else over the lines that
-write the property the line is in ([the menus](#the-menus)).
+write the property the line is in ([the menus](#the-menus)). While the menu is open, those lines stay lit and the canvas
+lights what they write; nothing is picked, so what was picked is lit again once it closes.
 
 The answer opens under the canvas, where a table's rows open, rather than in the drawer over the page, so the lines it
 explains stay in view beside it; a drag on the line between them resizes it, and the size is kept apart from the rows'.
