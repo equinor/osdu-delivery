@@ -3,50 +3,17 @@ import * as vscode from 'vscode';
 import { IndexedDocument } from '../../../../sqlflow/tools/sqlflow-vscode/src/documents/documentIndex';
 import { scalarKeys } from '../../../../sqlflow/tools/sqlflow-vscode/src/documents/yamlPath';
 import { ModuleContext, VscodeModule } from '../../../../sqlflow/tools/sqlflow-vscode/src/host';
-import { InfoRow, InfoTreeProvider } from '../../../../sqlflow/tools/sqlflow-vscode/src/views/documentViews';
-import { PanelContent, PanelSection } from '../../../../sqlflow/tools/sqlflow-vscode/src/views/panelContent';
 import { askRunPayload } from './deliveryRuns';
-import { fetchTemplate, pickKind } from './deliverySchemas';
-import { JsonRow, rowsOf } from './jsonRows';
+import { fetchTemplate } from './deliverySchemas';
 import { MappingEditing, WorkingCopyTemplates } from './mappingEditing';
 import { declaredPartitions, objectParts } from './runOptions';
 import { declaredParameters, recordPath } from './templates';
 
-/** The flow kinds this product adds, each with the tool that says how it stands. */
-const FLOW_READERS: Record<string, { label: string; tool: string; icon: string }> = {
-    delivery: { label: 'Delivery', tool: 'delivery_flow', icon: 'cloud-upload' },
-    assertion: { label: 'Assertions', tool: 'delivery_assertions', icon: 'beaker' },
-    dimension: { label: 'Dimensions', tool: 'delivery_dimensions', icon: 'symbol-enum' },
-    retrieval: { label: 'Retrievals', tool: 'delivery_retrievals', icon: 'cloud-download' },
-    inventory: { label: 'Inventories', tool: 'delivery_inventories', icon: 'list-tree' },
-    removal: { label: 'Removals', tool: 'delivery_removals', icon: 'trash' },
-};
+/** The page of a mapping being written, in the hosted build (osdu/gui/src/hosted/module.tsx). */
+const WORKING_COPY_MAPPING_PAGE = '/delivery/working-copy/mapping';
 
-function infoRows(rows: JsonRow[]): InfoRow[] {
-    return rows.map((row) => ({
-        label: row.label,
-        description: row.description,
-        tooltip: row.description,
-        children: row.children ? async () => infoRows(row.children ?? []) : undefined,
-    }));
-}
-
-interface Issue {
-    issue: string;
-    pattern: string;
-    records: number;
-    held?: number;
-    failed?: number;
-    shape?: string;
-}
-
-interface CheckAnswer {
-    loads?: boolean;
-    issues?: { severity: string; message: string; variable?: string }[];
-    requiredAndEmpty?: (string | { path?: string; variable?: string })[];
-    shape?: unknown;
-    links?: Record<string, string>;
-}
+/** The context key that says what kind of document the editor in front holds, which the manifest's menus read. */
+const DOCUMENT_IN_FRONT = 'osduDelivery.documentInFront';
 
 interface LineageObject {
     key: string;
@@ -59,7 +26,7 @@ interface LineageObject {
 /** The OSDU Delivery module: what the module's kinds and documents add to the extension. */
 export const deliveryModule: VscodeModule = {
     activate(context: ModuleContext): void {
-        const { estate, panels, documents, documentView, references, lenses, command, extension } = context;
+        const { estate, pages, offers, documents, references, lenses, command, extension } = context;
         const mcp = estate.mcp;
         const templates = new WorkingCopyTemplates();
         const editing = new MappingEditing(templates, documents);
@@ -73,112 +40,27 @@ export const deliveryModule: VscodeModule = {
             vscode.languages.registerHoverProvider(selector, editing)
         );
 
-        const delivery = new InfoTreeProvider(async () => [
-            ['Partitions', 'database', 'delivery_partitions'],
-            ['Mappings', 'symbol-namespace', 'delivery_mappings'],
-            ['Templates', 'file-code', 'delivery_templates'],
-            ['Caches', 'archive', 'delivery_caches'],
-            ['Cache Changes', 'diff', 'delivery_cache_changes'],
-            ['Assertions', 'beaker', 'delivery_assertions'],
-            ['Dimensions', 'symbol-enum', 'delivery_dimensions'],
-            ['Inventories', 'list-tree', 'delivery_inventories'],
-            ['Removals', 'trash', 'delivery_removals'],
-            ['Configuration', 'settings-gear', 'delivery_config'],
-        ].map(([label, icon, tool]) => ({
-            label,
-            icon,
-            children: async () => infoRows(rowsOf(await mcp.call(tool))),
-        })));
-        extension.subscriptions.push(vscode.window.registerTreeDataProvider('osduDelivery', delivery), context.refreshed(() => delivery.refresh()));
+        // The headings the side bar lists this product's documents under.
+        offers.nameGroup('mapping', 'Mappings');
+        offers.nameGroup('dictionary', 'Dictionaries');
+        offers.nameGroup('repository', 'Repository settings');
 
-        // What a flow of a kind this module adds says of itself.
-        for (const [flowType, reader] of Object.entries(FLOW_READERS)) {
-            documentView.register({
-                label: reader.label,
-                icon: reader.icon,
-                expanded: flowType === 'delivery',
-                applies: ({ document, pipeline }) => document.flowType === flowType && pipeline !== undefined,
-                rows: async ({ pipeline }) => infoRows(rowsOf(await mcp.call(reader.tool, { pipelineId: pipeline?.id }))),
-            });
-        }
-        documentView.register({
-            label: 'Latest Submissions',
-            icon: 'package',
-            applies: ({ document, pipeline }) => document.flowType === 'delivery' && pipeline !== undefined,
-            rows: async ({ pipeline }) => infoRows(rowsOf(await mcp.call('delivery_submissions', { pipelineId: pipeline?.id, max: 5 }))),
-        });
-        documentView.register({
-            label: 'Cache',
-            icon: 'archive',
-            applies: ({ document, pipeline }) => document.flowType === 'cache' && pipeline !== undefined,
-            rows: async ({ pipeline }) => infoRows(rowsOf(await mcp.call('delivery_caches', { repoId: pipeline?.repoId }))),
-        });
-        documentView.register({
-            label: 'Audit Trail',
-            icon: 'history',
-            applies: ({ document, pipeline }) => pipeline !== undefined && (document.flowType === 'cache' || document.flowType === 'download' || document.flowType! in FLOW_READERS),
-            rows: async ({ pipeline }) => infoRows(rowsOf(await mcp.call('delivery_activities', { pipelineId: pipeline?.id, pageSize: 10 }))),
-        });
-        documentView.register({
-            label: 'Issues',
-            icon: 'warning',
-            expanded: true,
-            applies: ({ document, pipeline }) => document.flowType === 'delivery' && pipeline !== undefined,
-            rows: async ({ pipeline }) => {
-                const answer = await mcp.call<{ issues?: Issue[] }>('delivery_flow_issues', { pipelineId: pipeline?.id });
-                const issues = answer.issues ?? [];
-                return issues.length === 0
-                    ? [{ label: 'Nothing keeps its records blocked.', icon: 'pass' }]
-                    : issues.map((issue) => ({
-                        label: `${issue.records} records`,
-                        description: issue.pattern,
-                        tooltip: issue.pattern,
-                        icon: 'warning',
-                    }));
-            },
-        });
-        documentView.register({
-            label: 'Template',
-            icon: 'file-code',
-            expanded: true,
-            applies: ({ document }) => document.documentType === 'mapping',
-            rows: async ({ document, text }) => {
-                const kind = /^template\s*:\s*\r?\n\s+kind\s*:\s*["']?([^\s"'#]+)/m.exec(text)?.[1];
-                if (!kind) {
-                    return [{ label: 'This mapping names no template yet.' }];
-                }
-                const file = await templates.forDocument(kind, document.uri);
-                return [
-                    { label: 'Kind', description: kind, icon: 'tag' },
-                    file
-                        ? { label: 'File', description: vscode.workspace.asRelativePath(file.uri), icon: 'go-to-file', command: { command: 'vscode.open', title: 'Open', arguments: [file.uri] } }
-                        : { label: 'File', description: 'no template folder on this path holds it', icon: 'warning' },
-                ];
-            },
-        });
-        documentView.register({
-            label: 'Flows Rendering It',
-            icon: 'symbol-event',
-            applies: ({ document }) => document.documentType === 'mapping',
-            rows: async ({ text }) => {
-                const name = /^name\s*:\s*(\S+)/m.exec(text)?.[1];
-                const version = /^version\s*:\s*(\S+)/m.exec(text)?.[1];
-                const flows = (await documents.all()).filter((document) => document.flowType === 'delivery');
-                const reference = `${name}@${version}`;
-                const hits = await Promise.all(flows.map(async (flow) => {
-                    const body = Buffer.from(await vscode.workspace.fs.readFile(flow.uri)).toString('utf8');
-                    return body.includes(reference) ? flow : undefined;
-                }));
-                const rendering = hits.filter((flow): flow is IndexedDocument => flow !== undefined);
-                return rendering.length === 0
-                    ? [{ label: 'No flow of this repository pins it.' }]
-                    : rendering.map((flow) => ({
-                        label: flow.name ?? flow.relativePath,
-                        icon: 'symbol-event',
-                        command: { command: 'vscode.open', title: 'Open', arguments: [flow.uri] },
-                    }));
-            },
-        });
+        /** Shows what a mapping makes, beside its file: the mapping's page, read from the file as it is saved. */
+        const previewMapping = (uri: vscode.Uri): void => {
+            pages.open(`${WORKING_COPY_MAPPING_PAGE}?document=${encodeURIComponent(uri.toString())}`, { beside: true });
+        };
+        offers.register((document) => (document.documentType === 'mapping'
+            ? [{ id: 'preview', label: 'Preview what it makes', icon: 'preview', primary: true, run: async () => previewMapping(document.uri) }]
+            : []));
+
+        // The menus offer a mapping's preview while a mapping is the document in front.
+        const sayDocumentInFront = async (): Promise<void> => {
+            const uri = vscode.window.activeTextEditor?.document.uri;
+            const document = uri ? await documents.at(uri) : undefined;
+            await vscode.commands.executeCommand('setContext', DOCUMENT_IN_FRONT, document?.documentType ?? document?.flowType ?? '');
+        };
+        extension.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => void sayDocumentInFront()));
+        void sayDocumentInFront();
 
         // What a delivery flow's and a mapping's keys refer to.
         references.register({
@@ -232,23 +114,14 @@ export const deliveryModule: VscodeModule = {
             values: async (document) => (document ? sourceColumns(document) : []),
         });
 
-        const checkMapping = async (uri: vscode.Uri): Promise<void> => {
-            const document = await vscode.workspace.openTextDocument(uri);
-            const pipeline = (await estate.repos())[0];
-            const answer = await mcp.call<CheckAnswer>('delivery_check_mapping', {
-                yaml: document.getText(),
-                path: vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/'),
-                repoId: pipeline?.id,
-                shape: true,
-            });
-            panels.show(`mapping:${uri.toString()}`, checkContent(path.basename(uri.fsPath), answer));
-        };
-
-        command('osduDelivery.checkMapping', async (arg: unknown) => {
+        command('osduDelivery.previewMapping', async (arg: unknown) => {
             const uri = arg instanceof vscode.Uri ? arg : vscode.window.activeTextEditor?.document.uri;
-            if (uri) {
-                await checkMapping(uri);
+            const document = uri ? await documents.at(uri) : undefined;
+            if (document?.documentType !== 'mapping') {
+                void vscode.window.showInformationMessage(`${context.product}: open a mapping document to preview what it makes.`);
+                return;
             }
+            previewMapping(document.uri);
         });
 
         command('osduDelivery.scaffoldMapping', async () => {
@@ -278,55 +151,15 @@ export const deliveryModule: VscodeModule = {
             await vscode.window.showTextDocument(document);
         });
 
-        command('osduDelivery.compareSchemaVersions', async () => {
-            const from = await pickKind(mcp, 'The version in use');
-            const to = from && (await pickKind(mcp, 'The version to move to'));
-            if (!from || !to) {
-                return;
-            }
-            const answer = await mcp.call<unknown>('delivery_osdu_schema_compare', {
-                fromRelease: from.release,
-                fromKind: from.kind,
-                toRelease: to.release,
-                toKind: to.kind,
-            });
-            panels.show(`compare:${from.kind}:${to.kind}`, {
-                title: `${from.kind} to ${to.kind}`,
-                sections: [{ heading: 'What a mapping has to change', code: JSON.stringify(answer, null, 2) }],
-            });
-        });
-
         command('osduDelivery.fetchTemplate', () => fetchTemplate(mcp, context.product));
 
-        command('osduDelivery.findRecord', async () => {
-            const search = await vscode.window.showInputBox({ prompt: 'An OSDU id, a source key, or the start of a label', ignoreFocusOut: true });
-            if (!search) {
-                return;
-            }
-            const answer = await mcp.call<{ items?: { flowId: string; deliveryKey: string; label?: string; targetId?: string; status?: string }[] }>('delivery_find_records', { search });
-            const hit = await vscode.window.showQuickPick(
-                (answer.items ?? []).map((item) => ({ label: item.label ?? item.targetId ?? item.deliveryKey, description: item.status, detail: item.targetId, item })),
-                { placeHolder: 'Which record?', matchOnDetail: true }
-            );
-            if (hit) {
-                const record = await mcp.call<unknown>('delivery_record', { flowId: hit.item.flowId, deliveryKey: hit.item.deliveryKey });
-                panels.show(`record:${hit.item.deliveryKey}`, { title: hit.label, sections: [{ heading: 'What the ledger holds', code: JSON.stringify(record, null, 2) }] });
-            }
-        });
-
-        command('osduDelivery.probeTarget', async () => {
-            const document = vscode.window.activeTextEditor ? await documents.at(vscode.window.activeTextEditor.document.uri) : undefined;
-            const pipeline = document?.name ? await estate.pipelineNamed(document.name, document.relativePath) : undefined;
-            if (!pipeline) {
-                void vscode.window.showInformationMessage('Open a delivery flow the estate holds.');
-                return;
-            }
-            const answer = await mcp.call<unknown>('delivery_probe_target', { pipelineId: pipeline.id });
-            panels.show(`probe:${pipeline.id}`, { title: `${pipeline.name}: its OSDU`, sections: [{ heading: 'How it answered', code: JSON.stringify(answer, null, 2) }] });
-        });
+        // The module's pages a person reaches for while writing: each opens in a tab, as the side bar's menu opens it.
+        command('osduDelivery.openDelivery', async () => pages.open('/delivery'));
+        command('osduDelivery.openTemplates', async () => pages.open('/delivery/templates'));
+        command('osduDelivery.findRecord', async () => pages.open('/delivery/records'));
 
         lenses.register(async (document) => (document.documentType === 'mapping'
-            ? [{ title: '$(checklist) Check Mapping', command: 'osduDelivery.checkMapping', arguments: [document.uri] }]
+            ? [{ title: '$(open-preview) Preview', command: 'osduDelivery.previewMapping', arguments: [document.uri] }]
             : []));
 
         context.addRunParameters(async (pipeline, document) => {
@@ -340,39 +173,5 @@ export const deliveryModule: VscodeModule = {
         });
 
         context.addRunPayload((pipeline, operation) => askRunPayload(estate, pipeline, operation));
-
-        context.addRunSections(async (run): Promise<PanelSection[]> => {
-            if (run.flowKind !== 'delivery') {
-                return [];
-            }
-            const answer = await mcp.call<unknown>('delivery_run', { id: run.runId }).catch(() => undefined);
-            return answer === undefined ? [] : [{ heading: 'What it delivered', code: JSON.stringify(answer, null, 2) }];
-        });
-
     },
 };
-
-/** A mapping check as a person reads it: whether it loads, what is wrong, what OSDU would refuse. */
-function checkContent(file: string, answer: CheckAnswer): PanelContent {
-    const required = (answer.requiredAndEmpty ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.path ?? entry.variable ?? ''));
-    return {
-        title: `${file}: check`,
-        subtitle: answer.loads === false ? 'It does not load.' : 'Checked against its template by the control plane.',
-        actions: answer.links?.page ? [{ text: 'Open in the mapping builder', url: answer.links.page }] : undefined,
-        sections: [
-            {
-                heading: 'Required and empty',
-                columns: ['Property'],
-                rows: required.map((property) => [property]),
-                empty: 'Everything the template requires is filled.',
-            },
-            {
-                heading: 'Issues',
-                columns: ['Severity', 'Variable', 'Message'],
-                rows: (answer.issues ?? []).map((issue) => [issue.severity, issue.variable, issue.message]),
-                empty: 'No issues.',
-            },
-            ...(answer.shape === undefined ? [] : [{ heading: 'The record it makes', code: JSON.stringify(answer.shape, null, 2) }]),
-        ],
-    };
-}

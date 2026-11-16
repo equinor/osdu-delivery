@@ -21,6 +21,24 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
+// ---- Transport -----------------------------------------------------------------------------------------------------
+
+/**
+ * How a call reaches the control plane: the request as this client built it, answered with a Response. The browser's
+ * fetch unless the page is hosted by something that carries its calls (embed/hostTransport.ts), where the page's own
+ * origin is not one the control plane's CORS allows and the credential stays with the host.
+ */
+export type ApiTransport = (url: URL, init: RequestInit) => Promise<Response>;
+
+const browserTransport: ApiTransport = (url, init) => fetch(url, init);
+
+let transport: ApiTransport = browserTransport;
+
+/** Carries every call through `next` from now on; null gives the calls back to the browser's fetch. */
+export function setApiTransport(next: ApiTransport | null): void {
+  transport = next ?? browserTransport;
+}
+
 // ---- Auth token wiring (owned by AuthContext) ---------------------------------------------------------------------
 
 let currentToken: string | null = null;
@@ -147,7 +165,7 @@ async function request<T>(options: RequestOptions): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await transport(url, {
       method: options.method,
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -244,7 +262,7 @@ async function getRaw(path: string, accept: string, query: QueryParams | undefin
     headers.Authorization = `Bearer ${currentToken}`;
   }
 
-  const response = await fetch(url, { method: "GET", headers, signal: signal ?? null });
+  const response = await transport(url, { method: "GET", headers, signal: signal ?? null });
   if (response.status === 401 && currentToken) {
     onUnauthorized?.();
   }
@@ -303,7 +321,7 @@ export async function streamSse(
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, {
+  const response = await transport(url, {
     method: init?.method ?? "GET",
     headers,
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
@@ -401,7 +419,7 @@ export async function postBinary<T>(
     headers.Authorization = `Bearer ${currentToken}`;
   }
 
-  const response = await fetch(url, { method: "POST", headers, body, signal: signal ?? null });
+  const response = await transport(url, { method: "POST", headers, body, signal: signal ?? null });
   if (response.status === 401 && currentToken) {
     onUnauthorized?.();
   }

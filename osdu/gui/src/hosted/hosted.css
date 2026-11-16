@@ -1,0 +1,11 @@
+/*
+  The stylesheet of the hosted build (hosted/): SQLFlow's design system with the host design over it, whose tokens are
+  the theme of the editor showing the page (sqlflow/gui/src/embed/host-design.css), and both source trees named for
+  Tailwind, as index.css names them for the browser's build.
+*/
+
+@import "../../../../sqlflow/gui/src/index.css";
+@import "../../../../sqlflow/gui/src/embed/host-design.css";
+
+@source "../";
+@source "../../../../sqlflow/gui/src";

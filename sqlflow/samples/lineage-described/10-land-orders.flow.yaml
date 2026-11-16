@@ -1,0 +1,10 @@
+# Landing flow: the files a job on another platform drops into data/orders -> a raw string pre table.
+# This flow is the estate's own. What made the files it reads is described in the two documents under lineage/.
+name: described-land-orders
+source:
+  type: csv
+  location: data/orders
+target:
+  connection: ${env:SQLFLOW_DEMO_DB}
+  schema: demo
+  table: Described_Orders_Pre

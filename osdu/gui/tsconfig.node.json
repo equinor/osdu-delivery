@@ -5,12 +5,15 @@
     "lib": ["ES2023", "DOM"],
     "skipLibCheck": true,
     "outDir": ".tsbuild",
+    "rootDir": "../..",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "noEmit": false,
+    "emitDeclarationOnly": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "e2e/**/*.ts"]
+  "include": ["vite.config.ts", "vite.hosted.config.ts", "../../sqlflow/gui/hosted.build.ts", "playwright.config.ts", "e2e/**/*.ts"]
 }

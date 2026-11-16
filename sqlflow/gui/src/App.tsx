@@ -66,6 +66,104 @@ function moduleRouteElements(frame: ModuleRouteFrame) {
   ));
 }
 
+/**
+ * The pages shown in the workbench, as routes: SQLFlow's own and the ones the registered modules add, each behind what it
+ * asks of the session. A frame other than the workbench's (embed/HostedApp.tsx) lists the same routes inside its own, so
+ * a page added here is a page there.
+ */
+export function workbenchPages() {
+  return (
+    <>
+      <Route path="/" element={<DashboardPage />} />
+      {/* The SQLFlow assistant: chat over the estate, tools served by the SQLFlow MCP server. */}
+      <Route path="/chat" element={<ChatPage />} />
+      {/* One finished query drawn as a chart: where an answer given outside the GUI links to. */}
+      <Route path="/query-results/:taskId" element={<QueryResultPage />} />
+      <Route path="/insights" element={<InsightsPage />} />
+      {/* Which tables have stopped receiving data, from the run history's own write statistics. */}
+      <Route path="/datastreams" element={<DataStreamsPage />} />
+      <Route path="/runs" element={<RunsPage />} />
+      <Route path="/runs/groups/:groupId" element={<RunGroupPage />} />
+      <Route path="/runs/:runId" element={<RunDetailPage />} />
+      <Route path="/nodes" element={<NodesPage />} />
+      <Route path="/repos" element={<ReposPage />} />
+      <Route path="/repos/:repoId" element={<RepoDetailPage />} />
+      <Route path="/pipelines" element={<PipelinesPage />} />
+      <Route path="/pipelines/:pipelineId" element={<PipelineDetailPage />} />
+      {/* Timeline route sits above the table route so the sidebar's Timeline entry resolves; both live under
+          /schedules so the Schedules nav group stays highlighted. */}
+      <Route path="/schedules/timeline" element={<ScheduleTimelinePage />} />
+      <Route path="/schedules" element={<SchedulesPage />} />
+      <Route path="/datasources" element={<DatasourcesPage />} />
+      <Route path="/integrations" element={<IntegrationsPage />} />
+      {/* The Integrations page briefly shipped as "REST APIs"; keep the old path working for bookmarks. */}
+      <Route path="/rest-apis" element={<Navigate to="/integrations" replace />} />
+      <Route path="/datasources/browse" element={<DatasourceBrowsePage />} />
+      <Route path="/discover" element={<DiscoverPage />} />
+      {/* Top-level path (not under /datasources) so the sidebar's startsWith selection stays unambiguous. */}
+      <Route path="/key-detection" element={<UniqueKeyDetectionPage />} />
+      {/* Repo sources merged into the Repos page; keep the old path working for bookmarks. */}
+      <Route path="/repo-sources" element={<Navigate to="/repos" replace />} />
+      {/* The explorer tree over every catalog object and flow, with per-node details. */}
+      <Route path="/catalog" element={<CatalogPage />} />
+      {/* The graph is the lineage landing; the searchable object catalog is the secondary explorer. */}
+      <Route path="/lineage" element={<LineageGraphPage />} />
+      <Route path="/lineage/objects" element={<LineagePage />} />
+      {/* The consumption side: who reads the warehouse, and through which queries. */}
+      <Route path="/schema-changes" element={<SchemaChangesPage />} />
+      <Route path="/subscribers" element={<SubscribersPage />} />
+      {/* The graph used to live here; keep the old link working, carrying any repo/view query through. */}
+      <Route path="/lineage/graph" element={<LineageGraphRedirect />} />
+      <Route path="/search" element={<SearchPage />} />
+      {/* Self-service and available to any authenticated user; no scope guard beyond RequireAuth. */}
+      <Route path="/settings/tokens" element={<AccessTokensPage />} />
+      <Route path="/settings/notifications" element={<NotificationsPage />} />
+      <Route path="/settings/maintenance" element={<MaintenancePage />} />
+      <Route
+        path="/users"
+        element={(
+          <RequireScope scope="admin">
+            <UsersPage />
+          </RequireScope>
+        )}
+      />
+      <Route
+        path="/semantic-layer"
+        element={(
+          <RequireScope scope="admin">
+            <SemanticLayerPage />
+          </RequireScope>
+        )}
+      />
+      <Route
+        path="/external-triggers"
+        element={(
+          <RequireScope scope="admin">
+            <ExternalTriggersPage />
+          </RequireScope>
+        )}
+      />
+      {/* Saved answers moved into the AI context page as its example queries; keep old links working. */}
+      <Route path="/saved-answers" element={<Navigate to="/semantic-layer?tab=examples" replace />} />
+      {/* The column policy page became the AI context page; keep old links working. */}
+      <Route path="/column-policies" element={<Navigate to="/semantic-layer" replace />} />
+      {/* The pages this build's GUI modules add (none in SQLFlow's own build), inside the workbench like every page. */}
+      {moduleRouteElements("workbench")}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </>
+  );
+}
+
+/** The pages shown in a window of their own, with nothing of the workbench around them, as routes. */
+export function windowPages() {
+  return (
+    <>
+      <Route path="/device" element={<DeviceApprovalPage />} />
+      {moduleRouteElements("window")}
+    </>
+  );
+}
+
 export default function App() {
   return (
     <Suspense fallback={<TopProgressBar />}>
@@ -79,8 +177,7 @@ export default function App() {
             </RequireAuth>
           )}
         >
-          <Route path="/device" element={<DeviceApprovalPage />} />
-          {moduleRouteElements("window")}
+          {windowPages()}
         </Route>
         <Route
           element={(
@@ -89,82 +186,7 @@ export default function App() {
             </RequireAuth>
           )}
         >
-          <Route path="/" element={<DashboardPage />} />
-          {/* The SQLFlow assistant: chat over the estate, tools served by the SQLFlow MCP server. */}
-          <Route path="/chat" element={<ChatPage />} />
-          {/* One finished query drawn as a chart: where an answer given outside the GUI links to. */}
-          <Route path="/query-results/:taskId" element={<QueryResultPage />} />
-          <Route path="/insights" element={<InsightsPage />} />
-          {/* Which tables have stopped receiving data, from the run history's own write statistics. */}
-          <Route path="/datastreams" element={<DataStreamsPage />} />
-          <Route path="/runs" element={<RunsPage />} />
-          <Route path="/runs/groups/:groupId" element={<RunGroupPage />} />
-          <Route path="/runs/:runId" element={<RunDetailPage />} />
-          <Route path="/nodes" element={<NodesPage />} />
-          <Route path="/repos" element={<ReposPage />} />
-          <Route path="/repos/:repoId" element={<RepoDetailPage />} />
-          <Route path="/pipelines" element={<PipelinesPage />} />
-          <Route path="/pipelines/:pipelineId" element={<PipelineDetailPage />} />
-          {/* Timeline route sits above the table route so the sidebar's Timeline entry resolves; both live under
-              /schedules so the Schedules nav group stays highlighted. */}
-          <Route path="/schedules/timeline" element={<ScheduleTimelinePage />} />
-          <Route path="/schedules" element={<SchedulesPage />} />
-          <Route path="/datasources" element={<DatasourcesPage />} />
-          <Route path="/integrations" element={<IntegrationsPage />} />
-          {/* The Integrations page briefly shipped as "REST APIs"; keep the old path working for bookmarks. */}
-          <Route path="/rest-apis" element={<Navigate to="/integrations" replace />} />
-          <Route path="/datasources/browse" element={<DatasourceBrowsePage />} />
-          <Route path="/discover" element={<DiscoverPage />} />
-          {/* Top-level path (not under /datasources) so the sidebar's startsWith selection stays unambiguous. */}
-          <Route path="/key-detection" element={<UniqueKeyDetectionPage />} />
-          {/* Repo sources merged into the Repos page; keep the old path working for bookmarks. */}
-          <Route path="/repo-sources" element={<Navigate to="/repos" replace />} />
-          {/* The explorer tree over every catalog object and flow, with per-node details. */}
-          <Route path="/catalog" element={<CatalogPage />} />
-          {/* The graph is the lineage landing; the searchable object catalog is the secondary explorer. */}
-          <Route path="/lineage" element={<LineageGraphPage />} />
-          <Route path="/lineage/objects" element={<LineagePage />} />
-          {/* The consumption side: who reads the warehouse, and through which queries. */}
-          <Route path="/schema-changes" element={<SchemaChangesPage />} />
-          <Route path="/subscribers" element={<SubscribersPage />} />
-          {/* The graph used to live here; keep the old link working, carrying any repo/view query through. */}
-          <Route path="/lineage/graph" element={<LineageGraphRedirect />} />
-          <Route path="/search" element={<SearchPage />} />
-          {/* Self-service and available to any authenticated user; no scope guard beyond RequireAuth. */}
-          <Route path="/settings/tokens" element={<AccessTokensPage />} />
-          <Route path="/settings/notifications" element={<NotificationsPage />} />
-          <Route path="/settings/maintenance" element={<MaintenancePage />} />
-          <Route
-            path="/users"
-            element={(
-              <RequireScope scope="admin">
-                <UsersPage />
-              </RequireScope>
-            )}
-          />
-          <Route
-            path="/semantic-layer"
-            element={(
-              <RequireScope scope="admin">
-                <SemanticLayerPage />
-              </RequireScope>
-            )}
-          />
-          <Route
-            path="/external-triggers"
-            element={(
-              <RequireScope scope="admin">
-                <ExternalTriggersPage />
-              </RequireScope>
-            )}
-          />
-          {/* Saved answers moved into the AI context page as its example queries; keep old links working. */}
-          <Route path="/saved-answers" element={<Navigate to="/semantic-layer?tab=examples" replace />} />
-          {/* The column policy page became the AI context page; keep old links working. */}
-          <Route path="/column-policies" element={<Navigate to="/semantic-layer" replace />} />
-          {/* The pages this build's GUI modules add (none in SQLFlow's own build), inside the workbench like every page. */}
-          {moduleRouteElements("workbench")}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {workbenchPages()}
         </Route>
       </Routes>
     </Suspense>

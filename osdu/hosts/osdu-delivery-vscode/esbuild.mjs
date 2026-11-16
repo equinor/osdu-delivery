@@ -1,4 +1,5 @@
 import { build, context } from 'esbuild';
+import { execSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +70,23 @@ function copyBinaries() {
     }
 }
 
+/**
+ * Builds the pages and the side bar the extension shows: the GUI's hosted build (osdu/gui, `npm run build:hosted`),
+ * which writes into dist/hosted. A package always builds them anew, so it never carries pages older than its sources;
+ * a checkout builds them when it has none, and `npm run bundle:hosted` builds them again after the GUI changed.
+ */
+function buildHostedPages() {
+    if (!production && existsSync(join(here, 'dist', 'hosted', '.vite', 'manifest.json'))) {
+        return;
+    }
+    const gui = join(repository, 'osdu', 'gui');
+    if (!existsSync(join(gui, 'node_modules'))) {
+        throw new Error(`[esbuild] the pages are built from ${gui}, which has no packages installed: run npm ci there first.`);
+    }
+    console.log('[esbuild] building the hosted pages');
+    execSync('npm run build:hosted', { cwd: gui, stdio: 'inherit' });
+}
+
 const options = {
     entryPoints: [join(here, 'src', 'extension.ts')],
     bundle: true,
@@ -86,6 +104,7 @@ const options = {
 
 copyDocuments();
 copyBinaries();
+buildHostedPages();
 // A package carries the licence the repository is under, from the one file that states it.
 cpSync(join(repository, 'LICENSE'), join(here, 'LICENSE'));
 

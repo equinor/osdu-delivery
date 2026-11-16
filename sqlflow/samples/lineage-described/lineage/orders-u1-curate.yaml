@@ -1,0 +1,39 @@
+# A step another system runs, written down for lineage. It is never executed here.
+# It reads the order system's own tables and writes the curated table the next description reads.
+flowType: lin
+name: orders-u1-curate-lin
+description: Builds the curated orders table from the order system's orders and exchange rates.
+system: lakehouse
+unit: job orders-daily, task curate_orders
+owner: data-platform@example.com
+evidence:
+  - { repo: lakehouse-jobs, path: jobs/orders/curate_orders.py, commit: 4f1c2ab9, note: The transformation. }
+  - { repo: lakehouse-jobs, path: jobs/orders/job.yml, commit: 4f1c2ab9, note: The job and when it runs. }
+
+reads:
+  # The order system is where the data starts: nothing before it is described.
+  - { system: erp, name: sales.orders, as: src, origin: true, note: One row per order line as the order system keeps it. }
+  - { system: erp, name: sales.exchange_rates, as: fx, origin: true }
+
+writes:
+  - name: curated.orders
+    note: One row per order, with the amount in euro.
+    columns:
+      order_id: src.order_no
+      customer_id: src.customer_no
+      order_date: { from: src.ordered_at, note: Cast to a date in UTC. }
+      amount_eur:
+        from: [src.amount, src.currency, fx.rate]
+        note: amount * rate of the order's currency on the order date.
+
+context: |
+  ## Rows
+  - Order lines are summed to one row per order.
+  - Test orders (customer_no below 1000) are left out.
+  - An order in a currency with no rate on its date is left out and written to the job's reject log.
+
+  ## Timing
+  The job runs daily at 02:00 UTC and rebuilds the table from the last 30 days of orders.
+
+  ## Deleted orders
+  An order deleted in the order system stays in the curated table: nothing removes it.

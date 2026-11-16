@@ -57,6 +57,12 @@ public sealed record CollectedFlow
     /// graph builder leaves it out: no node, no edges, no wave, no batch membership.</summary>
     public bool ParticipatesInLineage { get; init; } = true;
 
+    /// <summary>True for a lineage description (<c>flowType: lin</c>): a document that describes a step another system
+    /// runs. It is collected so it becomes a pipeline row that holds its text, and it is nothing else: it never runs,
+    /// has no run history, and stands in no flow's place.</summary>
+    public bool IsLineageDescription
+        => string.Equals(Node.Kind, LineageDescriptionFlow.FlowType, StringComparison.OrdinalIgnoreCase);
+
     public required DateTime FileWriteUtc { get; init; }
 }
 
@@ -338,10 +344,20 @@ public sealed record CollectedRegisteredObject
 /// the loader's error, secret-redacted.</summary>
 public sealed record BrokenFlowDocument(string File, string Error);
 
+/// <summary>One lineage description (flowType: lin) as the estate scan found it: the description as written and the
+/// document declaring it, relative to the scanned folder. It contributes no fact to <see cref="CollectionResult.Facts"/>:
+/// what it says is placed beside the computed graph once that graph is built
+/// (<see cref="Graph.LineageDescriber"/>).</summary>
+public sealed record CollectedDescription(Core.Lineage.LineageDescriptionFlow Flow, string File);
+
 /// <summary>What one collector hands the builder.</summary>
 public sealed class CollectionResult
 {
     public List<CollectedFlow> Flows { get; } = [];
+
+    /// <summary>Every lineage description the estate declares, in path order. The graph builder never reads this list,
+    /// so the lineage it computes is the same whether the estate holds descriptions or not.</summary>
+    public List<CollectedDescription> Descriptions { get; } = [];
 
     /// <summary>Every named schedule the estate declares, with the flows that joined it, resolved once the whole
     /// repo is in hand (a reference can point at a definition in any file). This is the authority on WHAT a fire
@@ -434,6 +450,7 @@ public sealed class CollectionResult
     {
         ArgumentNullException.ThrowIfNull(other);
         Flows.AddRange(other.Flows);
+        Descriptions.AddRange(other.Descriptions);
         Subscribers.AddRange(other.Subscribers);
         Facts.AddRange(other.Facts);
         ObjectArtifacts.AddRange(other.ObjectArtifacts);

@@ -9,3 +9,11 @@ tsconfig.json
 .vscode-test/**
 .gitignore
 publish/**
+dist/hosted/.vite/**
+!dist/hosted/.vite/manifest.json
+dist/hosted/assets/*.worker-*.js
+dist/hosted/assets/worker-*.js
+dist/hosted/assets/*.wasm
+media/**
+package.mjs
+*.vsix

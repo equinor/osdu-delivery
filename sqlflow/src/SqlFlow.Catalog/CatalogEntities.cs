@@ -652,16 +652,68 @@ public class CatalogLineageEdge
     /// <summary>The module (view/proc/function key) whose body produced this fact (derived tier; null otherwise).</summary>
     public string? ViaModule { get; set; }
 
-    /// <summary>Reads / Writes / Creates / Requires / Destroys.</summary>
+    /// <summary>Reads / Writes / Creates / Requires / Destroys / Registers for the lineage SQLFlow computes, and
+    /// DescribedReads / DescribedWrites for what a lineage description (flowType: lin) says of a step SQLFlow does not
+    /// run. The described relations are values of their own on purpose: every reader that asks for Reads or Writes
+    /// (waves, dependencies, object levels, data streams, run context) leaves them out without knowing of them, and a
+    /// reader that wants the described lineage asks for it by name.</summary>
     public string Relation { get; set; } = string.Empty;
 
     public string ObjectKey { get; set; } = string.Empty;
 
-    /// <summary>The object's display name, denormalized for listing without a join.</summary>
+    /// <summary>The object's display name, denormalized for listing without a join. For an object only a lineage
+    /// description names (a key starting with <c>described:</c>) this is its only record: such an object has no row in
+    /// the object registry.</summary>
     public string ObjectName { get; set; } = string.Empty;
 
     /// <summary>Declared / Observed / Derived: the provenance of the fact.</summary>
     public string Tier { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// One source column of one mapped column of an object a lineage description (flowType: lin) writes: the optional
+/// column level of described lineage, kept beside the edges and never part of them. Repo-scoped and fully replaced for
+/// a repo on each sync, like the edges. A mapped column with several sources is several rows sharing
+/// <see cref="Ordinal"/>; one the step makes itself is a single row with no source. Read on request only (a column
+/// mapping between two objects, the sources of one column): no lineage computation and no object list reads this table.
+/// </summary>
+public class CatalogLineageColumnMapping
+{
+    public long Id { get; set; }
+
+    public Guid RepoId { get; set; }
+
+    /// <summary>The describing pipeline (<see cref="CatalogPipeline.Kind"/> <c>lin</c>).</summary>
+    public Guid PipelineId { get; set; }
+
+    /// <summary>The description's name.</summary>
+    public string Flow { get; set; } = string.Empty;
+
+    /// <summary>The written object's key: a registry object's, or a described object's.</summary>
+    public string TargetObjectKey { get; set; } = string.Empty;
+
+    public string TargetObjectName { get; set; } = string.Empty;
+
+    /// <summary>The mapped column. A <c>*</c> stands for every column not listed by name.</summary>
+    public string TargetColumn { get; set; } = string.Empty;
+
+    /// <summary>The mapped column's position among its object's mapped columns, 1-based, in declaration order.</summary>
+    public int Ordinal { get; set; }
+
+    /// <summary>The source's position among the column's sources, 1-based; 0 on the single row of a column that has
+    /// none.</summary>
+    public int SourceOrdinal { get; set; }
+
+    /// <summary>The read object's key; null for a column the step makes itself.</summary>
+    public string? SourceObjectKey { get; set; }
+
+    public string? SourceObjectName { get; set; }
+
+    /// <summary>The source column. A <c>*</c> stands for the column of the same name.</summary>
+    public string? SourceColumn { get; set; }
+
+    /// <summary>How the value is made, as the description says it; repeated on each row of the column.</summary>
+    public string? Note { get; set; }
 }
 
 /// <summary>

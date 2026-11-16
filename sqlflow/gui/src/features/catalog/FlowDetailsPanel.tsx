@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isApiError } from "../../api/client";
@@ -104,6 +105,7 @@ export function FlowDetailsPanel({ repoId, pipelineId }: { repoId: string; pipel
             focusId: flow.id,
             label: flow.name,
             sublabel: flow.relativePath,
+            described: isLineageDescription(flow.kind),
           }}
           variant="outlined"
         />

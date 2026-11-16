@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { searchApi } from "../../api/endpoints";
+import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 
 /** Local debounce so the catalog search fires after typing pauses, not per keystroke. */
 function useDebounced(value: string, delayMs: number): string {
@@ -25,7 +26,8 @@ function useDebounced(value: string, delayMs: number): string {
 export function GraphSearch({ options, onPickNode, onPickCatalog }: {
   options: { id: string; name: string }[];
   onPickNode: (id: string) => void;
-  onPickCatalog: (id: string, repoId?: string) => void;
+  /** `described` is true for a lineage description, which the graph draws only when asked to. */
+  onPickCatalog: (id: string, repoId?: string, described?: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const trimmed = query.trim();
@@ -65,9 +67,9 @@ export function GraphSearch({ options, onPickNode, onPickCatalog }: {
     setQuery("");
     onPickNode(id);
   };
-  const pickCatalog = (id: string, repoId?: string) => {
+  const pickCatalog = (id: string, repoId?: string, described = false) => {
     setQuery("");
-    onPickCatalog(id, repoId);
+    onPickCatalog(id, repoId, described);
   };
 
   return (
@@ -129,7 +131,7 @@ export function GraphSearch({ options, onPickNode, onPickCatalog }: {
                 <CommandItem
                   key={hit.id}
                   value={hit.id}
-                  onSelect={() => pickCatalog(hit.id, hit.repoId)}
+                  onSelect={() => pickCatalog(hit.id, hit.repoId, isLineageDescription(hit.kind))}
                   data-testid="graph-search-flow"
                 >
                   <div className="min-w-0 flex-1 overflow-hidden">

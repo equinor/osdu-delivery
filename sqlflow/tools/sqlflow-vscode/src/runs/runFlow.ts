@@ -1,14 +1,5 @@
 import * as vscode from 'vscode';
-import { Estate, FlowKindOperation, Pipeline, Run } from '../mcp/estate';
-import { isActive } from '../views/trees';
-import { PanelContent, PanelSection } from '../views/panelContent';
-import { Panels } from '../views/panels';
-
-/** How often a run being followed is read. */
-const FOLLOW_MS = 3000;
-
-/** The entries of a run's trace a panel shows: the end of it, which holds how it finished. */
-const TRACE_ENTRIES = 200;
+import { Estate, FlowKindOperation, Pipeline } from '../mcp/estate';
 
 interface RunArguments {
     fullLoad?: boolean;
@@ -99,122 +90,20 @@ async function pickOperation(pipeline: Pipeline, operations: FlowKindOperation[]
     return chosen?.operation;
 }
 
-/** Runs a flow: asks what the run should do, queues it through the same tool an assistant calls, and follows it. */
+/**
+ * Starts a run of a flow: asks what the run should do and queues it through the same tool an assistant calls. Answers
+ * the run's id, or undefined when the person backed out; the run is followed on its own page, which shows its trace
+ * as it is written.
+ */
 export async function runFlow(
     estate: Estate,
-    product: string,
     pipeline: Pipeline,
     parameters: RunParameter[],
-    payloadOf: RunPayloadReader,
-    refreshed: () => void
-): Promise<void> {
+    payloadOf: RunPayloadReader
+): Promise<string | undefined> {
     const args = await askArguments(estate, pipeline, parameters, payloadOf);
     if (!args) {
-        return;
+        return undefined;
     }
-    const accepted = await estate.triggerRun({ repoId: pipeline.repoId, flowName: pipeline.name, ...args });
-    refreshed();
-    await follow(estate, product, accepted.runId, pipeline.name, refreshed);
-}
-
-/** Reads a run until it ends, says how it ended, and offers it. Closing the notification stops following, not the run. */
-async function follow(estate: Estate, product: string, runId: string, flow: string, refreshed: () => void): Promise<void> {
-    const ended = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `${product}: ${flow}`, cancellable: true },
-        async (progress, cancel) => {
-            let run: Run | undefined;
-            while (!cancel.isCancellationRequested) {
-                run = await estate.run(runId);
-                if (!isActive(run)) {
-                    return run;
-                }
-                progress.report({ message: run.lastAction ?? run.status });
-                await new Promise((resolve) => setTimeout(resolve, FOLLOW_MS));
-            }
-            return undefined;
-        }
-    );
-    refreshed();
-    if (!ended) {
-        return;
-    }
-    const show = ended.status === 'failed' ? vscode.window.showErrorMessage : vscode.window.showInformationMessage;
-    const pick = await show(`${product}: ${flow} ${ended.status}.${ended.error ? ` ${ended.error}` : ''}`, 'Open Run');
-    if (pick === 'Open Run') {
-        await vscode.commands.executeCommand('sqlflow.openRun', runId);
-    }
-}
-
-/** A run as a person reads it: how it went, then what it did. */
-export async function showRun(estate: Estate, panels: Panels, runId: string, moduleSections: (run: Run) => Promise<PanelSection[]>): Promise<void> {
-    const run = await estate.run(runId);
-    const [trace, statements, assertions, files, added] = await Promise.all([
-        estate.runTrace(runId, TRACE_ENTRIES),
-        estate.runStatements(runId),
-        estate.runAssertions(runId),
-        estate.runFiles(runId),
-        moduleSections(run),
-    ]);
-
-    const sections: PanelSection[] = [{
-        heading: 'Run',
-        facts: [
-            ['Status', run.status],
-            ['Operation', run.operation],
-            ['Started by', run.startedBy?.summary ?? run.requestedBy ?? run.triggerSource],
-            ['Started', run.startUtc],
-            ['Ended', run.endUtc],
-            ['Duration', run.durationSeconds === null || run.durationSeconds === undefined ? null : `${run.durationSeconds.toFixed(1)} s`],
-            ['Rows', run.rowsLoaded],
-            ['Commit', run.commitSha?.slice(0, 8)],
-        ],
-    }];
-    if (run.error) {
-        sections.push({ heading: 'Error', code: run.error });
-    }
-    if (run.failedStatementSql) {
-        sections.push({ heading: `Statement that failed (${run.failedStatementStep ?? 'step unknown'})`, code: run.failedStatementSql });
-    }
-    sections.push(...added);
-    sections.push({
-        heading: trace.total > trace.entries.length ? `Trace (the last ${trace.entries.length} of ${trace.total} entries)` : 'Trace',
-        columns: ['When', 'Level', 'Step', 'What happened'],
-        rows: trace.entries.map((entry) => [
-            entry.timestampUtc?.slice(11, 19),
-            entry.level,
-            entry.step,
-            entry.error ?? entry.message ?? entry.sql,
-        ]),
-        empty: 'This run left no trace.',
-    });
-    if (assertions.length > 0) {
-        sections.push({
-            heading: 'Assertions',
-            columns: ['Assertion', 'Result', 'Value', 'Error'],
-            rows: assertions.map((assertion) => [assertion.name, assertion.result, assertion.assertedValue, assertion.error]),
-        });
-    }
-    if (files.length > 0) {
-        sections.push({
-            heading: 'Files',
-            columns: ['File', 'Rows', 'Bytes'],
-            rows: files.map((file) => [file.name, file.rows, file.sizeBytes]),
-        });
-    }
-    if (statements.length > 0) {
-        sections.push({
-            heading: 'Statements',
-            columns: ['#', 'Step', 'Error'],
-            rows: statements.map((statement) => [statement.ordinal, statement.step, statement.error]),
-        });
-    }
-
-    const gui = run.links?.page ?? run.links?.run;
-    const content: PanelContent = {
-        title: `${run.flowName}: ${run.status}`,
-        subtitle: run.runId,
-        actions: gui ? [{ text: 'Open in GUI', url: gui }] : undefined,
-        sections,
-    };
-    panels.show(`run:${runId}`, content);
+    return (await estate.triggerRun({ repoId: pipeline.repoId, flowName: pipeline.name, ...args })).runId;
 }

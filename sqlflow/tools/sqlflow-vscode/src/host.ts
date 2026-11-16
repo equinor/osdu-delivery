@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { cliCommand, offerCliInTerminals } from './cli';
 import { Docs } from './docs/docs';
 import { DocumentIndex, IndexedDocument, recogniseOpenedDocuments } from './documents/documentIndex';
+import { isLineageDescription, isRunnable } from './documents/recognition';
 import { keyPathAtLine } from './documents/yamlPath';
 import {
     cliTaskProvider,
@@ -18,28 +19,19 @@ import {
     TASK_TYPE,
 } from './editor/documentActions';
 import { builtInReferences, References } from './editor/references';
+import { HostedBuild, readHostedBuild } from './gui/hostedFiles';
+import { HostedSurroundings } from './gui/hostedLink';
+import { HostedPages, OpenPage } from './gui/hostedPages';
+import { HostedSession } from './gui/hostedSession';
+import { DocumentOffers } from './gui/documentOffers';
+import { HostedSideBar, SIDE_BAR_VIEW } from './gui/hostedSideBar';
 import { startLspClient, stopLspClient } from './lsp/lspClient';
-import { Estate, Pipeline, Run } from './mcp/estate';
+import { Estate, Pipeline } from './mcp/estate';
 import { connectAssistant, registerWithEditor } from './mcp/mcpSetup';
 import { McpServer } from './mcp/mcpServer';
 import { SignIn } from './mcp/signIn';
 import { SignInNeeded } from './mcp/toolAnswer';
-import { RunParameter, RunPayloadReader, runFlow, showRun } from './runs/runFlow';
-import { DataStreamPanel } from './views/dataStreamPanel';
-import { builtInSections, DocumentViewProvider, RepositoryViewProvider } from './views/documentViews';
-import { PanelContent, PanelSection } from './views/panelContent';
-import { Panels } from './views/panels';
-import {
-    CatalogTreeProvider,
-    DataStreamNode,
-    DataStreamsTreeProvider,
-    PipelineNode,
-    RepoNode,
-    RunNode,
-    RunsTreeProvider,
-    ScheduleNode,
-    SchedulesTreeProvider,
-} from './views/trees';
+import { RunParameter, RunPayloadReader, runFlow } from './runs/runFlow';
 
 const DOCUMENT_SELECTOR: vscode.DocumentSelector = [{ language: 'sqlflow-flow' }];
 
@@ -78,33 +70,43 @@ export interface VscodeModule {
     activate(context: ModuleContext): void;
 }
 
+/** The GUI's pages, as the extension opens them: each in a tab of the editor, read with the person's sign-in. */
+export interface Pages {
+    /** Shows a page by its path in the GUI (`/runs`, `/pipelines/<id>`), in the tab already on it or a new one. */
+    open(path: string, where?: OpenPage): void;
+}
+
 /** What a module adds to, and what it reads through. */
 export interface ModuleContext {
     extension: vscode.ExtensionContext;
     product: string;
     estate: Estate;
     documents: DocumentIndex;
-    panels: Panels;
+    /** The GUI's pages, the module's own among them: what a module shows instead of drawing a view of its own. */
+    pages: Pages;
+    /** What the side bar offers on a document's row, and the heading a module's documents are listed under. */
+    offers: DocumentOffers<IndexedDocument, Pipeline>;
     output: vscode.LogOutputChannel;
-    /** The Document view: a module adds a section per thing it knows of a document. */
-    documentView: DocumentViewProvider;
     /** What keys refer to: a module adds a provider per key it owns. */
     references: References;
     lenses: DocumentLenses;
     /** Registers a command that reads the estate: a failure is shown, and a missing sign-in offers one. */
     command(id: string, action: (...args: unknown[]) => Promise<void>): void;
-    /** Everything the views show changed: read it again. */
+    /** Everything read from the estate changed: read it again. */
     refreshed: vscode.Event<void>;
-    /** Sections a module adds to a run's panel. */
-    addRunSections(sections: (run: Run) => Promise<PanelSection[]>): void;
     /** The parameters a run of a flow takes, when a module knows them. */
     addRunParameters(parameters: (pipeline: Pipeline, document: IndexedDocument | undefined) => Promise<RunParameter[] | undefined>): void;
     /** What a run of a kind may be given beyond its operation and parameters. */
     addRunPayload(payload: RunPayloadReader): void;
 }
 
+/** The folder of an extension the hosted build is in: the GUI's pages and side bar, built for the editor's webviews. */
+function hostedFolder(extensionPath: string): string {
+    return path.join(extensionPath, 'dist', 'hosted');
+}
+
 /** Composes the extension for a host. */
-export async function activateHost(context: vscode.ExtensionContext, host: VscodeHost): Promise<{ estate: Estate }> {
+export async function activateHost(context: vscode.ExtensionContext, host: VscodeHost): Promise<{ estate: Estate; pages: Pages }> {
     // A log channel, since the language client writes its log here too and vscode-languageclient 10 accepts nothing
     // else.
     const output = vscode.window.createOutputChannel(host.product, { log: true });
@@ -122,25 +124,9 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const estate = new Estate(mcp);
     const signIn = new SignIn(mcp, host.product);
     const documents = new DocumentIndex(output);
-    const panels = new Panels();
     const docs = new Docs(host.docCorpora(extensionPath), mcp);
-    context.subscriptions.push(mcp, signIn, documents);
-
-    const catalog = new CatalogTreeProvider(estate);
-    const runs = new RunsTreeProvider(estate);
-    const schedules = new SchedulesTreeProvider(estate);
-    const dataStreams = new DataStreamsTreeProvider(estate);
-    const documentView = new DocumentViewProvider(estate, documents);
-    const repository = new RepositoryViewProvider(documents, estate);
-    builtInSections(estate).forEach((section) => documentView.register(section));
-    context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('sqlflowDocument', documentView),
-        vscode.window.registerTreeDataProvider('sqlflowRepository', repository),
-        vscode.window.registerTreeDataProvider('sqlflowCatalog', catalog),
-        vscode.window.registerTreeDataProvider('sqlflowRuns', runs),
-        vscode.window.registerTreeDataProvider('sqlflowSchedules', schedules),
-        vscode.window.registerTreeDataProvider('sqlflowDataStreams', dataStreams)
-    );
+    const session = new HostedSession(mcp, signIn, host.product);
+    context.subscriptions.push(mcp, signIn, documents, session);
 
     const onRefresh = new vscode.EventEmitter<void>();
     const onServerChange = new vscode.EventEmitter<void>();
@@ -150,33 +136,6 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const lenses = new DocumentLenses(documents, estate);
     const validation = new RepositoryValidation(documents, estate, host.product);
     context.subscriptions.push(validation);
-
-    const refreshAll = (): void => {
-        estate.forget();
-        catalog.refresh();
-        runs.refresh();
-        schedules.refresh();
-        dataStreams.refresh();
-        documentView.refresh();
-        repository.refresh();
-        lenses.refresh();
-        onRefresh.fire();
-    };
-    context.subscriptions.push(
-        signIn.changed(refreshAll),
-        signIn.changed(() => onServerChange.fire()),
-        vscode.window.onDidChangeActiveTextEditor(() => documentView.refresh()),
-        vscode.workspace.onDidSaveTextDocument(() => documentView.refresh()),
-        vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration('sqlflow.controlPlaneUrl') || event.affectsConfiguration('sqlflow.guiUrl')
-                || event.affectsConfiguration('sqlflow.mcpBinaryPath')) {
-                mcp.restart();
-                onServerChange.fire();
-                offerCliInTerminals(context, host.product);
-                void signIn.check();
-            }
-        })
-    );
 
     /** Runs an action that reads the estate: a missing sign-in offers one and tries again, anything else is shown. */
     const guarded = async (action: () => Promise<void>): Promise<void> => {
@@ -196,6 +155,66 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         }
     };
 
+    // The hosted build is read when the first surface is shown, and once: a checkout whose pages are not built yet still
+    // has its language support, its lenses and its commands.
+    let hosted: HostedBuild | undefined;
+    const build = (): HostedBuild => (hosted ??= readHostedBuild(hostedFolder(extensionPath)));
+    const around = (): HostedSurroundings => ({
+        product: host.product,
+        folder: vscode.Uri.file(hostedFolder(extensionPath)),
+        session,
+        documents,
+        output,
+        userAgent: `${host.mcp.program}-vscode/${version}`,
+        openPage: (pagePath) => pages.open(pagePath),
+    });
+    const icon = context.extension.packageJSON.icon as string | undefined;
+    const hostedPages = new HostedPages(build, around, icon ? vscode.Uri.joinPath(context.extensionUri, icon) : undefined);
+    const pages: Pages = {
+        open: (pagePath, where) => {
+            try {
+                hostedPages.open(pagePath, where);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                output.error(message);
+                void vscode.window.showErrorMessage(`${host.product}: ${message}`);
+            }
+        },
+    };
+    const offers = new DocumentOffers<IndexedDocument, Pipeline>();
+    const sideBar = new HostedSideBar(build, around, documents, estate, signIn, offers, guarded);
+    context.subscriptions.push(
+        hostedPages,
+        sideBar,
+        vscode.window.registerWebviewViewProvider(SIDE_BAR_VIEW, sideBar, { webviewOptions: { retainContextWhenHidden: true } })
+    );
+
+    const refreshAll = (): void => {
+        estate.forget();
+        sideBar.refresh();
+        lenses.refresh();
+        onRefresh.fire();
+    };
+    context.subscriptions.push(
+        signIn.changed(refreshAll),
+        // A page tells a person what did not answer; why, in the server's own words, is kept here.
+        signIn.changed(() => {
+            if (signIn.problem !== undefined) {
+                output.warn(`[sign-in] ${signIn.problem}`);
+            }
+        }),
+        signIn.changed(() => onServerChange.fire()),
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('sqlflow.controlPlaneUrl') || event.affectsConfiguration('sqlflow.guiUrl')
+                || event.affectsConfiguration('sqlflow.mcpBinaryPath')) {
+                mcp.restart();
+                onServerChange.fire();
+                offerCliInTerminals(context, host.product);
+                void signIn.check();
+            }
+        })
+    );
+
     const register = (id: string, fn: (...args: unknown[]) => unknown): void => {
         context.subscriptions.push(vscode.commands.registerCommand(id, fn));
     };
@@ -203,7 +222,6 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         register(id, (...args: unknown[]) => guarded(() => action(...args)));
     };
 
-    const runSections: ((run: Run) => Promise<PanelSection[]>)[] = [];
     const runParameters: ((pipeline: Pipeline, document: IndexedDocument | undefined) => Promise<RunParameter[] | undefined>)[] = [];
     let runPayload: RunPayloadReader = async () => undefined;
 
@@ -265,13 +283,10 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     });
 
     register('sqlflow.refreshCatalog', refreshAll);
-    register('sqlflow.refreshRuns', () => runs.refresh());
-    register('sqlflow.refreshDataStreams', () => dataStreams.refresh());
-    register('sqlflow.refreshDocument', () => documentView.refresh());
     command('sqlflow.refreshRepository', () => documents.refresh());
 
-    command('sqlflow.syncRepository', async (arg: unknown) => {
-        const source = arg instanceof RepoNode ? arg.source : await pickSource(estate);
+    command('sqlflow.syncRepository', async () => {
+        const source = await pickSource(estate);
         if (!source) {
             return;
         }
@@ -280,14 +295,12 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         refreshAll();
     });
 
+    /** The catalog's flow a command is about: the document given, or the one in the editor, or one the person picks. */
     const resolvePipeline = async (arg: unknown): Promise<{ pipeline: Pipeline; document?: IndexedDocument } | undefined> => {
-        if (arg instanceof PipelineNode) {
-            return { pipeline: arg.pipeline };
-        }
         const uri = arg instanceof vscode.Uri ? arg : vscode.window.activeTextEditor?.document.uri;
         const document = uri ? await documents.at(uri) : undefined;
         if (document?.kind === 'flow' && document.name) {
-            const pipeline = await estate.pipelineNamed(document.name, document.relativePath);
+            const pipeline = await estate.pipelineNamed(document.name, document.relativePath, document.flowType);
             if (pipeline) {
                 return { pipeline, document };
             }
@@ -308,98 +321,58 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         return chosen ? { pipeline: chosen.pipeline } : undefined;
     };
 
-    command('sqlflow.runFlow', async (arg: unknown) => {
-        const resolved = await resolvePipeline(arg);
-        if (!resolved) {
-            return;
-        }
+    const openRun = (runId: string, where?: OpenPage): void => pages.open(`/runs/${encodeURIComponent(runId)}`, where);
+    const openFlowPage = (pipeline: Pipeline, where?: OpenPage): void => pages.open(`/pipelines/${encodeURIComponent(pipeline.id)}`, where);
+
+    const startRun = async (resolved: { pipeline: Pipeline; document?: IndexedDocument }): Promise<void> => {
         let parameters: RunParameter[] = [];
         for (const reader of runParameters) {
             parameters = (await reader(resolved.pipeline, resolved.document)) ?? parameters;
         }
-        await runFlow(estate, host.product, resolved.pipeline, parameters, runPayload, () => {
-            runs.refresh();
-            documentView.refresh();
+        const runId = await runFlow(estate, resolved.pipeline, parameters, runPayload);
+        if (runId !== undefined) {
+            // The run's own page follows it: its trace as it is written, and how it ended. Beside the file, so the
+            // document that ran stays in view.
+            openRun(runId, { beside: true });
             lenses.refresh();
-        });
-    });
+        }
+    };
 
-    command('sqlflow.openPipeline', async (arg: unknown) => {
-        if (arg instanceof PipelineNode) {
-            await openFlow(estate, documents, arg.pipeline);
+    command('sqlflow.runFlow', async (arg: unknown) => {
+        const resolved = await resolvePipeline(arg);
+        if (resolved?.document !== undefined && isLineageDescription(resolved.document)) {
+            // The editor's title button is on every flow document; on a lineage description it says why nothing runs.
+            void vscode.window.showInformationMessage(
+                `${host.product}: '${resolved.pipeline.name}' is a lineage description. It describes a step another system runs, is read for lineage only, and is never executed.`
+            );
+            return;
+        }
+        if (resolved) {
+            await startRun(resolved);
         }
     });
 
-    command('sqlflow.openFlowByName', async (arg: unknown) => {
-        if (typeof arg === 'string') {
-            const pipeline = await estate.pipelineNamed(arg);
-            if (pipeline) {
-                await openFlow(estate, documents, pipeline);
-            }
+    command('sqlflow.openPipeline', async (arg: unknown) => {
+        const resolved = await resolvePipeline(arg);
+        if (resolved) {
+            openFlowPage(resolved.pipeline, { beside: resolved.document !== undefined });
         }
     });
 
     command('sqlflow.openRun', async (arg: unknown) => {
-        const runId = arg instanceof RunNode ? arg.run.runId : arg;
-        if (typeof runId === 'string') {
-            await showRun(estate, panels, runId, async (run) =>
-                (await Promise.all(runSections.map((sections) => sections(run)))).flat());
+        if (typeof arg === 'string' && arg !== '') {
+            openRun(arg);
         }
     });
 
-    command('sqlflow.cancelRun', async (arg: unknown) => {
-        if (arg instanceof RunNode) {
-            await estate.cancelRun(arg.run.runId);
-            void vscode.window.showInformationMessage(`${host.product}: cancellation requested for run ${arg.run.runId}.`);
-            runs.refresh();
+    register('sqlflow.openPage', (arg: unknown) => {
+        if (typeof arg === 'string') {
+            pages.open(arg);
         }
     });
-
-    command('sqlflow.runSchedule', async (arg: unknown) => {
-        if (arg instanceof ScheduleNode) {
-            await mcp.text('run_schedule', { id: arg.schedule.id });
-            void vscode.window.showInformationMessage(`${host.product}: ${arg.schedule.name ?? 'the schedule'} fired.`);
-            runs.refresh();
-            schedules.refresh();
-        }
-    });
-
-    command('sqlflow.showSchedulePlan', async (arg: unknown) => {
-        if (arg instanceof ScheduleNode) {
-            const plan = await mcp.call('get_schedule_plan', { id: arg.schedule.id });
-            panels.show(`schedule:${arg.schedule.id}`, {
-                title: arg.schedule.name ?? arg.schedule.id,
-                subtitle: [arg.schedule.cron, arg.schedule.timezone].filter(Boolean).join(' '),
-                sections: [
-                    {
-                        heading: 'Schedule',
-                        facts: [
-                            ['Next', arg.schedule.nextFireUtc],
-                            ['Last', arg.schedule.lastFireUtc],
-                            ['Paused', arg.schedule.paused ? 'yes' : 'no'],
-                            ['After', arg.schedule.afterSchedules?.join(', ')],
-                        ],
-                    },
-                    { heading: 'What it would run', code: JSON.stringify(plan, null, 2) },
-                ],
-            });
-        }
-    });
-
-    command('sqlflow.openDataStream', async (arg: unknown) => {
-        if (arg instanceof DataStreamNode) {
-            const days = vscode.workspace.getConfiguration('sqlflow').get<number>('dataStreamWindowDays', 60);
-            // The full analysis, including the day-by-day series and every detector's reasoning (the ones
-            // that stayed quiet included, so a verdict can be checked rather than taken on trust).
-            DataStreamPanel.show(await estate.dataStream(arg.stream.pipelineId, days), days);
-        }
-    });
-
-    command('sqlflow.showLineage', async (arg: unknown) => {
-        if (arg instanceof RepoNode) {
-            panels.show(`lineage:${arg.repo.id}`, lineageContent(arg.repo.name, await estate.lineageWaves(arg.repo.id)));
-        }
-    });
+    register('sqlflow.openHome', () => pages.open('/'));
+    register('sqlflow.openRuns', () => pages.open('/runs'));
+    register('sqlflow.showLineage', () => pages.open('/lineage'));
 
     command('sqlflow.compareWithSynced', async (arg: unknown) => {
         const uri = arg instanceof vscode.Uri ? arg : vscode.window.activeTextEditor?.document.uri;
@@ -408,18 +381,14 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         }
     });
 
-    command('sqlflow.showFlowHistory', async (arg: unknown) => {
-        const resolved = await resolvePipeline(arg);
-        if (resolved) {
-            panels.show(`history:${resolved.pipeline.id}`, historyContent(resolved.pipeline, await estate.flowFileHistory(resolved.pipeline.id)));
-        }
-    });
-
     command('sqlflow.openInGui', async (arg: unknown) => {
         const resolved = await resolvePipeline(arg);
-        const page = resolved?.pipeline.links?.page;
+        if (!resolved) {
+            return;
+        }
+        const page = resolved.pipeline.links?.page;
         if (!page) {
-            void vscode.window.showInformationMessage(`${host.product}: set sqlflow.guiUrl to open the GUI from here.`);
+            void vscode.window.showInformationMessage(`${host.product}: set sqlflow.guiUrl to open the GUI in the browser from here.`);
             return;
         }
         await vscode.env.openExternal(vscode.Uri.parse(page));
@@ -460,6 +429,23 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     context.subscriptions.push(status, signIn.changed(showStatus));
     showStatus();
 
+    // What the side bar offers on a flow's row: run it, and for a flow the estate has, its page and what differs from it.
+    offers.register((document, pipeline) => {
+        if (document.kind !== 'flow') {
+            return [];
+        }
+        return [
+            // A lineage description is never run, so its row offers its page and its comparison, and no Run.
+            ...(isRunnable(document)
+                ? [{ id: 'run', label: 'Run', icon: 'run', primary: true, run: () => vscode.commands.executeCommand('sqlflow.runFlow', document.uri) as Promise<void> }]
+                : []),
+            ...(pipeline === undefined ? [] : [
+                { id: 'page', label: 'Open the flow\'s page', icon: 'page', run: async () => openFlowPage(pipeline, { beside: true }) },
+                { id: 'compare', label: 'Compare with what the estate runs', icon: 'compare', run: () => compareWithSynced(estate, documents, document.uri) },
+            ]),
+        ];
+    });
+
     context.subscriptions.push(
         recogniseOpenedDocuments(),
         vscode.languages.registerCompletionItemProvider(DOCUMENT_SELECTOR, references, ':', ' '),
@@ -480,14 +466,13 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         product: host.product,
         estate,
         documents,
-        panels,
+        pages,
+        offers,
         output,
-        documentView,
         references,
         lenses,
         command,
         refreshed: onRefresh.event,
-        addRunSections: (sections) => runSections.push(sections),
         addRunParameters: (parameters) => runParameters.push(parameters),
         addRunPayload: (payload) => {
             runPayload = payload;
@@ -506,7 +491,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     offerCliInTerminals(context, host.product);
     void signIn.check();
     output.info(`${host.product} extension activated.`);
-    return { estate };
+    return { estate, pages };
 }
 
 export async function deactivateHost(): Promise<void> {
@@ -523,55 +508,4 @@ async function pickSource(estate: Estate): Promise<{ id: string; name: string } 
         { placeHolder: 'Sync which repository?' }
     );
     return chosen?.source;
-}
-
-/** Opens a flow: its local file when this workspace holds it, else what the estate holds. */
-async function openFlow(estate: Estate, documents: DocumentIndex, pipeline: Pipeline): Promise<void> {
-    const local = (await documents.all()).find((document) => document.kind === 'flow' && document.name === pipeline.name);
-    if (local) {
-        await vscode.window.showTextDocument(local.uri, { preview: true });
-        return;
-    }
-    const detail = await estate.pipeline(pipeline.id);
-    const document = await vscode.workspace.openTextDocument({ language: 'sqlflow-flow', content: detail.yaml });
-    await vscode.window.showTextDocument(document, { preview: true });
-}
-
-function lineageContent(repo: string, answer: unknown): PanelContent {
-    const body = answer as { items?: { wave: number; pipelines: { name: string; kind: string }[] }[] } | { wave: number; pipelines: { name: string; kind: string }[] }[];
-    const waves = Array.isArray(body) ? body : body.items ?? [];
-    return {
-        title: `${repo}: run order`,
-        subtitle: 'Flows of a wave run together; a later wave runs after every earlier one ends.',
-        sections: [{
-            heading: 'Waves',
-            columns: ['Wave', 'Flow', 'Kind'],
-            rows: waves.flatMap((wave) => wave.pipelines.map((pipeline) => [
-                wave.wave,
-                { text: pipeline.name, command: 'sqlflow.openFlowByName', args: [pipeline.name] },
-                pipeline.kind,
-            ])),
-            empty: 'Lineage has not been computed for this repository yet.',
-        }],
-    };
-}
-
-function historyContent(pipeline: Pipeline, answer: unknown): PanelContent {
-    const body = answer as { commits?: Record<string, unknown>[]; items?: Record<string, unknown>[] } | Record<string, unknown>[];
-    const commits = Array.isArray(body) ? body : body.commits ?? body.items ?? [];
-    return {
-        title: `${pipeline.name}: history`,
-        subtitle: pipeline.relativePath ? path.posix.basename(pipeline.relativePath) : undefined,
-        sections: [{
-            heading: 'Commits',
-            columns: ['Commit', 'When', 'Who', 'Message'],
-            rows: commits.map((commit) => [
-                String(commit.sha ?? commit.commitSha ?? '').slice(0, 8),
-                String(commit.authoredUtc ?? commit.committedUtc ?? commit.date ?? ''),
-                String(commit.author ?? commit.authorName ?? ''),
-                String(commit.subject ?? commit.message ?? ''),
-            ]),
-            empty: 'The repository holds no history for this file.',
-        }],
-    };
 }

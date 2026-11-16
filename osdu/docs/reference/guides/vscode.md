@@ -2,7 +2,7 @@
 id: delivery-guide-vscode
 title: "The VS Code extension: developing flows, mappings and templates in the editor"
 type: guide
-summary: "The OSDU Delivery extension: Microsoft browser sign-in, every document understood, mappings checked against templates, the estate, and the MCP server built in."
+summary: "The OSDU Delivery extension: every document understood, a mapping previewed from its file, the GUI's pages in the editor's tabs, and the MCP server built in."
 keywords:
   - vs code
   - vscode
@@ -14,7 +14,13 @@ keywords:
   - device approval
   - mapping completion
   - template folder
-  - document view
+  - preview mapping
+  - working copy
+  - side bar
+  - pages in tabs
+  - webview
+  - marketplace
+  - vsix
   - new document
   - validate repository
   - compare with synced
@@ -34,6 +40,7 @@ related:
   - delivery-concept-templates
   - delivery-concept-authentication-and-identity
   - delivery-wiki-0039-vscode-extension-is-an-mcp-client
+  - delivery-wiki-0060-vscode-shows-the-gui
 sourceRefs:
   - osdu/hosts/osdu-delivery-vscode/package.json
   - osdu/hosts/osdu-delivery-vscode/src/extension.ts
@@ -53,14 +60,32 @@ sourceRefs:
   - sqlflow/tools/sqlflow-vscode/src/documents/recognition.ts
   - sqlflow/gui/src/auth/DeviceApprovalPage.tsx
   - sqlflow/src/SqlFlow.ControlPlane/Security/DeviceApprovalPage.cs
+  - sqlflow/gui/src/embed/protocol.ts
+  - sqlflow/gui/src/embed/renderHosted.tsx
+  - sqlflow/gui/src/embed/HostedSideBar.tsx
+  - sqlflow/gui/src/embed/host-design.css
+  - sqlflow/tools/sqlflow-vscode/src/gui/carrier.ts
+  - sqlflow/tools/sqlflow-vscode/src/gui/credentials.ts
+  - sqlflow/tools/sqlflow-vscode/src/gui/hostedHtml.ts
+  - sqlflow/tools/sqlflow-vscode/src/gui/hostedLink.ts
+  - sqlflow/tools/sqlflow-vscode/src/gui/hostedPages.ts
+  - sqlflow/tools/sqlflow-vscode/src/gui/hostedSideBar.ts
+  - osdu/gui/src/hosted/WorkingCopyMappingPage.tsx
+  - osdu/gui/src/hosted/workingCopy.ts
+  - osdu/gui/vite.hosted.config.ts
+  - osdu/hosts/osdu-delivery-vscode/package.mjs
+  - .github/workflows/vscode-extension.yml
 ---
 
 # The VS Code extension
 
 `osdu-delivery-vscode` makes the editor the place a pipeline is developed. Open a repository and every flow, mapping,
-template and schedule in it is understood; sign in once and the estate, its runs and an AI assistant are there, all
-reading the same [MCP server](mcp.md). It is SQLFlow's extension composed with the delivery module, as the
-[MCP server](mcp.md) and the GUI are.
+template and schedule in it is understood; sign in once and the estate's pages open in tabs beside your files, a mapping
+shows what it makes as you write it, and an AI assistant reads the estate through the [MCP server](mcp.md). It is
+SQLFlow's extension composed with the delivery module, as the [MCP server](mcp.md) and the GUI are.
+
+It draws its own surfaces: one side bar and the GUI's pages, in the colours of your editor theme, and no tree view or
+panel of the editor's own.
 
 ## Signing in
 
@@ -95,39 +120,78 @@ pipeline document, and any other YAML stays plain YAML. `sqlflow.recognizeDocume
 | A mapping's `record` | Completes the properties of its template as you type, required ones first; a hover says what the schema says; a key the template lacks, and a required property nothing fills, are reported as you go. It reads the [template folders](../concepts/templates.md#template-folders) on the mapping's path in your working copy, so it works offline and before anything is pushed. |
 | Values | `render.mapping` offers the repository's mappings, `template.kind` its templates, `schedule` its schedules, `connection` what other flows connect to, `partitions` the partitions, `$param.` the document's parameters and `$cache.` what its cache flows declare. `$from`, `dataset.key` and a property's bare column offer the columns of the table the mapping's delivery flow reads, once the estate has seen it. |
 | Links | Ctrl+click a mapping a flow pins, a template a mapping fills, or a schedule a flow joins. |
+| **Preview Mapping** (Ctrl+K V) | Opens the mapping's page beside its file, read from the file: see [Previewing a mapping](#previewing-a-mapping). |
 | **New Document** | Starts any kind from a skeleton the language engine accepts. |
 | **New Mapping from a Template** | Scaffolds a mapping for a template a synced repository holds. |
 | **Fetch a Template into This Repository** | Picks a release and a kind from the OSDU data definitions and writes the template file into the template folder on your path, as the GUI's Templates page downloads one. |
-| **Compare Two Versions of a Kind** | Says what a mapping has to change to move from one version to another, picked from what the releases publish. |
+| **Open Templates** | Opens the Templates page, which compares two versions of a kind and says what a mapping has to change to move from one to the other. |
 
 **Validate Repository** checks every document with the same engine, offline, and lists what it finds in the Problems panel
 for files nobody has open.
 
-## What the views show
+## The side bar and the pages
 
-| View | Shows |
+The extension's side bar has two parts, with a search over them and who is signed in beside it.
+
+| Part | Shows |
 | --- | --- |
-| **Document** | Follows the editor: what the document is, whether the file differs from what the estate runs, its latest runs, what runs before and after it, its columns, and for its kind its records, interfaces, target, issues, submissions, audit trail, template or the flows rendering it, or an AI context's approval. A flow's issues group its blocked records by cause. |
-| **Repository** | The workspace's documents by kind, marking what is in the estate. |
-| **Delivery** | Partitions, mappings, templates, caches and their changes, assertions, dimensions, inventories, removals and configuration. |
-| **Estate** | Repositories with their synced commit and any sync error, and their flows. **Sync Repository** syncs one now. |
-| **Runs**, **Schedules**, **Data Streams** | What ran, what will, and which tables stopped receiving data. |
+| **Working copy** | The documents of the folder open in the editor, by kind, read from disk: flows by their kind, mappings, dictionaries, schedules. A row opens its file, and offers what can be done with it on the row and in its menu: run a flow, open its page, compare it with what the estate runs, preview a mapping. A flow the estate does not have yet is marked, and so is the file in front of you when it differs from what runs. It needs no sign-in. |
+| **Estate** | The GUI's own menu. Every entry opens its page in a tab of the editor. |
 
-A run opens in a panel with its error, the statement that failed, its trace, assertions, files and statements. The lenses
-at the top of a document run it, say how it last ran and **Compare with Synced** shows what your file changes from what
-runs. **Show Flow History** lists the commits that touched a flow, and **Open in GUI** opens its page when `sqlflow.guiUrl`
-is set.
+Typing in the search narrows the working copy to the documents with a word starting that way, in their name or their
+path; Enter searches the estate.
+
+A page in a tab is the page [the GUI](../concepts/gui.md) shows, with the same data and the same actions, under your
+sign-in: a flow with its records, issues, submissions and preview, a run with its trace as it is written, lineage,
+schedules, templates, the cache, a record's history. A strip over the page goes back and forward through what the tab has
+shown, reads the page again, carries the partition every delivery page is read in, and opens the same page in your
+browser when `sqlflow.guiUrl` is set. A page already open is brought forward rather than opened twice, and the tabs open
+when the editor closes come back on the pages they showed.
+
+| Command | Opens |
+| --- | --- |
+| **Open Home**, **Open Runs**, **Open Lineage** | The home page, the runs board, the lineage graph. |
+| **Open Delivery**, **Open Templates**, **Find a Record** | The delivery overview, the Templates page, the record lookup. |
+| **Open Flow Page** | The page of the flow in the editor, beside its file. Also a lens at the top of a flow. |
+
+The lenses at the top of a flow run it, say how it last ran, open its page, and **Compare with Synced** shows what your
+file changes from what runs. **Open in the Browser** opens the flow's page in the web GUI when `sqlflow.guiUrl` is set.
+
+### Previewing a mapping
+
+**Preview Mapping** opens the page of the mapping in the editor, beside its file. It is the
+[mapping's page](../concepts/gui.md) with one difference: it reads the file.
+
+- **Overview** lays out what the mapping does, from the tables it reads to the record it fills
+  ([the mapping overview](../concepts/mapping-overview.md)), **Properties** lays the mapping over its template attribute by
+  attribute, and **Record shape** draws the record it renders. All three are drawn from the text of your file, so they
+  show a mapping before it is pushed.
+- **Staged records** and the **Dry run** read rows, and a row is rendered by the control plane with the mapping the estate
+  last synced ([a dry run](../concepts/dry-run.md)). When your file differs from that mapping the page says so: push and
+  sync to render rows with the new text.
+- The page follows the file as you save it. While the editor holds changes you have not saved it shows the file as last
+  saved and says so, with a link to show the unsaved text at once, so a line half typed never redraws the page.
+- A mapping the estate has not seen yet shows Properties and Record shape, with its template settled from the template
+  folders of the repository its neighbours were synced from.
+
+### Running a flow
 
 **Run** asks what the run should do, from the operations the control plane registers, asks for the partition of a flow
 serving several and for the flow's parameters, offers what that operation takes (force, a submission, only some records,
-interfaces or types, what to send again), confirms an operation that writes to the flow's target, and follows the run to
-its end.
+interfaces or types, what to send again), and confirms an operation that writes to the flow's target. The run's own page
+then opens beside the file and follows the run: its trace as it is written, and what it reported when it ended.
 
 **Run a Command Line Verb** runs `validate`, [`check`](../cli/check.md), [`preview`](../cli/preview.md) and
-[`values`](../cli/values.md) on the open file as a task, on this machine. They read your working copy, so they answer for
-what is not pushed yet. A record's rendered content and what OSDU holds
-are read this way or in the GUI: the [MCP server](mcp.md#metadata-and-a--questions-query) reads neither, so neither do the
-views.
+[`values`](../cli/values.md) on the open file as a task, on this machine. They read your working copy whole, flow and
+mapping alike, so they render a record with a mapping that is not pushed yet, where a page's rows wait for the sync.
+
+### What a page may reach
+
+A page is a webview, and is given nothing but the extension's own files to load. It holds no credential, and its content
+security policy lets it connect to no address at all. Every call it makes to the control plane is made for it by the
+extension, with the credential you signed in with, to the control plane you signed in to and nowhere else. So a page
+shows exactly what your account may see in the GUI, a record's content included, and nothing of it reaches an assistant:
+what [the MCP server](mcp.md#metadata-and-a--questions-query) tells a model is unchanged.
 
 ## The assistant
 
@@ -166,31 +230,44 @@ The MCP server's rules hold for the assistant here too: a verb that writes runs 
 | Setting | Meaning |
 | --- | --- |
 | `sqlflow.controlPlaneUrl` | The control plane. Empty uses the address the server was last given. An untrusted workspace cannot set it, so a repository cannot choose where your sign-in goes. |
-| `sqlflow.guiUrl` | The GUI's public address, which makes links into it absolute. |
+| `sqlflow.guiUrl` | The GUI's public address. With it a page offers itself in the browser, and links into the GUI are absolute. |
 | `sqlflow.cliPath` | The command line. Empty uses the one the extension carries, else `sqlflow` on the PATH. A machine setting: a workspace cannot name it. |
 | `sqlflow.lspBinaryPath`, `sqlflow.mcpBinaryPath` | A build of either server instead of the packaged one. Machine settings too. |
 | `sqlflow.recognizeDocuments` | Open YAML files by what they hold. On by default. |
-| `sqlflow.runResultLimit`, `sqlflow.dataStreamWindowDays`, `sqlflow.dataStreamShowHealthy` | What the Runs and Data Streams views list. |
 
 ## Building it
 
 ```bash
-export CARGO_TARGET_DIR="$PWD/target"
-cargo build --release --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-lsp
-cargo build --release --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
+(cd osdu/gui && npm ci)          # the pages are built from the GUI's sources, with its packages
 cd osdu/hosts/osdu-delivery-vscode
 npm ci
-npm run package     # a .vsix for this platform, holding the language server, the MCP server and the command line
+npm run package                  # builds the three programs, the pages and the bundle, and writes a .vsix for this platform
 ```
 
-The package holds all three programs for the platform it is built on, and a build without one of them stops. F5 from this folder runs the extension from a checkout,
-finding the servers in their target folders. It replaces SQLFlow's own extension, whose commands it carries, so install
-one of the two.
+A package holds three programs built for its platform (the language server, the MCP server and the command line), so
+there is one package per platform: `win32-x64`, `linux-x64`, `darwin-arm64` and `darwin-x64`. `npm run package` builds
+the one for the machine it runs on, and stops when a program is missing. `node package.mjs --skip-programs` packages again
+from the programs already built.
+
+`npm run bundle` builds the extension for a checkout: F5 from this folder then runs it, finding the two servers in their
+target folders. It builds the pages when the folder has none; `npm run bundle:hosted` builds them again after the GUI
+changed. The extension replaces SQLFlow's own, whose commands it carries, so install one of the two.
 
 ```bash
 npm test                      # the unit tests
 npm run test:integration      # the extension in a real editor, over the welldb sample, with both servers
 ```
+
+With `OSDU_VSCODE_TEST_CONTROL_PLANE` and `OSDU_VSCODE_TEST_TOKEN` set, the integration suite also opens pages against
+that control plane and checks that each one loads, is signed in and names its tab.
+
+### Publishing it
+
+The workflow **VS Code extension** (`.github/workflows/vscode-extension.yml`) builds the package of every platform, each
+on a runner of that platform, and keeps them as artifacts. It runs by hand only. Ticking **publish** sends the packages to
+the Visual Studio Marketplace, which needs the repository secret `VSCE_PAT`: a personal access token of the publisher the
+manifest names, with the Marketplace scope Manage. The Marketplace takes a version once, so raise `version` in
+`osdu/hosts/osdu-delivery-vscode/package.json` and add its section to the extension's `CHANGELOG.md` before the next one.
 
 ## See also
 
@@ -198,4 +275,6 @@ npm run test:integration      # the extension in a real editor, over the welldb 
 - [Writing a mapping](writing-a-mapping.md)
 - [Templates](../concepts/templates.md)
 - [Authentication and identity](../concepts/authentication-and-identity.md)
-- [Decision 0039: the extension is a client of the MCP server](../../wiki/decisions/0039-vscode-extension-is-an-mcp-client.md)
+- [The GUI](../concepts/gui.md)
+- [Decision 0039: the extension signs in through the MCP server](../../wiki/decisions/0039-vscode-extension-is-an-mcp-client.md)
+- [Decision 0060: the extension shows the GUI's own pages](../../wiki/decisions/0060-vscode-shows-the-gui.md)

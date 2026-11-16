@@ -45,7 +45,7 @@ function isPackageImport(source: string): boolean {
  * from sqlflow/gui/src would look for sqlflow/gui/node_modules: failing when that folder does not exist, and bundling a
  * second React when it does.
  */
-function vendoredPackagesFromThisBuild(): Plugin {
+export function vendoredPackagesFromThisBuild(): Plugin {
   const anchor = path.join(guiRoot, "index.html");
   return {
     name: "osdu-gui:vendored-packages",
@@ -65,7 +65,7 @@ function vendoredPackagesFromThisBuild(): Plugin {
   };
 }
 
-const aliases = [
+export const aliases = [
   { find: /^@osdu\//, replacement: `${forwardSlashes(moduleSrc)}/` },
   { find: /^@\//, replacement: `${forwardSlashes(sqlflowSrc)}/` },
 ];
@@ -80,7 +80,7 @@ const DASHBOARD_EXPORT = "virtual:assertion-dashboard-export";
  * GUI imports the module only when a dashboard is downloaded, so the bundle is a chunk of its own; the dev server builds
  * it on that first import and again when one of its sources changes.
  */
-function assertionDashboardExport(): Plugin {
+export function assertionDashboardExport(): Plugin {
   const resolvedId = `\0${DASHBOARD_EXPORT}`;
   const entry = path.resolve(moduleSrc, "features/delivery/assertions/dashboard/exportEntry.tsx");
   return {

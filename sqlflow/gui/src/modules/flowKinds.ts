@@ -5,7 +5,7 @@
 
 import {
   Braces, CalendarDays, Copy, FileInput, FileOutput, GitBranch, Globe, HeartPulse, Import, ListOrdered, Server,
-  SquareFunction, TableProperties, Workflow, Zap,
+  SquareFunction, TableProperties, Waypoints, Workflow, Zap,
 } from "lucide-react";
 import { kindContribution, type FlowKindIdentity, type FlowKindTone } from "./registry";
 
@@ -50,6 +50,8 @@ const BUILT_IN = new Map<string, FlowKindIdentity>([
   ["sch", { label: "Schema registration", icon: TableProperties, tone: "neutral" }],
   ["batch", { label: "Batch", icon: ListOrdered, tone: "neutral" }],
   ["cal", { label: "Calendar", icon: CalendarDays, tone: "violet" }],
+  // A step another system runs, written down for lineage and never executed: neutral, since it moves no data here.
+  ["lin", { label: "Lineage description", icon: Waypoints, tone: "neutral" }],
 ]);
 
 /** SQLFlow's own kinds, in the order above. */

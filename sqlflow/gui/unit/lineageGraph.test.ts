@@ -537,3 +537,150 @@ describe("a folder and its own data", () => {
     assert.ok(!edges(view).includes(`A>${SRC}`));
   });
 });
+
+describe("the described lineage", () => {
+  // Two steps another system runs before the file the estate lands: a source table, curated, then written as the file.
+  const SOURCE = "described:erp|||sales.orders";
+  const CURATED = "described:lake|||curated.orders";
+  const described = () => estate((p) => {
+    p.pipelines.push(pipeline("curate-lin", "lin", -1, "lineage"), pipeline("publish-lin", "lin", -1, "lineage"));
+    p.objects.push({ ...object(SOURCE, "erp"), location: null, described: true });
+    p.objects.push({ ...object(CURATED, "lake"), location: null, described: true });
+    p.flowGraph.push(
+      { ...edge(SOURCE, "curate-lin"), described: true },
+      { ...edge("curate-lin", CURATED), described: true },
+      { ...edge(CURATED, "publish-lin"), described: true },
+      { ...edge("publish-lin", "landed.csv"), described: true },
+    );
+    p.describedIncluded = true;
+  });
+  // The same, with a step that reads what the publishing flow writes: a report, after the estate.
+  const REPORT = "described:bi|||sales report";
+  const consumed = () => {
+    const payload = described();
+    payload.pipelines.push(pipeline("report-lin", "lin", -1, "lineage"));
+    payload.objects.push({ ...object(REPORT, "bi"), location: null, described: true });
+    payload.flowGraph.push({ ...edge("T", "report-lin"), described: true }, { ...edge("report-lin", REPORT), described: true });
+    return payload;
+  };
+  const banded = (view: View) => bandedLayout(
+    view.nodes.map((node) => ({
+      id: node.id, flow: node.memberType === "flow", waves: node.waves, described: node.described === true,
+    })),
+    view.edges,
+  );
+  const laneOf = (layout: ReturnType<typeof bandedLayout>, id: string) => {
+    const y = layout.positions.get(id)!.y;
+    return layout.lanes.find((lane) => y >= lane.start && y <= lane.end)!;
+  };
+
+  for (const level of ["flows", "handovers", "all"] as const) {
+    it(`keeps every wave's band, name and flows with the described lineage drawn (${level})`, () => {
+      const without = banded(draw({ level }));
+      const view = draw({ level }, consumed());
+      const layout = banded(view);
+
+      // The bands of the plan are the ones the drawing has without descriptions, under the same names.
+      assert.deepEqual(layout.lanes.filter((lane) => !lane.described).map((lane) => lane.wave), without.lanes.map((lane) => lane.wave));
+      assert.deepEqual(layout.lanes.filter((lane) => lane.wave !== null).map((lane) => lane.wave), [1, 2, 3, 4]);
+      // Every node of the estate is in the band it is in without them. One the described lineage adds to the drawing
+      // (the landed file is a handover once a described step writes it) is in a band of the plan all the same.
+      for (const node of view.nodes.filter((item) => item.described !== true)) {
+        if (without.positions.has(node.id)) {
+          assert.equal(laneOf(layout, node.id).rank, laneOf(without, node.id).rank, `${node.id} moved to another band`);
+        } else {
+          assert.equal(laneOf(layout, node.id).described, false, `${node.id} is in a band of the described lineage`);
+        }
+      }
+      // What is described is in bands of its own, never in a wave's.
+      for (const node of view.nodes.filter((item) => item.described === true)) {
+        const lane = laneOf(layout, node.id);
+        assert.equal(lane.described, true, `${node.id} is in a band of the plan`);
+        assert.equal(lane.wave, null);
+      }
+      for (const item of view.edges) {
+        assert.ok(
+          layout.positions.get(item.source)!.y < layout.positions.get(item.target)!.y,
+          `${item.source} should be above ${item.target}`,
+        );
+      }
+    });
+  }
+
+  it("lays what leads into the estate above wave 1, and what only consumes right after the wave it reads", () => {
+    const layout = banded(draw({ level: "flows" }, consumed()));
+    const ranks = (id: string) => laneOf(layout, id).rank;
+    // The chain ends right above its first reader, and each step before it one band further up.
+    assert.equal(ranks("publish-lin"), 0.5);
+    assert.equal(ranks("curate-lin"), -0.5);
+    // The report reads what wave 3 writes: between wave 3 and wave 4, in neither.
+    assert.equal(ranks("report-lin"), 3.5);
+    assert.deepEqual(layout.lanes.map((lane) => lane.rank), [-0.5, 0.5, 1, 2, 3, 3.5, 4]);
+  });
+
+  it("draws an object only descriptions name under the step that writes it, and a source above its first reader", () => {
+    const layout = banded(draw({ level: "all" }, consumed()));
+    const at = (id: string) => ({ rank: laneOf(layout, id).rank, y: layout.positions.get(id)!.y });
+    assert.equal(at(CURATED).rank, at("curate-lin").rank);
+    assert.ok(at(CURATED).y > at("curate-lin").y);
+    assert.equal(at(SOURCE).rank, at("curate-lin").rank);
+    assert.ok(at(SOURCE).y < at("curate-lin").y);
+    assert.equal(at(REPORT).rank, at("report-lin").rank);
+    assert.ok(at(REPORT).y > at("report-lin").y);
+    // The file the estate lands stays where it is without descriptions: in wave 1, above the flow that reads it.
+    assert.equal(at("landed.csv").rank, 1);
+  });
+
+  it("lays descriptions that lead nowhere in the drawing, or feed each other, without failing", () => {
+    // The landing flow is hidden, so the chain reaches nothing that runs; and two steps name each other's output.
+    const payload = consumed();
+    payload.pipelines.push(pipeline("loop-a-lin", "lin", -1, "lineage"), pipeline("loop-b-lin", "lin", -1, "lineage"));
+    payload.flowGraph.push(
+      { ...edge("loop-a-lin", "loop-b-lin"), described: true },
+      { ...edge("loop-b-lin", "loop-a-lin"), described: true },
+    );
+    const view = draw({ level: "flows", hiddenKinds: new Set(["flow:file"]) }, payload);
+    const layout = banded(view);
+    for (const node of view.nodes) {
+      const position = layout.positions.get(node.id);
+      assert.ok(position !== undefined && Number.isFinite(position.x) && Number.isFinite(position.y), `${node.id} has no place`);
+    }
+    assert.ok(layout.lanes.every((lane) => Number.isFinite(lane.start) && Number.isFinite(lane.end)));
+  });
+
+  it("marks a lineage description and an object only descriptions name, and nothing else", () => {
+    const view = draw({ level: "all" }, described());
+    const marked = view.nodes.filter((node) => node.described === true).map((node) => node.id).sort();
+    assert.deepEqual(marked, [SOURCE, CURATED, "curate-lin", "publish-lin"].sort());
+  });
+
+  it("marks nothing in a drawing that was not asked for it", () => {
+    assert.ok(draw({ level: "all" }).nodes.every((node) => node.described !== true));
+  });
+
+  it("marks a folder of descriptions, and not a folder that also holds flows that run", () => {
+    const view = draw({ level: "flows", grouped: true }, described());
+    assert.equal(view.nodes.find((node) => node.id === "group:r1/lineage")?.described, true);
+    assert.equal(view.nodes.find((node) => node.id === SRC)?.described, false);
+  });
+
+  it("lays the described steps above the flows they feed, each arrow running down the page", () => {
+    const view = draw({ level: "flows" }, described());
+    const layout = banded(view);
+    const y = (id: string) => layout.positions.get(id)!.y;
+    assert.ok(y("curate-lin") < y("publish-lin"));
+    assert.ok(y("publish-lin") < y("pre"));
+    assert.ok(y("pre") < y("ing"));
+    for (const item of view.edges) {
+      assert.ok(y(item.source) < y(item.target), `${item.source} should be above ${item.target}`);
+    }
+  });
+
+  it("keeps the choice in the address, and leaves it out when it is off", () => {
+    assert.equal(readGraphParams(new URLSearchParams("repoId=r1")).described, false);
+    assert.equal(readGraphParams(new URLSearchParams("repoId=r1&described=on")).described, true);
+    assert.equal(readGraphParams(new URLSearchParams("repoId=r1&described=yes")).described, false);
+    assert.equal(writeGraphParams(readGraphParams(new URLSearchParams("repoId=r1&described=on"))).toString(), "repoId=r1&described=on");
+    assert.equal(writeGraphParams(readGraphParams(new URLSearchParams("repoId=r1"))).toString(), "repoId=r1");
+  });
+});

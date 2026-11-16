@@ -65,6 +65,22 @@ export function recogniseDocument(path: string, text: string): RecognisedDocumen
     return undefined;
 }
 
+/** The `flowType` of a lineage description: a document that says what a step another system runs reads and writes. */
+export const LINEAGE_DESCRIPTION = 'lin';
+
+/** Whether a flow document is a lineage description. */
+export function isLineageDescription(document: { kind: DocumentKind; flowType?: string }): boolean {
+    return document.kind === 'flow' && document.flowType?.trim().toLowerCase() === LINEAGE_DESCRIPTION;
+}
+
+/**
+ * Whether a document is a flow that can be run. Every flow is but a lineage description, which is read for lineage
+ * only: the control plane refuses to run one, so nothing here offers to.
+ */
+export function isRunnable(document: { kind: DocumentKind; flowType?: string }): boolean {
+    return document.kind === 'flow' && !isLineageDescription(document);
+}
+
 /** The word a person reads for a document's kind: its `flowType`, `documentType` or library. */
 export function kindLabel(document: RecognisedDocument): string {
     switch (document.kind) {

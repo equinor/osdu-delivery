@@ -216,11 +216,11 @@ public sealed class CatalogStorageContributor : IStorageContributor
                 Group = FlowsAndLineage,
                 Title = "Objects and lineage",
                 Verdict = StorageVerdict.Keep,
-                Holds = "The database objects the flows read and write, their columns, and the lineage edges and relationships between them.",
+                Holds = "The database objects the flows read and write, their columns, the lineage edges and relationships between them, and the column mappings lineage descriptions state.",
                 Reason = "The catalog, lineage and search pages read them. They describe the estate as it is now.",
                 Brief = "Rewritten by each sync",
                 Lifecycle = "Rewritten by each repository sync; objects nothing knows any more are forgotten by the sync.",
-                Tables = [T("Object"), T("ObjectColumn"), T("ObjectRelationship"), T("LineageEdge")],
+                Tables = [T("Object"), T("ObjectColumn"), T("ObjectRelationship"), T("LineageEdge"), T("LineageColumnMapping")],
                 ManagedAt = "/lineage",
             },
             new()

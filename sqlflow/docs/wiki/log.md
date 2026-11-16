@@ -428,3 +428,11 @@ Microsoft Learn's Dataverse Web API pages (paging, metadata, service protection,
 [Landing is string-first](decisions/string-first-landing.md): its exceptions are the sources whose own schema carries
 enforced types (Parquet, a DuckDB scan, a Dataverse table), where it named Parquet alone. What was built is documented
 in `source-type-dataverse`.
+
+## [2026-11-16] ingest | A lineage description is a flow type that is never run
+
+Added [A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes](decisions/lineage-descriptions-beside-the-graph.md)
+from the new kind's reader and placement (`YamlLineageDescriptionFlowLoader`, `LineageDescriber`), the audit of every
+reader of lineage edges that decided between a flag and relations of their own, and the design conversation in which
+the human ruled out an execution model, references, and warnings for partly described chains. What was built is
+documented in `flow-lin`, `flow-lin-columns`, `concept-described-lineage` and `guide-describe-an-upstream-step`.

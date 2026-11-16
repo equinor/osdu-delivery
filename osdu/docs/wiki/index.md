@@ -288,6 +288,10 @@ other packages adopt the same contract.
   why the render context keeps each distinct value once under an identity, how two application locks order the sets
   being written and the sweep, why the migration carries the context over instead of emptying it, and why the cache's own
   tables stay clustered by partition.
+- [0060: the VS Code extension shows the GUI's own pages, built a second time and read with the person's sign-in](decisions/0060-vscode-shows-the-gui.md):
+  why one drawn side bar and the GUI's pages in webviews replaced the editor's own trees, why a page's calls are carried
+  by the extension under the person's credential while the MCP server's rule for assistants stands, and why a mapping's
+  preview reads the file and its rows read the sync. Amends 0039.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

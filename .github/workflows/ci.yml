@@ -197,6 +197,12 @@ jobs:
         working-directory: osdu/gui
         run: npm run build
 
+      # The pages and the side bar the VS Code extension shows are a second build of the same sources
+      # (osdu/gui/vite.hosted.config.ts), so a change that breaks them is caught here and not when a package is made.
+      - name: Build the pages the VS Code extension shows
+        working-directory: osdu/gui
+        run: npm run build:hosted
+
       - name: Lint OSDU GUI
         working-directory: osdu/gui
         run: npm run lint
@@ -214,6 +220,11 @@ jobs:
       - name: Build SQLFlow GUI
         working-directory: sqlflow/gui
         run: npm run build
+
+      # SQLFlow's own hosted build as well, for the same reason.
+      - name: Build the pages SQLFlow's VS Code extension shows
+        working-directory: sqlflow/gui
+        run: npm run build:hosted
 
       # The chat's answer reading, result charting and report naming are plain modules with suites of their own,
       # run by Node's test runner on the sources as they are.

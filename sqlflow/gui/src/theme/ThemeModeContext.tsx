@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { applyAppearance, readStoredAppearance, rememberAppearance, systemPrefersDark } from "./appearance";
-import { designById, offeredDesigns, resolveAppearance, type Appearance, type Design, type StoredAppearance, type ThemeMode } from "./designs";
+import { HOST_DESIGN, designById, offeredDesigns, resolveAppearance, type Appearance, type Design, type StoredAppearance, type ThemeMode } from "./designs";
 
 export type { ThemeMode } from "./designs";
 
@@ -67,6 +67,28 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
     toggle: () => setStored({ design, mode: mode === "dark" ? "light" : "dark" }),
     choose: (choice) => setStored({ design: choice.design ?? design, mode: choice.mode ?? mode }),
   }), [design, mode]);
+
+  return <ThemeModeContext.Provider value={value}>{children}</ThemeModeContext.Provider>;
+}
+
+/**
+ * The appearance of a page its host dresses (embed/): the host's design, in the mode the host's own colours are in.
+ * Nothing is kept and nothing is offered: the host's theme is the person's choice, made where they make it, and the page
+ * follows it. `revision` moves whenever the host's colours do, between two themes of one mode as well, so what reads
+ * tokens into literal colours rebuilds them then.
+ */
+export function HostedThemeProvider({ mode, revision, children }: { mode: ThemeMode; revision: number; children: ReactNode }) {
+  // The appearance must be on <html> before children read tokens for it.
+  applyAppearance({ design: HOST_DESIGN.id, mode });
+
+  const value = useMemo<ThemeModeValue>(() => ({
+    mode,
+    design: HOST_DESIGN,
+    designs: [HOST_DESIGN],
+    palette: `${HOST_DESIGN.id}:${mode}:${revision}`,
+    toggle: () => undefined,
+    choose: () => undefined,
+  }), [mode, revision]);
 
   return <ThemeModeContext.Provider value={value}>{children}</ThemeModeContext.Provider>;
 }

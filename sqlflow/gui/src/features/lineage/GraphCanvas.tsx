@@ -15,7 +15,7 @@ import type { StreamStatus } from "../../api/types";
 import { NODE_HEIGHT, NODE_WIDTH, type Orientation, type Position } from "./graphLayout";
 import type { Lane } from "./graphBands";
 import type { View, ViewEdge } from "./graphModel";
-import { LANE_LABEL_ROOM, LaneBand, type LaneNode } from "./LaneBand";
+import { LANE_LABEL_ROOM, LANE_LABEL_ROOM_DESCRIBED, LaneBand, type LaneNode } from "./LaneBand";
 import { CardActionsContext, LineageNodeCard, type CardActions, type CardNode, type CardRole } from "./LineageNodeCard";
 
 const nodeTypes = { card: LineageNodeCard, lane: LaneBand };
@@ -178,14 +178,16 @@ export function GraphCanvas({
   // The bands sit behind the cards and take no part in anything: no click, no selection, no drag.
   const laneNodes = useMemo<LaneNode[]>(() => lanes.map((lane, index) => {
     const down = orientation === "down";
+    // Every band of a drawing leaves the same room for its name, so the bands line up.
+    const labelRoom = lanes.some((other) => other.described) ? LANE_LABEL_ROOM_DESCRIBED : LANE_LABEL_ROOM;
     const along = lane.end - lane.start + LANE_MARGIN * 2;
-    const across = laneReach.end - laneReach.start + LANE_LABEL_ROOM + LANE_MARGIN * 2;
+    const across = laneReach.end - laneReach.start + labelRoom + LANE_MARGIN * 2;
     const acrossRight = laneReach.end - laneReach.start + 36 + LANE_MARGIN * 2;
     return {
       id: `lane:${lane.rank}`,
       type: "lane" as const,
       position: down
-        ? { x: laneReach.start - LANE_LABEL_ROOM - LANE_MARGIN, y: lane.start - LANE_MARGIN }
+        ? { x: laneReach.start - labelRoom - LANE_MARGIN, y: lane.start - LANE_MARGIN }
         : { x: lane.start - LANE_MARGIN, y: laneReach.start - 36 - LANE_MARGIN },
       width: down ? across : along,
       height: down ? along : acrossRight,
@@ -194,7 +196,12 @@ export function GraphCanvas({
       selectable: false,
       focusable: false,
       style: { pointerEvents: "none" as const },
-      data: { label: lane.wave === null ? "" : `Wave ${lane.wave}`, shaded: index % 2 === 0, orientation },
+      data: {
+        // A wave's band is named by its wave. A band of steps other systems run says so: it is no wave of the plan.
+        label: lane.wave !== null ? `Wave ${lane.wave}` : lane.described ? "Other systems" : "",
+        shaded: index % 2 === 0,
+        orientation,
+      },
     };
   }), [lanes, laneReach, orientation]);
   const drawnNodes = useMemo<FlowNode[]>(() => [...laneNodes, ...styledNodes], [laneNodes, styledNodes]);
@@ -206,6 +213,9 @@ export function GraphCanvas({
       : view.edges.filter((edge) => edge.source === selection.id || edge.target === selection.id).length;
     const upstream = selection === null ? null : new Set([selection.id, ...selection.upstream]);
     const downstream = selection === null ? null : new Set([selection.id, ...selection.downstream]);
+    // An arrow into or out of a described node is one a lineage description states, not one the estate computed:
+    // it is drawn dotted, so the two read apart without colour.
+    const described = new Set(view.nodes.filter((node) => node.described === true).map((node) => node.id));
     return view.edges.map((edge) => {
       const onUpstream = upstream !== null && upstream.has(edge.source) && upstream.has(edge.target);
       const onDownstream = downstream !== null && downstream.has(edge.source) && downstream.has(edge.target);
@@ -225,11 +235,14 @@ export function GraphCanvas({
         label: label === "" ? undefined : label,
         zIndex: related ? 5 : 0,
         markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
-        style: { stroke, strokeWidth: edge.weight > 1 ? 2 : 1.25, opacity },
+        style: {
+          stroke, strokeWidth: edge.weight > 1 ? 2 : 1.25, opacity,
+          strokeDasharray: described.has(edge.source) || described.has(edge.target) ? "2 5" : undefined,
+        },
         labelStyle: { fontSize: 11, opacity },
       };
     });
-  }, [view.edges, selection, nameOf]);
+  }, [view.edges, view.nodes, selection, nameOf]);
 
   return (
     <CardActionsContext.Provider value={actions}>

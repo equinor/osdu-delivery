@@ -276,6 +276,18 @@ internal static class Program
                             return 0;
                         }
 
+                        case LineageDescriptionFlowDocument doc:
+                        {
+                            var flow = doc.Flow;
+                            var mapped = flow.Writes.Sum(w => w.Columns.Count);
+                            Console.WriteLine(
+                                $"OK  '{flow.Name}' is valid (lineage description of a {flow.System} step: " +
+                                $"{flow.Reads.Count} read(s), {flow.Writes.Count} write(s)" +
+                                (mapped == 0 ? string.Empty : $", {mapped} mapped column(s)") +
+                                "; metadata only, never run).");
+                            return 0;
+                        }
+
                         case RegisteredFlowDocument doc:
                         {
                             // What the document names beside it is checked on disk too, as the estate form checks it.
@@ -1728,11 +1740,43 @@ internal static class Program
             {
                 Console.WriteLine($"  CYCLE  {string.Join(" -> ", cycle.Flows)} via {string.Join(", ", cycle.ViaObjects)}");
             }
+
+            // The described lineage is listed apart from the plan, which it takes no part in: each step another system
+            // runs with what it reads and writes, and where a described chain ends.
+            var described = report.Described;
+            if (described.Steps.Count > 0)
+            {
+                var boundaries = described.Objects.ToDictionary(o => o.Key, o => o.Boundary, StringComparer.Ordinal);
+                string Shown(LineageDescribedEndpoint endpoint)
+                    => endpoint.ObjectName
+                       + (endpoint.ViaFlow is { } via ? $" (of flow {via})" : string.Empty)
+                       + (boundaries.GetValueOrDefault(endpoint.ObjectKey) switch
+                       {
+                           LineageDescribedBoundary.Origin => " [origin]",
+                           LineageDescribedBoundary.Open => " [not described further]",
+                           _ => string.Empty,
+                       });
+
+                Console.WriteLine(
+                    $"  described lineage: {described.Steps.Count} step(s) other systems run, {described.Objects.Count} object(s) only they name, "
+                    + $"{described.Columns.Count} mapped column(s); no part of the plan above");
+                foreach (var step in described.Steps)
+                {
+                    var reads = step.Reads.Count == 0 ? "(nothing)" : string.Join(", ", step.Reads.Select(Shown));
+                    var writes = step.Writes.Count == 0 ? "(nothing)" : string.Join(", ", step.Writes.Select(Shown));
+                    Console.WriteLine($"    {step.Name} ({step.System}): {reads} -> {writes}");
+                }
+            }
         }
 
         foreach (var warning in report.Warnings)
         {
             Console.WriteLine($"  WARN  {warning}");
+        }
+
+        foreach (var finding in report.Described.Warnings)
+        {
+            Console.WriteLine($"  WARN  described lineage: {finding}");
         }
 
         if (artifactPath is not null)

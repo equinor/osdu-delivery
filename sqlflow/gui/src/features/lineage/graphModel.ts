@@ -1,4 +1,5 @@
 import type { ProjectGraph } from "../../api/types.ts";
+import { isLineageDescription } from "../../modules/lineageDescriptionKind.ts";
 
 /**
  * The lineage graph as the page draws it, derived from the one payload the server sends. The payload is the whole
@@ -39,6 +40,12 @@ export interface BaseNode {
   frontier: boolean;
   /** Why this flow's reads and writes are not fully known, when they are not. */
   incompleteReason: string | null;
+  /**
+   * True for a node of the described lineage: a lineage description (a step another system runs, written down and
+   * never run here), or an object only descriptions name. Such nodes are in the payload only when the drawing asked
+   * for the described lineage.
+   */
+  described?: boolean;
 }
 
 /** A directed graph over base nodes: the mixed drawing (flows and objects) or the data-only one. */
@@ -119,6 +126,8 @@ export interface ViewNode {
   repoId: string | null;
   /** True for the node a trace is drawn around. */
   anchor: boolean;
+  /** True when every node it stands for is of the described lineage (see {@link BaseNode.described}). */
+  described?: boolean;
 }
 
 export interface ViewEdge {
@@ -232,6 +241,7 @@ export function buildGraphSource(payload: Pick<ProjectGraph, "pipelines" | "obje
       repoName: null,
       frontier: object.frontier,
       incompleteReason: null,
+      described: object.described === true,
     });
   }
 
@@ -255,6 +265,7 @@ export function buildGraphSource(payload: Pick<ProjectGraph, "pipelines" | "obje
       incompleteReason: pipeline.lineageComplete === false
         ? pipeline.incompleteReason ?? "Its reads and writes could not be derived."
         : null,
+      described: isLineageDescription(pipeline.kind),
     });
   }
 
@@ -323,6 +334,7 @@ function plainNode(node: BaseNode): ViewNode {
     repoName: node.repoName,
     repoId: node.repoId,
     anchor: false,
+    described: node.described === true,
   };
 }
 
@@ -535,6 +547,7 @@ function quotient(
       repoName: repoNames.size === 1 ? [...repoNames][0] : null,
       repoId: repoIds.size === 1 ? [...repoIds][0] : null,
       anchor: members.some((member) => member.anchor),
+      described: members.every((member) => member.described === true),
     };
     for (const member of members) {
       union(merged.members, member.members);

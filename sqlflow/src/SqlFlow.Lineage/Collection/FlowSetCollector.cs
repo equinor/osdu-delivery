@@ -155,6 +155,18 @@ public sealed class FlowSetCollector
         // subscriber's read facts join a graph whose producing side is already fully known.
         CollectSubscribers(result, root, storedSpecs);
 
+        // A lineage description is no flow of the plan and may never stand in the place of one. A pipeline is
+        // identified by its name and the first document in path order becomes it, so a description sorted before a
+        // flow of its name would turn that flow into one that never runs. A description that has the name of a flow
+        // that runs, or of a description read before it, is therefore taken out of the flow set: it becomes no
+        // pipeline and joins no warning below. The described lineage says it was left out, and why (LineageDescriber).
+        var running = result.Flows
+            .Where(f => !f.IsLineageDescription)
+            .Select(f => f.Node.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var described = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        result.Flows.RemoveAll(f => f.IsLineageDescription && (running.Contains(f.Node.Name) || !described.Add(f.Node.Name)));
+
         var duplicates = result.Flows
             .GroupBy(f => f.Node.Name, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1);
@@ -1094,6 +1106,14 @@ public sealed class FlowSetCollector
                 ParticipatesInLineage = header.ParticipatesInLineage,
                 FileWriteUtc = fileWriteUtc,
             });
+        }
+
+        // A lineage description is a pipeline row like any document and nothing more to the graph: it declares no fact,
+        // no server and no file drop. What it says is kept aside for the pass that places it beside the computed lineage
+        // once that lineage exists, so the facts collected here are the same with or without descriptions.
+        if (document is LineageDescriptionFlowDocument lineageDescription)
+        {
+            result.Descriptions.Add(new CollectedDescription(lineageDescription.Flow, file));
         }
 
         switch (document)

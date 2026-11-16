@@ -21,7 +21,8 @@ public static class RepoStore
 {
     /// <summary>
     /// Deletes a repo and every catalog row attributed to it: its pipelines, runs (and each run's file / assertion /
-    /// statement / event / surrogate-key / health-check children), run groups, lineage edges, object relationships,
+    /// statement / event / surrogate-key / health-check children), run groups, lineage edges, the column mappings its
+    /// lineage descriptions state, object relationships,
     /// flow dependencies, pipeline columns, schedules and schedule members, and its transform-column rows. A managed
     /// git source registered under the same name is dropped too, together with its sync activity trace, so the
     /// background sync cannot recreate the repo on its next tick. The whole purge runs in one serializable
@@ -60,6 +61,8 @@ public static class RepoStore
             var pipelines = await catalog.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             await catalog.PipelineColumns.Where(c => c.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             var lineageEdges = await catalog.LineageEdges.Where(e => e.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            // The column mappings its lineage descriptions state go with the described edges they belong to.
+            await catalog.LineageColumnMappings.Where(m => m.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             await catalog.ObjectRelationships.Where(r => r.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             await catalog.SubscriberQueries.Where(q => q.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             await catalog.SubscriberReportVisualQuestions.Where(q => q.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);

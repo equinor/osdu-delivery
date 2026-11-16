@@ -151,6 +151,11 @@ public static class FlowLoadProfiles
                 $"reads the table and view metadata of {(d.Document.Flow.Scope.Database is { } database ? $"database '{database}'" : "the default database")} behind connection '{d.Document.Flow.Server}'",
                 "registers those objects in the catalog; it loads no table",
                 target: null),
+            LineageDescriptionFlowDocument d => Profile(
+                FlowReadModes.NotApplicable,
+                $"describes a step the system '{d.Flow.System}' runs ({d.Flow.Reads.Count} object(s) read, {d.Flow.Writes.Count} written); SQLFlow reads nothing for it",
+                "nothing: a lineage description is metadata and is never executed",
+                target: null),
             RegisteredFlowDocument d => Profile(
                 FlowReadModes.External,
                 $"runs the '{d.Kind}' flow kind a host module registered; what it reads is defined by that module, not modelled by SQLFlow",

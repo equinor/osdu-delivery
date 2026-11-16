@@ -1,8 +1,8 @@
 ---
 id: flow-overview
-title: "Anatomy of a flow file: the fourteen document kinds"
+title: "Anatomy of a flow file: the fifteen document kinds"
 type: flow-reference
-summary: How the top-level flowType key selects one of fourteen flow document kinds, what each kind contains, and how loading and validation behave.
+summary: How the top-level flowType key selects one of fifteen flow document kinds, what each kind contains, and how loading and validation behave.
 keywords:
   - flowtype
   - document kinds
@@ -13,6 +13,7 @@ related:
   - flow-source
   - flow-ing
   - flow-batch
+  - flow-lin
   - concept-flow-identity
   - cli-validate
 sourceRefs:
@@ -21,6 +22,7 @@ sourceRefs:
   - src/SqlFlow.Yaml/FlowYaml.cs
   - src/SqlFlow.Yaml/YamlSourceControlFlowLoader.cs
   - src/SqlFlow.Yaml/YamlBatchFlowLoader.cs
+  - src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs
   - src/SqlFlow.Core/SqlFlowException.cs
   - src/SqlFlow.Core/Model/FlowDefinition.cs
   - src/SqlFlow.Core/Runs/RunHistoryWriter.cs
@@ -32,9 +34,9 @@ sourceRefs:
   - src/SqlFlow.Cli/Program.cs
 ---
 
-# Anatomy of a flow file: the fourteen document kinds
+# Anatomy of a flow file: the fifteen document kinds
 
-Every SQLFlow pipeline is a single YAML document. There is no control database and no registration step: the file is the whole pipeline. One root key, `flowType`, decides which of fourteen document kinds the file is, and therefore which loader parses it, which keys are recognized, and which engine runs it. This page is the map: what the fourteen kinds are, how dispatch works, what every kind shares, and where each kind's full key reference lives.
+Every SQLFlow pipeline is a single YAML document. There is no control database and no registration step: the file is the whole pipeline. One root key, `flowType`, decides which of fifteen document kinds the file is, and therefore which loader parses it, which keys are recognized, and which engine runs it. This page is the map: what the fourteen kinds are, how dispatch works, what every kind shares, and where each kind's full key reference lives.
 
 ## The flowType discriminator
 
@@ -56,11 +58,12 @@ Every SQLFlow pipeline is a single YAML document. There is no control database a
 | `sftp` | SFTP transfer | `YamlSftpFlowLoader` | Downloads files from an SFTP server into the lake/local, or uploads the other way |
 | `cal` | calendar | `YamlCalendarFlowLoader` | Generates a date dimension for a declared range from rules alone (no source) and merges it into a table |
 | `trl` | translate | `YamlTranslateFlowLoader` | Maps a SQL query result through a declared JSON template into arbitrarily shaped documents, saves them to a destination, and optionally delivers the saved documents to a remote API |
+| `lin` | lineage description | `YamlLineageDescriptionFlowLoader` | Describes a step another system runs (what it reads and writes, and what it does to the data), so lineage continues before a landed file or after a written table. Metadata only: never executed, in no wave, and with no effect on the lineage SQLFlow computes |
 
 Any other value fails fast at parse time with a `FlowValidationException` carrying the full menu, instead of a confusing downstream validation failure:
 
 ```text
-<file>: unknown flowType '<x>'. Use 'ing' for a table-to-table ingestion flow, 'exp' for a file export, 'sp' for a stored-procedure flow, 'inv' for an ADF/Automation trigger, 'hc' for an ML health check, 'scm' for a database source-control snapshot, 'sch' to register an external database's tables and views in the catalog, 'batch' for an ordered multi-flow batch, 'api' for a generic acquisition flow (HTTP / SFTP / Azure Table), 'cpy' for a file-copy flow (local / Azure storage / S3, with optional zip/unzip), 'sftp' for an SFTP download or upload, 'cal' for a generated calendar dimension, 'trl' for a JSON translation flow (query result to shaped documents, optionally delivered to an API), or omit flowType for a file flow.
+<file>: unknown flowType '<x>'. Use 'ing' for a table-to-table ingestion flow, 'exp' for a file export, 'sp' for a stored-procedure flow, 'inv' for an ADF/Automation trigger, 'hc' for an ML health check, 'scm' for a database source-control snapshot, 'sch' to register an external database's tables and views in the catalog, 'batch' for an ordered multi-flow batch, 'api' for a generic acquisition flow (HTTP / SFTP / Azure Table), 'cpy' for a file-copy flow (local / Azure storage / S3, with optional zip/unzip), 'sftp' for an SFTP download or upload, 'cal' for a generated calendar dimension, 'trl' for a JSON translation flow (query result to shaped documents, optionally delivered to an API), 'lin' for a lineage description of a step another system runs (metadata only, never executed), or omit flowType for a file flow.
 ```
 
 ## What every document kind shares
@@ -82,7 +85,7 @@ Every validation failure is a `FlowValidationException` (a subclass of `SqlFlowE
 
 ### The schedule envelope
 
-Every document kind may carry a top-level `schedule:` block. It is captured on the `FlowDocument` envelope record itself, not inside any kind-specific model, so all fourteen kinds declare a schedule the same way. The engine never schedules anything; the control plane turns the declared schedule into runs.
+Every document kind may carry a top-level `schedule:` block. It is captured on the `FlowDocument` envelope record itself, not inside any kind-specific model, so every kind that runs declares a schedule the same way. A lineage description (`flowType: lin`) is the one kind that takes none: it is never executed, and its reader refuses a `schedule`, a `mode` or a `lifecycle`. The engine never schedules anything; the control plane turns the declared schedule into runs.
 
 ```yaml
 schedule:
@@ -125,7 +128,7 @@ Every load, on `validate` and `run` alike, also runs the secret-hygiene check: a
 
 ### Run artifacts and flowKind
 
-Every run writes its artifacts to a timestamped run folder under `.sqlflow/runs/<flow>/` next to the pipeline file: `run.json` (the result), `run.log` (the step-by-step log), and `trace.sql` (the generated SQL). A batch run adds `batch.json`; an hc run adds `healthcheck.json` (the full scored series); an scm run adds `scm.json`. The `flowKind` string recorded in `run.json` per kind:
+Every run writes its artifacts to a timestamped run folder under `.sqlflow/runs/<flow>/` next to the pipeline file: `run.json` (the result), `run.log` (the step-by-step log), and `trace.sql` (the generated SQL). A batch run adds `batch.json`; an hc run adds `healthcheck.json` (the full scored series); an scm run adds `scm.json`. A `flowType: lin` document is never run, so it has no run folder. The `flowKind` string recorded in `run.json` per kind:
 
 | Document | flowKind |
 | --- | --- |

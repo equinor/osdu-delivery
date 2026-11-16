@@ -301,6 +301,7 @@ impl Census {
             Some("sftp") => SFTP,
             Some("cal") => CAL,
             Some("trl") => TRL,
+            Some("lin") => LIN,
             // Unknown flowType: fall back to the file flow so hover/completion
             // still work on the shared and root keys while diagnostics flag the
             // bad discriminator.
@@ -322,6 +323,12 @@ impl Census {
                 .filter(|e| e.path == "flowType" && !have.contains(&e.path))
                 .collect();
             entries.extend(envelope);
+        }
+        // A lineage description (flowType: lin) is metadata and is never run: it declares no connection, takes no
+        // invoke hook, and its loader refuses a schedule or a mode. Its census is its own keys and nothing merged in,
+        // and it is strict as its loader is, so a key that would keep the document from loading is an error here too.
+        if ft == Some("lin") {
+            return Census { entries, strict: true };
         }
         // Merge shared blocks that the primary file does not already define.
         let shared = Census::parse(SHARED).unwrap_or_default();
@@ -508,7 +515,7 @@ const PROBED_ENVELOPE_KEYS: &[&str] = &["schedule", "mode"];
 
 /// The flow kinds SQLFlow compiles in; a module cannot register a census for one of them.
 pub const BUILT_IN_FLOW_TYPES: &[&str] =
-    &["ing", "exp", "sp", "inv", "hc", "scm", "sch", "batch", "api", "cpy", "sftp", "cal", "trl"];
+    &["ing", "exp", "sp", "inv", "hc", "scm", "sch", "batch", "api", "cpy", "sftp", "cal", "trl", "lin"];
 
 fn registry() -> &'static std::sync::RwLock<BTreeMap<CensusKind, ModuleCensus>> {
     static REGISTRY: std::sync::OnceLock<std::sync::RwLock<BTreeMap<CensusKind, ModuleCensus>>> = std::sync::OnceLock::new();
@@ -646,6 +653,7 @@ const CPY: &str = include_str!("../../../docs/reference/flow/keys.cpy.json");
 const SFTP: &str = include_str!("../../../docs/reference/flow/keys.sftp.json");
 const CAL: &str = include_str!("../../../docs/reference/flow/keys.cal.json");
 const TRL: &str = include_str!("../../../docs/reference/flow/keys.trl.json");
+const LIN: &str = include_str!("../../../docs/reference/flow/keys.lin.json");
 const SHARED: &str = include_str!("../../../docs/reference/flow/keys.shared.json");
 const SUBSCRIBERS: &str = include_str!("../../../docs/reference/flow/keys.subscribers.json");
 const SCHEDULES: &str = include_str!("../../../docs/reference/flow/keys.schedules.json");
@@ -785,6 +793,38 @@ mod tests {
             Resolution::Exact(_)
         ));
         assert!(matches!(c.resolve(&ak(&["repository"])), Resolution::Unknown));
+    }
+
+    #[test]
+    fn lineage_description_census_is_its_own_keys_and_strict() {
+        let c = Census::for_flow_type(Some("lin"));
+        assert!(c.strict, "a lineage description's loader refuses an unknown key, so its census is strict");
+        for leaf in ["flowType", "name", "system", "unit", "evidence", "reads", "writes", "context"] {
+            assert!(matches!(c.resolve(&ak(&[leaf])), Resolution::Exact(_)), "{leaf} should be known");
+        }
+        assert!(matches!(
+            c.resolve(&[AuthoredSeg::Key("reads".into()), AuthoredSeg::List, AuthoredSeg::Key("fedBy".into())]),
+            Resolution::Exact(_)
+        ));
+        // A column is named by the author, and its value is a source, a list of them, or a mapping.
+        let column = [
+            AuthoredSeg::Key("writes".into()),
+            AuthoredSeg::List,
+            AuthoredSeg::Key("columns".into()),
+            AuthoredSeg::Key("order_id".into()),
+        ];
+        assert!(matches!(c.resolve(&column), Resolution::Exact(_)));
+        let mut from = column.to_vec();
+        from.push(AuthoredSeg::Key("from".into()));
+        assert!(matches!(c.resolve(&from), Resolution::Exact(_)));
+        // The short form of an evidence entry is a path on its own.
+        assert!(matches!(c.resolve(&[AuthoredSeg::Key("evidence".into()), AuthoredSeg::List]), Resolution::Exact(_)));
+
+        // Nothing a running flow takes is merged in: no envelope, no connections, no invoke hooks.
+        for foreign in ["schedule", "mode", "connections", "servicePrincipals", "lifecycle"] {
+            assert!(matches!(c.resolve(&ak(&[foreign])), Resolution::Unknown), "{foreign} should be unknown on lin");
+        }
+        assert!(BUILT_IN_FLOW_TYPES.contains(&"lin"));
     }
 
     #[test]

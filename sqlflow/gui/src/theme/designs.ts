@@ -86,6 +86,13 @@ export interface ResolvedAppearance {
 
 export const SQLFLOW_DESIGN: Design = { id: "sqlflow", label: "SQLFlow", stylesheets: [], marks: null };
 
+/**
+ * The design a page wears when something other than a browser tab shows it (embed/): its surfaces, text and hairlines
+ * are the host's own theme, so the page reads as part of what hosts it. A person never picks it and a browser never
+ * offers it: the hosted entry puts it on, and its tokens live in embed/host-design.css.
+ */
+export const HOST_DESIGN: Design = { id: "host", label: "Host", stylesheets: [], marks: null };
+
 const DESIGN_ID = /^[a-z][a-z0-9-]*$/;
 
 let offered: readonly Design[] = [SQLFLOW_DESIGN];
@@ -137,7 +144,7 @@ function checkMark(moduleId: string, designId: string, mode: ThemeMode, mark: De
  * every design is checked before the first render and a conflicting one fails at startup with a message naming it.
  */
 export function installModuleDesigns(contributions: readonly { moduleId: string; designs: readonly DesignContribution[] }[]): void {
-  const owners = new Map<string, string>([[SQLFLOW_DESIGN.id, "SQLFlow"]]);
+  const owners = new Map<string, string>([[SQLFLOW_DESIGN.id, "SQLFlow"], [HOST_DESIGN.id, "SQLFlow"]]);
   const labels = new Map<string, string>([[SQLFLOW_DESIGN.label.toLowerCase(), "SQLFlow"]]);
   const designs: Design[] = [SQLFLOW_DESIGN];
   let firstOwner: string | null = null;
@@ -210,9 +217,9 @@ export function offeredDesigns(): readonly Design[] {
   return offered;
 }
 
-/** The design with this id, or SQLFlow's when none is offered under it. */
+/** The design with this id: one the workbench offers, the host's, or SQLFlow's when there is none under it. */
 export function designById(id: string): Design {
-  return offered.find((design) => design.id === id) ?? SQLFLOW_DESIGN;
+  return offered.find((design) => design.id === id) ?? (id === HOST_DESIGN.id ? HOST_DESIGN : SQLFLOW_DESIGN);
 }
 
 /**

@@ -282,6 +282,30 @@ mod tests {
         assert!(idx.by_yaml_path("source.options.header").is_some());
     }
 
+    /// What a person or an assistant asks about lineage beyond the estate, and the page that answers each. A lineage
+    /// description is only as useful as it is findable, so its pages are held to the questions they were written for.
+    #[test]
+    fn a_question_about_lineage_beyond_the_estate_finds_its_page() {
+        let idx = DocsIndex::load();
+        let questions: &[(&str, &[&str])] = &[
+            ("where does a landed file come from before the drop-off zone", &["flow-lin", "concept-described-lineage", "guide-describe-an-upstream-step"]),
+            ("describe a step another system runs", &["flow-lin", "guide-describe-an-upstream-step"]),
+            ("flowType lin keys", &["flow-lin"]),
+            ("source to target column mapping of a described step", &["flow-lin-columns"]),
+            ("why are described steps not shown in the lineage graph by default", &["concept-described-lineage", "guide-lineage-graph"]),
+            ("write a lineage description for a databricks job", &["guide-describe-an-upstream-step", "flow-lin"]),
+        ];
+        let mut missed = Vec::new();
+        for (question, answers) in questions {
+            let top: Vec<&str> = idx.search(question, None, 5).iter().map(|hit| hit.meta.id.as_str()).collect();
+            if !answers.iter().any(|answer| top.contains(answer)) {
+                missed.push(format!("'{question}' found {top:?}, not any of {answers:?}"));
+            }
+        }
+        assert!(missed.is_empty(), "questions whose answer is not in the top five:\n{}", missed.join("\n"));
+        assert_eq!(idx.by_yaml_path("writes[].columns").map(|page| page.id.as_str()), Some("flow-lin-columns"));
+    }
+
     fn page(id: &str, body: &'static str) -> DocPage {
         DocPage {
             meta: DocMeta::page(id, "Probe targets", "concept", "probe/targets.md", "What a probe target is.", &["probe", "target"])

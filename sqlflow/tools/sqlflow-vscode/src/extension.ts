@@ -30,6 +30,11 @@ const SQLFLOW: VscodeHost = {
             content: 'name: newFlow\nsource:\n  type: csv\n  path: ./data/*.csv\ntarget:\n  server: dwh\n  table: stg.newFlow\n',
         },
         {
+            label: 'Lineage description',
+            detail: 'flowType: lin, a step another system runs, for lineage only and never executed',
+            content: 'flowType: lin\nname: newStep-lin\ndescription: What the step does, in a sentence.\nsystem: databricks\nreads:\n  - { name: schema.source, as: src, origin: true }\nwrites:\n  - feeds: newFlow\n    columns:\n      id: src.id\ncontext: |\n  Which rows are left out or added and why, how keys are formed, and when the step runs.\n',
+        },
+        {
             label: 'Schedule library',
             detail: 'schedules.yaml, named schedules flows join',
             content: 'schedules:\n  nightly:\n    cron: "0 1 * * *"\n    timezone: UTC\n',

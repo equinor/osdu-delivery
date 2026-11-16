@@ -33,6 +33,12 @@ export interface GraphParams {
   stacked: boolean;
   /** Which way data runs on the canvas: top to bottom unless the reader chose left to right. */
   orientation: Orientation;
+  /**
+   * Whether the described lineage is drawn too: what lineage descriptions say of steps other systems run, before
+   * the files the estate lands and after the tables it writes. Off unless the reader turned it on, so a drawing is
+   * the lineage the estate computed.
+   */
+  described: boolean;
 }
 
 const LEVELS: readonly GraphLevel[] = ["flows", "handovers", "all", "objects"];
@@ -91,6 +97,7 @@ export function readGraphParams(search: URLSearchParams): GraphParams {
     direction: direction === "up" ? "upstream" : direction === "down" ? "downstream" : "both",
     stacked: search.get("stacks") !== "off",
     orientation: search.get("layout") === "right" ? "right" : "down",
+    described: search.get("described") === "on",
   };
 }
 
@@ -132,6 +139,9 @@ export function writeGraphParams(params: GraphParams): URLSearchParams {
   }
   if (params.orientation === "right") {
     search.set("layout", "right");
+  }
+  if (params.described) {
+    search.set("described", "on");
   }
   return search;
 }

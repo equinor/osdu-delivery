@@ -65,9 +65,9 @@ export function parseSignIn(text: string): SignInRequest {
     return { url, code };
 }
 
-/** How a pending sign-in stands. */
+/** How a pending sign-in stands. A signed-in answer names the person, their role and their scopes when the server says them. */
 export type SignInProgress =
-    | { state: 'signed-in'; who: string | undefined }
+    | { state: 'signed-in'; who: string | undefined; role?: string; scopes?: string[] }
     | { state: 'waiting' }
     | { state: 'slow-down' }
     | { state: 'denied' }
@@ -78,7 +78,9 @@ export type SignInProgress =
 export function parseAuthStatus(text: string): SignInProgress {
     const authenticated = /^Authenticated as ([^,.]+(?:\.[^,.\s]+)*)/.exec(text);
     if (authenticated) {
-        return { state: 'signed-in', who: authenticated[1] };
+        const role = /, role ([^,.]+)/.exec(text)?.[1].trim();
+        const scopes = /, scopes: ([^.]+)\./.exec(text)?.[1].trim().split(/\s+/);
+        return { state: 'signed-in', who: authenticated[1], ...(role ? { role } : {}), ...(scopes ? { scopes } : {}) };
     }
     if (text.startsWith('Signed in')) {
         return { state: 'signed-in', who: undefined };

@@ -201,10 +201,11 @@ public static class CatalogEndpoints
             query = query.Where(x => db.ScheduleMembers.Any(m => m.ScheduleId == sid && m.PipelineId == x.Id));
         }
 
-        if (!string.IsNullOrWhiteSpace(kind))
-        {
-            query = query.Where(x => x.Kind == kind);
-        }
+        // A lineage description is listed when it is asked for by its kind. Otherwise the list is the flows that run,
+        // as it was before descriptions existed, for every reader of it: a page, a member picker, a count.
+        query = string.IsNullOrWhiteSpace(kind)
+            ? query.WithoutLineageDescriptions()
+            : query.Where(x => x.Kind == kind);
 
         if (active is { } a)
         {
@@ -259,7 +260,7 @@ public static class CatalogEndpoints
     private static async Task<Ok<IReadOnlyList<PipelineBatchDto>>> ListPipelineBatchesAsync(
         CatalogDbContext db, Guid? repoId, bool? active, CancellationToken ct)
     {
-        var query = db.Pipelines.AsNoTracking().AsQueryable();
+        var query = db.Pipelines.AsNoTracking().WithoutLineageDescriptions();
         if (repoId is { } r)
         {
             query = query.Where(x => x.RepoId == r);
@@ -292,7 +293,7 @@ public static class CatalogEndpoints
     private static async Task<Ok<IReadOnlyList<string>>> ListPipelineProjectsAsync(
         CatalogDbContext db, Guid? repoId, CancellationToken ct)
     {
-        var query = db.Pipelines.AsNoTracking().AsQueryable();
+        var query = db.Pipelines.AsNoTracking().WithoutLineageDescriptions();
         if (repoId is { } r)
         {
             query = query.Where(x => x.RepoId == r);

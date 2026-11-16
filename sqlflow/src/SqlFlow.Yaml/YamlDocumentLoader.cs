@@ -135,7 +135,12 @@ public sealed class YamlDocumentLoader
     public static readonly IReadOnlySet<string> BuiltInFlowTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "file", "ing", "exp", "sp", "inv", "hc", "scm", "sch", "batch", "api", "cpy", "sftp", "cal", "trl",
+        Core.Lineage.LineageDescriptionFlow.FlowType,
     };
+
+    /// <summary>The lineage description kind (<c>flowType: lin</c>), which every loader reads: a description is the same
+    /// document in every host, and no host registers anything to run it.</summary>
+    private static readonly LineageDescriptionFlowKind LineageDescriptions = new();
 
     private sealed class DocumentKindYaml
     {
@@ -447,6 +452,18 @@ public sealed class YamlDocumentLoader
         => string.IsNullOrWhiteSpace(flowType) ? null : _kinds.GetValueOrDefault(flowType.Trim());
 
     /// <summary>
+    /// Why a document of kind <paramref name="flowKind"/> is never run, or null for a kind that runs. A lineage
+    /// description (<c>lin</c>) is the one kind that never does: it is read for lineage only. A boundary that would
+    /// queue a run without checking its parameters (the anchor of a node-scoped trigger, a schedule taking a member)
+    /// asks here, so the refusal is given before anything is queued; <see cref="ValidateRunParameters"/> gives the same
+    /// one everywhere else.
+    /// </summary>
+    public static string? NeverRunReason(string? flowKind)
+        => string.Equals(flowKind?.Trim(), Core.Lineage.LineageDescriptionFlow.FlowType, StringComparison.OrdinalIgnoreCase)
+            ? LineageDescriptionFlowKind.NeverRuns
+            : null;
+
+    /// <summary>
     /// The one rule every trust boundary applies to a run's parameters for a flow of kind <paramref name="flowKind"/>
     /// (a trigger, a schedule, the CLI, the executor): the parameters are valid on their own, and kind arguments
     /// (<see cref="Core.Runs.RunParameters.Operation"/>, <c>Values</c>, <c>Payload</c>) are accepted only by a registered
@@ -459,6 +476,14 @@ public sealed class YamlDocumentLoader
     public void ValidateRunParameters(string? flowKind, Core.Runs.RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+
+        // A lineage description is never run, whatever it is given: every boundary that would start a run asks here
+        // first, so this one refusal covers a trigger, a schedule, a batch, the command line and the executor.
+        if (NeverRunReason(flowKind) is { } neverRuns)
+        {
+            throw new SqlFlowException(neverRuns);
+        }
+
         parameters.Validate();
         var kind = FindKind(flowKind);
         if (kind is null)
@@ -498,6 +523,14 @@ public sealed class YamlDocumentLoader
     {
         var probe = Probe(yaml, source);
         var flowType = probe?.FlowType?.Trim();
+
+        // A lineage description is read before the envelope is: it is never run, so its own reader answers a schedule,
+        // a mode or a lifecycle with why it takes none, where the envelope would have accepted them.
+        if (string.Equals(flowType, Core.Lineage.LineageDescriptionFlow.FlowType, StringComparison.OrdinalIgnoreCase))
+        {
+            return LineageDescriptions.Parse(yaml, source);
+        }
+
         var schedule = MapSchedule(probe?.Schedule, source, FireDefaults);
         var mode = YamlDocumentParts.ParseExecutionMode(probe?.Mode, "mode", source);
 
@@ -614,6 +647,7 @@ public sealed class YamlDocumentLoader
             + "(local / Azure storage / S3, with optional zip/unzip), 'sftp' for an SFTP download or upload, "
             + "'cal' for a generated calendar dimension, "
             + "'trl' for a JSON translation flow (query result to shaped documents, optionally delivered to an API), "
+            + "'lin' for a lineage description of a step another system runs (metadata only, never executed), "
             + "or omit flowType for a file flow."
             + (_kinds.Count == 0
                 ? string.Empty

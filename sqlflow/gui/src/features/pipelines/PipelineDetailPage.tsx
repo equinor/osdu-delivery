@@ -31,14 +31,15 @@ import { ActiveBadge, RunStatusBadge, ScheduleStateBadge } from "../../component
 import { TruncatedText } from "../../components/TruncatedText";
 import { pollingInterval } from "../../hooks/usePolling";
 import { useTabFlowKind, useTabTitle } from "../../layout/workbench/TabsContext";
-import { embeddedHealthCheckName } from "../../lib/definition";
+import { describedStepFacts, embeddedHealthCheckName } from "../../lib/definition";
 import { formatBytes, formatDurationSeconds } from "../../lib/time";
 import { flowKindIdentity, flowKindToneClasses } from "../../modules/flowKinds";
+import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { kindContribution } from "../../modules/registry";
 import { projectOf } from "../repos/project";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
 import { hasCensus } from "../../lib/lsp/sqlflowLsp";
-import { orderPipelineTabs } from "./pipelineTabs";
+import { DESCRIPTION_HIDDEN_FACTS, DESCRIPTION_HIDDEN_TABS, orderPipelineTabs } from "./pipelineTabs";
 
 /** Definition JSON arrives as one compact string; pretty-print it, falling back to the raw text if malformed. */
 function prettyJson(raw: string): string {
@@ -483,8 +484,14 @@ export default function PipelineDetailPage() {
   // What kind of flow this is leads the header: its glyph, its name under the pipeline's, and the card's top edge in its
   // colour, so two flows of different kinds open side by side never read as the same page.
   const identity = flowKindIdentity(detail.kind);
-  const shows = (builtInTab: string) => !(kind?.hiddenPipelineTabs ?? []).includes(builtInTab);
-  const showsFact = (builtInFact: string) => !(kind?.hiddenPipelineFacts ?? []).includes(builtInFact);
+  // A lineage description is a document and nothing that runs: the tabs and facts of a run say nothing of it, and the
+  // step it describes (who runs it, where, who to ask) is what its header says in their place.
+  const described = isLineageDescription(detail.kind);
+  const step = described ? describedStepFacts(detail.definitionJson) : null;
+  const shows = (builtInTab: string) => !(kind?.hiddenPipelineTabs ?? []).includes(builtInTab)
+    && !(described && DESCRIPTION_HIDDEN_TABS.includes(builtInTab));
+  const showsFact = (builtInFact: string) => !(kind?.hiddenPipelineFacts ?? []).includes(builtInFact)
+    && !(described && DESCRIPTION_HIDDEN_FACTS.includes(builtInFact));
   // The kind's own tabs, then the built-in ones it shows, in the order the kind asks for.
   const tabs = orderPipelineTabs([
     ...(kind?.pipelineTabs ?? []).map((contributed) => ({ value: contributed.value, label: contributed.label, testId: contributed.testId })),
@@ -512,7 +519,7 @@ export default function PipelineDetailPage() {
       <DetailHeaderCard
         title={detail.name}
         leading={<FlowKindTile kind={detail.kind} testId="pipeline-kind" />}
-        subtitle={<span data-testid="pipeline-kind-label">{identity.label} flow</span>}
+        subtitle={<span data-testid="pipeline-kind-label">{described ? identity.label : `${identity.label} flow`}</span>}
         edgeClassName={flowKindToneClasses(identity.tone).edge}
         badges={(
           <>
@@ -536,7 +543,20 @@ export default function PipelineDetailPage() {
                 </TooltipContent>
               </Tooltip>
             )}
-            {detail.executionMode === "disabled" && (
+            {described && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Badge variant="outline" data-testid="pipeline-never-run">never run here</Badge>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">
+                  A lineage description says what a step another system runs reads and writes. It is read for
+                  lineage only: nothing here runs, schedules or triggers it, and it is in no wave.
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {!described && detail.executionMode === "disabled" && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
@@ -561,7 +581,8 @@ export default function PipelineDetailPage() {
           <>
             <Button variant="outline" size="sm" asChild data-testid="pipeline-view-lineage">
               <RouterLink
-                to={`/lineage?repoId=${encodeURIComponent(detail.repoId)}&focus=${encodeURIComponent(pipelineId)}`}
+                // A description is in the graph only with the described lineage on, so its link turns it on.
+                to={`/lineage?repoId=${encodeURIComponent(detail.repoId)}&focus=${encodeURIComponent(pipelineId)}${described ? "&described=on" : ""}`}
               >
                 <Network />
                 View in lineage
@@ -634,10 +655,13 @@ export default function PipelineDetailPage() {
                 </TooltipContent>
               </Tooltip>
             )}
-            <Button size="sm" onClick={() => setTriggerOpen(true)} data-testid="open-trigger-run">
-              <Play />
-              Trigger run
-            </Button>
+            {/* A lineage description is a step another system runs: there is nothing here to trigger. */}
+            {!isLineageDescription(detail.kind) && (
+              <Button size="sm" onClick={() => setTriggerOpen(true)} data-testid="open-trigger-run">
+                <Play />
+                Trigger run
+              </Button>
+            )}
           </>
         )}
         meta={(
@@ -669,11 +693,27 @@ export default function PipelineDetailPage() {
         {showsFact("targetServer") && (
           <DetailPair label="Target server"><ConnectionRef value={detail.targetServer} copyTestId="copy-pipeline-target" /></DetailPair>
         )}
+        {step !== null && (
+          <>
+            {step.system !== null && <DetailPair label="System"><span data-testid="pipeline-described-system">{step.system}</span></DetailPair>}
+            {step.unit !== null && (
+              <DetailPair label="Step">
+                <TruncatedText text={step.unit} maxWidth={320} />
+              </DetailPair>
+            )}
+            {step.owner !== null && <DetailPair label="Owner">{step.owner}</DetailPair>}
+            <DetailPair label="Connects">
+              <span data-testid="pipeline-described-connects">
+                {`${step.reads} read, ${step.writes} written`}{step.mappedColumns > 0 ? `, ${step.mappedColumns} mapped column${step.mappedColumns === 1 ? "" : "s"}` : ""}
+              </span>
+            </DetailPair>
+          </>
+        )}
         {kind?.pipelineFacts?.(detail)}
         <DetailPair label="Path">
           <TruncatedText text={detail.relativePath} mono maxWidth={240} copy copyTestId="copy-pipeline-path" />
         </DetailPair>
-        <RunTimes pipelineId={pipelineId} />
+        {!described && <RunTimes pipelineId={pipelineId} />}
         {shows("files") && <DetailPair label="Avg file size"><AvgFileSize pipelineId={pipelineId} /></DetailPair>}
         <DetailPair label="First seen"><RelativeTime value={detail.firstSeenUtc} absolute /></DetailPair>
         <DetailPair label="Last seen"><RelativeTime value={detail.lastSeenUtc} absolute /></DetailPair>

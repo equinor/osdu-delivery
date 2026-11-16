@@ -294,7 +294,10 @@ public static class InsightsEndpoints
         // Active flows that ran before the window but not inside it: a schedule that stopped firing, a paused
         // source, or a worker that cannot claim them. Reported as info; an intentionally idle flow reads the same.
         var fromUtc = report.FromUtc;
+        // A lineage description never runs, so one that took the name of a flow with a run history is not a flow that
+        // went quiet.
         var silent = await db.Pipelines.AsNoTracking()
+            .WithoutLineageDescriptions()
             .Where(p => p.Active && (repoId == null || p.RepoId == repoId))
             .Where(p => !db.Runs.Any(r => r.PipelineId == p.Id && r.WrittenUtc >= fromUtc))
             .Select(p => new

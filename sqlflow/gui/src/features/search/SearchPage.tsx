@@ -24,6 +24,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { PagedTable, type Column } from "../../components/PagedTable";
 import { TruncatedText } from "../../components/TruncatedText";
 import { formatBytes, parseUtc } from "../../lib/time";
+import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { moduleSearchCategories, type SearchCategoryContribution } from "../../modules/registry";
 
 /**
@@ -59,7 +60,7 @@ const definitionTarget = (row: DefinitionHit): LineageJumpTarget => ({
 });
 const flowTarget = (row: FlowHit): LineageJumpTarget => ({
   kind: "node", repoId: row.repoId, repoName: row.repoName, focusId: row.id, label: row.name,
-  sublabel: `${row.kind} flow · ${row.repoName}`,
+  sublabel: `${row.kind} flow · ${row.repoName}`, described: isLineageDescription(row.kind),
 });
 const flowColumnTarget = (row: FlowColumnHit): LineageJumpTarget => ({
   kind: "node", repoId: row.repoId, repoName: row.repoName, focusId: row.pipelineId, label: row.flowName,

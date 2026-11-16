@@ -144,6 +144,20 @@ public static class LineageService
         // synonym resolution, so it shows exactly what each tier contributed.
         var facts = BuildFactsDump(collected, flowDirectory, tiers, generatedAtUtc);
         var report = LineageGraphBuilder.Build(collected, flowDirectory, tiers, generatedAtUtc);
+
+        // The estate's lineage descriptions (flowType: lin) are placed beside the finished graph, never inside it: the
+        // builder above has not seen them, so everything it computed is what it computes for an estate without any.
+        if (collected.Descriptions.Count > 0)
+        {
+            report = report with { Described = LineageDescriber.Describe(report, collected.Descriptions, collected.Flows) };
+            if (progress is not null)
+            {
+                await progress(
+                    $"described lineage: {report.Described.Steps.Count} step(s), {report.Described.Objects.Count} described object(s), "
+                    + $"{report.Described.Edges.Count} connection(s), {report.Described.Columns.Count} column mapping(s).", ct).ConfigureAwait(false);
+            }
+        }
+
         return new LineageComputation { Report = report, Facts = facts };
     }
 

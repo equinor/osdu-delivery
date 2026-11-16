@@ -177,7 +177,7 @@ limit.
 | Run events | `RunEvent` | Optional | The limit an admin sets (above) |
 | Flow versions | `FlowVersion` | Keep | One row per distinct flow document, never removed |
 | Repositories and flows | `Repo`, `RepoSource`, `Pipeline`, `PipelineColumn`, `FlowDependency` | Keep | Rewritten by each sync; deleted with the repository |
-| Objects and lineage | `Object`, `ObjectColumn`, `ObjectRelationship`, `LineageEdge` | Keep | Rewritten by each sync, which forgets objects nothing knows |
+| Objects and lineage | `Object`, `ObjectColumn`, `ObjectRelationship`, `LineageEdge`, `LineageColumnMapping` | Keep | Rewritten by each sync, which forgets objects nothing knows |
 | Schema changes | `SchemaChange` | Keep, grows | Deleted with its repository |
 | Schedules | `Schedule`, `ScheduleMember`, `ScheduleParent` | Keep | Rewritten by each sync |
 | Subscribers | `Subscriber` and its eight report and model tables | Keep | Rewritten by each sync |

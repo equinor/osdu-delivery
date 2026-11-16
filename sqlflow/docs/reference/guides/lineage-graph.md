@@ -27,6 +27,7 @@ sourceRefs:
   - gui/src/features/lineage/graphModel.ts
   - gui/src/features/lineage/graphUrl.ts
   - gui/src/features/lineage/graphLayout.ts
+  - gui/src/features/lineage/graphBands.ts
   - gui/src/features/lineage/GraphControls.tsx
   - gui/src/features/lineage/GraphStatusLine.tsx
   - gui/src/features/lineage/GraphDetails.tsx
@@ -59,6 +60,11 @@ several staggered lines. A band is named by its wave only when every flow in it 
 repository, or a folder holding several waves, takes the first band after everything it reads from, and that band has
 no name. **Layout** turns the drawing left to right for those who prefer it, with the bands as columns.
 
+With **Described steps** on, the steps other systems run are drawn in bands of their own, named **Other systems**,
+between the waves: above Wave 1 for a chain that leads into the estate, and right after the wave it reads for a step
+that only consumes. They take no wave's band, so every wave holds the same flows under the same name with the switch
+on or off.
+
 ## What opens
 
 | You arrive by | Scope | What is drawn |
@@ -85,6 +91,7 @@ The bar is in the order a drawing is made in: what to look at, how much of it, t
 | **Waves** | Trims the drawing to a range of execution waves. |
 | **Kinds** | The legend, and the filter: hides kinds of node. |
 | **Layout** | Which way data runs: top to bottom, or left to right. |
+| **Other systems** | **Described steps** also draws what [lineage descriptions](../flow/lin.md) say of steps other systems run: where a landed file comes from, and what reads a table after the estate. Off unless switched on, and offered only when a description touches what is drawn. Described steps and the arrows to them are dotted: stated in a document, never run or observed here ([described lineage](../concepts/described-lineage.md)). |
 | **Trace** | Shown while a node is traced: how many hops around it, and which side. |
 
 ### Show: the level

@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Lineage can be followed past the estate, into the steps other systems run.** A lineage description
+  (`flowType: lin`) says what a step on another platform reads and writes: the job that fills a drop-off zone, the
+  notebook before it, a report that reads a table afterwards. Descriptions chain by the objects they name, reach the
+  estate by naming the flow that reads or writes an object (`feeds`, `fedBy`), carry prose `context` on what happens
+  to the data, and may map columns from source to target. A description is metadata only: it is never run, it is in
+  no wave, and lineage, waves, dependencies and the lists of pipelines are what they were without it. It is shown when
+  asked for: **Described steps** on the lineage graph, `described=true` on the lineage API, `sqlflow lineage`'s
+  `described lineage:` summary, and the assistant's `object_lineage(described: true)`, `list_lineage_descriptions`
+  and `column_mapping`. The editor checks and completes the document like any flow
+  ([lineage description](sqlflow/docs/reference/flow/lin.md),
+  [column mappings](sqlflow/docs/reference/flow/lin-columns.md),
+  [described lineage](sqlflow/docs/reference/concepts/described-lineage.md),
+  [describing a step another system runs](sqlflow/docs/reference/guides/describe-an-upstream-step.md)).
 - **A dimension build's trace says what its write is doing.** Each step of the write (deleting what earlier builds
   removed, merging, writing the table) logs when it starts and ends with its counts and how long it took; a wait for
   another build's write lock is logged with how long it waited; and a step still running after a minute logs again, at
@@ -347,10 +360,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /flows/{id}/check-values/export` asks for the same ([the Mappings page](osdu/docs/reference/concepts/gui-build.md#mappings)).
 
 - **The VS Code extension.** `osdu-delivery-vscode` makes the editor the place a pipeline is developed: a repository's plain `*.yaml`
-  files open as what they are, every key of every kind has completion, hover and checks, a mapping completes and is checked
-  against the template folders on its path as it is typed, and the views show the document in front of you, the repository,
-  the estate, its runs and what keeps a flow's records blocked. A run is started with its kind's operations and followed
-  ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
+  files open as what they are, every key of every kind has completion, hover and checks, and a mapping completes and is checked
+  against the template folders on its path as it is typed. A run is started with its kind's operations and followed on its
+  own page ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
+
+- **The GUI's pages in the editor.** The extension draws one side bar, the working copy by kind with what each document offers
+  and the GUI's own menu, and opens every page of the GUI in a tab, in the colours of the editor's theme and under your
+  sign-in: a flow, a run with its trace, lineage, templates, a record's history. No tree view or panel of the editor's own is
+  left ([the side bar and the pages](osdu/docs/reference/guides/vscode.md#the-side-bar-and-the-pages)).
+
+- **A mapping previewed from its file.** `Preview Mapping` (Ctrl+K V) opens the mapping's page beside its file and reads the
+  file: its overview, its properties against the template and the shape of its record show a mapping before it is pushed,
+  and follow the file as it is saved ([previewing a mapping](osdu/docs/reference/guides/vscode.md#previewing-a-mapping)).
+
+- **A package for the Marketplace.** The extension is packaged once per platform, each with its own language server, MCP
+  server and command line, by `npm run package` and by a workflow that builds all four and publishes them when asked
+  ([building it](osdu/docs/reference/guides/vscode.md#building-it)).
 
 - **Sign in once, with Microsoft, in the browser.** A client's browser sign-in now reaches the GUI, behind its usual sign-in, so an
   account that signs in with Entra approves the extension, an assistant's `login` or `sqlflow login`, which the control plane's

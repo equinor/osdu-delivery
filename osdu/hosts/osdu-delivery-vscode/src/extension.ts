@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateHost, deactivateHost, VscodeHost } from '../../../../sqlflow/tools/sqlflow-vscode/src/host';
+import { activateHost, deactivateHost, Pages, VscodeHost } from '../../../../sqlflow/tools/sqlflow-vscode/src/host';
 import { Estate } from '../../../../sqlflow/tools/sqlflow-vscode/src/mcp/estate';
 import { deliveryModule } from './deliveryModule';
 import { SKELETONS } from './skeletons';
@@ -43,11 +43,13 @@ const OSDU_DELIVERY: VscodeHost = {
 export interface OsduDeliveryApi {
     skeletons: typeof SKELETONS;
     estate: Estate;
+    /** The GUI's pages, each opened in a tab of the editor. */
+    pages: Pages;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<OsduDeliveryApi> {
-    const { estate } = await activateHost(context, OSDU_DELIVERY);
-    return { skeletons: SKELETONS, estate };
+    const { estate, pages } = await activateHost(context, OSDU_DELIVERY);
+    return { skeletons: SKELETONS, estate, pages };
 }
 
 export async function deactivate(): Promise<void> {

@@ -290,7 +290,12 @@ public sealed class CatalogSync
             // side is an input too: an edited subscribers.yaml, a committed report specification, or a report
             // uploaded to the semantic layer changes the fingerprint without touching any flow.
             var anyExcluded = collected.Flows.Count != flows.Count;
-            var lineageNeeded = forceLineage || includeDerived || anyExcluded || runs.Count > 0
+
+            // A lineage description left out of the flow set (it has the name of a flow that runs, or of another
+            // description) is no pipeline, so no content hash speaks for it. While the estate holds one, lineage is
+            // computed, so the finding that says why it was left out is reported until the document is renamed.
+            var descriptionLeftOut = collected.Descriptions.Count != collected.Flows.Count(f => f.IsLineageDescription);
+            var lineageNeeded = forceLineage || includeDerived || anyExcluded || descriptionLeftOut || runs.Count > 0
                 || !string.Equals(storedSubscriberHash, collected.SubscriberInputHash, StringComparison.Ordinal)
                 || LineageInputsChanged(pipelines, anyUnreadable, storedActiveHashes)
                 || await ExtensionLineageInputsChangedAsync(context, repoId, root, ct).ConfigureAwait(false);
@@ -319,6 +324,13 @@ public sealed class CatalogSync
                     foreach (var warning in report.Warnings)
                     {
                         warnings.Add($"lineage: {warning}");
+                    }
+
+                    // What a lineage description says that could not be used. Reported apart from the lineage above,
+                    // which no description can change.
+                    foreach (var finding in report.Described.Warnings)
+                    {
+                        warnings.Add($"described lineage: {finding}");
                     }
                 }
                 catch (Exception ex) when (ex is SqlFlow.Core.SqlFlowException or IOException or InvalidOperationException)
@@ -849,6 +861,14 @@ public sealed class CatalogSync
                 row.DefinitionJson = projected.DefinitionJson;
                 row.Active = true;
                 row.LastSeenUtc = nowUtc;
+                if (string.Equals(projected.Kind, Core.Lineage.LineageDescriptionFlow.FlowType, StringComparison.OrdinalIgnoreCase))
+                {
+                    // A lineage description is in no wave. A document rewritten as one keeps nothing of the place the
+                    // flow it replaced had in the plan, which nothing else would reset: a wave is stamped only on the
+                    // flows the plan holds.
+                    row.Wave = -1;
+                }
+
                 updated++;
             }
             else
@@ -1662,6 +1682,9 @@ public sealed class CatalogSync
             FlowDependencies = report.FlowDependencies
                 .Select(d => d with { ViaObjects = d.ViaObjects.Select(MapKey).ToList() })
                 .ToList(),
+            // A lineage description that named a flow is connected to that flow's object, so it follows the object
+            // to the identity adopted here.
+            Described = report.Described.Rekey(MapKey),
         };
     }
 
@@ -1950,6 +1973,30 @@ public sealed class CatalogSync
             });
             preservedEdges++;
             edges++;
+        }
+
+        // The described lineage: what this repository's lineage descriptions (flowType: lin) say of steps SQLFlow does
+        // not run. It is stored in the same table so one walk can cross both, under relations of its own
+        // (DescribedReads, DescribedWrites) so that everything reading Reads and Writes, in this pass and in every
+        // other reader, is as it would be without it. The repository's rows were deleted with its other edges above; a
+        // described object has no registry row, so its name is stored on the edge.
+        var describedNames = report.Described.Objects.ToDictionary(o => o.Key, o => o.Name, StringComparer.Ordinal);
+        foreach (var edge in report.Described.Edges)
+        {
+            var name = describedNames.TryGetValue(edge.ObjectKey, out var described)
+                ? described
+                : objectNames.TryGetValue(edge.ObjectKey, out var registered) ? registered : edge.ObjectKey;
+            context.LineageEdges.Add(CatalogProjection.Edge(edge, repoId, CatalogProjection.ShownName(name)));
+        }
+
+        // The optional column level of the described lineage, replaced per repository like the edges.
+        await context.LineageColumnMappings.Where(m => m.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+        foreach (var mapping in report.Described.Columns)
+        {
+            foreach (var row in CatalogProjection.ColumnMappings(mapping, repoId))
+            {
+                context.LineageColumnMappings.Add(row);
+            }
         }
 
         // The interpreted data model is this repo's view too (its code exhibited the joins), so it is

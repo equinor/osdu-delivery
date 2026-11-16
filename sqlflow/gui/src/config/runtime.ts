@@ -41,6 +41,15 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   return config;
 }
 
+/**
+ * Gives the configuration to a page whose host knows it (embed/), in place of reading config.json: a hosted page is
+ * served from its host's own files, which hold no deployment's configuration. The host gives it again when the control
+ * plane it talks to changes.
+ */
+export function setRuntimeConfig(next: RuntimeConfig): void {
+  config = { apiBaseUrl: next.apiBaseUrl.replace(/\/+$/, ""), branding: next.branding };
+}
+
 export function runtimeConfig(): RuntimeConfig {
   if (!config) {
     throw new Error("Runtime configuration is not loaded yet; loadRuntimeConfig() runs before the app renders.");

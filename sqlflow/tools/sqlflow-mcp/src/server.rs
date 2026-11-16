@@ -412,7 +412,7 @@ pub struct ValidateFlowInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FlowTypeInput {
-    /// The flow kind: omit for the file flow, or one of ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl.
+    /// The flow kind: omit for the file flow, or one of ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl, lin.
     #[serde(rename = "flowType")]
     pub flow_type: Option<String>,
     /// A document that is not a flow, instead of a flow kind: "schedules", "subscribers", "ai-context", or a
@@ -492,7 +492,8 @@ pub struct RunTraceInput {
 pub struct ListPipelinesInput {
     #[serde(rename = "repoId")]
     pub repo_id: Option<String>,
-    /// Flow kind filter (e.g. ing, exp, sp).
+    /// Flow kind filter (e.g. ing, exp, sp). Lineage descriptions (kind lin) are documents that never run and are
+    /// listed only when this names them; list_lineage_descriptions is the tool for them.
     pub kind: Option<String>,
     /// Filter by active state.
     pub active: Option<bool>,
@@ -741,6 +742,42 @@ pub struct ObjectLineageInput {
     pub direction: Option<String>,
     /// How many hops to walk (default 3, max 8). One hop is one flow/module crossing: source table ->
     /// landing table is depth 1.
+    pub depth: Option<i64>,
+    /// true to also follow the DESCRIBED lineage: what lineage descriptions (flowType: lin) say of steps other
+    /// systems run, before a file the estate lands or after a table it writes. Off by default, so the walk is the
+    /// lineage SQLFlow computed from the flows it runs. Ask for it when the answer shows `describedAvailable: true`,
+    /// or when the question is about where data comes from before it reaches the estate.
+    pub described: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LineageDescriptionsInput {
+    /// Restrict to one repository (its id from list_repos). Omit for every repository.
+    #[serde(rename = "repoId")]
+    pub repo_id: Option<String>,
+    /// A word of the description's name or of its document: a system, an object, a job name.
+    pub search: Option<String>,
+    /// Page number, from 1.
+    pub page: Option<i64>,
+    /// Rows per page.
+    #[serde(rename = "pageSize")]
+    pub page_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ColumnMappingInput {
+    /// The key of the object whose columns are asked about (the target): from object_lineage with described: true,
+    /// or from list_lineage_descriptions. Needed unless `pipelineId` is given.
+    pub to: Option<String>,
+    /// The key of an object the columns come from (the source). With it, only what comes from that object is
+    /// returned, followed through as many described steps as lie between the two. Omit for the direct sources.
+    pub from: Option<String>,
+    /// One column of the target, to ask where that column alone comes from.
+    pub column: Option<String>,
+    /// The id of one lineage description, to list everything it maps. Used instead of `to`.
+    #[serde(rename = "pipelineId")]
+    pub pipeline_id: Option<String>,
+    /// How many described steps a column is followed through when `from` is given (default 8, max 12).
     pub depth: Option<i64>,
 }
 
@@ -2367,15 +2404,69 @@ there are, so read the last page for how a long run ended. The SQL it executed i
             \"where does <table> get its data\", \"what feeds this\", \"what depends on this\", and impact analysis beyond \
             one hop; describe_object's edges stop at the object itself, this crosses the flows. `truncated: true` means a \
             cap cut the walk, so absence of a node is then not proof of absence; re-ask with a smaller depth or one \
-            direction. Takes the object `key` from search_all / describe_object / lineage_objects."
+            direction. Takes the object `key` from search_all / describe_object / lineage_objects. \
+            The walk is the lineage SQLFlow computed from the flows it runs, and it ends where the estate ends: at the file \
+            a flow lands, or at the last table it writes. `describedAvailable: true` says lineage descriptions continue \
+            from there: ask again with `described: true` to follow them, back to the source a file was made from or on to \
+            what consumes a table. A step with `described: true` is a hop a description STATES (a step another system \
+            runs, written down and never observed), so say so when you report it; `describedSteps` names each description \
+            crossed (its system, where the step lives there, what it does), and get_pipeline(pipelineId) returns its \
+            document, whose `context` says what happens to the data in that step. An object with `kind: Described` is one \
+            only descriptions name; its `boundary` is `origin` when a description marks it as where the data starts, and \
+            `open` when what produces it is simply not described, which is the end of what is known, not a fault."
     )]
     async fn object_lineage(&self, Parameters(i): Parameters<ObjectLineageInput>) -> String {
         let q = vec![
             ("key", i.key),
             ("direction", i.direction.unwrap_or_default()),
             ("depth", i.depth.map(|n| n.to_string()).unwrap_or_default()),
+            ("described", i.described.map(|b| b.to_string()).unwrap_or_default()),
         ];
         self.get("/api/v1/lineage/objects/graph", &q).await
+    }
+
+    #[tool(
+        description = "List the lineage descriptions (flowType: lin) the catalog holds: documents that say what a step ANOTHER system \
+            runs reads and writes (a job on a data platform, a pipeline, a notebook, a manual export), so lineage can be \
+            followed past the flows SQLFlow runs. Each row is one step: its system, where it lives there, what it does, \
+            the objects it is connected to (`describedObject: true` for one only descriptions name, false for an object \
+            of the estate it reached by naming a flow), and how many columns it maps. A description is metadata only and \
+            is never executed: it has no runs, no schedule and no wave. Use this to find what is described for a system or \
+            an object (`search`), then object_lineage(key, described: true) to walk it and get_pipeline(pipelineId) to \
+            read a step's document and its `context`. An empty list means the estate describes nothing outside itself, \
+            which is the normal state: descriptions are optional."
+    )]
+    async fn list_lineage_descriptions(&self, Parameters(i): Parameters<LineageDescriptionsInput>) -> String {
+        let q = vec![
+            ("repoId", i.repo_id.unwrap_or_default()),
+            ("search", i.search.unwrap_or_default()),
+            ("page", i.page.map(|n| n.to_string()).unwrap_or_default()),
+            ("pageSize", i.page_size.map(|n| n.to_string()).unwrap_or_default()),
+        ];
+        self.get("/api/v1/lineage/described/steps", &q).await
+    }
+
+    #[tool(
+        description = "The column mapping of the described lineage: for the columns of an object a lineage description writes, the \
+            columns they come from and how each value is made. THE tool for \"what is the mapping from <source> to \
+            <target>\" and \"where does column X come from\" when the step in between is one another system runs. With \
+            `to` alone it returns the direct sources of each mapped column; with `from` as well, only what comes from that \
+            object, followed through every described step between the two (each source then lists the columns in between \
+            under `via`); with `column`, one column. A `*` in a column name stands for every column not listed by name. A \
+            column with no `sources` is one the step makes itself; its `note` says how. Column mappings are an OPTIONAL \
+            level of detail that most descriptions do not declare: an empty answer comes with a `notes` line saying why, and \
+            means the mapping was not written down, never that the columns do not exist. `truncated: true` means a limit \
+            cut the answer. Object keys come from object_lineage(described: true) or list_lineage_descriptions."
+    )]
+    async fn column_mapping(&self, Parameters(i): Parameters<ColumnMappingInput>) -> String {
+        let q = vec![
+            ("to", i.to.unwrap_or_default()),
+            ("from", i.from.unwrap_or_default()),
+            ("column", i.column.unwrap_or_default()),
+            ("pipelineId", i.pipeline_id.unwrap_or_default()),
+            ("depth", i.depth.map(|n| n.to_string()).unwrap_or_default()),
+        ];
+        self.get("/api/v1/lineage/described/columns", &q).await
     }
 
     #[tool(
@@ -4753,6 +4844,13 @@ const ESTATE_GUIDE: &str = "\
   the graph transitively, upstream to the true origin (the source system's table, file, or API endpoint) and
   downstream to every dependent, each step naming the flow that carries the hop. Use it whenever the answer
   is more than one hop away; describe_object's edge list stops at the object itself.
+- \"Where does this data come from BEFORE it reaches us / what happened to it on the way / what is the mapping
+  from <source> to <target>?\": the estate's own lineage ends at the file a flow lands. When object_lineage
+  answers `describedAvailable: true`, lineage descriptions (flowType: lin) continue from there: walk again with
+  `described: true`, read each crossed step's document with get_pipeline (its `context` says which rows are
+  left out or added, how keys are formed, when it runs), and ask column_mapping(to, from) for the columns.
+  Report such a hop as described, not as run: it is what a document states about another system. A `boundary`
+  of `open` means the description stops there, so say that what lies beyond is not described.
 - \"Which tables does this dashboard/report use?\": subscribers are the consumption side. list_subscribers
   (filter by type or search by name/owner) finds the report; describe_subscriber(key) lists every object its
   queries read and the SQL itself. The reverse (\"who consumes this table\") is in describe_semantic_table's

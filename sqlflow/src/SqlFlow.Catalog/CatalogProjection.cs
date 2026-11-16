@@ -207,6 +207,55 @@ public static class CatalogProjection
         };
     }
 
+    /// <summary>The length of a shown object or column name, and of a note, in <c>catalog.LineageColumnMapping</c> and
+    /// of an edge's object name in <c>catalog.LineageEdge</c>.</summary>
+    public const int ObjectNameLength = 512;
+    private const int NoteLength = 2000;
+
+    /// <summary>A name as an edge or a column mapping shows it, cut to what its column holds.</summary>
+    public static string ShownName(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return Truncate(name, ObjectNameLength);
+    }
+
+    /// <summary>Projects one mapped column of a lineage description into its catalog rows: one per source column, or
+    /// a single row without a source for a column the described step makes itself.</summary>
+    public static IEnumerable<CatalogLineageColumnMapping> ColumnMappings(LineageColumnMapping mapping, Guid repoId)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        CatalogLineageColumnMapping Row(int sourceOrdinal, LineageColumnSource? source) => new()
+        {
+            RepoId = repoId,
+            PipelineId = CatalogIdentity.Pipeline(repoId, mapping.Flow),
+            Flow = mapping.Flow,
+            TargetObjectKey = mapping.TargetObjectKey,
+            // An object of the estate is shown as database.schema.name, which may be longer than the column holds; the
+            // key beside it is the identity, so the shown name is cut and never fails the sync.
+            TargetObjectName = Truncate(mapping.TargetObjectName, ObjectNameLength),
+            TargetColumn = Truncate(mapping.TargetColumn, ObjectNameLength),
+            Ordinal = mapping.Ordinal,
+            SourceOrdinal = sourceOrdinal,
+            SourceObjectKey = source?.ObjectKey,
+            SourceObjectName = source is null ? null : Truncate(source.ObjectName, ObjectNameLength),
+            SourceColumn = source is null ? null : Truncate(source.Column, ObjectNameLength),
+            // A note is served as stored, so it is redacted like the document it comes from: the reader refuses a
+            // credential, and nothing that slipped past it rests here.
+            Note = NullIfBlank(mapping.Note) is { } note ? Truncate(SecretHygiene.RedactedMessage(note), NoteLength) : null,
+        };
+
+        if (mapping.Sources.Count == 0)
+        {
+            yield return Row(0, null);
+            yield break;
+        }
+
+        for (var i = 0; i < mapping.Sources.Count; i++)
+        {
+            yield return Row(i + 1, mapping.Sources[i]);
+        }
+    }
+
     /// <summary>Projects a flow-level lineage dependency into a repo-scoped catalog row; <paramref name="viaObjects"/>
     /// is the mediating objects' display names, comma-joined.</summary>
     public static CatalogFlowDependency FlowDependency(LineageFlowDependency dependency, Guid repoId, string viaObjects)

@@ -31,6 +31,13 @@ public static class RunArtifactCollector
         var runsRoots = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var flow in flows)
         {
+            if (flow.IsLineageDescription)
+            {
+                // A lineage description never runs, so it has no run history: it claims no run folder (one a flow
+                // whose name is written the same way on disk may own) and its folder is no place to look for runs.
+                continue;
+            }
+
             bySafeName.TryAdd(RunHistoryWriter.SafeName(flow.Node.Name), flow);
             var documentDirectory = Path.GetDirectoryName(Path.Combine(root, flow.Node.File)) ?? root;
             runsRoots.Add(Path.Combine(documentDirectory, ".sqlflow", "runs"));

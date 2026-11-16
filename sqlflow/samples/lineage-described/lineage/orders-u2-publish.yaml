@@ -1,0 +1,31 @@
+# The step that writes the files the estate lands. It names the flow that reads them (feeds), so the location is
+# written once, in that flow, and never repeated here.
+flowType: lin
+name: orders-u2-publish-lin
+description: Writes the curated orders as the daily file the estate lands.
+system: lakehouse
+unit: job orders-daily, task publish_orders
+owner: data-platform@example.com
+evidence:
+  - { repo: lakehouse-jobs, path: jobs/orders/publish_orders.py, commit: 4f1c2ab9 }
+
+reads:
+  - { name: curated.orders, as: orders }
+
+writes:
+  - feeds: described-land-orders
+    note: One CSV per day, one row per order of that day.
+    columns:
+      order_id: orders.order_id
+      customer_id: orders.customer_id
+      order_date: orders.order_date
+      amount: { from: orders.amount_eur, note: Rounded to two decimals. }
+      exported_at: # the step makes this one itself
+
+context: |
+  ## Rows
+  Every order of the day is written. An empty day writes a file with the header alone.
+
+  ## Timing
+  Runs after curate_orders in the same job. The file is written under a temporary name and renamed, so a half-written
+  file is never picked up.

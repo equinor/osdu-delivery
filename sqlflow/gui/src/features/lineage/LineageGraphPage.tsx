@@ -37,7 +37,10 @@ import { ExplainPageButton } from "../chat/ExplainPageButton";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
 import { useThemeMode } from "../../theme/ThemeModeContext";
 import { GraphCanvas, type CenterRequest } from "./GraphCanvas";
-import { CompactControl, Field, KindFilter, LevelControl, OrientationControl, TraceControl, WaveRange } from "./GraphControls";
+import { isLineageDescription } from "../../modules/lineageDescriptionKind";
+import {
+  CompactControl, DescribedControl, Field, KindFilter, LevelControl, OrientationControl, TraceControl, WaveRange,
+} from "./GraphControls";
 import { GraphDetails } from "./GraphDetails";
 import { counted, kindLook } from "./graphKinds";
 import { bandedLayout, type BandedLayout } from "./graphBands";
@@ -216,13 +219,16 @@ export default function LineageGraphPage() {
     () => (seedNode === "" ? params.expand : [seedNode, ...params.expand]),
     [seedNode, params.expand],
   );
+  // The described lineage (what lineage descriptions say of steps other systems run) is asked for only when the
+  // reader turned it on, so the drawing is the lineage the estate computed until then.
   const projectGraph = useQuery({
-    queryKey: ["lineage-project-graph", params.repoId, params.project, seedNode, expandTokens.join("\u0000")],
+    queryKey: ["lineage-project-graph", params.repoId, params.project, seedNode, expandTokens.join("\u0000"), params.described],
     enabled: graphEnabled,
     queryFn: () => lineageApi.projectGraph({
       repoId: params.repoId || undefined,
       project: params.project || undefined,
       expand: expandTokens,
+      described: params.described,
     }),
     // Walking past a frontier node grows the same drawing, so it stays up while the larger one loads; another
     // scope is another drawing, and starts from its skeleton.
@@ -298,7 +304,9 @@ export default function LineageGraphPage() {
       return { ...NO_LAYOUT, positions: layeredLayout(view.nodes.map((node) => node.id), view.edges, params.orientation) };
     }
     return bandedLayout(
-      view.nodes.map((node) => ({ id: node.id, flow: node.memberType === "flow", waves: node.waves })),
+      view.nodes.map((node) => ({
+        id: node.id, flow: node.memberType === "flow", waves: node.waves, described: node.described === true,
+      })),
       view.edges,
       params.orientation,
     );
@@ -449,8 +457,10 @@ export default function LineageGraphPage() {
 
   // A node found in the catalog rather than on the canvas. A flow is drawn in its own repository, traced, so its
   // whole chain is there on both sides; anything else seeds on itself, since data belongs to no one repository.
-  const seedFocus = useCallback((id: string, hitRepoId?: string) => {
+  // A lineage description is drawn only with the described lineage on, so finding one turns it on.
+  const seedFocus = useCallback((id: string, hitRepoId?: string, described = false) => {
     patch({
+      ...(described ? { described: true } : {}),
       repoId: hitRepoId ?? "",
       project: "",
       focus: id,
@@ -478,6 +488,7 @@ export default function LineageGraphPage() {
       direction: "both",
       stacked: true,
       expand: [],
+      described: false,
     }));
     setUnfoldedState({ key: drawingKey, openStacks: NOTHING, revealUp: NOTHING, revealDown: NOTHING });
   }, [patch, drawingKey]);
@@ -682,7 +693,9 @@ export default function LineageGraphPage() {
   // run from here; a flow reached in another repository, and data, get the navigation actions only.
   const menuNode = nodeMenu === null ? null : view?.nodes.find((node) => node.id === nodeMenu.id) ?? null;
   const menuFlow = menuNode !== null && menuNode.type === "flow" ? flowById.get(menuNode.id) ?? null : null;
-  const menuCanRun = menuFlow !== null && params.repoId !== "" && menuFlow.repoId === params.repoId;
+  // A lineage description is a step another system runs: nothing here can run it, so it is offered no run.
+  const menuCanRun = menuFlow !== null && params.repoId !== "" && menuFlow.repoId === params.repoId
+    && !isLineageDescription(menuFlow.kind);
   const menuFolder = menuNode !== null && menuNode.type === "flow" ? base?.nodes.get(menuNode.id)?.folderId ?? null : null;
   const kindOf = (id: string) => flowById.get(id)?.kind;
 
@@ -764,6 +777,12 @@ export default function LineageGraphPage() {
             <Field label="Layout">
               <OrientationControl value={params.orientation} onChange={(orientation) => patch({ orientation })} />
             </Field>
+            {/* Offered only where it changes the drawing: a description touches what is drawn, or it is already on. */}
+            {(params.described || payload?.describedAvailable === true) && (
+              <Field label="Other systems" testId="graph-described-control">
+                <DescribedControl value={params.described} onChange={(described) => patch({ described })} />
+              </Field>
+            )}
             {traceId !== "" && !view.traceMissing && (
               <Field label="Trace" testId="graph-trace-control">
                 <TraceControl
@@ -824,6 +843,19 @@ export default function LineageGraphPage() {
                 <span className="inline-flex items-center gap-1.5 text-warning" data-testid="graph-trace-missing">
                   <TriangleAlert aria-hidden className="size-3.5" />
                   The traced node is not in this scope.
+                  {/* A step another system runs is in the drawing only with the described lineage on: a link that
+                      names one without asking for it lands here, one click from seeing it. */}
+                  {!params.described && payload?.describedAvailable === true && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="h-5"
+                      onClick={() => patch({ described: true })}
+                      data-testid="graph-trace-missing-described"
+                    >
+                      Show described steps
+                    </Button>
+                  )}
                   <Button variant="outline" size="xs" className="h-5" onClick={stopTracing}>Stop tracing</Button>
                 </span>
               )}

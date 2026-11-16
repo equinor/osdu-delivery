@@ -1,9 +1,17 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { credentialFile } from '../gui/credentials';
 import { McpServer } from './mcpServer';
-import { parseAuthStatus, parseSignIn, ToolFailed } from './toolAnswer';
+import { parseAuthStatus, parseSignIn, SignInNeeded, ToolFailed } from './toolAnswer';
+
+/** Who is signed in: the person, and what the control plane lets them do. */
+export interface SignedIn {
+    subject: string;
+    /** The person's role; null for a credential with no account behind it. */
+    role: string | null;
+    scopes: string[];
+}
 
 /** The longest a browser sign-in is waited for: the code's own life is the control plane's, and it says when it ends. */
 const SIGN_IN_WAIT_MS = 10 * 60 * 1000;
@@ -24,6 +32,8 @@ export class SignIn implements vscode.Disposable {
     private readonly onChange = new vscode.EventEmitter<void>();
     readonly changed = this.onChange.event;
     private person: string | undefined;
+    private held: SignedIn | undefined;
+    private why: string | undefined;
     private readonly watch: fs.FSWatcher | undefined;
 
     constructor(mcp: McpServer, product: string) {
@@ -44,21 +54,37 @@ export class SignIn implements vscode.Disposable {
         return this.person;
     }
 
+    /** Who is signed in, with the role and scopes the control plane gave them, as last checked. */
+    get identity(): SignedIn | undefined {
+        return this.held;
+    }
+
+    /** Why nobody is signed in, when the last check said more than that nobody is: the control plane did not answer, say. */
+    get problem(): string | undefined {
+        return this.why;
+    }
+
     /** Asks the server who its credential is. Reachable or not, this never throws: no answer reads as signed out. */
     async check(): Promise<boolean> {
         try {
             const status = parseAuthStatus(await this.mcp.text('check_auth_status'));
-            this.set(status.state === 'signed-in' ? status.who ?? 'signed in' : undefined);
-        } catch {
-            this.set(undefined);
+            if (status.state === 'signed-in') {
+                this.set({ subject: status.who ?? 'signed in', role: status.role ?? null, scopes: status.scopes ?? [] }, undefined);
+            } else {
+                this.set(undefined, status.state === 'signed-out' && !/^Not authenticated/i.test(status.reason) ? status.reason : undefined);
+            }
+        } catch (err) {
+            this.set(undefined, err instanceof SignInNeeded ? undefined : err instanceof Error ? err.message : String(err));
         }
         return this.person !== undefined;
     }
 
-    private set(person: string | undefined): void {
-        const changed = person !== this.person;
-        this.person = person;
-        void vscode.commands.executeCommand('setContext', 'sqlflow.signedIn', person !== undefined);
+    private set(identity: SignedIn | undefined, problem: string | undefined): void {
+        const changed = JSON.stringify(identity) !== JSON.stringify(this.held) || problem !== this.why;
+        this.held = identity;
+        this.person = identity?.subject;
+        this.why = problem;
+        void vscode.commands.executeCommand('setContext', 'sqlflow.signedIn', identity !== undefined);
         if (changed) {
             this.onChange.fire();
         }
@@ -140,14 +166,9 @@ export class SignIn implements vscode.Disposable {
 
     async signOut(): Promise<void> {
         await this.mcp.text('logout');
-        this.set(undefined);
+        this.set(undefined, undefined);
         void vscode.window.showInformationMessage(`${this.product}: signed out.`);
     }
-}
-
-/** The file every client of a control plane shares a person's sign-in through, the CLI and the MCP server included. */
-function credentialFile(): string {
-    return process.env.SQLFLOW_CREDENTIALS_FILE?.trim() || path.join(os.homedir(), '.sqlflow', 'credentials.json');
 }
 
 /** Watches a file by its folder, which outlives it. A folder that is not there yet means nobody has signed in on this

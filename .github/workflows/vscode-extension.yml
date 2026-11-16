@@ -1,0 +1,122 @@
+name: VS Code extension
+
+# Packages the OSDU Delivery extension for VS Code, one package for each platform it installs on, and publishes them to
+# the Visual Studio Marketplace when the person running it asks for that.
+#
+# Run by hand only. A package carries three programs built for its platform (the language server, the MCP server and
+# the sqlflow command line), so each one is built on a runner of that platform by the extension's own packager
+# (osdu/hosts/osdu-delivery-vscode/package.mjs), which is what a developer runs for their own machine. Every run keeps
+# its packages as artifacts; nothing leaves the repository unless `publish` is ticked.
+#
+# Publishing needs the repository secret VSCE_PAT: a personal access token of the Marketplace publisher the manifest
+# names (`publisher` in osdu/hosts/osdu-delivery-vscode/package.json), with the Marketplace scope Manage. The Marketplace
+# refuses a version it already holds, so a package is published once: raise `version` in the manifest for the next one.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the packages to the Visual Studio Marketplace
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One platform failing to build says nothing of the others, and their packages are still worth having.
+      fail-fast: false
+      matrix:
+        include:
+          - target: win32-x64
+            runner: windows-latest
+          - target: linux-x64
+            runner: ubuntu-latest
+          - target: darwin-arm64
+            runner: macos-latest
+          - target: darwin-x64
+            runner: macos-13
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # The pages the extension shows are built from the GUI's sources, with the GUI's packages.
+      - name: Install OSDU GUI dependencies
+        working-directory: osdu/gui
+        run: npm ci
+
+      - name: Install the extension's dependencies
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: npm ci
+
+      - name: Unit test the extension
+        shell: bash
+        run: |
+          (cd osdu/hosts/osdu-delivery-vscode && npm run compile && npm test)
+          node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
+
+      # Builds the three programs for this runner's platform, the pages and the bundle, and packages them under the
+      # platform's name. It stops when the runner is not the platform asked for, or when a program is missing.
+      - name: Package
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: node package.mjs --target ${{ matrix.target }}
+
+      - name: Keep the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: vsix-${{ matrix.target }}
+          path: osdu/hosts/osdu-delivery-vscode/*.vsix
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to the Marketplace
+    needs: package
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Fetch the packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: vsix-*
+          path: packages
+          merge-multiple: true
+
+      # Every platform's package goes up under the one version, each for its own platform. A package the Marketplace
+      # already holds is refused there, which fails this step and names it: a version is published once.
+      - name: Publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::The repository secret VSCE_PAT is not set, so nothing can be published. The packages are this run's artifacts."
+            exit 1
+          fi
+          shopt -s nullglob
+          packages=(packages/*.vsix)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "::error::No package was built, so there is nothing to publish."
+            exit 1
+          fi
+          npx --yes @vscode/vsce@4 publish --packagePath "${packages[@]}"

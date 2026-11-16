@@ -156,6 +156,24 @@ load:
 `,
     },
     {
+        label: 'Lineage description',
+        detail: 'flowType: lin, a step another system runs before the drop-off zone, for lineage only and never executed',
+        content: `flowType: lin
+name: newsystem-thing-u1-publish-lin
+description: Writes the files the pre-ingestion flow lands.
+system: databricks
+unit: the job and task that runs the step
+reads:
+  - { name: curated.thing, as: src, origin: true }
+writes:
+  - feeds: newsystem-thing-01-pre
+    columns:
+      thing_id: src.id
+context: |
+  Which rows are left out or added and why, how keys are formed, and when the step runs.
+`,
+    },
+    {
         label: 'Schedule library',
         detail: 'schedules.yaml, named schedules flows join',
         content: `schedules:

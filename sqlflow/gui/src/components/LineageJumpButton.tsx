@@ -57,7 +57,9 @@ export interface DatasetJumpTarget {
  */
 export type LineageJumpTarget =
   | { kind: "object"; objectKey: string; objectKind: string; label: string; sublabel?: string }
-  | { kind: "node"; repoId: string; repoName: string; focusId: string; label: string; sublabel?: string }
+  // `described` is true for a lineage description (a step another system runs): the graph draws those only when
+  // asked to, so the jump asks, or the node it lands on would not be in the drawing.
+  | { kind: "node"; repoId: string; repoName: string; focusId: string; label: string; sublabel?: string; described?: boolean }
   | { kind: "file"; filePath: string; label: string; sublabel?: string }
   | { kind: "subscriber"; subscriberKey: string; label: string; sublabel?: string }
   | DatasetJumpTarget;
@@ -167,11 +169,14 @@ function LineageJumpOptions({ target, active, onClose }: {
 
   // repoId is optional: a subscriber's or a dataset's graph walk is repo-agnostic (it seeds on the node's own key,
   // not a project), so no repo needs choosing for it, unlike an object (which can live in several repos' graphs).
-  const go = (focusId: string, repoId?: string) => {
+  const go = (focusId: string, repoId?: string, described = false) => {
     onClose();
     const params = new URLSearchParams({ focus: focusId });
     if (repoId !== undefined) {
       params.set("repoId", repoId);
+    }
+    if (described) {
+      params.set("described", "on");
     }
     navigate(`/lineage?${params.toString()}`);
   };
@@ -202,7 +207,7 @@ function LineageJumpOptions({ target, active, onClose }: {
         <JumpOption
           primary={target.repoName}
           secondary="Trace this flow in the graph"
-          onSelect={() => go(target.focusId, target.repoId)}
+          onSelect={() => go(target.focusId, target.repoId, target.described === true)}
         />
       )}
 

@@ -45,7 +45,7 @@
     },
     {
       "path": "flowType",
-      "type": "enum(ing|exp|sp|inv|hc|scm|sch|batch|api|cpy|sftp|cal|trl)",
+      "type": "enum(ing|exp|sp|inv|hc|scm|sch|batch|api|cpy|sftp|cal|trl|lin)",
       "required": false,
       "enumValues": [
         "ing",
@@ -60,11 +60,12 @@
         "cpy",
         "sftp",
         "cal",
-        "trl"
+        "trl",
+        "lin"
       ],
-      "description": "Document-kind discriminator read by YamlDocumentLoader.Parse in a cheap probe deserialization pass before the full document is re-parsed by the selected loader. Dispatch after Trim(): absent/empty selects the file flow (FlowDefinition root via YamlFlowLoader, wrapped as FileFlowDocument); 'ing' an ingestion, 'exp' a file export, 'sp' a stored procedure, 'inv' an ADF/Automation trigger, 'hc' an ML health check, 'scm' a database source-control snapshot, 'sch' a schema registration (an external database's tables and views registered in the catalog), 'batch' an ordered multi-flow batch, 'api' a generic acquisition, 'cpy' a file copy, 'sftp' an SFTP transfer, 'cal' a generated calendar dimension, 'trl' a JSON translation.",
+      "description": "Document-kind discriminator read by YamlDocumentLoader.Parse in a cheap probe deserialization pass before the full document is re-parsed by the selected loader. Dispatch after Trim(): absent/empty selects the file flow (FlowDefinition root via YamlFlowLoader, wrapped as FileFlowDocument); 'ing' an ingestion, 'exp' a file export, 'sp' a stored procedure, 'inv' an ADF/Automation trigger, 'hc' an ML health check, 'scm' a database source-control snapshot, 'sch' a schema registration (an external database's tables and views registered in the catalog), 'batch' an ordered multi-flow batch, 'api' a generic acquisition, 'cpy' a file copy, 'sftp' an SFTP transfer, 'cal' a generated calendar dimension, 'trl' a JSON translation, 'lin' a lineage description of a step another system runs (metadata only, never executed).",
       "definedIn": "src/SqlFlow.Yaml/YamlDocumentLoader.cs",
-      "validation": "Value is trimmed, then matched case-insensitively against exactly ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl. Null, empty, or whitespace-only values select the file flow instead of erroring. Any other value throws FlowValidationException \"<source>: unknown flowType '<flowType>'. ...\" naming every accepted kind."
+      "validation": "Value is trimmed, then matched case-insensitively against exactly ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl, lin. Null, empty, or whitespace-only values select the file flow instead of erroring. Any other value throws FlowValidationException \"<source>: unknown flowType '<flowType>'. ...\" naming every accepted kind."
     },
     {
       "path": "incremental",

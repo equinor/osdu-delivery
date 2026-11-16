@@ -30,6 +30,8 @@ public sealed class CatalogDbContext : DbContext
 
     public DbSet<CatalogLineageEdge> LineageEdges => Set<CatalogLineageEdge>();
 
+    public DbSet<CatalogLineageColumnMapping> LineageColumnMappings => Set<CatalogLineageColumnMapping>();
+
     public DbSet<CatalogObjectRelationship> ObjectRelationships => Set<CatalogObjectRelationship>();
 
     public DbSet<CatalogSubscriber> Subscribers => Set<CatalogSubscriber>();
@@ -309,6 +311,26 @@ public sealed class CatalogDbContext : DbContext
             entity.HasIndex(e => e.ObjectKey);
             entity.HasIndex(e => e.RepoId);
             entity.HasIndex(e => e.PipelineId);
+        });
+
+        modelBuilder.Entity<CatalogLineageColumnMapping>(entity =>
+        {
+            entity.ToTable("LineageColumnMapping");
+            entity.HasKey(m => m.Id);
+            entity.Property(m => m.Flow).HasMaxLength(400).IsRequired();
+            entity.Property(m => m.TargetObjectKey).HasMaxLength(900).IsRequired();
+            entity.Property(m => m.TargetObjectName).HasMaxLength(512).IsRequired();
+            entity.Property(m => m.TargetColumn).HasMaxLength(512).IsRequired();
+            entity.Property(m => m.SourceObjectKey).HasMaxLength(900);
+            entity.Property(m => m.SourceObjectName).HasMaxLength(512);
+            entity.Property(m => m.SourceColumn).HasMaxLength(512);
+            entity.Property(m => m.Note).HasMaxLength(2000);
+            // The three questions asked of it: what a written object's columns come from, where a read object's
+            // columns go, and one description's mappings. A repo's rows are replaced wholesale on each sync.
+            entity.HasIndex(m => m.TargetObjectKey);
+            entity.HasIndex(m => m.SourceObjectKey);
+            entity.HasIndex(m => m.PipelineId);
+            entity.HasIndex(m => m.RepoId);
         });
 
         modelBuilder.Entity<CatalogObjectRelationship>(entity =>

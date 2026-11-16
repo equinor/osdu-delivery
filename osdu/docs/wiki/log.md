@@ -826,3 +826,13 @@ Added decision 0059 and `delivery-table-cache-set-value`; updated decision 0053,
 `delivery-table-cache-set`, `delivery-concept-storage-and-retention`, `delivery-concept-database`,
 `delivery-concept-ledger` and `delivery-flow-mapping-lookups-composite`. The cache's own tables were left clustered by
 partition, and the decision says why.
+
+## [2026-11-16] ingest | The VS Code extension shows the GUI's own pages, decision 0060
+
+Source: the owner's request for an extension that looks and works like the web GUI ("carefully and accuratly prot the rich
+interfaces to vscode", "I dont want to use the native vscode tools and panels", the mapping's preview named as the
+example, and a package fit for the Marketplace), a reading of a sister product's extension and of how its copied pages
+had drifted from their originals, and the extension as rebuilt: the GUI's hosted build, the carrier, the drawn side bar
+and the mapping preview that reads its file.
+
+Added decision 0060; amended decision 0039 (what of it the pages replaced); updated `delivery-guide-vscode`.

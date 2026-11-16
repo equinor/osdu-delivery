@@ -32,12 +32,18 @@ async function open(relative) {
 
 const hoverText = (hovers) => hovers.flatMap((hover) => hover.contents).map((content) => content.value ?? String(content)).join('\n');
 
+/** The tabs showing a page of the GUI: each is a webview of the extension's page kind. */
+const pageTabs = () => vscode.window.tabGroups.all
+    .flatMap((group) => group.tabs)
+    .filter((tab) => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.includes('sqlflow.page'));
+
 const checks = {
     async 'the extension activates and contributes its views'() {
         const extension = vscode.extensions.getExtension(EXTENSION);
         assert.ok(extension, 'the extension is installed');
         await extension.activate();
-        assert.ok(extension.packageJSON.contributes.views.sqlflow.some((view) => view.id === 'osduDelivery'));
+        // One drawn side bar, and no tree of the editor's own.
+        assert.deepEqual(extension.packageJSON.contributes.views.sqlflow.map((view) => [view.id, view.type]), [['sqlflow.sideBar', 'webview']]);
     },
 
     async 'every command the manifest names is registered'() {
@@ -155,15 +161,35 @@ const checks = {
         assert.ok(lenses.some((lens) => lens.command?.command === 'sqlflow.runFlow'));
     },
 
-    async 'a mapping offers its check'() {
+    async 'a mapping offers its preview'() {
         const document = await open('mappings/Wellbore@1.3.0.yaml');
         const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', document.uri);
-        assert.ok(lenses.some((lens) => lens.command?.command === 'osduDelivery.checkMapping'));
+        assert.ok(lenses.some((lens) => lens.command?.command === 'osduDelivery.previewMapping'));
     },
 
-    async 'the views render with nobody signed in'() {
+    async 'the pages are built, and the side bar and a page open with nobody signed in'() {
+        const extension = vscode.extensions.getExtension(EXTENSION);
+        const fs = require('node:fs');
+        const hosted = path.join(extension.extensionPath, 'dist', 'hosted');
+        for (const file of ['page.js', 'side-bar.js', path.join('.vite', 'manifest.json')]) {
+            assert.ok(fs.existsSync(path.join(hosted, file)), `${file} is built`);
+        }
         await vscode.commands.executeCommand('workbench.view.extension.sqlflow');
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await vscode.commands.executeCommand('sqlflow.openHome');
+        await until('a page in a tab', () => pageTabs().length === 1);
+        // The same page asked for again is the tab already on it.
+        await vscode.commands.executeCommand('sqlflow.openHome');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        assert.equal(pageTabs().length, 1);
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    },
+
+    async 'a mapping\'s preview opens beside its file'() {
+        const document = await open('mappings/Wellbore@1.3.0.yaml');
+        await vscode.commands.executeCommand('osduDelivery.previewMapping', document.uri);
+        const [tab] = await until('the preview\'s tab', () => (pageTabs().length === 1 ? pageTabs() : undefined));
+        assert.notEqual(tab.group.viewColumn, vscode.window.activeTextEditor?.viewColumn ?? vscode.window.visibleTextEditors[0].viewColumn);
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     },
 
     async 'every skeleton of New Document is one the engine takes'() {
@@ -207,7 +233,7 @@ exports.run = async () => {
     const extension = vscode.extensions.getExtension(EXTENSION);
     await extension.activate();
     if (process.env.SQLFLOW_CONTROL_PLANE_TOKEN) {
-        Object.assign(checks, require('./online.cjs')(extension.exports.estate));
+        Object.assign(checks, require('./online.cjs')(extension.exports.estate, pageTabs, until));
     }
     for (const [name, check] of Object.entries(checks)) {
         try {

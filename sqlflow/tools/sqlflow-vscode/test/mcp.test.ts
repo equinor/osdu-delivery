@@ -78,7 +78,11 @@ test('the sign-in answer gives the address to open and the code to compare', () 
 });
 
 test('the sign-in sentences read as where the sign-in stands', () => {
-    assert.deepEqual(parseAuthStatus('Authenticated as alice@example.com, role admin, scopes: read.'), { state: 'signed-in', who: 'alice@example.com' });
+    assert.deepEqual(
+        parseAuthStatus('Authenticated as alice@example.com, role admin, scopes: read operate admin.'),
+        { state: 'signed-in', who: 'alice@example.com', role: 'admin', scopes: ['read', 'operate', 'admin'] }
+    );
+    assert.deepEqual(parseAuthStatus('Authenticated as bootstrap.'), { state: 'signed-in', who: 'bootstrap' });
     assert.deepEqual(parseAuthStatus('Signed in. Scopes: read operate.'), { state: 'signed-in', who: undefined });
     assert.deepEqual(parseAuthStatus('Still waiting for approval. Approve in the browser, then check again.'), { state: 'waiting' });
     assert.deepEqual(parseAuthStatus('Sign-in was denied.'), { state: 'denied' });

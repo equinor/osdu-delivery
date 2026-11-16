@@ -298,6 +298,19 @@ public static class RunTriggerEndpoints
                 title: "Not found");
         }
 
+        // A lineage description is never run. A batch leaves it out by its mode; named as the anchor of a node scope it
+        // would be queued whatever its mode, so it is refused here, before anything is queued.
+        foreach (var member in expansion.Members)
+        {
+            if (SqlFlow.Yaml.YamlDocumentLoader.NeverRunReason(member.FlowKind) is { } neverRuns)
+            {
+                return TypedResults.Problem(
+                    detail: $"'{member.FlowName}': {neverRuns}",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Invalid run parameters");
+            }
+        }
+
         // A node backfill starts its WINDOW at the anchor (the flow the operator picked). Its descendants then
         // reprocess whatever the anchor re-lands: a relational descendant takes MIN-from-source (its rows carry old
         // business dates that MAX-from-target would filter out), a file descendant dated from the file's name or path

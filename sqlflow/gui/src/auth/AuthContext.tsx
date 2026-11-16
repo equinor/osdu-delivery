@@ -334,6 +334,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** Who a host says is signed in (embed/): the session's person, without what a browser's own sign-in keeps. */
+export interface HostedIdentity {
+  subject: string;
+  role: string | null;
+  scopes: string[];
+}
+
+/** The ways of signing in a browser tab has, which a hosted page does not: its host signs the person in. */
+function hostSignsIn(): Promise<never> {
+  return Promise.reject(new Error("This page is signed in by what hosts it; sign in there."));
+}
+
+/**
+ * The session of a page its host signs in (embed/): who the host says is signed in, with a placeholder where the token
+ * would be, since the host presents the credential on every call it carries. Nothing is kept in the browser's storage
+ * and nothing is renewed here: both are the host's, and so is signing out. The entry that renders this gives the API
+ * client the placeholder and the 401 handler before the first render, as AuthProvider does for a browser's session.
+ */
+export function HostedAuthProvider({ identity, token, onSignOut, children }: {
+  /** Who the host says is signed in; null while nobody is. */
+  identity: HostedIdentity | null;
+  /** The placeholder the API client presents, which the host replaces with the person's credential. */
+  token: string;
+  /** Asks the host to sign the person out. */
+  onSignOut: () => void;
+  children: ReactNode;
+}) {
+  const value = useMemo<AuthContextValue>(() => {
+    const session: Session | null = identity === null
+      ? null
+      : {
+        token,
+        subject: identity.subject,
+        role: identity.role,
+        scopes: identity.scopes,
+        // The host keeps the credential alive and says when it ends, so the session here never lapses by the clock.
+        expiresAtMs: Number.MAX_SAFE_INTEGER,
+        remember: false,
+        renewable: false,
+      };
+    return {
+      session,
+      sessionEndedReason: null,
+      // The same two tiers as a browser's session: any signed-in person has the operational product, and only the
+      // admin surface reads the scopes.
+      hasScope: (scope: string) => session !== null && (scope !== "admin" || session.scopes.includes("admin")),
+      loginLocal: hostSignsIn,
+      loginEntra: hostSignsIn,
+      completeLoginEntra: hostSignsIn,
+      loginBootstrap: hostSignsIn,
+      logout: onSignOut,
+    };
+  }, [identity, token, onSignOut]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
 export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext);
   if (!context) {

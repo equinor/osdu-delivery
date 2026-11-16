@@ -8,6 +8,7 @@
     "dev": "vite",
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "tsc -b && vite build",
+    "build:hosted": "vite build --config vite.hosted.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
     "test:unit": "node --test \"unit/**/*.test.ts\"",

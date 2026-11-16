@@ -56,13 +56,18 @@ export function cardCaption(node: ViewNode): string {
     parts.push(waveText(node.waves));
   } else if (node.type === "stack") {
     parts.push(node.name);
+  } else if (node.type === "flow" && node.described === true) {
+    // A lineage description is a step another system runs: it has no wave, and saying so here keeps it from reading
+    // as a flow the estate forgot to order.
+    parts.push(kindLook("flow", node.kind).label, "never run here");
   } else if (node.type === "flow") {
     parts.push(kindLook("flow", node.kind).label, waveText(node.waves));
     if (node.incompleteReasons.length > 0) {
       parts.push("lineage not derived");
     }
   } else {
-    parts.push(node.kind, node.place);
+    // An object only descriptions name is said to be so: no catalog row stands behind it.
+    parts.push(node.kind, node.place, node.described === true ? "described" : "");
   }
   return parts.filter((part) => part !== "").join(" · ");
 }

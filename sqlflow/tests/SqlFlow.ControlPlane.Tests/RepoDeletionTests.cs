@@ -58,6 +58,7 @@ public sealed class RepoDeletionTests
                 db.RunGroups.Add(new CatalogRunGroup { GroupId = Guid.NewGuid(), RepoId = repoId, Mode = RunGroupModes.Batch, Anchor = repoName, MemberCount = 1, EnqueuedUtc = now });
 
                 db.LineageEdges.Add(new CatalogLineageEdge { RepoId = repoId, PipelineId = pipelineId, Flow = repoName + "_orders", Relation = "Writes", ObjectKey = objectKey, ObjectName = "Orders", Tier = "Observed" });
+                db.LineageColumnMappings.Add(new CatalogLineageColumnMapping { RepoId = repoId, PipelineId = pipelineId, Flow = repoName + "_described", TargetObjectKey = objectKey, TargetObjectName = "Orders", TargetColumn = "Id", Ordinal = 1 });
                 db.ObjectRelationships.Add(new CatalogObjectRelationship { RepoId = repoId, FromObjectKey = objectKey, FromColumns = "Id", ToObjectKey = objectKey, ToColumns = "Id", Origin = "Join", Tier = "Observed", Occurrences = 1 });
                 db.FlowDependencies.Add(new CatalogFlowDependency { RepoId = repoId, FromFlow = "a", ToFlow = "b", FromPipelineId = pipelineId, ToPipelineId = pipelineId, ViaObjects = "Orders" });
                 db.PipelineColumns.Add(new CatalogPipelineColumn { RepoId = repoId, PipelineId = pipelineId, Kind = PipelineColumnKinds.Declared, Ordinal = 1, ColumnName = "Id" });
@@ -102,6 +103,7 @@ public sealed class RepoDeletionTests
                 Assert.False(await db.RunEvents.AsNoTracking().AnyAsync(e => e.RunId == runId));
                 Assert.False(await db.RunGroups.AsNoTracking().AnyAsync(g => g.RepoId == repoId));
                 Assert.False(await db.LineageEdges.AsNoTracking().AnyAsync(e => e.RepoId == repoId));
+                Assert.False(await db.LineageColumnMappings.AsNoTracking().AnyAsync(m => m.RepoId == repoId));
                 Assert.False(await db.ObjectRelationships.AsNoTracking().AnyAsync(r => r.RepoId == repoId));
                 Assert.False(await db.FlowDependencies.AsNoTracking().AnyAsync(d => d.RepoId == repoId));
                 Assert.False(await db.PipelineColumns.AsNoTracking().AnyAsync(c => c.RepoId == repoId));

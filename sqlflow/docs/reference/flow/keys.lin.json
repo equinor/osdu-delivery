@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "product": "SQLFlow V3",
+  "flowType": "lin",
+  "generatedFrom": "source code: src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs and src/SqlFlow.Core/Lineage/LineageDescriptionFlow.cs",
+  "naming": "A lineage description is read by a strict reader over the YAML tree (YamlLineageDescriptionFlowLoader), not by a YamlDotNet deserializer: keys are case-sensitive and written exactly as listed here, an unknown key is a problem that keeps the document from loading, and every problem is reported with its line. A key a running flow takes (schedule, mode, lifecycle, connections, parameters, source, target, onErrorResume) is refused with the reason: a lineage description is never executed.",
+  "keyCount": 32,
+  "keys": [
+    {
+      "path": "name",
+      "type": "string",
+      "required": true,
+      "default": "none",
+      "description": "The description's name: its identity in the estate, the pipeline row it becomes, and the flow its connections are attributed to in the described lineage. It must be a name no other flow of the repository has. Plain text on one line, at most 400 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "Required. Blank, over 400 characters, spanning several lines or holding a control character is a problem. Two descriptions under one name keep the first in path order; a description that takes the name of a flow that runs is left out of the described lineage. Both are reported by the lineage computation, not by the reader. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "description",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the step does, in a sentence. Shown wherever the step is listed and given to an assistant with each step a lineage walk crosses. At most 1000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "batch",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "A grouping label, as on every flow. It groups the description with other pipelines in lists and has no other effect. At most 250 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "system",
+      "type": "string",
+      "required": true,
+      "default": "none",
+      "description": "The system that performs the step: a data platform, an orchestrator, a script, a person (databricks, fabric, adf, dbt, manual). A free name, not a list SQLFlow knows. It is also the system of every object the description names without a system of its own.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "Required. A letter followed by letters, digits or hyphens, at most 32 characters. Accepted in any case and kept lower-case."
+    },
+    {
+      "path": "unit",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "Where the step is found in that system, as a person would look it up: a job and task, a pipeline and activity, a notebook. Free text, shown as written. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "owner",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "Who to ask about the step: a team or a person. At most 256 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "url",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "Where the step can be looked at (the job's page, the pipeline's page). Shown as written and never fetched. At most 2048 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "An address that carries a credential (user and secret before the host, or a secret-bearing keyword) is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "evidence",
+      "type": "list<string|object>",
+      "required": false,
+      "default": "[]",
+      "description": "What the description was written from: the code or the definitions of the step. It lets a reader check a statement, and tells an old description from a current one by its commit. At most 50 entries. Nothing is fetched or compared by SQLFlow: these are pointers.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs"
+    },
+    {
+      "path": "evidence[]",
+      "type": "string|object",
+      "required": false,
+      "default": "none",
+      "description": "One thing the description was written from. Written as a path alone, or as a mapping with path and optionally repo, commit and note.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs"
+    },
+    {
+      "path": "evidence[].repo",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "The repository holding the evidence: a name or an address without credentials. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "An address that carries a credential is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "evidence[].path",
+      "type": "string",
+      "required": true,
+      "default": "none",
+      "description": "The file or folder, relative to the repository. At most 1024 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "Required in the mapping form. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "evidence[].commit",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "The commit the description was written from. At most 64 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "evidence[].note",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the entry holds: the job definition, the transformation, the configuration. At most 2000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "reads",
+      "type": "list<object>",
+      "required": false,
+      "default": "[]",
+      "description": "What the step reads. Each entry names one object, in one of two ways: by name (an object the estate does not manage, known only from descriptions) or with fedBy (the object a flow of the estate writes). At most 200 entries.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A description names at least one object under reads or writes; either may be left out when the other is there. A description with neither reads nor writes, or with both empty, connects nothing and is a problem. The same object named twice is a problem."
+    },
+    {
+      "path": "reads[].system",
+      "type": "string",
+      "required": false,
+      "default": "the description's system",
+      "description": "The system the object belongs to, when it is not the description's own (a source system the step reads from, say). Goes with name.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A letter followed by letters, digits or hyphens, at most 32 characters. A problem on an entry that names its object with fedBy."
+    },
+    {
+      "path": "reads[].name",
+      "type": "string",
+      "required": false,
+      "default": "none",
+      "description": "The object's name as its system writes it, without anything that differs between environments (schema.table, not a catalog or a storage account). Two descriptions that name the same system and name mean the same object, whatever case they use, which is how descriptions chain. A * stands for a family of objects named alike. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "An entry has exactly one of name and fedBy. A | or a control character in the name is a problem. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "reads[].fedBy",
+      "type": "string",
+      "required": false,
+      "default": "none",
+      "description": "The name of a flow of the estate whose output the step reads. The description is connected to the object that flow already declares it writes, so a description of something downstream of the estate meets the estate's own lineage without restating a table or a location.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "An entry has exactly one of name and fedBy. The flow is looked up when lineage is computed. A flow the repository does not declare, another lineage description, a flow that takes no part in lineage, or a flow that writes several objects with no at to tell them apart leaves this one connection out with a finding that says what to write; the rest of the description stays. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "reads[].at",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "Which of the flow's objects is meant, when the flow named with fedBy writes more than one: the object's name, or a part of it. A whole name wins over a part, so Orders means the table and not also a view named v_Orders. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "Goes with fedBy; a problem on an entry that names its object with name. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "reads[].as",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "A short alias for the read object, which a column mapping uses to say where a column comes from (alias.column). Only needed when the description maps columns.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A letter or underscore followed by letters, digits or underscores, at most 64 characters. Two reads entries may not take the same alias (compared without regard to case)."
+    },
+    {
+      "path": "reads[].note",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the object holds, in a sentence or two. At most 2000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "reads[].origin",
+      "type": "bool",
+      "required": false,
+      "default": "false",
+      "description": "True when the object is where the data starts: nothing upstream of it is expected to be described. A lineage walk then reports the object as the origin; without it, an object no description writes is reported as an open end (what produces it is not described), which is a fact and not a fault.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "true or false. A problem on an entry that names its object with fedBy: an object the estate writes is not where described data starts."
+    },
+    {
+      "path": "writes",
+      "type": "list<object>",
+      "required": false,
+      "default": "[]",
+      "description": "What the step writes. Each entry names one object, in one of two ways: by name (an object the estate does not manage) or with feeds (the object a flow of the estate reads, such as the files a file flow lands). At most 200 entries.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A description names at least one object under reads or writes; either may be left out when the other is there. A description with neither reads nor writes, or with both empty, connects nothing and is a problem. The same object named twice is a problem."
+    },
+    {
+      "path": "writes[].system",
+      "type": "string",
+      "required": false,
+      "default": "the description's system",
+      "description": "The system the object belongs to, when it is not the description's own. Goes with name.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A letter followed by letters, digits or hyphens, at most 32 characters. A problem on an entry that names its object with feeds."
+    },
+    {
+      "path": "writes[].name",
+      "type": "string",
+      "required": false,
+      "default": "none",
+      "description": "The object's name as its system writes it, without anything that differs between environments. Naming the same system and name as another description's reads entry is what chains the two. A * stands for a family of objects named alike. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "An entry has exactly one of name and feeds. A | or a control character in the name is a problem. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "writes[].feeds",
+      "type": "string",
+      "required": false,
+      "default": "none",
+      "description": "The name of a flow of the estate that reads what the step writes. The description is connected to the object that flow already declares it reads (a file flow's source location, an ingestion's source table), so the location is written once, in the flow that uses it, and never repeated here.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "An entry has exactly one of name and feeds. The flow is looked up when lineage is computed. A flow the repository does not declare, another lineage description, a flow that takes no part in lineage, or a flow that reads several objects with no at to tell them apart leaves this one connection out with a finding that says what to write; the rest of the description stays. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "writes[].at",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "Which of the flow's objects is meant, when the flow named with feeds reads more than one: the object's name, or a part of it. A whole name wins over a part. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "Goes with feeds; a problem on an entry that names its object with name. A ${...} reference in the value is a problem: a description resolves nothing, so the value is written plainly."
+    },
+    {
+      "path": "writes[].note",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the object holds, in a sentence or two: its grain, when it is written, what a reader of it must know. At most 2000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "writes[].columns",
+      "type": "map<string,string|list|object>",
+      "required": false,
+      "default": "{}",
+      "description": "The optional column level: for columns of the written object, the columns they come from. A description is complete without it, and it may be partial: a column that is not listed is not mapped, which says nothing about whether it exists. Column mappings are read on request (the mapping between two objects, the sources of one column) and take no part in lineage itself. At most 2000 columns.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A column name mapped twice (compared without regard to case) is a problem. More than 2000 columns on one object is a problem, and so is more than 5000 mapped columns, or 20000 source columns, over the whole document, however the mappings are written (an anchor repeated under several writes counts each time). A ${...} reference in a column name is a problem."
+    },
+    {
+      "path": "writes[].columns.<column>",
+      "type": "string|list<string>|object",
+      "required": false,
+      "default": "none",
+      "description": "One column of the written object. The value is where it comes from: one source written alias.column, a list of them, a mapping with from and note, or nothing for a column the step makes itself. A * in the column name stands for every column not listed by name (*, or with text around it as in raw:*), and takes a source with a * of its own (alias.*) for the column of the same name.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "At most 512 characters and at most one * in the name."
+    },
+    {
+      "path": "writes[].columns.<column>.from",
+      "type": "string|list<string>",
+      "required": false,
+      "default": "none",
+      "description": "The columns the value comes from, each written alias.column, where the alias is the as of a reads entry. Several sources mean the value is made from all of them. At most 50.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A source without an alias, an alias no reads entry declares, a source listed twice, more than one * in a source column, or a * in a source of a column that has none is a problem. A ${...} reference in a source is a problem."
+    },
+    {
+      "path": "writes[].columns.<column>.note",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "How the value is made, in words or as an expression: a cast, a unit conversion, the latest of two dates. At most 2000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "context",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What happens to the data in the step, in prose: which rows are left out or added and why, how keys are formed, when the step runs and what starts it, what becomes of a deleted record, how to repair it. Written for a person and for an assistant answering questions about the data; never parsed. Markdown reads well. At most 20000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+      "validation": "A credential in the text is a problem; the value is never echoed in the message."
+    }
+  ]
+}

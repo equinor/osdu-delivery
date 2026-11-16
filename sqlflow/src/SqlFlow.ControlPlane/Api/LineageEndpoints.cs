@@ -126,9 +126,17 @@ public sealed record ObjectDossierDto(
 /// (or module body) that carries the data across the hop. Reading upstream, the via-flow WRITES the previous
 /// level's object and READS this one; downstream mirrors it.
 /// </summary>
+/// <remarks>
+/// <see cref="Described"/> is true for a hop a lineage description (flowType: lin) carries: a step SQLFlow does not
+/// run, stated by a document and never observed. Such hops are in the walk only when it was asked for them. For an
+/// object only descriptions name (no registry row), <see cref="Kind"/> is <c>Described</c>, <see cref="System"/> is
+/// the system it belongs to, and <see cref="Boundary"/> says whether the described chain ends there: <c>origin</c>
+/// when a description marks it as where the data starts, <c>open</c> when what produces it is simply not described.
+/// </remarks>
 public sealed record LineageStepDto(
     int Depth, string? PipelineId, string? FlowName, string? ViaModule,
-    string ObjectKey, string ObjectName, string? Database, string? Schema, string? Kind);
+    string ObjectKey, string ObjectName, string? Database, string? Schema, string? Kind,
+    bool Described = false, string? System = null, string? Boundary = null);
 
 /// <summary>
 /// The transitive lineage of one object: everything upstream (where its data comes FROM, walked source-ward
@@ -136,11 +144,20 @@ public sealed record LineageStepDto(
 /// consumer-ward through the flows and modules that read each level), each as depth-annotated steps in BFS order.
 /// <see cref="Truncated"/> reports that a cap cut the walk, so absence of a node is then not proof of absence.
 /// </summary>
+/// <remarks>
+/// The walk follows the lineage SQLFlow computed. <see cref="DescribedIncluded"/> says it was also asked to follow
+/// the described lineage (what lineage descriptions say of steps other systems run), in which case
+/// <see cref="DescribedSteps"/> names each description it crossed. <see cref="DescribedAvailable"/> says the walk
+/// reached objects with described lineage it was not asked to follow, so asking again with it included goes further.
+/// </remarks>
 public sealed record ObjectLineageDto(
     string Key, string Name, string Kind, int Depth,
     IReadOnlyList<LineageStepDto> Upstream,
     IReadOnlyList<LineageStepDto> Downstream,
-    bool Truncated);
+    bool Truncated,
+    bool DescribedIncluded = false,
+    bool DescribedAvailable = false,
+    IReadOnlyList<DescribedStepSummaryDto>? DescribedSteps = null);
 
 /// <summary>One run of a producing flow: did the population attempt work, when, how much landed, and why it failed
 /// (<see cref="Error"/>, null unless it failed). The trailing fields say what kind of run it was, so its rows are not
@@ -370,14 +387,21 @@ public sealed record ProjectGraphPipelineDto(
 /// <summary>One object node of the drawable project graph: its key (the node id), display name, resolved kind
 /// (<c>table</c>/<c>view</c>/<c>file</c>), where it lives (<c>database.schema</c>, null for a file), and whether
 /// it sits on the depth-capped frontier with un-included consumers (so the client can offer to expand it).</summary>
-public sealed record ProjectGraphObjectDto(string Key, string Name, string Kind, string? Location, bool Frontier);
+/// <remarks><c>Described</c> is true for an object only lineage descriptions (flowType: lin) name: it is in the graph
+/// only when the described lineage was asked for, its <c>Kind</c> is the system it belongs to, and it has no
+/// registry row behind it.</remarks>
+public sealed record ProjectGraphObjectDto(
+    string Key, string Name, string Kind, string? Location, bool Frontier, bool Described = false);
 
 /// <summary>One resolved, drawable edge of the project graph. <c>Source</c>/<c>Target</c> are node ids (a
 /// pipeline id or an object key). <c>Label</c> is what the arrow says (<c>writes</c>/<c>creates</c>/<c>reads</c>/
 /// <c>view</c> in the flows view; the flow name in the objects view). <c>PipelineId</c> is the flow the edge is
 /// attributed to, for stable per-flow coloring; null for a DB-managed view's derivation edge and for the edge from
 /// a source into a derived dataset, which no flow maintains.</summary>
-public sealed record ProjectGraphDrawEdgeDto(string Source, string Target, string Label, Guid? PipelineId);
+/// <remarks><c>Described</c> is true for an edge a lineage description (flowType: lin) states: a connection of a step
+/// SQLFlow does not run, drawn only when the described lineage was asked for.</remarks>
+public sealed record ProjectGraphDrawEdgeDto(
+    string Source, string Target, string Label, Guid? PipelineId, bool Described = false);
 
 /// <summary>A project's lineage as one cross-repo subgraph. <c>Pipelines</c> and <c>Edges</c> are the underlying
 /// facts (reusing <see cref="EdgeDto"/>, whose <c>RepoId</c> records which repo attributed each fact);
@@ -393,7 +417,9 @@ public sealed record ProjectGraphDto(
     bool Truncated,
     IReadOnlyList<ProjectGraphObjectDto> Objects,
     IReadOnlyList<ProjectGraphDrawEdgeDto> FlowGraph,
-    IReadOnlyList<ProjectGraphDrawEdgeDto> ObjectGraph);
+    IReadOnlyList<ProjectGraphDrawEdgeDto> ObjectGraph,
+    bool DescribedIncluded = false,
+    bool DescribedAvailable = false);
 
 /// <summary>One (server, database, schema) grouping in the catalog with how many objects it holds: the schema
 /// hierarchy a caller browses to answer "what schemas exist" and "how big is each" before drilling into
@@ -482,6 +508,8 @@ public static class LineageEndpoints
         lineage.MapGet("/subscribers/similar-questions", FindSimilarQuestionsAsync).WithName("FindSimilarQuestions");
         lineage.MapGet("/projects", ListProjectsAsync).WithName("ListLineageProjects");
         lineage.MapGet("/project-graph", GetProjectGraphAsync).WithName("GetLineageProjectGraph");
+        lineage.MapGet("/described/steps", DescribedLineage.ListStepsAsync).WithName("ListDescribedLineageSteps");
+        lineage.MapGet("/described/columns", DescribedLineage.GetColumnMappingsAsync).WithName("GetDescribedColumnMappings");
 
         var repos = group.MapGroup("/repos").WithTags("Lineage");
         repos.MapGet("/{repoId:guid}/lineage/edges", ListEdgesAsync).WithName("ListLineageEdges");
@@ -891,7 +919,7 @@ public static class LineageEndpoints
 
         // Count the object's edges per repo and flag whether any of them writes/creates it (the producing repo).
         var groups = await db.LineageEdges.AsNoTracking()
-            .Where(e => e.ObjectKey == key)
+            .Where(e => e.ObjectKey == key && e.Relation != DescribedReads && e.Relation != DescribedWrites)
             .GroupBy(e => e.RepoId)
             .Select(g => new
             {
@@ -1034,9 +1062,18 @@ public static class LineageEndpoints
     /// prefix the drawable graph already keys file endpoints by.</summary>
     private const string SubscriberKeyPrefix = "subscriber|";
 
+    /// <summary>The relations a lineage description (flowType: lin) contributes. They are stored beside the computed
+    /// lineage and are no part of it, so every answer here leaves them out unless the caller asks for the described
+    /// lineage by name (<c>described=true</c>).</summary>
+    private const string DescribedReads = nameof(LineageRelation.DescribedReads);
+
+    /// <inheritdoc cref="DescribedReads"/>
+    private const string DescribedWrites = nameof(LineageRelation.DescribedWrites);
+
     private static async Task<Results<Ok<ObjectDossierDto>, ProblemHttpResult>> GetObjectDossierAsync(
-        string key, CatalogDbContext db, CancellationToken ct)
+        string key, CatalogDbContext db, bool? described, CancellationToken ct)
     {
+        var includeDescribed = described == true;
         var detail = await db.Objects.AsNoTracking().Where(o => o.Key == key)
             .Select(o => new ObjectDetailDto(
                 o.Key, o.ServerRef, o.Database, o.Schema, o.Name, o.Kind, o.Level, o.Definition, o.Script,
@@ -1059,7 +1096,8 @@ public static class LineageEndpoints
         // what writes it, so the model sees the flows on both sides. Every edge here points at THE dossier
         // object, so its database/schema come straight from the detail row (no join needed).
         var edges = await db.LineageEdges.AsNoTracking()
-            .Where(e => e.ObjectKey == key)
+            .Where(e => e.ObjectKey == key
+                && (includeDescribed || (e.Relation != DescribedReads && e.Relation != DescribedWrites)))
             .OrderBy(e => e.Relation).ThenBy(e => e.Flow).ThenBy(e => e.Id)
             .Take(MaxDossierRows)
             .Select(e => new EdgeDto(
@@ -1161,12 +1199,42 @@ public static class LineageEndpoints
     /// This is the traversal behind "where does this table's data come from" and "what breaks downstream", which
     /// the single-object dossier cannot answer: its edges stop at one hop.
     /// </summary>
+    /// <remarks>
+    /// With <paramref name="described"/> the walk also follows the described lineage: what lineage descriptions
+    /// (flowType: lin) say of steps other systems run, before a file the estate lands or after a table it writes. It is
+    /// off unless asked for, so the answer without it is the one this endpoint always gave. An object only a
+    /// description names has no registry row; the walk may start from one when the described lineage is included.
+    /// </remarks>
     private static async Task<Results<Ok<ObjectLineageDto>, ProblemHttpResult>> GetObjectLineageAsync(
-        string key, CatalogDbContext db, string? direction, int? depth, CancellationToken ct)
+        string key, CatalogDbContext db, string? direction, int? depth, bool? described, CancellationToken ct)
     {
-        var identity = await db.Objects.AsNoTracking().Where(o => o.Key == key)
+        var includeDescribed = described == true;
+        var registered = await db.Objects.AsNoTracking().Where(o => o.Key == key)
             .Select(o => new { o.Key, o.Name, o.Kind })
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        var identity = registered is null ? null : new { registered.Key, registered.Name, Kind = registered.Kind ?? string.Empty };
+        if (identity is null && LineageDescribedObject.IsDescribedKey(key))
+        {
+            // An object only descriptions name: it is known from the edges naming it, and only to a caller that asked
+            // for the described lineage.
+            var name = includeDescribed
+                ? await db.LineageEdges.AsNoTracking()
+                    .Where(e => e.ObjectKey == key && (e.Relation == DescribedReads || e.Relation == DescribedWrites))
+                    .OrderBy(e => e.Id)
+                    .Select(e => e.ObjectName)
+                    .FirstOrDefaultAsync(ct).ConfigureAwait(false)
+                : null;
+            if (name is null && !includeDescribed)
+            {
+                return TypedResults.Problem(
+                    detail: $"'{key}' is an object only a lineage description names; pass described=true to walk the described lineage.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Described lineage not requested");
+            }
+
+            identity = name is null ? null : new { Key = key, Name = name, Kind = DescribedLineage.DescribedKind };
+        }
+
         if (identity is null)
         {
             return NotFound("object", key);
@@ -1188,19 +1256,41 @@ public static class LineageEndpoints
         List<LineageStepDto> downstream = [];
         if (dir is "BOTH" or "UPSTREAM")
         {
-            (upstream, var cut) = await TraverseAsync(db, key, upstream: true, levels, ct).ConfigureAwait(false);
+            (upstream, var cut) = await TraverseAsync(db, key, upstream: true, levels, includeDescribed, ct).ConfigureAwait(false);
             truncated |= cut;
         }
 
         if (dir is "BOTH" or "DOWNSTREAM")
         {
-            (downstream, var cut) = await TraverseAsync(db, key, upstream: false, levels, ct).ConfigureAwait(false);
+            (downstream, var cut) = await TraverseAsync(db, key, upstream: false, levels, includeDescribed, ct).ConfigureAwait(false);
             truncated |= cut;
         }
 
+        if (includeDescribed)
+        {
+            var (upstreamSteps, downstreamSteps, summaries) = await DescribedLineage
+                .AnnotateWalkAsync(db, upstream, downstream, ct).ConfigureAwait(false);
+            return TypedResults.Ok(new ObjectLineageDto(
+                identity.Key, identity.Name, identity.Kind, levels, upstreamSteps, downstreamSteps, truncated,
+                DescribedIncluded: true, DescribedAvailable: false, DescribedSteps: summaries));
+        }
+
+        // Not asked for: say whether the walk passed objects the described lineage continues from, so a caller that
+        // needs to go beyond what SQLFlow manages knows that asking again with described=true goes further.
+        var reached = upstream.Concat(downstream).Select(s => s.ObjectKey).Append(key).Distinct(StringComparer.Ordinal).ToList();
+        var available = await DescribedLineage.TouchesAsync(db, reached, dir, ct).ConfigureAwait(false);
         return TypedResults.Ok(new ObjectLineageDto(
-            identity.Key, identity.Name, identity.Kind, levels, upstream, downstream, truncated));
+            identity.Key, identity.Name, identity.Kind, levels, upstream, downstream, truncated,
+            DescribedIncluded: false, DescribedAvailable: available));
     }
+
+    /// <summary>The relations one side of a walk follows: the computed ones, and the described ones with them when the
+    /// walk was asked to follow the described lineage. A flow SQLFlow runs carries no described relation and a
+    /// lineage description carries no other, so one list serves both.</summary>
+    private static string[] WalkRelations(bool writing, bool described)
+        => writing
+            ? described ? [.. WritingRelations, DescribedWrites] : WritingRelations
+            : described ? ["Reads", DescribedReads] : ["Reads"];
 
     /// <summary>
     /// One direction of the walk. Per level, two set queries (never per-node queries): the connecting flows and
@@ -1208,11 +1298,11 @@ public static class LineageEndpoints
     /// so a diamond (two flows landing in one table) reports each object once, at its shortest distance.
     /// </summary>
     private static async Task<(List<LineageStepDto> Steps, bool Truncated)> TraverseAsync(
-        CatalogDbContext db, string originKey, bool upstream, int levels, CancellationToken ct)
+        CatalogDbContext db, string originKey, bool upstream, int levels, bool described, CancellationToken ct)
     {
         // Walking upstream: who WRITES the frontier, and what do those writers READ. Downstream mirrors it.
-        var frontierRelations = upstream ? WritingRelations : new[] { "Reads" };
-        var farSideRelations = upstream ? new[] { "Reads" } : WritingRelations;
+        var frontierRelations = WalkRelations(writing: upstream, described);
+        var farSideRelations = WalkRelations(writing: !upstream, described);
 
         var steps = new List<LineageStepDto>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { originKey };
@@ -1251,7 +1341,7 @@ public static class LineageEndpoints
             }
 
             var next = new List<string>();
-            var levelSteps = new List<(string? PipelineId, string? Flow, string? ViaModule, string Key, string Name)>();
+            var levelSteps = new List<(string? PipelineId, string? Flow, string? ViaModule, string Key, string Name, bool Described)>();
             foreach (var edge in farEdges)
             {
                 if (!visited.Add(edge.ObjectKey))
@@ -1260,18 +1350,23 @@ public static class LineageEndpoints
                 }
 
                 next.Add(edge.ObjectKey);
-                levelSteps.Add((edge.PipelineId?.ToString(), edge.Flow, edge.ViaModule, edge.ObjectKey, edge.ObjectName));
+                levelSteps.Add((
+                    edge.PipelineId?.ToString(), edge.Flow, edge.ViaModule, edge.ObjectKey, edge.ObjectName,
+                    LineageRelations.IsDescribed(edge.Relation)));
             }
 
             // One identity lookup for the whole level, so each step names where its object lives.
             var locations = await LoadObjectLocationsAsync(db, next, ct).ConfigureAwait(false);
-            foreach (var (pipelineId, flow, viaModule, objectKey, objectName) in levelSteps)
+            foreach (var (pipelineId, flow, viaModule, objectKey, objectName, viaDescription) in levelSteps)
             {
                 var found = locations.TryGetValue(objectKey, out var location);
+                var describedSystem = found ? null : LineageDescribedObject.SystemOf(objectKey);
                 steps.Add(new LineageStepDto(
                     level, pipelineId, flow, viaModule, objectKey,
                     found ? location.Name : objectName,
-                    location.Database, location.Schema, location.Kind));
+                    location.Database, location.Schema,
+                    describedSystem is null ? location.Kind : DescribedLineage.DescribedKind,
+                    Described: viaDescription, System: describedSystem));
 
                 if (steps.Count >= MaxTraversalSteps)
                 {
@@ -1303,14 +1398,15 @@ public static class LineageEndpoints
                 && ((e.PipelineId != null && pipelineIds.Contains(e.PipelineId.Value))
                     || (e.PipelineId == null && e.ViaModule != null && modules.Contains(e.ViaModule))))
             .OrderBy(e => e.ObjectName).ThenBy(e => e.Id)
-            .Select(e => new TraversalEdge(e.PipelineId, e.Flow, e.ViaModule, e.ObjectKey, e.ObjectName));
+            .Select(e => new TraversalEdge(e.PipelineId, e.Flow, e.ViaModule, e.ObjectKey, e.ObjectName, e.Relation));
 
     /// <summary>One distinct flow/module attribution in a traversal level.</summary>
     internal sealed record TraversalConnector(Guid? PipelineId, string? Flow, string? ViaModule);
 
-    /// <summary>One far-side edge of a traversal level.</summary>
+    /// <summary>One far-side edge of a traversal level, with the relation that carries it (a described relation marks a
+    /// hop a lineage description states).</summary>
     internal sealed record TraversalEdge(
-        Guid? PipelineId, string? Flow, string? ViaModule, string ObjectKey, string ObjectName);
+        Guid? PipelineId, string? Flow, string? ViaModule, string ObjectKey, string ObjectName, string Relation);
 
     /// <summary>The newest run of each of the given pipelines, resolved server-side (a grouped top-1, translated
     /// to a windowed query; internal so the translation test can render it to SQL).</summary>
@@ -1914,7 +2010,7 @@ public static class LineageEndpoints
 
     private static async Task<Results<Ok<PagedResult<EdgeDto>>, ProblemHttpResult>> ListEdgesAsync(
         Guid repoId, CatalogDbContext db, Guid? pipelineId, string? objectKey, string? relation, string? tier,
-        int? page, int? pageSize, CancellationToken ct)
+        bool? described, int? page, int? pageSize, CancellationToken ct)
     {
         if (!await RepoExistsAsync(db, repoId, ct).ConfigureAwait(false))
         {
@@ -1924,6 +2020,14 @@ public static class LineageEndpoints
         var (p, size) = PageRequest.Normalize(page, pageSize);
 
         var query = db.LineageEdges.AsNoTracking().Where(e => e.RepoId == repoId);
+
+        // The described lineage is listed on request only: asked for with described=true, or by naming one of its
+        // relations outright.
+        if (described != true && !LineageRelations.IsDescribed(relation?.Trim()))
+        {
+            query = query.Where(e => e.Relation != DescribedReads && e.Relation != DescribedWrites);
+        }
+
         if (pipelineId is { } pid)
         {
             query = query.Where(e => e.PipelineId == pid);
@@ -1970,8 +2074,10 @@ public static class LineageEndpoints
 
         // The whole execution plan is returned in one response (no paging): both the wave count and the pipelines
         // within them are bounded by the repo's active pipeline count, which is the same set listed elsewhere, so
-        // this cannot grow without bound for a given repo.
+        // this cannot grow without bound for a given repo. A lineage description is no part of the plan: it is in no
+        // wave, so it is not listed as a flow lineage gave none.
         var rows = await db.Pipelines.AsNoTracking()
+            .WithoutLineageDescriptions()
             .Where(x => x.RepoId == repoId && x.Active)
             .OrderBy(x => x.Wave).ThenBy(x => x.Name).ThenBy(x => x.Id)
             .Select(x => new { x.Wave, x.Id, x.Name, x.Kind })
@@ -2022,7 +2128,10 @@ public static class LineageEndpoints
     private static async Task<Ok<IReadOnlyList<LineageProjectDto>>> ListProjectsAsync(
         CatalogDbContext db, CancellationToken ct)
     {
+        // A folder that holds only lineage descriptions is no scope of its own: descriptions are drawn with the flows
+        // they connect to, when asked for.
         var rows = await db.Pipelines.AsNoTracking()
+            .WithoutLineageDescriptions()
             .Where(p => p.Active)
             .Join(db.Repos.AsNoTracking(), p => p.RepoId, r => r.Id,
                 (p, r) => new { p.RepoId, RepoName = r.Name, p.RelativePath })
@@ -2046,9 +2155,16 @@ public static class LineageEndpoints
 
     /// <summary>One lineage fact reduced to what the closure walk needs plus what it must echo back as an
     /// <see cref="EdgeDto"/>; the object's database/schema are attached afterward from the global registry.</summary>
+    /// <remarks><c>Described</c> marks a fact a lineage description (flowType: lin) states. Such a row is in the walk only
+    /// when the graph was asked for the described lineage, and then under the relation it reads as (a described read
+    /// as <c>Reads</c>, a described write as <c>Writes</c>), so the one walk and the one drawing serve both.</remarks>
     private sealed record EdgeRow(
         long Id, Guid RepoId, string? Flow, Guid? PipelineId, string? ViaModule, string Relation,
-        string ObjectKey, string ObjectName, string Tier);
+        string ObjectKey, string ObjectName, string Tier, bool Described = false)
+    {
+        /// <summary>The relation as the catalog stores it.</summary>
+        public string StoredRelation => !Described ? Relation : Relation == "Reads" ? DescribedReads : DescribedWrites;
+    }
 
     /// <summary>
     /// A repository's or a project's lineage as a single cross-repo subgraph. The seed is the active flows of the
@@ -2060,8 +2176,14 @@ public static class LineageEndpoints
     /// un-included consumers are returned as the <c>Frontier</c>, and <paramref name="expand"/> re-seeds the walk from
     /// specific nodes (an object key or a pipeline id) so a client can push past the boundary node by node.
     /// </summary>
+    /// <remarks>
+    /// With <paramref name="described"/> the graph also holds the described lineage: the lineage descriptions
+    /// (flowType: lin) among the seeds, the objects only they name, and their connections. Without it the graph is the
+    /// one this endpoint always drew, and <c>DescribedAvailable</c> says whether asking for it would add anything. A
+    /// graph seeded on a description, or on an object only descriptions name, includes it without being asked.
+    /// </remarks>
     private static async Task<Results<Ok<ProjectGraphDto>, ProblemHttpResult>> GetProjectGraphAsync(
-        CatalogDbContext db, Guid? repoId, string? project, int? depth, string[]? expand, CancellationToken ct)
+        CatalogDbContext db, Guid? repoId, string? project, int? depth, string[]? expand, bool? described, CancellationToken ct)
     {
         // The seed is a repository, one of its projects (a repo-root folder) or, for a deep-link onto a specific node,
         // one or more expand tokens. A GUID token is a pipeline re-seeded at depth 0; any other token is an object key whose
@@ -2112,14 +2234,23 @@ public static class LineageEndpoints
 
         var maxDepth = Math.Clamp(depth ?? DefaultGraphDepth, 1, MaxGraphDepth);
 
+        // The described lineage is drawn when asked for, or when the graph is seeded on it: a jump onto a lineage
+        // description or onto an object only descriptions name would otherwise land on nothing.
+        var includeDescribed = described == true
+            || expandObjectKeys.Any(LineageDescribedObject.IsDescribedKey)
+            || (expandPipelineIds.Count > 0 && await db.Pipelines.AsNoTracking()
+                .AnyAsync(p => expandPipelineIds.Contains(p.Id) && p.Kind == LineageDescriptionFlow.FlowType, ct).ConfigureAwait(false));
+
         // Seed pipelines: the active flows of the selected project, or of the whole repository when it is named with
         // no project. The project is derived in memory (a path split SQL should not carry), so only this repo's
-        // (id, path) pairs are pulled, not the whole table.
+        // (id, path) pairs are pulled, not the whole table. A lineage description is a seed only in a graph that
+        // includes the described lineage: it runs nothing, so it has no place among the flows otherwise.
         var seedPipelineIds = new HashSet<Guid>();
         if (repoId is not null)
         {
             var repoPipelines = await db.Pipelines.AsNoTracking()
-                .Where(p => p.RepoId == repoId!.Value && p.Active)
+                .Where(p => p.RepoId == repoId!.Value && p.Active
+                    && (includeDescribed || p.Kind != LineageDescriptionFlow.FlowType))
                 .Select(p => new { p.Id, p.RelativePath })
                 .ToListAsync(ct).ConfigureAwait(false);
             foreach (var p in repoPipelines)
@@ -2142,10 +2273,23 @@ public static class LineageEndpoints
         // The whole estate's edges, once, minimally projected. This is the universal graph the walk runs over; it is
         // bounded by the edge count (the same set the per-repo edges endpoint pages through, summed across repos) and
         // reduced to in-memory adjacency below so the traversal itself hits no database.
-        var edgeRows = await db.LineageEdges.AsNoTracking()
+        var storedRows = await db.LineageEdges.AsNoTracking()
             .Select(e => new EdgeRow(
-                e.Id, e.RepoId, e.Flow, e.PipelineId, e.ViaModule, e.Relation, e.ObjectKey, e.ObjectName, e.Tier))
+                e.Id, e.RepoId, e.Flow, e.PipelineId, e.ViaModule, e.Relation, e.ObjectKey, e.ObjectName, e.Tier, false))
             .ToListAsync(ct).ConfigureAwait(false);
+
+        // The described lineage is taken out before anything is derived, unless this graph includes it, in which case
+        // each of its rows joins the walk as the read or the write it describes. Everything below reads edgeRows only.
+        var describedRows = storedRows.Where(e => LineageRelations.IsDescribed(e.Relation)).ToList();
+        var edgeRows = storedRows.Where(e => !LineageRelations.IsDescribed(e.Relation)).ToList();
+        if (includeDescribed)
+        {
+            edgeRows.AddRange(describedRows.Select(e => e with
+            {
+                Relation = e.Relation == DescribedReads ? "Reads" : "Writes",
+                Described = true,
+            }));
+        }
 
         var writesByPipeline = new Dictionary<Guid, List<string>>();
         var readsByPipeline = new Dictionary<Guid, List<string>>();
@@ -2322,6 +2466,56 @@ public static class LineageEndpoints
             }
         }
 
+        // The described lineage mostly lies upstream of what SQLFlow manages, and the walk above only goes downstream.
+        // So a graph that includes it also takes each description that writes an object drawn here, with what that
+        // description reads, and so on up the described chain, wherever the description is kept (it may live in
+        // another folder or another repository than the flow it feeds). Only descriptions are followed, and only
+        // upwards: a flow that feeds a description is not pulled in, and nothing downstream of a description found
+        // this way is, so the scope stays what was asked for plus where its data comes from.
+        if (includeDescribed)
+        {
+            var describing = describedRows
+                .Where(e => e.PipelineId is not null)
+                .Select(e => e.PipelineId!.Value)
+                .ToHashSet();
+            var pending = new Queue<string>(includedObjects);
+            while (pending.Count > 0)
+            {
+                if (!producersByObject.TryGetValue(pending.Dequeue(), out var producers))
+                {
+                    continue;
+                }
+
+                foreach (var producer in producers)
+                {
+                    if (!describing.Contains(producer) || pipelineDepth.ContainsKey(producer))
+                    {
+                        continue;
+                    }
+
+                    if (pipelineDepth.Count >= MaxGraphPipelines)
+                    {
+                        truncated = true;
+                        continue;
+                    }
+
+                    pipelineDepth[producer] = 0;
+                    if (!readsByPipeline.TryGetValue(producer, out var reads))
+                    {
+                        continue;
+                    }
+
+                    foreach (var read in reads)
+                    {
+                        if (includedObjects.Add(read))
+                        {
+                            pending.Enqueue(read);
+                        }
+                    }
+                }
+            }
+        }
+
         var includedPipes = new HashSet<Guid>(pipelineDepth.Keys);
         var ids = includedPipes.ToList();
         var pipeRows = await db.Pipelines.AsNoTracking()
@@ -2401,7 +2595,7 @@ public static class LineageEndpoints
             {
                 locations.TryGetValue(e.ObjectKey, out var loc);
                 return new EdgeDto(
-                    e.Id, e.RepoId, e.Flow, e.PipelineId, e.ViaModule, e.Relation, e.ObjectKey, e.ObjectName,
+                    e.Id, e.RepoId, e.Flow, e.PipelineId, e.ViaModule, e.StoredRelation, e.ObjectKey, e.ObjectName,
                     loc.Database, loc.Schema, e.Tier, loc.Kind);
             })
             .ToList();
@@ -2438,10 +2632,16 @@ public static class LineageEndpoints
 
         var (objects, flowGraph, objectGraph) = DeriveDrawableGraph(
             includedEdges, includedObjects, includedPipes, locations,
-            pipeRows.ToDictionary(p => p.Id, p => p.Name), openFrontier, subscriberNames);
+            pipeRows.ToDictionary(p => p.Id, p => p.Name), openFrontier, subscriberNames,
+            pipeRows.Where(p => p.Kind == LineageDescriptionFlow.FlowType).Select(p => p.Id).ToHashSet());
+
+        // Whether the described lineage would add to this graph: a description touches an object drawn here. Only
+        // said when it was left out, so a client can offer it where it exists and nowhere else.
+        var describedAvailable = !includeDescribed && describedRows.Any(e => includedObjects.Contains(e.ObjectKey));
 
         return TypedResults.Ok(new ProjectGraphDto(
-            pipelines, edges, openFrontier, truncated, objects, flowGraph, objectGraph));
+            pipelines, edges, openFrontier, truncated, objects, flowGraph, objectGraph,
+            DescribedIncluded: includeDescribed, DescribedAvailable: describedAvailable));
     }
 
     /// <summary>
@@ -2468,7 +2668,8 @@ public static class LineageEndpoints
         IReadOnlyDictionary<string, (string? Database, string? Schema, string Name, string? Kind)> locations,
         IReadOnlyDictionary<Guid, string> pipelineNameById,
         IReadOnlyList<string> openFrontier,
-        IReadOnlyDictionary<string, string> subscriberNames)
+        IReadOnlyDictionary<string, string> subscriberNames,
+        IReadOnlySet<Guid> describingPipes)
     {
         var frontierSet = new HashSet<string>(openFrontier, StringComparer.Ordinal);
         var nameByKey = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -2536,6 +2737,12 @@ public static class LineageEndpoints
                 return datasetSystem.Replace('-', ' ');
             }
 
+            // An object only lineage descriptions name is captioned by its system for the same reason.
+            if (LineageDescribedObject.SystemOf(key) is { } describedSystem)
+            {
+                return describedSystem.Replace('-', ' ');
+            }
+
             if (key.StartsWith("file|", StringComparison.Ordinal))
             {
                 // A "file" node whose identity is a remote endpoint is the acquisition's external SOURCE, not a
@@ -2581,7 +2788,8 @@ public static class LineageEndpoints
                     subscriberNames.GetValueOrDefault(key) ?? loc.Name ?? nameByKey.GetValueOrDefault(key, key),
                     KindOf(key),
                     string.IsNullOrEmpty(location) ? null : location,
-                    frontierSet.Contains(key));
+                    frontierSet.Contains(key),
+                    LineageDescribedObject.IsDescribedKey(key));
             })
             .ToList();
 
@@ -2592,7 +2800,7 @@ public static class LineageEndpoints
         {
             if (source != target && seenFlow.Add((source, target)))
             {
-                flowGraph.Add(new ProjectGraphDrawEdgeDto(source, target, label, pid));
+                flowGraph.Add(new ProjectGraphDrawEdgeDto(source, target, label, pid, pid is { } by && describingPipes.Contains(by)));
             }
         }
 
@@ -2603,7 +2811,7 @@ public static class LineageEndpoints
         {
             if (source != target && seenObject.Add((source, target, label)))
             {
-                objectGraph.Add(new ProjectGraphDrawEdgeDto(source, target, label, pid));
+                objectGraph.Add(new ProjectGraphDrawEdgeDto(source, target, label, pid, pid is { } by && describingPipes.Contains(by)));
             }
         }
 

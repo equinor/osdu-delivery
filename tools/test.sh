@@ -205,16 +205,17 @@ gui_install() {
     (cd "$1" && npm ci --no-audit --no-fund)
   fi
 }
-step "OSDU GUI: build, lint and unit tests"
+# The hosted build is the pages and the side bar the VS Code extension shows, a second build of the same sources.
+step "OSDU GUI: build, the hosted build, lint and unit tests"
 gui_install osdu/gui
-(cd osdu/gui && npm run build && npm run lint && npm run test:unit)
+(cd osdu/gui && npm run build && npm run build:hosted && npm run lint && npm run test:unit)
 
 # SQLFlow's GUI on its own, as CI builds it, when this branch changes it.
 base="$(git merge-base HEAD origin/main 2> /dev/null || true)"
 if [ "$mode" = full ] || [ -z "$base" ] || [ -n "$(git diff --name-only "$base" -- sqlflow/gui; git status --porcelain -- sqlflow/gui)" ]; then
   step "SQLFlow GUI: build and unit tests"
   gui_install sqlflow/gui
-  (cd sqlflow/gui && npm run build && npm run test:unit)
+  (cd sqlflow/gui && npm run build && npm run build:hosted && npm run test:unit)
 else
   step "SQLFlow GUI: unchanged on this branch, not built"
 fi

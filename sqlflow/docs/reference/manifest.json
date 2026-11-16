@@ -943,6 +943,59 @@
       ]
     },
     {
+      "id": "concept-described-lineage",
+      "corpus": "reference",
+      "path": "concepts/described-lineage.md",
+      "title": "Described lineage: what other systems do, kept beside the lineage SQLFlow computes",
+      "type": "concept",
+      "summary": "How lineage descriptions (flowType lin) extend lineage past the estate's own flows without touching waves or default views, and how to ask for them.",
+      "keywords": [
+        "described lineage",
+        "lineage description",
+        "flowtype lin",
+        "DescribedReads",
+        "DescribedWrites",
+        "upstream lineage",
+        "source system",
+        "waves unchanged",
+        "opt in",
+        "described objects",
+        "origin",
+        "open end",
+        "column mapping",
+        "assistant"
+      ],
+      "related": [
+        "flow-lin",
+        "flow-lin-columns",
+        "guide-describe-an-upstream-step",
+        "concept-lineage-graph-and-plan",
+        "concept-lineage-tiers",
+        "guide-lineage-graph",
+        "cli-lineage"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Core/Lineage/LineageReport.cs",
+        "src/SqlFlow.Core/Lineage/LineageDescriptionFlow.cs",
+        "src/SqlFlow.Lineage/Graph/LineageDescriber.cs",
+        "src/SqlFlow.Lineage/LineageService.cs",
+        "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
+        "src/SqlFlow.Yaml/YamlDocumentLoader.cs",
+        "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+        "src/SqlFlow.Catalog/CatalogSync.cs",
+        "src/SqlFlow.Catalog/CatalogEntities.cs",
+        "src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs",
+        "tests/SqlFlow.ControlPlane.Tests/LineageDescribedApiTests.cs",
+        "tests/SqlFlow.Core.Tests/Integration/CatalogSyncDescribedLineageIntegrationTests.cs",
+        "gui/src/features/lineage/GraphControls.tsx",
+        "tools/sqlflow-mcp/src/server.rs"
+      ]
+    },
+    {
       "id": "concept-environment-variables",
       "corpus": "reference",
       "path": "concepts/environment-variables.md",
@@ -1362,7 +1415,8 @@
         "cli-lineage",
         "concept-lineage-graph-and-plan",
         "guide-lineage-demo",
-        "concept-run-artifacts"
+        "concept-run-artifacts",
+        "concept-described-lineage"
       ],
       "sourceRefs": [
         "src/SqlFlow.Core/Lineage/LineageReport.cs",
@@ -2524,6 +2578,87 @@
       ]
     },
     {
+      "id": "flow-lin",
+      "corpus": "reference",
+      "path": "flow/lin.md",
+      "title": "Lineage description (flowType: lin)",
+      "type": "flow-reference",
+      "summary": "flowType: lin describes a step another system runs, so lineage continues before a landed file or after a written table. Metadata only, never executed.",
+      "keywords": [
+        "lineage description",
+        "flowtype lin",
+        "described lineage",
+        "upstream lineage",
+        "drop-off zone",
+        "landing zone",
+        "where does the data come from",
+        "step another system runs",
+        "feeds",
+        "fedBy",
+        "metadata only",
+        "never executed",
+        "databricks",
+        "fabric",
+        "origin"
+      ],
+      "yamlPath": "(root, flowType: lin)",
+      "related": [
+        "flow-lin-columns",
+        "concept-described-lineage",
+        "guide-describe-an-upstream-step",
+        "flow-overview",
+        "concept-lineage-graph-and-plan",
+        "cli-lineage",
+        "cli-validate"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlDocumentLoader.cs",
+        "src/SqlFlow.Core/Lineage/LineageDescriptionFlow.cs",
+        "src/SqlFlow.Lineage/Graph/LineageDescriber.cs",
+        "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
+        "src/SqlFlow.Catalog/FlowLoadProfiles.cs",
+        "docs/reference/flow/keys.lin.json",
+        "samples/lineage-described/lineage/orders-u2-publish.yaml"
+      ]
+    },
+    {
+      "id": "flow-lin-columns",
+      "corpus": "reference",
+      "path": "flow/lin-columns.md",
+      "title": "Column mappings in a lineage description (writes[].columns)",
+      "type": "flow-reference",
+      "summary": "The optional column level of a lineage description: for a written object's columns, the source columns they come from and how each value is made.",
+      "keywords": [
+        "column mapping",
+        "column lineage",
+        "source to target mapping",
+        "where does this column come from",
+        "writes columns",
+        "from",
+        "alias",
+        "star column",
+        "lineage description",
+        "flowtype lin"
+      ],
+      "yamlPath": "writes[].columns",
+      "related": [
+        "flow-lin",
+        "concept-described-lineage",
+        "guide-describe-an-upstream-step"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+        "src/SqlFlow.Core/Lineage/LineageDescriptionFlow.cs",
+        "src/SqlFlow.Lineage/Graph/LineageDescriber.cs",
+        "src/SqlFlow.Catalog/CatalogProjection.cs",
+        "src/SqlFlow.Catalog/CatalogEntities.cs",
+        "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "docs/reference/flow/keys.lin.json",
+        "samples/lineage-described/lineage/orders-u1-curate.yaml"
+      ]
+    },
+    {
       "id": "flow-load",
       "corpus": "reference",
       "path": "flow/load.md",
@@ -2566,9 +2701,9 @@
       "id": "flow-overview",
       "corpus": "reference",
       "path": "flow/overview.md",
-      "title": "Anatomy of a flow file: the fourteen document kinds",
+      "title": "Anatomy of a flow file: the fifteen document kinds",
       "type": "flow-reference",
-      "summary": "How the top-level flowType key selects one of fourteen flow document kinds, what each kind contains, and how loading and validation behave.",
+      "summary": "How the top-level flowType key selects one of fifteen flow document kinds, what each kind contains, and how loading and validation behave.",
       "keywords": [
         "flowtype",
         "document kinds",
@@ -2580,6 +2715,7 @@
         "flow-source",
         "flow-ing",
         "flow-batch",
+        "flow-lin",
         "concept-flow-identity",
         "cli-validate"
       ],
@@ -2589,6 +2725,7 @@
         "src/SqlFlow.Yaml/FlowYaml.cs",
         "src/SqlFlow.Yaml/YamlSourceControlFlowLoader.cs",
         "src/SqlFlow.Yaml/YamlBatchFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
         "src/SqlFlow.Core/SqlFlowException.cs",
         "src/SqlFlow.Core/Model/FlowDefinition.cs",
         "src/SqlFlow.Core/Runs/RunHistoryWriter.cs",
@@ -3278,6 +3415,42 @@
       ]
     },
     {
+      "id": "guide-describe-an-upstream-step",
+      "corpus": "reference",
+      "path": "guides/describe-an-upstream-step.md",
+      "title": "Describing a step another system runs: from its code to a lineage description",
+      "type": "guide",
+      "summary": "How to write lineage descriptions for a pipeline another platform runs: one document per hop, what to name, and what to put in context.",
+      "keywords": [
+        "lineage description",
+        "flowtype lin",
+        "upstream pipeline",
+        "databricks job",
+        "fabric",
+        "dataflow",
+        "notebook",
+        "drop-off zone",
+        "landing zone",
+        "extract lineage from code",
+        "agent",
+        "evidence",
+        "context"
+      ],
+      "related": [
+        "flow-lin",
+        "flow-lin-columns",
+        "concept-described-lineage",
+        "cli-validate",
+        "cli-lineage"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+        "src/SqlFlow.Lineage/Graph/LineageDescriber.cs",
+        "samples/lineage-described/lineage/orders-u1-curate.yaml",
+        "samples/lineage-described/lineage/orders-u2-publish.yaml"
+      ]
+    },
+    {
       "id": "guide-explore-json-xml",
       "corpus": "reference",
       "path": "guides/explore-json-xml.md",
@@ -3579,6 +3752,7 @@
         "gui/src/features/lineage/graphModel.ts",
         "gui/src/features/lineage/graphUrl.ts",
         "gui/src/features/lineage/graphLayout.ts",
+        "gui/src/features/lineage/graphBands.ts",
         "gui/src/features/lineage/GraphControls.tsx",
         "gui/src/features/lineage/GraphStatusLine.tsx",
         "gui/src/features/lineage/GraphDetails.tsx",
@@ -4463,6 +4637,55 @@
       ]
     },
     {
+      "id": "wiki-lineage-descriptions-beside-the-graph",
+      "corpus": "wiki",
+      "path": "decisions/lineage-descriptions-beside-the-graph.md",
+      "title": "A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes",
+      "type": "decision",
+      "summary": "Why flowType lin is metadata only, why its edges carry relations of their own instead of a flag, why it takes no references, and why its meaning is prose.",
+      "keywords": [
+        "lineage description",
+        "flowType lin",
+        "described lineage",
+        "DescribedReads",
+        "DescribedWrites",
+        "metadata only",
+        "waves unchanged",
+        "no environment variables",
+        "context as prose",
+        "column mapping",
+        "optional extension"
+      ],
+      "related": [
+        "wiki-schema-registration-flows",
+        "wiki-the-mcp-server-is-the-assistants-one-definition"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlDocumentLoader.cs",
+        "src/SqlFlow.Core/Lineage/LineageReport.cs",
+        "src/SqlFlow.Lineage/Graph/LineageDescriber.cs",
+        "src/SqlFlow.Lineage/LineageService.cs",
+        "src/SqlFlow.Lineage/Graph/LineageGraphBuilder.cs",
+        "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
+        "src/SqlFlow.Lineage/Collection/RunArtifactCollector.cs",
+        "gui/src/features/lineage/graphBands.ts",
+        "src/SqlFlow.Catalog/CatalogSync.cs",
+        "src/SqlFlow.Catalog/RunContextStore.cs",
+        "src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/KindEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs",
+        "tests/SqlFlow.Core.Tests/LineageDescribedTests.cs",
+        "tests/SqlFlow.Core.Tests/Integration/CatalogSyncDescribedLineageIntegrationTests.cs",
+        "tests/SqlFlow.ControlPlane.Tests/LineageDescribedApiTests.cs",
+        "tests/SqlFlow.ControlPlane.Tests/LineageDescribedColumnTests.cs"
+      ]
+    },
+    {
       "id": "wiki-orchestration-and-scheduling",
       "corpus": "wiki",
       "path": "patterns/orchestration-and-scheduling.md",
@@ -5020,7 +5243,8 @@
         "wiki-powerbi-model-entity-resolution",
         "wiki-semantic-layer-is-the-allow-list",
         "wiki-powerbi-report-specifications",
-        "wiki-visual-sql-translation"
+        "wiki-visual-sql-translation",
+        "wiki-lineage-descriptions-beside-the-graph"
       ],
       "sourceRefs": [
         "src/SqlFlow.Yaml/YamlSchemaRegistrationFlowLoader.cs",

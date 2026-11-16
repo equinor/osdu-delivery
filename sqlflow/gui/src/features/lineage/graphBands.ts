@@ -27,6 +27,13 @@ import {
  * So every arrow runs down the page: within a band from inputs to flows to what they write, and from a band to a
  * later one. A flow drawn after a flow of another repository, a folder of flows or a stack has no single wave; it
  * takes the first band after everything it reads from, and never one before its own wave.
+ *
+ * The described lineage (steps other systems run, written down in lineage descriptions) has no wave and may move
+ * nothing that has one. The bands of the estate's own flows are computed as if no description were drawn, and each
+ * described step then takes a band of its own between two of them, at a half step: as late as what it feeds allows
+ * when it leads into the estate (the chain that fills a landing folder sits above wave 1), and right after what it
+ * reads when it only consumes. A wave's band therefore holds the same flows, under the same name, with the described
+ * lineage drawn or not.
  */
 
 export interface BandNode {
@@ -35,14 +42,19 @@ export interface BandNode {
   flow: boolean;
   /** The waves of the flows the node stands for; empty for data, and for a flow lineage gave no wave. */
   waves: readonly number[];
+  /** True for a node of the described lineage: a lineage description, or an object only descriptions name. */
+  described?: boolean;
 }
 
 /** One band of the drawing, along the axis data runs on (top to bottom: y). */
 export interface Lane {
-  /** The band's place in the running order, from 1. */
+  /** The band's place in the running order, from 1. A band of the described lineage sits at a half step between
+   * two of them (0.5 is above wave 1, and so are the steps before that). */
   rank: number;
   /** The wave every flow of the band runs in; null when its flows are of several waves, or of none. */
   wave: number | null;
+  /** True for a band that holds only the described lineage: steps other systems run, and what only they name. */
+  described: boolean;
   start: number;
   end: number;
 }
@@ -188,9 +200,15 @@ export function bandedLayout(
   const made = new Map<string, number>();
   const depth = new Map<string, number>();
   const section = new Map<string, Section>();
+  const isDescribed = (id: string) => byId.get(id)!.described === true;
   for (const id of order) {
     const node = byId.get(id)!;
-    const above = Math.max(0, ...backward.get(id)!.map((producer) => made.get(producer) ?? 0));
+    if (node.described === true) {
+      // Placed further down, around the bands the estate's own flows take here.
+      continue;
+    }
+    const above = Math.max(
+      0, ...backward.get(id)!.filter((producer) => !isDescribed(producer)).map((producer) => made.get(producer) ?? 0));
     if (node.flow) {
       const rank = Math.max(firstWave(node), above + 1);
       band.set(id, rank);
@@ -213,11 +231,99 @@ export function bandedLayout(
   // Data nothing in the drawing writes, consumers first: above the first thing that reads it.
   for (let i = order.length - 1; i >= 0; i--) {
     const id = order[i];
-    if (section.has(id)) {
+    if (section.has(id) || isDescribed(id)) {
       continue;
     }
-    const readers = forward(id);
+    const readers = forward(id).filter((reader) => band.has(reader));
     const first = readers.length === 0 ? 1 : Math.min(...readers.map((reader) => band.get(reader)!));
+    const over = readers
+      .filter((reader) => section.get(reader) === "before" && band.get(reader) === first)
+      .map((reader) => depth.get(reader)!);
+    band.set(id, first);
+    section.set(id, "before");
+    depth.set(id, 1 + Math.max(0, ...over));
+  }
+
+  // ---- The described lineage, around the bands above. A described step sits at a half step, so it never shares a
+  // band with a flow that runs: half a step from a wave's band, a whole step from another described step.
+  const describedFlows = order.filter((id) => isDescribed(id) && byId.get(id)!.flow);
+  if (describedFlows.length > 0) {
+    // The flows a node leads to, or comes from, through data alone.
+    const flowsBeyond = (id: string, step: (node: string) => readonly string[]): string[] => {
+      const found = new Set<string>();
+      const passed = new Set<string>();
+      const queue = [...step(id)];
+      for (let head = 0; head < queue.length; head++) {
+        const next = queue[head];
+        if (byId.get(next)!.flow) {
+          found.add(next);
+        } else if (!passed.has(next)) {
+          passed.add(next);
+          queue.push(...step(next));
+        }
+      }
+      return [...found];
+    };
+    const beside = (anchor: number, direction: 1 | -1) =>
+      Number.isInteger(anchor) ? anchor + direction * 0.5 : anchor + direction;
+    const place = (id: string, rank: number) => {
+      band.set(id, rank);
+      section.set(id, "flows");
+      depth.set(id, 0);
+    };
+
+    // Whether a step leads into the estate: to a flow that runs, directly or through other described steps.
+    const fed = new Map(describedFlows.map((id) => [id, flowsBeyond(id, forward)]));
+    const leadsIn = new Set<string>();
+    for (let i = describedFlows.length - 1; i >= 0; i--) {
+      const id = describedFlows[i];
+      if (fed.get(id)!.some((flow) => !isDescribed(flow) || leadsIn.has(flow))) {
+        leadsIn.add(id);
+      }
+    }
+    // Leading in: as late as what it feeds allows, consumers first, so the chain ends right above its first reader.
+    for (let i = describedFlows.length - 1; i >= 0; i--) {
+      const id = describedFlows[i];
+      if (leadsIn.has(id)) {
+        const readers = fed.get(id)!.filter((flow) => band.has(flow)).map((flow) => band.get(flow)!);
+        place(id, beside(Math.min(...readers), -1));
+      }
+    }
+    // Only consuming: right after the latest thing it reads, producers first.
+    for (const id of describedFlows) {
+      if (!leadsIn.has(id)) {
+        const feeders = flowsBeyond(id, (node) => backward.get(node)!)
+          .filter((flow) => band.has(flow))
+          .map((flow) => band.get(flow)!);
+        place(id, beside(Math.max(0, ...feeders), 1));
+      }
+    }
+  }
+  // What only descriptions name: under the step that writes it, as data is under the flow that writes it.
+  for (const id of order) {
+    if (!isDescribed(id) || section.has(id)) {
+      continue;
+    }
+    const writers = backward.get(id)!.filter((producer) => band.has(producer));
+    if (writers.length > 0) {
+      const at = Math.max(...writers.map((producer) => band.get(producer)!));
+      const under = writers
+        .filter((producer) => section.get(producer) === "after" && band.get(producer) === at)
+        .map((producer) => depth.get(producer)!);
+      band.set(id, at);
+      section.set(id, "after");
+      depth.set(id, 1 + Math.max(0, ...under));
+    }
+  }
+  // Where a described chain starts (nothing drawn writes it): above its first reader. One nothing reads either sits
+  // above wave 1, with the rest of what lies before the estate.
+  for (let i = order.length - 1; i >= 0; i--) {
+    const id = order[i];
+    if (!isDescribed(id) || section.has(id)) {
+      continue;
+    }
+    const readers = forward(id).filter((reader) => band.has(reader));
+    const first = readers.length === 0 ? 0.5 : Math.min(...readers.map((reader) => band.get(reader)!));
     const over = readers
       .filter((reader) => section.get(reader) === "before" && band.get(reader) === first)
       .map((reader) => depth.get(reader)!);
@@ -294,7 +400,7 @@ export function bandedLayout(
     }
     let lane = lanes[lanes.length - 1];
     if (lane === undefined || lane.rank !== line.band) {
-      lane = { rank: line.band, wave: null, start: cursor, end: cursor + thickness };
+      lane = { rank: line.band, wave: null, described: false, start: cursor, end: cursor + thickness };
       lanes.push(lane);
     }
 
@@ -317,10 +423,13 @@ export function bandedLayout(
     lane.end = cursor + thickness;
   });
 
-  // A band is named by its wave only when that is true of every flow in it.
+  // A band is named by its wave only when that is true of every flow in it. A band of the described lineage is one
+  // that holds nothing else.
   for (const lane of lanes) {
     const waves = new Set<number>();
     let unwaved = false;
+    lane.described = nodes.some((node) => band.get(node.id) === lane.rank)
+      && nodes.every((node) => band.get(node.id) !== lane.rank || node.described === true);
     for (const node of nodes) {
       if (node.flow && band.get(node.id) === lane.rank) {
         if (node.waves.length === 0) {

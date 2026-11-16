@@ -8269,7 +8269,7 @@
       "path": "guides/vscode.md",
       "title": "The VS Code extension: developing flows, mappings and templates in the editor",
       "type": "guide",
-      "summary": "The OSDU Delivery extension: Microsoft browser sign-in, every document understood, mappings checked against templates, the estate, and the MCP server built in.",
+      "summary": "The OSDU Delivery extension: every document understood, a mapping previewed from its file, the GUI's pages in the editor's tabs, and the MCP server built in.",
       "keywords": [
         "vs code",
         "vscode",
@@ -8281,7 +8281,13 @@
         "device approval",
         "mapping completion",
         "template folder",
-        "document view",
+        "preview mapping",
+        "working copy",
+        "side bar",
+        "pages in tabs",
+        "webview",
+        "marketplace",
+        "vsix",
         "new document",
         "validate repository",
         "compare with synced",
@@ -8301,7 +8307,8 @@
         "delivery-guide-writing-a-mapping",
         "delivery-concept-templates",
         "delivery-concept-authentication-and-identity",
-        "delivery-wiki-0039-vscode-extension-is-an-mcp-client"
+        "delivery-wiki-0039-vscode-extension-is-an-mcp-client",
+        "delivery-wiki-0060-vscode-shows-the-gui"
       ],
       "sourceRefs": [
         "osdu/hosts/osdu-delivery-vscode/package.json",
@@ -8321,7 +8328,22 @@
         "osdu/hosts/osdu-delivery-vscode/src/deliverySchemas.ts",
         "sqlflow/tools/sqlflow-vscode/src/documents/recognition.ts",
         "sqlflow/gui/src/auth/DeviceApprovalPage.tsx",
-        "sqlflow/src/SqlFlow.ControlPlane/Security/DeviceApprovalPage.cs"
+        "sqlflow/src/SqlFlow.ControlPlane/Security/DeviceApprovalPage.cs",
+        "sqlflow/gui/src/embed/protocol.ts",
+        "sqlflow/gui/src/embed/renderHosted.tsx",
+        "sqlflow/gui/src/embed/HostedSideBar.tsx",
+        "sqlflow/gui/src/embed/host-design.css",
+        "sqlflow/tools/sqlflow-vscode/src/gui/carrier.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/credentials.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedHtml.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedLink.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedPages.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedSideBar.ts",
+        "osdu/gui/src/hosted/WorkingCopyMappingPage.tsx",
+        "osdu/gui/src/hosted/workingCopy.ts",
+        "osdu/gui/vite.hosted.config.ts",
+        "osdu/hosts/osdu-delivery-vscode/package.mjs",
+        ".github/workflows/vscode-extension.yml"
       ]
     },
     {
@@ -11777,7 +11799,8 @@
         "get_cli"
       ],
       "related": [
-        "delivery-wiki-0046-eu-ai-act"
+        "delivery-wiki-0046-eu-ai-act",
+        "delivery-wiki-0060-vscode-shows-the-gui"
       ],
       "sourceRefs": [
         "sqlflow/tools/sqlflow-vscode/src/host.ts",
@@ -12399,6 +12422,54 @@
         "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/CacheSetSweepTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/CacheSetValuesScaleTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0060-vscode-shows-the-gui",
+      "corpus": "wiki",
+      "path": "decisions/0060-vscode-shows-the-gui.md",
+      "title": "Decision 0060: the VS Code extension shows the GUI's own pages, built a second time and read with the person's sign-in",
+      "type": "decision",
+      "summary": "Why the extension draws one side bar and the GUI's pages in webviews, carries a page's calls itself, and previews a mapping from its file.",
+      "keywords": [
+        "vs code extension",
+        "webview",
+        "hosted build",
+        "side bar",
+        "native tree view",
+        "mapping preview",
+        "working copy",
+        "content security policy",
+        "credential",
+        "editor theme",
+        "marketplace",
+        "platform package"
+      ],
+      "related": [
+        "delivery-wiki-0039-vscode-extension-is-an-mcp-client",
+        "delivery-wiki-0040-dry-run-of-a-mapping"
+      ],
+      "sourceRefs": [
+        "sqlflow/gui/src/embed/protocol.ts",
+        "sqlflow/gui/src/embed/hostTransport.ts",
+        "sqlflow/gui/src/embed/renderHosted.tsx",
+        "sqlflow/gui/src/embed/HostedFrame.tsx",
+        "sqlflow/gui/src/embed/HostedSideBar.tsx",
+        "sqlflow/gui/src/embed/host-design.css",
+        "sqlflow/gui/hosted.build.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/carrier.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/credentials.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedHtml.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedLink.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedPages.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/hostedSideBar.ts",
+        "sqlflow/tools/sqlflow-vscode/src/host.ts",
+        "osdu/gui/src/hosted/WorkingCopyMappingPage.tsx",
+        "osdu/gui/src/hosted/workingCopy.ts",
+        "osdu/gui/vite.hosted.config.ts",
+        "osdu/hosts/osdu-delivery-vscode/src/deliveryModule.ts",
+        "osdu/hosts/osdu-delivery-vscode/package.mjs",
+        ".github/workflows/vscode-extension.yml"
       ]
     },
     {

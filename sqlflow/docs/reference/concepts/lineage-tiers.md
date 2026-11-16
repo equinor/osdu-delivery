@@ -18,6 +18,7 @@ related:
   - concept-lineage-graph-and-plan
   - guide-lineage-demo
   - concept-run-artifacts
+  - concept-described-lineage
 sourceRefs:
   - src/SqlFlow.Core/Lineage/LineageReport.cs
   - src/SqlFlow.Lineage/LineageService.cs
@@ -66,6 +67,7 @@ Each flow kind contributes fixed facts:
 | `inv` (invoke) | A lineage node with no facts; it triggers external compute and moves no catalog data. |
 | `scm` | Nothing. A source-control snapshot is a schedulable pipeline but a maintenance one: it scripts object definitions to a git tree, so it declares no data dependency and is excluded from the graph entirely (no node, no edge, no wave). |
 | `batch` | Nothing. A batch's ordering is computed FROM lineage, never part of it. |
+| `lin` (lineage description) | Nothing. A description states what a step another system runs reads and writes; it is set aside by the scan and placed beside the finished graph as [described lineage](described-lineage.md), so no tier, wave or dependency sees it. |
 
 The generated-view fact is what connects a landing flow to its downstream readers: the landing flow declares it writes the view, the downstream ingestion flow declares it reads the view, and the dependency resolves entirely at the declared tier.
 

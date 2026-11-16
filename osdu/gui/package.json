@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:hosted": "vite build --config vite.hosted.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
     "e2e": "playwright test --tsconfig tsconfig.node.json",

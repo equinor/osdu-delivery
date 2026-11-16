@@ -1,0 +1,117 @@
+/*
+  The host design (theme/designs.ts, HOST_DESIGN): what a page wears when an editor shows it in a webview (embed/). The
+  editor gives every webview its theme as `--vscode-*` variables and rewrites them when the person changes theme, so
+  each of the workbench's tokens (index.css) is set here from one of them, and a page reads as part of the editor in
+  whatever theme the person works in: light, dark or high contrast, the editor's own or one they installed.
+
+  What follows the theme is the ground and what is written on it: surfaces, text, hairlines, the one colour for what a
+  person acts on, the focus ring and the fonts. A surface between two of the theme's own is mixed from its foreground
+  into its background, so it keeps its place in a light theme and a dark one alike.
+
+  What does not follow it are the status hues and the chart palette. They are measured values (DESIGN.md 3.2 and 3.4)
+  and mean the same thing wherever a run or a record is shown, so they stay the workbench's own, in the step for the
+  theme's mode: the light step on a light theme, the dark step (index.css, `.dark`) on a dark one.
+
+  Every token set here holds in both modes, since each `--vscode-*` variable already is the theme's value for its mode;
+  the selector outweighs index.css's `.dark`, so the tokens that differ by mode are simply not set here.
+*/
+
+:root[data-sf-design="host"] {
+  --host-ground: var(--vscode-editor-background);
+  --host-ink: var(--vscode-foreground);
+
+  --background: var(--host-ground);
+  --foreground: var(--host-ink);
+  --card: color-mix(in srgb, var(--host-ink) 3%, var(--host-ground));
+  --card-foreground: var(--host-ink);
+  --popover: var(--vscode-editorWidget-background, color-mix(in srgb, var(--host-ink) 5%, var(--host-ground)));
+  --popover-foreground: var(--vscode-editorWidget-foreground, var(--host-ink));
+
+  /* A link is the colour a theme sets to be read on its editor background, so the same pair turned round reads too:
+     a filled button is that colour with the background's colour written on it. */
+  --primary: var(--vscode-textLink-foreground);
+  --primary-foreground: var(--host-ground);
+  --secondary: color-mix(in srgb, var(--host-ink) 9%, var(--host-ground));
+  --secondary-foreground: var(--host-ink);
+  --muted: color-mix(in srgb, var(--host-ink) 6%, var(--host-ground));
+  --muted-foreground: var(--vscode-descriptionForeground, color-mix(in srgb, var(--host-ink) 65%, var(--host-ground)));
+  --accent: color-mix(in srgb, var(--host-ink) 10%, var(--host-ground));
+  --accent-foreground: var(--host-ink);
+
+  /* A high contrast theme names the one border it draws everything with; the others get a hairline mixed for them. */
+  --border: var(--vscode-contrastBorder, color-mix(in srgb, var(--host-ink) 16%, var(--host-ground)));
+  --input: var(--vscode-contrastBorder, color-mix(in srgb, var(--host-ink) 32%, var(--host-ground)));
+  --ring: var(--vscode-focusBorder, var(--primary));
+
+  --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
+
+  /* The strip over a hosted page stands where the workbench's title bar does, on the editor's own tab strip colour. */
+  --title-bar: var(--vscode-editorGroupHeader-tabsBackground, var(--host-ground));
+  --title-bar-foreground: var(--host-ink);
+  --title-bar-subtle: var(--muted-foreground);
+  --chrome-border: var(--border);
+  --activity-bar: var(--vscode-activityBar-background, var(--host-ground));
+  --activity-bar-foreground: var(--vscode-activityBar-inactiveForeground, var(--muted-foreground));
+  --activity-bar-active: var(--vscode-activityBar-foreground, var(--host-ink));
+  --activity-bar-badge: var(--primary);
+  --side-bar: var(--vscode-sideBar-background, var(--host-ground));
+  --side-bar-foreground: var(--vscode-sideBar-foreground, var(--host-ink));
+  --panel: var(--vscode-panel-background, var(--host-ground));
+  --status-bar: var(--vscode-statusBar-background, var(--primary));
+  --status-bar-foreground: var(--vscode-statusBar-foreground, var(--primary-foreground));
+  --tab-bar: var(--vscode-editorGroupHeader-tabsBackground, var(--host-ground));
+  --tab-active: var(--vscode-tab-activeBackground, var(--host-ground));
+  --editor: var(--host-ground);
+
+  --sidebar: var(--side-bar);
+  --sidebar-foreground: var(--side-bar-foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  /* A row of a tree, hovered or selected, as the editor's own lists mark one. */
+  --sidebar-accent: var(--vscode-list-inactiveSelectionBackground, color-mix(in srgb, var(--host-ink) 12%, transparent));
+  --sidebar-accent-foreground: var(--vscode-list-inactiveSelectionForeground, var(--host-ink));
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+/*
+  The editor's fonts, at the editor's size: a page beside a file reads in the face the file's tab and the side bar are
+  set in, and its data in the face the code is. The utilities carry the workbench's own faces (index.css, @theme), so
+  the body and the monospace utility are set here, where the design is on.
+*/
+:root[data-sf-design="host"] body {
+  background: var(--host-ground);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+}
+
+:root[data-sf-design="host"] :is(.font-mono, code, kbd, pre, samp) {
+  font-family: var(--vscode-editor-font-family, ui-monospace, Consolas, monospace);
+}
+
+/* The editor draws its own scrollbars in the theme's colours; a page's follow them. */
+:root[data-sf-design="host"] * {
+  scrollbar-color: var(--vscode-scrollbarSlider-background, color-mix(in srgb, var(--host-ink) 25%, transparent)) transparent;
+}
+
+:root[data-sf-design="host"] *::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, color-mix(in srgb, var(--host-ink) 25%, transparent));
+  border-radius: 0;
+}
+
+:root[data-sf-design="host"] *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--vscode-scrollbarSlider-hoverBackground, color-mix(in srgb, var(--host-ink) 40%, transparent));
+}
+
+:root[data-sf-design="host"] ::selection {
+  background: var(--vscode-editor-selectionBackground, color-mix(in srgb, var(--primary) 30%, transparent));
+}
+
+/*
+  The side bar's own page (embed/HostedSideBar.tsx) sits in the editor's side bar, on its ground rather than the
+  editor's, so the tokens mixed from the ground are mixed from that one there.
+*/
+:root[data-sf-design="host"][data-sf-surface="side-bar"] {
+  --host-ground: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --host-ink: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+}

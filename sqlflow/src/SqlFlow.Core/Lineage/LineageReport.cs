@@ -58,6 +58,28 @@ public enum LineageRelation
     /// <summary>A schema registration flow (flowType: sch) recorded the object's metadata in the catalog. Metadata
     /// only: it implies no dependency, orders nothing, and moves no data.</summary>
     Registers = 5,
+
+    /// <summary>A lineage description (flowType: lin) says a step SQLFlow does not run reads the object. Metadata only:
+    /// it implies no dependency, orders nothing and moves no data, and it is a relation of its own so that nothing
+    /// computed over <see cref="Reads"/> (waves, dependencies, object levels, data streams) ever sees it.</summary>
+    DescribedReads = 6,
+
+    /// <summary>A lineage description (flowType: lin) says a step SQLFlow does not run writes the object. Metadata
+    /// only, and apart from <see cref="Writes"/> for the same reason as <see cref="DescribedReads"/>.</summary>
+    DescribedWrites = 7,
+}
+
+/// <summary>The relations a lineage description contributes, and how they read as the data movement they describe.</summary>
+public static class LineageRelations
+{
+    /// <summary>Whether <paramref name="relation"/> comes from a lineage description (flowType: lin).</summary>
+    public static bool IsDescribed(LineageRelation relation)
+        => relation is LineageRelation.DescribedReads or LineageRelation.DescribedWrites;
+
+    /// <summary>Whether <paramref name="relation"/>, as the catalog spells it, comes from a lineage description.</summary>
+    public static bool IsDescribed(string? relation)
+        => string.Equals(relation, nameof(LineageRelation.DescribedReads), StringComparison.Ordinal)
+           || string.Equals(relation, nameof(LineageRelation.DescribedWrites), StringComparison.Ordinal);
 }
 
 /// <summary>One pipeline (flow document) participating in the graph.</summary>
@@ -536,9 +558,10 @@ public sealed record LineageReport
     /// <summary>The current lineage.json schema version written by this build. Version 2 adds the object
     /// <see cref="LineageObjectNode.Script"/> and its offline columns; version 3 adds the interpreted data
     /// model (the per-object <see cref="LineageObjectNode.KeyColumns"/> and the <see cref="Relationships"/>
-    /// list); version 4 adds the consumption side (<see cref="Subscribers"/> and their read edges). Each
+    /// list); version 4 adds the consumption side (<see cref="Subscribers"/> and their read edges); version 5
+    /// adds the described lineage (<see cref="Described"/>), which leaves every other member as it was. Each
     /// version is additive: an older reader sees the same shape plus new fields it can ignore.</summary>
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -595,4 +618,241 @@ public sealed record LineageReport
     /// hold is no longer in its database, so a consumer persisting the report may forget it once nothing references it.
     /// Empty when the derived tier was not requested or reached no server.</summary>
     public IReadOnlyList<string> InventoriedServers { get; init; } = [];
+
+    /// <summary>What the estate's lineage descriptions (flowType: lin) add: the steps other systems run, the objects
+    /// only they name, and how both connect to the graph above. It is computed after everything else and from it, so
+    /// every other member of the report is the same whether the estate holds descriptions or not, and a reader that
+    /// wants the lineage SQLFlow computed ignores this member. Empty when the estate declares none; not required in the
+    /// envelope so a version-4 document still deserializes.</summary>
+    public LineageDescribed Described { get; init; } = LineageDescribed.Empty;
+}
+
+/// <summary>
+/// The described lineage of an estate: what its lineage descriptions (flowType: lin) say happens outside the flows
+/// SQLFlow runs. Kept apart from the computed graph on purpose. Its edges carry
+/// <see cref="LineageRelation.DescribedReads"/> and <see cref="LineageRelation.DescribedWrites"/>, a description is in
+/// no wave and no dependency, and an object only a description names is not in <see cref="LineageReport.Objects"/>.
+/// </summary>
+public sealed record LineageDescribed
+{
+    /// <summary>An estate with no lineage description.</summary>
+    public static LineageDescribed Empty { get; } = new();
+
+    /// <summary>The described steps, by name.</summary>
+    public IReadOnlyList<LineageDescribedStep> Steps { get; init; } = [];
+
+    /// <summary>The objects only descriptions name, by key. An object the estate's own flows touch is in
+    /// <see cref="LineageReport.Objects"/> and is not repeated here.</summary>
+    public IReadOnlyList<LineageDescribedObject> Objects { get; init; } = [];
+
+    /// <summary>One edge per object a step reads or writes, with <see cref="LineageEdge.Flow"/> the step's name,
+    /// <see cref="LineageTier.Declared"/> as the tier, and a described relation.</summary>
+    public IReadOnlyList<LineageEdge> Edges { get; init; } = [];
+
+    /// <summary>The column mappings the steps declare, in step, object and declaration order. An optional level of
+    /// detail: a step that maps no column is complete without it.</summary>
+    public IReadOnlyList<LineageColumnMapping> Columns { get; init; } = [];
+
+    /// <summary>What a description says that could not be used and why, and where a described chain is left open, one
+    /// sentence each. A finding never removes a step: what could be used still counts.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>True when the estate declares no lineage description. Computed, so it is no part of the artifact.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsEmpty => Steps.Count == 0 && Warnings.Count == 0;
+
+    /// <summary>
+    /// The same described lineage with every object key passed through <paramref name="map"/>: what a consumer that
+    /// gives an object of the computed graph another key (a catalog adopting the database-qualified identity of an
+    /// object the report knows without its database) applies here too, so a description stays connected to the object
+    /// it named. Two connections that become one are kept once.
+    /// </summary>
+    public LineageDescribed Rekey(Func<string, string> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        if (IsEmpty)
+        {
+            return this;
+        }
+
+        LineageDescribedEndpoint Endpoint(LineageDescribedEndpoint endpoint) => endpoint with { ObjectKey = map(endpoint.ObjectKey) };
+        return this with
+        {
+            Steps =
+            [
+                .. Steps.Select(s => s with
+                {
+                    Reads = [.. s.Reads.Select(Endpoint)],
+                    Writes = [.. s.Writes.Select(Endpoint)],
+                }),
+            ],
+            Edges = [.. Edges.Select(e => e with { ObjectKey = map(e.ObjectKey) }).Distinct()],
+            Columns =
+            [
+                .. Columns.Select(c => c with
+                {
+                    TargetObjectKey = map(c.TargetObjectKey),
+                    Sources = [.. c.Sources.Select(s => s with { ObjectKey = map(s.ObjectKey) })],
+                }),
+            ],
+        };
+    }
+}
+
+/// <summary>One step a lineage description (flowType: lin) describes.</summary>
+public sealed record LineageDescribedStep
+{
+    /// <summary>The description's name: the flow its edges are attributed to.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>The description's document, relative to the scanned folder.</summary>
+    public required string File { get; init; }
+
+    /// <summary>The system that performs the step.</summary>
+    public required string System { get; init; }
+
+    /// <summary>Where the step is found in that system.</summary>
+    public string? Unit { get; init; }
+
+    /// <summary>What the step does, in a sentence.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Who to ask about the step.</summary>
+    public string? Owner { get; init; }
+
+    /// <summary>Where the step can be looked at.</summary>
+    public string? Url { get; init; }
+
+    public string? Batch { get; init; }
+
+    /// <summary>What the description was written from.</summary>
+    public IReadOnlyList<LineageDescriptionEvidence> Evidence { get; init; } = [];
+
+    /// <summary>The objects the step reads that could be placed in the graph, in declaration order.</summary>
+    public IReadOnlyList<LineageDescribedEndpoint> Reads { get; init; } = [];
+
+    /// <summary>The objects the step writes that could be placed in the graph, in declaration order.</summary>
+    public IReadOnlyList<LineageDescribedEndpoint> Writes { get; init; } = [];
+}
+
+/// <summary>One object a described step reads or writes, placed in the graph.</summary>
+public sealed record LineageDescribedEndpoint
+{
+    /// <summary>The object's node key: a <see cref="LineageObjectNode.Key"/> of the computed graph when the description
+    /// named a flow of the estate, or a <see cref="LineageDescribedObject.Key"/>.</summary>
+    public required string ObjectKey { get; init; }
+
+    /// <summary>The object's name, as it is shown.</summary>
+    public required string ObjectName { get; init; }
+
+    /// <summary>The flow of the estate the description named to reach the object; null for an object named by a system
+    /// and a name.</summary>
+    public string? ViaFlow { get; init; }
+
+    /// <summary>The alias the description gave the object, when it gave one.</summary>
+    public string? Alias { get; init; }
+
+    /// <summary>What the object holds, as the description says it.</summary>
+    public string? Note { get; init; }
+
+    /// <summary>True for a read the description marks as where the data starts.</summary>
+    public bool Origin { get; init; }
+}
+
+/// <summary>An object only lineage descriptions name: a table, a file set or an endpoint of a system the estate does
+/// not manage. Its key can never collide with an object of the computed graph, whose server reference is never of this
+/// form.</summary>
+public sealed record LineageDescribedObject
+{
+    /// <summary>The prefix of the server reference every described object's key starts with.</summary>
+    public const string ServerPrefix = "described:";
+
+    /// <summary>The node key: <c>described:&lt;system&gt;|||&lt;name&gt;</c>, case-folded like every node key.</summary>
+    public required string Key { get; init; }
+
+    /// <summary>The system the object belongs to.</summary>
+    public required string System { get; init; }
+
+    /// <summary>The object's name as the first description naming it spells it.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Whether the described chain ends at this object, and how.</summary>
+    public LineageDescribedBoundary Boundary { get; init; }
+
+    /// <summary>The server reference of a described object of <paramref name="system"/>.</summary>
+    public static string ServerRef(string system)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(system);
+        return ServerPrefix + system.Trim().ToLowerInvariant();
+    }
+
+    /// <summary>Whether <paramref name="key"/> is the key of a described object.</summary>
+    public static bool IsDescribedKey(string? key)
+        => key is not null && key.StartsWith(ServerPrefix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The system of a described object's key, or null for any other key.</summary>
+    public static string? SystemOf(string? key)
+    {
+        if (!IsDescribedKey(key))
+        {
+            return null;
+        }
+
+        var rest = key![ServerPrefix.Length..];
+        var end = rest.IndexOf('|', StringComparison.Ordinal);
+        return end < 0 ? rest : rest[..end];
+    }
+}
+
+/// <summary>Where a described chain ends, read upstream. Descriptions are optional and may cover part of a chain, so an
+/// end is a fact a reader is told, never a fault.</summary>
+public enum LineageDescribedBoundary
+{
+    /// <summary>A description writes the object, or none reads it: the chain does not end here.</summary>
+    None = 0,
+
+    /// <summary>A description reads the object, none writes it, and a read marks it as where the data starts.</summary>
+    Origin = 1,
+
+    /// <summary>A description reads the object, none writes it, and no read marks it as an origin: what produces it is
+    /// not described.</summary>
+    Open = 2,
+}
+
+/// <summary>One mapped column of an object a described step writes, with the columns it comes from.</summary>
+public sealed record LineageColumnMapping
+{
+    /// <summary>The described step declaring the mapping.</summary>
+    public required string Flow { get; init; }
+
+    /// <summary>The written object's node key.</summary>
+    public required string TargetObjectKey { get; init; }
+
+    /// <summary>The written object's name, as it is shown.</summary>
+    public required string TargetObjectName { get; init; }
+
+    /// <summary>The mapped column. A <c>*</c> stands for every column not listed by name.</summary>
+    public required string TargetColumn { get; init; }
+
+    /// <summary>The column's position among the object's mapped columns, 1-based, in declaration order.</summary>
+    public required int Ordinal { get; init; }
+
+    /// <summary>The columns it comes from, in declaration order; empty for a column the step makes itself.</summary>
+    public IReadOnlyList<LineageColumnSource> Sources { get; init; } = [];
+
+    /// <summary>How the value is made, as the description says it.</summary>
+    public string? Note { get; init; }
+}
+
+/// <summary>One source column of a mapped column.</summary>
+public sealed record LineageColumnSource
+{
+    /// <summary>The read object's node key.</summary>
+    public required string ObjectKey { get; init; }
+
+    /// <summary>The read object's name, as it is shown.</summary>
+    public required string ObjectName { get; init; }
+
+    /// <summary>The column there. A <c>*</c> stands for the column of the same name.</summary>
+    public required string Column { get; init; }
 }

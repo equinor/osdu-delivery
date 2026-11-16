@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { rowsOf } from '../src/jsonRows.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const manifest = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
-const sqlflow = JSON.parse(readFileSync(join(here, '..', '..', '..', '..', 'sqlflow', 'tools', 'sqlflow-vscode', 'package.json'), 'utf8'));
+const folder = join(here, '..');
+const manifest = JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8'));
+const sqlflowFolder = join(here, '..', '..', '..', '..', 'sqlflow', 'tools', 'sqlflow-vscode');
+const sqlflow = JSON.parse(readFileSync(join(sqlflowFolder, 'package.json'), 'utf8'));
+
+type Menus = Record<string, { command: string }[]>;
 
 // VS Code reads a manifest as a file, so this product's cannot be composed the way its code is: it restates SQLFlow's
 // contributions. These hold the two together, so a command SQLFlow adds cannot go missing here.
@@ -31,6 +34,21 @@ test('every view SQLFlow contributes is contributed here', () => {
     }
 });
 
+test('the side bar is one drawn view, in both manifests, and neither contributes a tree of the editor\'s own', () => {
+    for (const contributes of [manifest.contributes, sqlflow.contributes]) {
+        const views = Object.values<{ id: string; type?: string }[]>(contributes.views).flat();
+        assert.deepEqual(views.map((view) => [view.id, view.type]), [['sqlflow.sideBar', 'webview']]);
+        // A welcome text is how the editor fills an empty tree; a drawn view says what it has to say itself.
+        assert.equal(contributes.viewsWelcome, undefined);
+    }
+});
+
+test('a page\'s tab wakes the extension, so the tabs open when the editor closed come back', () => {
+    for (const events of [manifest.activationEvents, sqlflow.activationEvents]) {
+        assert.ok(events.includes('onWebviewPanel:sqlflow.page'));
+    }
+});
+
 test('a workspace cannot name the programs this extension runs', () => {
     const settings = manifest.contributes.configuration.properties;
     for (const name of ['sqlflow.lspBinaryPath', 'sqlflow.mcpBinaryPath', 'sqlflow.cliPath']) {
@@ -42,31 +60,85 @@ test('an untrusted workspace cannot choose where a sign-in goes', () => {
     assert.deepEqual(manifest.capabilities.untrustedWorkspaces.restrictedConfigurations.sort(), ['sqlflow.controlPlaneUrl', 'sqlflow.guiUrl']);
 });
 
-test('every menu names a contributed command', () => {
-    const commands = new Set(manifest.contributes.commands.map((command: { command: string }) => command.command));
-    const named = Object.values<{ command: string }[]>(manifest.contributes.menus).flat().map((item) => item.command);
-    assert.deepEqual(named.filter((id) => !commands.has(id)), []);
+test('every menu and key names a contributed command, in both manifests', () => {
+    for (const contributes of [manifest.contributes, sqlflow.contributes]) {
+        const commands = new Set(contributes.commands.map((command: { command: string }) => command.command));
+        const named = [
+            ...Object.values(contributes.menus as Menus).flat().map((item) => item.command),
+            ...(contributes.keybindings ?? []).map((key: { command: string }) => key.command),
+        ];
+        assert.deepEqual(named.filter((id) => !commands.has(id)), []);
+    }
+});
+
+test('every command a host registers is one its manifest contributes, and the other way round', () => {
+    const registered = (file: string): string[] =>
+        [...readFileSync(file, 'utf8').matchAll(/\b(?:register|command)\('((?:sqlflow|osduDelivery)\.[A-Za-z]+)'/g)].map((match) => match[1]);
+    const library = registered(join(sqlflowFolder, 'src', 'host.ts'));
+    const module = registered(join(folder, 'src', 'deliveryModule.ts'));
+    const contributed = (from: { contributes: { commands: { command: string }[] } }): string[] => from.contributes.commands.map((command) => command.command).sort();
+
+    assert.deepEqual([...library].sort(), contributed(sqlflow));
+    assert.deepEqual([...library, ...module].sort(), contributed(manifest));
 });
 
 test('the language files match SQLFlow\'s, which they are copies of', () => {
     for (const file of ['syntaxes/sqlflow-flow.tmLanguage.json', 'language-configuration.json']) {
-        const copy = readFileSync(join(here, '..', file), 'utf8');
-        const original = readFileSync(join(here, '..', '..', '..', '..', 'sqlflow', 'tools', 'sqlflow-vscode', file), 'utf8');
+        const copy = readFileSync(join(folder, file), 'utf8');
+        const original = readFileSync(join(sqlflowFolder, file), 'utf8');
         assert.equal(copy.replace(/\r\n/g, '\n'), original.replace(/\r\n/g, '\n'), file);
     }
 });
 
-test('an answer reads as rows, a named object by its name and an empty field left out', () => {
-    const rows = rowsOf({
-        total: 3,
-        missing: null,
-        links: { page: '/x' },
-        interfaces: [{ name: 'wellbores', mapping: 'Wellbore@1.3.0' }],
-        tags: ['a', 'b'],
-    });
+// What the Marketplace needs of a package, and refuses one without.
+test('the package says what the Marketplace shows of it', () => {
+    assert.match(manifest.publisher, /^[a-z0-9][a-z0-9-]*$/i);
+    assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+    assert.ok(manifest.displayName && manifest.description.length <= 250, 'a name and a description that fits a listing');
+    assert.ok(manifest.repository?.url && manifest.bugs?.url && manifest.homepage && manifest.license);
+    assert.ok(Array.isArray(manifest.keywords) && manifest.keywords.length > 0 && manifest.keywords.length <= 30, 'at most thirty keywords');
+    assert.equal(new Set(manifest.keywords).size, manifest.keywords.length, 'no keyword twice');
+    assert.match(manifest.galleryBanner.color, /^#[0-9a-f]{6}$/i);
+    const categories = ['Programming Languages', 'Snippets', 'Linters', 'Themes', 'Debuggers', 'Formatters', 'Keymaps', 'SCM Providers', 'Other',
+        'Extension Packs', 'Language Packs', 'Data Science', 'Machine Learning', 'Visualization', 'Notebooks', 'Education', 'Testing', 'AI', 'Chat'];
+    for (const category of manifest.categories) {
+        assert.ok(categories.includes(category), category);
+    }
+});
 
-    assert.deepEqual(rows.map((row) => row.label), ['total', 'interfaces', 'tags']);
-    assert.equal(rows[0].description, '3');
-    assert.equal(rows[1].children?.[0].label, 'wellbores');
-    assert.equal(rows[2].description, 'a, b');
+test('the icon is a PNG of at least 128 pixels a side, which the Marketplace asks for', () => {
+    assert.match(manifest.icon, /\.png$/);
+    const icon = readFileSync(join(folder, manifest.icon));
+    assert.equal(icon.subarray(1, 4).toString('latin1'), 'PNG');
+    const [width, height] = [icon.readUInt32BE(16), icon.readUInt32BE(20)];
+    assert.equal(width, height, 'square');
+    assert.ok(width >= 128, `${width} pixels`);
+});
+
+test('the package carries a readme and a change log, and every picture and page they and the walkthrough name', () => {
+    for (const file of ['README.md', 'CHANGELOG.md']) {
+        assert.ok(existsSync(join(folder, file)), file);
+    }
+    const readme = readFileSync(join(folder, 'README.md'), 'utf8');
+    // The Marketplace shows a picture only from an https address; a path into the repository would show nothing there.
+    for (const [, source] of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)) {
+        assert.match(source, /^https:\/\/.+\.(png|gif|jpg)$/, source);
+    }
+    for (const walkthrough of manifest.contributes.walkthroughs) {
+        for (const step of walkthrough.steps) {
+            assert.ok(existsSync(join(folder, step.media.markdown)), step.media.markdown);
+        }
+    }
+    assert.match(readFileSync(join(folder, 'CHANGELOG.md'), 'utf8'), new RegExp(`^## \\[${manifest.version.replace(/\./g, '\\.')}\\]`, 'm'));
+});
+
+test('a package leaves out its sources and what a hosted page never loads, and keeps what it runs', () => {
+    const ignored = readFileSync(join(folder, '.vscodeignore'), 'utf8').split(/\r?\n/).filter((line) => line !== '');
+    for (const pattern of ['src/**', 'test/**', 'node_modules/**', 'dist/hosted/assets/*.wasm', 'dist/hosted/assets/*.worker-*.js']) {
+        assert.ok(ignored.includes(pattern), pattern);
+    }
+    assert.ok(ignored.includes('!dist/hosted/.vite/manifest.json'), 'the list of the hosted build\'s files, which the extension reads');
+    for (const kept of ['dist/**', 'bin/**', 'resources/**', 'dist/hosted/**']) {
+        assert.ok(!ignored.includes(kept), kept);
+    }
 });

@@ -233,10 +233,20 @@ function encodeTokens(tokens: TokenResult[]): Uint32Array {
 
 const MARKER_OWNER = "sqlflow";
 let registered = false;
+let engineOff = false;
+
+/**
+ * Leaves the engine unstarted, for a page that cannot run it: one an editor shows in a webview (embed/), which may not
+ * start a worker from a file, and whose editor analyses the document itself, in the file, with its own language server.
+ * A code view then shows a flow's YAML with the grammar's colouring alone. Called before the first code view renders.
+ */
+export function withoutLanguageEngine(): void {
+  engineOff = true;
+}
 
 /** Register the flow-YAML providers with Monaco. Idempotent. */
 export function registerSqlflowYamlProviders(monaco: Monaco): void {
-  if (registered) {
+  if (registered || engineOff) {
     return;
   }
   registered = true;
@@ -279,6 +289,10 @@ export function registerSqlflowYamlProviders(monaco: Monaco): void {
 
 /** Recompute and publish diagnostics for a flow model as editor markers. */
 export async function refreshDiagnostics(monaco: Monaco, model: editor.ITextModel): Promise<void> {
+  if (engineOff) {
+    return;
+  }
+
   const source = model.getValue();
   const diags = await request<DiagnosticResult[]>({ op: "diagnostics", source });
   if (model.isDisposed()) {

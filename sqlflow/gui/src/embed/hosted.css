@@ -1,0 +1,7 @@
+/*
+  The stylesheet of a hosted entry (embed/): the workbench's design system, and over it the host design, whose tokens
+  are the theme of the editor showing the page (host-design.css).
+*/
+
+@import "../index.css";
+@import "./host-design.css";

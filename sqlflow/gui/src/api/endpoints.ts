@@ -590,14 +590,19 @@ export const lineageApi = {
   // A project's cross-repo downstream lineage closure. `expand` re-seeds the walk from frontier nodes (an object
   // key or a pipeline id) and is sent as repeated query params, which the single-value query builder cannot do, so
   // it is folded into the path here; the rest ride the normal query object.
-  projectGraph: (params: { repoId?: string; project?: string; depth?: number; expand?: string[] }) => {
+  // `described` asks for the described lineage as well (what lineage descriptions say of steps other systems run);
+  // it is left out of the request when off, so the graph asked for is the one the estate computed.
+  projectGraph: (params: { repoId?: string; project?: string; depth?: number; expand?: string[]; described?: boolean }) => {
     const expand = params.expand ?? [];
     const suffix = expand.length > 0
       ? `?${expand.map((token) => `expand=${encodeURIComponent(token)}`).join("&")}`
       : "";
     return get<ProjectGraph>(
       `/api/v1/lineage/project-graph${suffix}`,
-      { repoId: params.repoId, project: params.project, depth: params.depth } as QueryParams,
+      {
+        repoId: params.repoId, project: params.project, depth: params.depth,
+        described: params.described === true ? "true" : undefined,
+      } as QueryParams,
     );
   },
 };

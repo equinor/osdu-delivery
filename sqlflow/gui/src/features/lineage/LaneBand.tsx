@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 import type { Orientation } from "./graphLayout";
 
 export interface LaneData extends Record<string, unknown> {
-  /** What the band is: "Wave 3" when every flow in it runs in that wave, empty otherwise. */
+  /** What the band is: "Wave 3" when every flow in it runs in that wave, "Other systems" when it holds only steps
+   * other systems run (the described lineage), empty otherwise. */
   label: string;
   /** Every other band is shaded, so a band is followed across the drawing by eye. */
   shaded: boolean;
@@ -15,6 +16,8 @@ export type LaneNode = Node<LaneData, "lane">;
 
 /** The room a band's name takes beside (top to bottom) or above (left to right) its cards. */
 export const LANE_LABEL_ROOM = 96;
+/** The same room in a drawing that names a band of the described lineage, whose name is the longer one. */
+export const LANE_LABEL_ROOM_DESCRIBED = 164;
 
 /**
  * The backdrop of one band of the drawing: the flows of one wave with what they read first and what they write.

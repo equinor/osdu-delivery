@@ -1801,6 +1801,8 @@ export interface ProjectGraphObject {
   kind: string;
   location: string | null;
   frontier: boolean;
+  /** True for an object only lineage descriptions name: no registry row is behind it, and `kind` is its system. */
+  described?: boolean;
 }
 
 /** One resolved, drawable edge of the project graph. `source`/`target` are node ids (a pipeline id or an object
@@ -1811,6 +1813,8 @@ export interface ProjectGraphDrawEdge {
   target: string;
   label: string;
   pipelineId: string | null;
+  /** True for a connection a lineage description states: a step another system runs, never run here. */
+  described?: boolean;
 }
 
 /** A project's lineage as one cross-repo subgraph. `pipelines`/`edges` are the underlying facts; `objects`,
@@ -1825,6 +1829,12 @@ export interface ProjectGraph {
   objects: ProjectGraphObject[];
   flowGraph: ProjectGraphDrawEdge[];
   objectGraph: ProjectGraphDrawEdge[];
+  /** Whether the described lineage is in this graph: lineage descriptions, the objects only they name, and their
+   * connections. It is there when asked for, and when the graph was seeded on a node of it. */
+  describedIncluded?: boolean;
+  /** Whether asking for the described lineage would add to this graph: a description touches an object drawn here.
+   * Only ever true when it was left out. */
+  describedAvailable?: boolean;
 }
 
 /** One repo whose lineage references an object: how many of its edges touch the object and whether a flow there

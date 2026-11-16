@@ -104,6 +104,9 @@ to narrow a search to one kind of page.
 - [An external database is registered by a flow, and the dashboard supplies the model](decisions/schema-registration-flows.md) -
   why `flowType: sch` exists instead of reusing scm, why it reads only tables and views and leaves joins and
   measures to the dashboard, and why subscribers link to it by name.
+- [A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes](decisions/lineage-descriptions-beside-the-graph.md) -
+  why `flowType: lin` is metadata with no execution model and no references, why its edges carry relations of their
+  own instead of a flag, why what a step does is prose, and why an open end is a fact.
 - [A report visual's query is translated into T-SQL at sync, or refused with a reason](decisions/visual-sql-translation.md) -
   why the output is T-SQL only, why a stated Power Query and DAX subset refuses rather than approximates, why it
   runs in the graph builder, and why the translation is served as a dashboard match's SQL.

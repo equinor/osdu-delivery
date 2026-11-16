@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, ArrowDownToLine, ArrowLeftToLine, ArrowRight, ArrowRightToLine, ArrowUpToLine, Eye, EyeOff, FoldHorizontal, Layers,
-  MoveHorizontal, MoveVertical, SlidersHorizontal, X,
+  MoveHorizontal, MoveVertical, SlidersHorizontal, Waypoints, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -319,6 +319,36 @@ export function OrientationControl({ value, onChange }: { value: Orientation; on
         <TooltipContent>Left to right: what a node is made from is on its left.</TooltipContent>
       </Tooltip>
     </ToggleGroup>
+  );
+}
+
+/**
+ * Whether the drawing also holds the described lineage: the steps other systems run, as lineage descriptions state
+ * them. Off is the lineage the estate computed from the flows it runs; the control is only offered where turning it
+ * on would add something.
+ */
+export function DescribedControl({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Toggle
+          variant="outline"
+          size="sm"
+          pressed={value}
+          onPressedChange={onChange}
+          data-testid="graph-described-toggle"
+          className={cn("h-8 gap-1.5 px-2.5 text-xs", PRESSED)}
+        >
+          <Waypoints aria-hidden />
+          Described steps
+        </Toggle>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {value
+          ? "Steps other systems run are drawn too, with dotted arrows: where a landed file comes from, and what reads a table after this estate. They are stated in lineage descriptions, never run or observed here. Turn off for the lineage this estate computed."
+          : "Also draw the steps other systems run, as lineage descriptions state them: where a landed file comes from, and what reads a table after this estate. Nothing here runs or observes them."}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

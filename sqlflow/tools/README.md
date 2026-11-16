@@ -53,31 +53,60 @@ through `register_census(json)`, which the GUI calls for each census a GUI modul
 # Rust binaries (release)
 cargo build --release -p sqlflow-lsp -p sqlflow-mcp
 
-# VSCode extension: typecheck, then bundle (also stages the binaries + docs)
+# The GUI's packages, which the pages the extension shows are built with
+(cd ../gui && npm ci)
+
+# VSCode extension: typecheck, then bundle (also stages the binaries, the docs and the pages)
 cd sqlflow-vscode
 npm install
 npm run bundle          # or: npm run package   (produces a .vsix)
 ```
 
 `esbuild.mjs` copies `../docs/reference` into `dist/reference` (so the docs
-browser works offline) and stages the built `sqlflow-lsp` / `sqlflow-mcp`
-binaries into `bin/`. The extension also discovers binaries from
-`../target/{release,debug}` when run from a checkout, or from the
-`sqlflow.lspBinaryPath` / `sqlflow.mcpBinaryPath` settings, which a workspace
-cannot set: only the person's own settings name a program it runs.
+browser works offline), stages the built `sqlflow-lsp` / `sqlflow-mcp`
+binaries into `bin/`, and builds the pages and the side bar the extension shows
+into `dist/hosted` (the GUI's hosted build, `npm run build:hosted` in `../gui`;
+`npm run bundle:hosted` builds them again after the GUI changed). The extension
+also discovers binaries from `../target/{release,debug}` when run from a
+checkout, or from the `sqlflow.lspBinaryPath` / `sqlflow.mcpBinaryPath`
+settings, which a workspace cannot set: only the person's own settings name a
+program it runs.
 
 ## The VSCode extension
 
-The extension is a client of the MCP server: every view, panel and command reads through the server's tools, so it
-sees what an assistant sees, under the same rules, and it holds no REST client. It starts the program on first use and
-signs in through its `login` tool: the browser opens the control plane's approval, which goes on to the GUI, so an account
-that signs in with Microsoft Entra approves there. The server keeps the session, and an assistant registered with the same
+The extension signs in through the MCP server and shows the GUI's own pages. It starts the server on first use and signs
+in through its `login` tool: the browser opens the control plane's approval, which goes on to the GUI, so an account that
+signs in with Microsoft Entra approves there. The server keeps the session, and an assistant registered with the same
 program shares it. The extension registers the server with VS Code's own assistants, once per mode, and
 **Connect an AI Assistant** prints another client's registration from the server's `install`. A package may carry the
 `sqlflow` command line beside the server, as `bin/sqlflow`: the extension puts it on the PATH of every integrated terminal,
 the server finds it there and `get_cli` tells an assistant, so what would be a person clicking can be a script. A person
 signs in once: `~/.sqlflow/credentials.json`, the file `sqlflow login` keeps per control plane, is shared by the command line
 and the server, which reads what another client wrote on its next call.
+
+### One drawn side bar, and the GUI's pages in tabs
+
+The extension contributes one view, a webview, and no tree of the editor's own. The view and every page are the GUI
+itself: `../gui/src/embed` is a second entry to the workbench's sources (the hosted build), which renders the pages
+without the workbench's chrome, wears the host design (its tokens are the editor theme's `--vscode-*` variables, so a
+page follows the person's theme), and hands every call to its host instead of to the browser.
+
+| Part | Where | What it does |
+| --- | --- | --- |
+| The contract | `../gui/src/embed/protocol.ts` | Every message a page and its host exchange, compiled by both sides. |
+| The page's transport | `../gui/src/embed/hostTransport.ts` | The API client's calls, carried by the host and answered as fetch answers. |
+| The carrier | `src/gui/carrier.ts` | Makes a page's call to the control plane with the person's credential, and streams what streams. |
+| The credential | `src/gui/credentials.ts` | Reads the credential the server keeps, where the server reads it. Never writes. |
+| The page of a webview | `src/gui/hostedHtml.ts` | The HTML and its content security policy. |
+| A webview's link | `src/gui/hostedLink.ts` | Everything said between one webview and the extension, each message checked. |
+| The tabs | `src/gui/hostedPages.ts` | A page per tab, reused by address, restored after a restart. |
+| The side bar | `src/gui/hostedSideBar.ts` | The working copy from disk, and the workbench's menu. |
+
+A page is given no credential. Its content security policy admits no host (`connect-src` is the extension's own files),
+so it reaches the control plane only by asking the extension, which makes the call under the person's sign-in and refuses
+any address but the control plane's, any method the API does not have, and any header a page has no reason to set. A page
+therefore shows what the same person sees in the GUI, and nothing a model reads: the MCP server's rule about what an
+assistant is told is untouched.
 
 A YAML file is a pipeline document by what it holds (`src/documents/recognition.ts`, which follows
 `FlowDocumentRecognition` and the engine's document kinds), since a repository's flows are plain `*.yaml` files. What one
@@ -104,11 +133,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
 | A module adds | With | What it gets |
 | --- | --- | --- |
-| Sections of the Document view | `documentView.register` | Rows about the document in the editor, read when opened. |
+| What a row of the side bar offers | `offers.register`, `offers.nameGroup` | Actions on a document of the working copy, and the heading its documents are listed under. |
+| A page | `pages.open` | A page of the GUI, its own among them, in a tab of the editor. |
 | References | `references.register` | What a key may hold and the file a value refers to, as completion, links and go to definition. |
 | Lenses | `lenses.register` | Actions at the top of a document. |
 | Commands | `command` | A command that reads the estate: a failure is shown, a missing sign-in offers one. |
-| A run's panel and form | `addRunSections`, `addRunParameters`, `addRunPayload` | What it knows of a run of its kinds. |
+| A run's form | `addRunParameters`, `addRunPayload` | What a run of its kinds takes. The run itself is followed on its page. |
+
+A module's pages are its GUI module's: a host builds the hosted entries with its modules registered (`renderHosted`,
+`renderHostedSideBar`) and lays the build out with `../gui/hosted.build.ts`, so the extension finds the same files in a
+host's `dist/hosted` as in its own.
 
 VS Code reads a manifest as a file, so a host's `package.json` restates what this one contributes under the same `sqlflow.*`
 ids, and a host's extension replaces this one rather than sitting beside it.

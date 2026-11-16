@@ -390,6 +390,16 @@ public static class ScheduleEndpoints
                 statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
+        // A lineage description is never run, so a schedule cannot take one as a member: its fires would queue a run no
+        // node will ever execute.
+        var neverRun = active.FirstOrDefault(a => SqlFlow.Yaml.YamlDocumentLoader.NeverRunReason(a.Kind) is not null);
+        if (neverRun is not null)
+        {
+            return TypedResults.Problem(
+                detail: $"'{memberIds[neverRun.Id]}': {SqlFlow.Yaml.YamlDocumentLoader.NeverRunReason(neverRun.Kind)}",
+                statusCode: StatusCodes.Status400BadRequest, title: "Invalid schedule");
+        }
+
         // A schedule's operation and values are run arguments its fires pass on, so they are validated here exactly as
         // a trigger's are: by every member kind that would take them, and at least one member must take them, or the
         // schedule would carry arguments no fire ever uses.

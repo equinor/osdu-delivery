@@ -94,9 +94,10 @@ function MappingHeader({ detail, id, loading }: { detail: DeliveryMappingDetail 
  * dry run over them on Properties, one line saying what came of it, and under them the three ways to read the mapping. Overview
  * is what the mapping does, from the tables it reads to the record it fills; Staged records is the records beside what they
  * render to; Properties is the template the mapping fills, attribute by attribute. A dry run is one session of the page, so
- * Staged records marks each record with what it found, and neither loses it when the reader moves between them.
+ * Staged records marks each record with what it found, and neither loses it when the reader moves between them. The page
+ * of a mapping being written in an editor (hosted/WorkingCopyMappingPage.tsx) is this too, over the editor's text.
  */
-function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
+export function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
   const { mapping, yaml } = detail;
   const session = useValueCheckSession(mapping.id, mapping.reference);
   const staged = useStagedView(session);

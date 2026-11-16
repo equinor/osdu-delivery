@@ -4,6 +4,14 @@ export interface PipelineTabEntry {
 }
 
 /**
+ * The built-in tabs and header facts that say nothing of a lineage description (flowType: lin). It is a document that
+ * describes a step another system runs: it has no run, no file, no schedule and no transform of its own, no server it
+ * connects to and no wave. Its page is its document.
+ */
+export const DESCRIPTION_HIDDEN_TABS: readonly string[] = ["transforms", "runs", "files", "schedules"];
+export const DESCRIPTION_HIDDEN_FACTS: readonly string[] = ["wave", "sourceServer", "targetServer"];
+
+/**
  * A pipeline page's tabs in the order its kind asks (`FlowKindContribution.pipelineTabOrder`): the tabs it names, in its
  * order, then the others as they come (the kind's own, then the built-in ones). A name that is no tab of the page, such
  * as a tab the kind hides or one this version does not have, is passed over, and a name given twice keeps its first

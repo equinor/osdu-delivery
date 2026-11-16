@@ -34,7 +34,8 @@ related:
   - wiki-semantic-layer-is-the-allow-list
   - wiki-powerbi-report-specifications
   - wiki-visual-sql-translation
-updated: 2026-09-16
+  - wiki-lineage-descriptions-beside-the-graph
+updated: 2026-11-16
 ---
 
 # An external database is registered by a flow, and the dashboard supplies the model

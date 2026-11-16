@@ -82,7 +82,7 @@ The CLI is a thin shell over `LineageService.ComputeDetailedAsync` in src/SqlFlo
 
 ### Artifacts
 
-- `<folder>/.sqlflow/lineage/lineage.json` is always written (the directory is created if needed). It is the full `LineageReport`: `schemaVersion` (currently 1), `generatedAtUtc`, `flowDirectory`, `tiersUsed`, `flows`, `objects` (with columns, module definitions, and node warnings from the derived tier), `edges`, `flowDependencies`, `executionPlan` (`waves` plus `unordered`), `cycles`, `duplicateFlowNames`, and `warnings`.
+- `<folder>/.sqlflow/lineage/lineage.json` is always written (the directory is created if needed). It is the full `LineageReport`: `schemaVersion` (currently 5), `generatedAtUtc`, `flowDirectory`, `tiersUsed`, `flows`, `objects` (with columns, module definitions, and node warnings from the derived tier), `edges`, `flowDependencies`, `executionPlan` (`waves` plus `unordered`), `cycles`, `duplicateFlowNames`, `warnings`, and `described`. `described` holds what the estate's [lineage descriptions](../flow/lin.md) say (`steps`, `objects`, `edges`, `columns`, `warnings`) and is empty for an estate without any; every other member is the same with or without descriptions ([described lineage](../concepts/described-lineage.md)).
 - With `--dump-facts`, `facts.json` lands beside it: per-tier raw facts with node keys and observed-run provenance, catalog objects, synonyms, servers, server aliases, and warnings, all deterministically ordered. Whole references (`${...}` or `@alias`) are echoed; an inline connection literal is never written and appears as `(inline literal redacted)`.
 - An artifact write failure (IO or permissions) prints `WARN  could not write lineage artifacts: <message>` to stderr, omits the artifact path lines from the summary, and does not change the exit code.
 - All JSON (artifacts, `--out`, and stdout) is indented, camelCase, with enums as strings.
@@ -100,12 +100,17 @@ Lineage over <F> flow(s), <O> object(s), <E> edge(s) (declared+observed)
   wave 1: <flow>, <flow>
   wave 2: <flow>
   CYCLE  <flow-a> -> <flow-b> -> <flow-a> via <object keys>
+  described lineage: <S> step(s) other systems run, <N> object(s) only they name, <C> mapped column(s); no part of the plan above
+    <description> (<system>): <read>, <read> [origin] -> <write>
   WARN  <report warning>
+  WARN  described lineage: <finding>
   lineage: <folder>/.sqlflow/lineage/lineage.json
   facts: <folder>/.sqlflow/lineage/facts.json
 ```
 
 The tier list in the header is exactly the tiers used, lowercased and joined with `+` (`declared`, `declared+observed`, `declared+observed+derived`, or `declared+derived`). One `wave` line prints per execution-plan wave; when cycles exist, the flows whose order is unresolved (the cycle members and every flow downstream of them) are scheduled together in a final fallback wave whose line reads `wave <N> (fallback: unresolved order): <flows>`, and each cycle prints a `CYCLE` line with its path and mediating objects. The artifact paths print as absolute paths (`<folder>` resolved to its full path). The `facts:` line appears only with `--dump-facts`.
+
+The `described lineage:` lines appear only when the estate holds [lineage descriptions](../flow/lin.md) (`flowType: lin`). They are listed after the plan because they are no part of it: the header's counts and the waves are those of the estate's own flows. Each step prints with what it reads and writes; a read where the data starts is marked `[origin]`, one nothing describes further `[not described further]`, and an object reached through a flow of the estate names that flow. A connection that could not be placed prints as `WARN  described lineage: ...` and never changes the exit code. `--of` and `--explain` walk the computed lineage only.
 
 With plain `--json` (no `--of`, no `--explain`), the full `LineageReport` prints to stdout instead, and nothing else is printed.
 

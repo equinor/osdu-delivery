@@ -15,7 +15,7 @@ keywords:
   - credentials.json
   - sqlflow login
   - get_cli
-updated: 2026-10-30
+updated: 2026-11-16
 sourceRefs:
   - sqlflow/tools/sqlflow-vscode/src/host.ts
   - sqlflow/tools/sqlflow-vscode/src/mcp/mcpServer.ts
@@ -33,10 +33,15 @@ referenceRefs:
   - delivery-concept-authentication-and-identity
 related:
   - delivery-wiki-0046-eu-ai-act
+  - delivery-wiki-0060-vscode-shows-the-gui
 ---
 # 0039: The VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line
 
-Status: accepted. Documented in [the VS Code extension](../../reference/guides/vscode.md).
+Status: accepted, and amended by [decision 0060](0060-vscode-shows-the-gui.md) on 2026-11-16: the extension still signs
+in through the MCP server, shares its one credential and ships the command line, as below, but what it shows is the
+GUI's own pages, whose calls it carries to the control plane itself. "The extension reads through the server" and "The
+extension is a host" below describe the first version's views, which those pages replaced. Documented in
+[the VS Code extension](../../reference/guides/vscode.md).
 
 The human's words: "The goal for this extion is to provide all required information to develop pipelines. Note that the
 combination with MCP should be built in.", "I want the vscode to be the primary tool for yaml file development. It should
