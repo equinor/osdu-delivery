@@ -31,6 +31,7 @@ sourceRefs:
   - src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/KindEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/DescribedLineage.cs
+  - src/SqlFlow.ControlPlane/Api/ColumnTrace.cs
   - src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs
@@ -38,10 +39,12 @@ sourceRefs:
   - tests/SqlFlow.Core.Tests/Integration/CatalogSyncDescribedLineageIntegrationTests.cs
   - tests/SqlFlow.ControlPlane.Tests/LineageDescribedApiTests.cs
   - tests/SqlFlow.ControlPlane.Tests/LineageDescribedColumnTests.cs
+  - tests/SqlFlow.ControlPlane.Tests/ColumnTraceApiTests.cs
 referenceRefs:
   - flow-lin
   - flow-lin-columns
   - concept-described-lineage
+  - concept-column-trace
   - guide-describe-an-upstream-step
   - concept-lineage-graph-and-plan
 related:
@@ -187,6 +190,27 @@ described steps and not through the object search.
 An earlier draft warned when a described chain did not reach a marked origin. The human's requirement that the kind be
 an optional extension made that wrong: a team may describe one step and stop. The end of a chain is carried on the
 object as `origin` or `open`, and reported to the reader as what is known.
+
+## A column trace says what each step rests on
+
+The human asked for the assistant to explain where one column comes from, from a column on a page, and set the rule in
+the same breath: where there is no lineage description, the assistant says the information is missing, rather than
+inventing an explanation. A prompt cannot hold that rule on its own, since a model given object-level lineage and a
+column name will connect them plausibly. So the trace is computed by the control plane
+([column trace](../../reference/concepts/column-trace.md)), and the answer itself carries the rule:
+
+- Every step names its basis: a description's column mapping, a flow's own declaration, or the column's name alone.
+  SQLFlow records no column lineage for the flows it runs, and following a column by its name across a load is what
+  a person does too. It is allowed, and it is said, so an assumed step is never read as a stated one.
+- Every path that cannot be followed ends with a kind and a sentence saying what is missing. The assistant is told
+  to report those in those words. An estate with no description ends at the object its first flow reads.
+- Nothing new is stored. The trace reads what the catalog already holds (described column mappings, declared
+  transforms, column lists) on request, so the computed lineage and its readers are untouched, as the rule of this
+  page requires.
+
+A column list made only of what flows declare for an object is partial. Taking it as the whole list made the first
+version stop at a typed view that listed two declared columns of many. Such a list now shows that a column is there,
+never that one is not.
 
 ## What it leaves open
 

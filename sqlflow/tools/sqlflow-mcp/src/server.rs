@@ -782,6 +782,17 @@ pub struct ColumnMappingInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct TraceColumnInput {
+    /// The key of the object the column belongs to: from search_all, describe_object, lineage_objects or a lineage
+    /// walk. An object only lineage descriptions name may be traced too.
+    pub key: String,
+    /// The column to trace, by its name in that object.
+    pub column: String,
+    /// How many steps the column is followed through (default 12, max 24).
+    pub depth: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SubscribersInput {
     /// The consuming tool, exact: "PowerBI", "Tableau", "Excel", ... Omit for every type.
     /// Free text by design, so read the types back from an unfiltered call rather than guessing.
@@ -2467,6 +2478,39 @@ there are, so read the last page for how a long run ended. The SQL it executed i
             ("depth", i.depth.map(|n| n.to_string()).unwrap_or_default()),
         ];
         self.get("/api/v1/lineage/described/columns", &q).await
+    }
+
+    #[tool(
+        description = "Trace one column back toward its source: through the flows SQLFlow runs and through the steps lineage \
+            descriptions (flowType: lin) state for other systems. THE tool for \"where does this column's value come \
+            from\", \"trace this column to the source\" and \"what happens to it on the way\". `hops` are the steps, \
+            nearest the asked column first (order by `depth`), each from an object and column to the object and column \
+            its value comes from, with the flow or described step in between and a `basis` saying how the step is \
+            known: `described` (a lineage description's column mapping states it; `note` says how the value is made, \
+            `system` and `unit` where the step runs), `declared` (the flow's own document declares the column; \
+            `expression` and `dataType` say what it does to the value), or `name` (SQLFlow records which objects a flow \
+            reads and writes, not which columns, so the column is assumed to keep its name: say that it is assumed, and \
+            `sourceColumnKnown: true` means the source object is known to hold that column). `ends` are where each path \
+            stops: `origin` (a description marks it as where the data starts), `made` (a step makes the value itself), \
+            `flow` (a flow writes it and reads nothing the lineage records), or one of the four where information is \
+            missing: `notDescribed` (nothing writes the object: no flow and no lineage description), `notMapped` (a \
+            description writes the object but maps no such column), `derived` (the flow derives or renames it; its \
+            document says how), `limit` (the trace was cut). `outcome` is complete, partial or missing, and `missing` \
+            lists in sentences what the lineage does not say. Report those as missing, in those words, and say what \
+            would supply them (a lineage description of the step that writes the object, or a `columns` mapping in the \
+            description named). NEVER fill a gap from the column's name, from the object names or from general \
+            knowledge, and never present an assumed step as a stated one. With `describedLineageUsed: false` and a \
+            `notDescribed` end, no lineage description covers what happens before the estate reads the data: say \
+            that this information is missing. To tell what a described step does to the rows, read its document with \
+            get_pipeline(pipelineId): its `context` says. Takes the object `key` and the `column` name."
+    )]
+    async fn trace_column(&self, Parameters(i): Parameters<TraceColumnInput>) -> String {
+        let q = vec![
+            ("key", i.key),
+            ("column", i.column),
+            ("depth", i.depth.map(|n| n.to_string()).unwrap_or_default()),
+        ];
+        self.get("/api/v1/lineage/objects/column-trace", &q).await
     }
 
     #[tool(
@@ -4851,6 +4895,13 @@ const ESTATE_GUIDE: &str = "\
   left out or added, how keys are formed, when it runs), and ask column_mapping(to, from) for the columns.
   Report such a hop as described, not as run: it is what a document states about another system. A `boundary`
   of `open` means the description stops there, so say that what lies beyond is not described.
+- \"Where does this COLUMN come from / trace this column back to its source / explain the lineage of this
+  column?\": trace_column(key, column) follows the one column through the flows and the described steps, and
+  says for every step whether it is stated by a lineage description, declared by a flow, or only assumed
+  because the column keeps its name. Tell the path from the source to the column, say which steps are assumed,
+  and report every entry of `missing` as missing information, with what would supply it. Never invent the
+  part the trace does not hold: when no lineage description covers what happens before the estate reads the
+  data, the answer is that this information is missing.
 - \"Which tables does this dashboard/report use?\": subscribers are the consumption side. list_subscribers
   (filter by type or search by name/owner) finds the report; describe_subscriber(key) lists every object its
   queries read and the SQL itself. The reverse (\"who consumes this table\") is in describe_semantic_table's

@@ -436,3 +436,11 @@ from the new kind's reader and placement (`YamlLineageDescriptionFlowLoader`, `L
 reader of lineage edges that decided between a flag and relations of their own, and the design conversation in which
 the human ruled out an execution model, references, and warnings for partly described chains. What was built is
 documented in `flow-lin`, `flow-lin-columns`, `concept-described-lineage` and `guide-describe-an-upstream-step`.
+
+## [2026-11-16] ingest | A column trace says what each step rests on
+
+Extended [A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes](decisions/lineage-descriptions-beside-the-graph.md)
+with why one column's trace is computed by the control plane and names the basis of every step (`ColumnTrace`), from
+the request that the assistant explain a column's lineage and say that information is missing where no description
+covers it, and from the first version's wrong stop at a partly declared column list. What was built is documented in
+`concept-column-trace`.

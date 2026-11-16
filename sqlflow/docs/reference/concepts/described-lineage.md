@@ -97,8 +97,9 @@ Nothing returns described lineage unless it is asked to. Each surface has one wa
 | `GET /lineage/objects/dossier` | Described edges left out. | `described=true`. |
 | `GET /lineage/described/steps` | (always described) | The described steps, with what each is connected to. |
 | `GET /lineage/described/columns` | (always described) | [Column mappings](../flow/lin-columns.md). |
+| `GET /lineage/objects/column-trace` | (always follows descriptions) | [One column followed back to its source](column-trace.md), through the estate's flows and the described steps, with what is missing said. |
 | `sqlflow lineage` | The plan, then a `described lineage:` summary listing each step. | The summary is always printed; the plan above it never includes a description. |
-| The assistant (MCP) | `object_lineage` walks the estate's lineage. | `object_lineage(described: true)`, `list_lineage_descriptions`, `column_mapping`. |
+| The assistant (MCP) | `object_lineage` walks the estate's lineage. | `object_lineage(described: true)`, `list_lineage_descriptions`, `column_mapping`, `trace_column`. |
 
 ## In the lineage graph
 
@@ -135,18 +136,21 @@ The assistant's lineage walk says when descriptions continue beyond the estate (
 
 A described hop is what a document states about another system. The assistant is told to report it that way.
 
+Asked where one column comes from, the assistant uses `trace_column`: [the column trace](column-trace.md) follows the column through the estate's flows and the described steps, and ends every path it cannot follow with what is missing. The assistant is told to report that as missing, and never to fill it in.
+
 ## Known limits
 
 - **A description meets the flows of its own repository.** `feeds` and `fedBy` name a flow the same repository declares.
 - **Names are compared as written.** Two descriptions chain when they name the same system and name. A different spelling of one object is two objects.
 - **Nothing checks a description against the system it describes.** `evidence` points at the code and its commit; SQLFlow fetches and compares nothing.
 - **The lineage walk is bounded.** It follows at most 8 levels, described or not, and says when it was cut (`truncated`).
-- **Column mappings stop at the estate's own flows.** A mapping is what a description states, and the estate's flows state none here. A column is followed from a landed file back to its source, through as many described steps as lie between. It is not followed across the flow that loads the file into a table, so a mapping asked from a report after the estate back to a source before it answers with nothing and says why. The object-level walk crosses both.
+- **Column mappings stop at the estate's own flows.** A mapping is what a description states, and the estate's flows state none here. A column is followed from a landed file back to its source, through as many described steps as lie between. It is not followed across the flow that loads the file into a table, so a mapping asked from a report after the estate back to a source before it answers with nothing and says why. The object-level walk crosses both, and so does [the column trace](column-trace.md), one column at a time, saying which of its steps are only assumed.
 - **The graph follows descriptions upstream only as far as they are needed.** With **Described steps** on, a description upstream of what is drawn is drawn with what it reads. What else that description writes, and what reads it, is not pulled in: the scope stays what was asked for plus where its data comes from.
 
 ## See also
 
 - [Lineage description](../flow/lin.md)
 - [Column mappings in a lineage description](../flow/lin-columns.md)
+- [Column trace](column-trace.md): one column followed back to its source.
 - [Describing a step another system runs](../guides/describe-an-upstream-step.md)
 - [The lineage graph and the execution plan](lineage-graph-and-plan.md)

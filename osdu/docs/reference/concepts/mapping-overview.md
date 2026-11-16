@@ -34,6 +34,9 @@ keywords:
   - show in the yaml
   - where a column is read in the yaml
   - show the sql
+  - column lineage
+  - trace a column
+  - explain its lineage
 related:
   - delivery-flow-mapping
   - delivery-flow-mapping-lookups
@@ -44,6 +47,8 @@ related:
   - delivery-concept-dry-run
   - delivery-concept-lineage
   - delivery-concept-mapping-overview-sql
+  - concept-column-trace
+  - concept-described-lineage
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
@@ -70,6 +75,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/overview/tableRows.ts
   - osdu/gui/src/features/delivery/overview/yamlExplain.ts
   - osdu/gui/src/features/delivery/lineageTargets.ts
+  - sqlflow/gui/src/features/chat/columnLineage.ts
 ---
 
 # A mapping's overview: what a mapping does, on one canvas, from its tables to the record
@@ -135,6 +141,7 @@ on stays lit while it is on.
 | See how a property is filled | Double-click it, or press Enter on it (**Details** on its menu does the same). A panel slides in from the right with the way its value takes ([below](#the-way-a-value-is-filled)), its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. While the panel is open, a click on another part shows that part's. Escape closes it and leaves the part lit; a click on the canvas closes it and puts the light out. |
 | Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). |
 | See where a part is populated from | **Open in lineage** on its menu, or the lineage button on its panel, opens the [lineage graph](lineage.md) on its node: a table's, its cache type's, the kind it searches, or for a property each node its value comes from ([below](#opening-a-part-in-lineage)). |
+| Ask where a column's value comes from | **Explain its lineage** on a column's menu, or the button on its panel, asks the assistant to trace the column back to its source ([below](#explaining-a-columns-lineage)). |
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
 | See the parameters' values | **Preview the values** on the parameters, or one of them ([below](#the-parameters-values)). |
 | Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
@@ -170,12 +177,12 @@ when no step changed it first.
 
 | Right-click | The menu offers |
 | --- | --- |
-| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), **Show the SQL** for a flow's table or a cache table ([the SQL of a table's rows](mapping-overview-sql.md)), its **Details**, **Show in the YAML** where the document names it, **Open in lineage**, and a copy of its name: a flow's table by the name the flow gives it. |
+| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), **Show the SQL** for a flow's table or a cache table ([the SQL of a table's rows](mapping-overview-sql.md)), its **Details**, **Show in the YAML** where the document names it, **Open in lineage**, on a column of a table the flow reads **Explain its lineage** ([below](#explaining-a-columns-lineage)), and a copy of its name: a flow's table by the name the flow gives it. |
 | Another record a mapping reads (a parent, a child) | Its **Details**, **Open in lineage** when its kind is known, and a copy of its name. |
 | A property, or a dot on its line | Its **Details**, **Show in the YAML**, which opens the document at the lines that write it, **Open in lineage** for what its value comes from, and a copy of its path. |
 | The record's heading | **Preview the rendered record**, the YAML, **Open in lineage** for the kind, and a copy of the kind. |
 | The canvas | **Fit to the window**, **Open all** or **Fold**, the YAML, and **Open in lineage** for the mapping. |
-| A line of the YAML | **Explain this** and **Copy**, over the lines selected, or else the lines that write the property the line is in, or else the line alone; the menu's heading names the lines and the property. Without the assistant the browser's own menu opens. |
+| A line of the YAML | **Explain this** and **Copy**, over the lines selected, or else the lines that write the property the line is in, or else the line alone; the menu's heading names the lines and the property. Between them, **Explain the lineage of** each table column those lines read, the first 6 in the order they read them ([below](#explaining-a-columns-lineage)). Without the assistant the browser's own menu opens. |
 
 Escape closes a menu first, then the details, then what is shown under the canvas. In an explanation, Escape is the
 conversation's and leaves it open.
@@ -273,6 +280,26 @@ The question says which lines of how many (`YAML, lines 97 to 102 of 250`), the 
 conversation is followed up in the panel. Each question is a new conversation, kept with the others on the Assistant page,
 where it stays after the panel closes. Looking at a table's rows, the parameters' values or the rendered record takes the
 panel's place.
+
+## Explaining a column's lineage
+
+**Explain its lineage** asks the assistant where a column's value comes from, back to its source, and what happens to it
+on the way. A column's menu offers it, its panel carries it as a button, and the YAML's menu offers **Explain the lineage
+of** each table column the lines it is over read ([the menus](#the-menus)). The answer opens in the
+[Explain drawer](../../../../sqlflow/docs/reference/guides/chat-assistant.md#explain) over the page, a conversation of its
+own that is followed up there.
+
+The assistant [traces the column](../../../../sqlflow/docs/reference/concepts/column-trace.md) from its table's node
+through the estate's flows and its
+[lineage descriptions](../../../../sqlflow/docs/reference/concepts/described-lineage.md), and answers with the path, one
+step per line, and how each step is known: stated by a description, declared by a flow, or only assumed because the column
+keeps its name. Where the lineage does not say (the trace ends before it reaches a source, or a step is described without
+the column), the answer says the information is missing and what would supply it; nothing is filled in from a name.
+
+It is offered with the assistant configured, for a column of the record table or a child table, once a flow is picked and
+its table has a node in lineage. A column a [lookup table](../flow/delivery-lookups.md) gives the row is traced as the
+lookup table's own. A parameter, or a field of a cache table, a search or another record, is no column of a table, and
+offers none.
 
 ## The outline
 

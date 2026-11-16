@@ -319,6 +319,81 @@ test.describe.serial("lineage", () => {
     await expect(adminPage.getByTestId("lineage-jump-option").filter({ hasText: "populates" })).toHaveCount(1, { timeout: 30_000 });
   });
 
+  test("a column of the record table asks the assistant to trace it back to its source", async ({ adminPage }) => {
+    // The e2e host has no model behind the assistant. The page is told it has one, and each question it sends is kept
+    // and answered with nothing: what is checked is what Explain its lineage asks, not an answer.
+    const asked: string[] = [];
+    await adminPage.route(`${E2E.apiBaseUrl}/api/v1/chat/**`, async (route) => {
+      const request = route.request();
+      const cors = {
+        "access-control-allow-origin": request.headers()["origin"] ?? "*",
+        "access-control-allow-credentials": "true",
+        "access-control-allow-headers": "*",
+        "access-control-allow-methods": "*",
+      };
+      if (request.method() === "OPTIONS") {
+        return route.fulfill({ status: 204, headers: cors });
+      }
+
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/chat/capabilities")) {
+        return route.fulfill({
+          status: 200,
+          headers: { ...cors, "content-type": "application/json" },
+          body: JSON.stringify({
+            enabled: true, provider: "e2e", model: "e2e", disclosure: "Answers are written by an AI language model and can be wrong.",
+            images: false, transcription: false, maxImages: 0, maxImageBytes: 0, questionConfirmation: false,
+          }),
+        });
+      }
+
+      if (path.endsWith("/chat/ask")) {
+        asked.push((JSON.parse(request.postData() ?? "{}") as { question?: string }).question ?? "");
+        return route.fulfill({ status: 200, headers: { ...cors, "content-type": "text/event-stream" }, body: "" });
+      }
+
+      return route.fulfill({ status: 200, headers: { ...cors, "content-type": "application/json" }, body: "[]" });
+    });
+
+    await adminPage.goto("/delivery/documents");
+    const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: WELL_LOG_MAPPING }).first();
+    await row.click();
+    const overview = adminPage.getByTestId("mapping-overview");
+    const table = overview.getByTestId("mapping-overview-card-dataset");
+    await expect(table.locator("text.title")).toHaveText("silver.WellLog", { timeout: 30_000 });
+
+    // The table itself is no column: its menu opens it in lineage and offers no trace.
+    await table.locator("g.head").click({ button: "right" });
+    await expect(adminPage.getByTestId("mapping-overview-menu-lineage")).toBeVisible();
+    await expect(adminPage.getByTestId("mapping-overview-menu-explain-lineage")).toHaveCount(0);
+    await adminPage.keyboard.press("Escape");
+
+    // A column of it asks the assistant, in the Explain drawer, to trace that column from the table's node in lineage
+    // and to say what is missing rather than fill it in.
+    await overview.getByTestId("mapping-overview-field-dataset-log_run").click({ button: "right" });
+    const entry = adminPage.getByTestId("mapping-overview-menu-explain-lineage");
+    await expect(entry).toHaveText("Explain its lineage");
+    await expect(entry).toHaveAttribute("title", /traces this column back to its source/);
+    await entry.click();
+    await expect(adminPage.getByText("the lineage of log_run")).toBeVisible();
+    await expect.poll(() => asked.length).toBe(1);
+    expect(asked[0]).toContain("the column `log_run` of `silver.WellLog`");
+    expect(asked[0]).toMatch(/trace_column \(object key `[^`]*\|silver\|welllog`, column `log_run`\)/i);
+    expect(asked[0]).toContain("say that the information is missing");
+
+    // The YAML's menu over the line that reads the column offers the same question, by the column's name. The drawer
+    // lies over the page, so it is closed first.
+    await adminPage.getByTestId("explain-close").click();
+    await expect(adminPage.getByTestId("explain-drawer")).toHaveCount(0);
+    await overview.getByTestId("mapping-overview-toggle-yaml").click();
+    const yamlPane = overview.getByTestId("mapping-overview-yaml");
+    await expect(yamlPane).toContainText("documentType: mapping");
+    await yamlPane.getByTestId("mapping-overview-yaml-line").filter({ hasText: "LogRun: { $from: log_run }" }).click({ button: "right" });
+    const lineage = adminPage.getByTestId("mapping-overview-yaml-menu-lineage");
+    await expect(lineage).toHaveCount(1);
+    await expect(lineage).toContainText("log_run");
+  });
+
   test("the catalog tree groups datasets by system, partition and group", async ({ adminPage }) => {
     await adminPage.goto("/catalog");
     const tree = adminPage.getByRole("tree", { name: "Catalog tree" });

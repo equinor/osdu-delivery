@@ -124,7 +124,7 @@ Object keys come from a lineage walk that includes described lineage, or from th
 
 An answer that holds nothing says why in `notes`: no description maps the object's columns, the column asked for is not mapped, or the two objects are not connected by column mappings. None of them means the column does not exist. `truncated: true` means a limit cut the answer.
 
-A column is followed through described steps only. The estate's own flows state no column mapping here, so a column is not followed across one: from a landed file back to the source system works, and from a table the estate loads back past the file that fed it does not.
+A column is followed through described steps only. The estate's own flows state no column mapping here, so a column is not followed across one: from a landed file back to the source system works, and from a table the estate loads back past the file that fed it does not. [The column trace](../concepts/column-trace.md) does cross the estate's flows, for one column at a time: `GET /api/v1/lineage/objects/column-trace`, and the assistant's `trace_column`. It uses these mappings for the described steps, and says of each step across a flow whether the flow declares the column or the column is only assumed to keep its name.
 
 Following a column through several steps reads each object's mappings once, and a column already followed on a path is not followed again, so mappings that feed each other end. A column made from many columns, each made from many again, multiplies the paths at every step, so one answer follows at most 20000 columns, reads at most 60 objects and reports at most 500 sources for a column; past any of them it stops and says `truncated: true`. Narrow the question with `column` to get a whole answer.
 

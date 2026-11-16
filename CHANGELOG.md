@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [column mappings](sqlflow/docs/reference/flow/lin-columns.md),
   [described lineage](sqlflow/docs/reference/concepts/described-lineage.md),
   [describing a step another system runs](sqlflow/docs/reference/guides/describe-an-upstream-step.md)).
+- **The assistant traces a column back to its source, and says what is missing.** **Explain its lineage** on a column
+  asks the assistant where the value comes from and what happens to it on the way: on a mapping's Overview (a column
+  of a table on the canvas, its Details, and the lines of the YAML that read it) and on an object's column list. The
+  assistant follows the one column through the flows and the lineage descriptions (`trace_column`,
+  `GET /api/v1/lineage/objects/column-trace`), says of each step whether a description states it, the flow declares
+  it, or the column is only assumed to keep its name, and reports as missing whatever the lineage does not record:
+  with no lineage description before a landed file, the answer is that this information is missing
+  ([column trace](sqlflow/docs/reference/concepts/column-trace.md),
+  [mapping overview](osdu/docs/reference/concepts/mapping-overview.md)).
 - **A dimension build's trace says what its write is doing.** Each step of the write (deleting what earlier builds
   removed, merging, writing the table) logs when it starts and ends with its counts and how long it took; a wait for
   another build's write lock is logged with how long it waited; and a step still running after a minute logs again, at

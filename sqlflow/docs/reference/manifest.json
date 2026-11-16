@@ -723,6 +723,44 @@
       ]
     },
     {
+      "id": "concept-column-trace",
+      "corpus": "reference",
+      "path": "concepts/column-trace.md",
+      "title": "Column trace: one column followed back to its source",
+      "type": "concept",
+      "summary": "How one column is followed back through the flows SQLFlow runs and the steps lineage descriptions state, what each step rests on, and how the answer says wha...",
+      "keywords": [
+        "column trace",
+        "trace a column",
+        "column lineage",
+        "where does this column come from",
+        "explain the lineage of a column",
+        "trace_column",
+        "information missing",
+        "assumed by name",
+        "declared transform",
+        "described lineage",
+        "origin",
+        "assistant"
+      ],
+      "related": [
+        "concept-described-lineage",
+        "flow-lin-columns",
+        "flow-lin",
+        "concept-lineage-graph-and-plan",
+        "guide-describe-an-upstream-step"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.ControlPlane/Api/ColumnTrace.cs",
+        "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs",
+        "src/SqlFlow.Catalog/CatalogEntities.cs",
+        "tests/SqlFlow.ControlPlane.Tests/ColumnTraceApiTests.cs",
+        "tools/sqlflow-mcp/src/server.rs",
+        "gui/src/features/chat/columnLineage.ts"
+      ]
+    },
+    {
       "id": "concept-connections-and-secrets",
       "corpus": "reference",
       "path": "concepts/connections-and-secrets.md",
@@ -4676,13 +4714,15 @@
         "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/KindEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "src/SqlFlow.ControlPlane/Api/ColumnTrace.cs",
         "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs",
         "tests/SqlFlow.Core.Tests/LineageDescribedTests.cs",
         "tests/SqlFlow.Core.Tests/Integration/CatalogSyncDescribedLineageIntegrationTests.cs",
         "tests/SqlFlow.ControlPlane.Tests/LineageDescribedApiTests.cs",
-        "tests/SqlFlow.ControlPlane.Tests/LineageDescribedColumnTests.cs"
+        "tests/SqlFlow.ControlPlane.Tests/LineageDescribedColumnTests.cs",
+        "tests/SqlFlow.ControlPlane.Tests/ColumnTraceApiTests.cs"
       ]
     },
     {

@@ -2,6 +2,8 @@ import { Fragment, type ReactNode } from "react";
 import { Check, KeyRound, ShieldCheck, SlidersHorizontal, Table2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { LineageColumn } from "@/features/chat/columnLineage";
+import { ExplainColumnLineageButton } from "@/features/chat/ExplainColumnLineageButton";
 import { cn } from "@/lib/utils";
 import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode, MappingOutlineRowRule } from "../../../api/delivery";
 import { lastStepStart, outlinePathOf } from "../recordPath";
@@ -435,9 +437,10 @@ export const INSPECTOR_WIDTH = 380;
 
 /**
  * What was picked on the canvas, sliding in from the right without taking the canvas over: the way a value goes to a property, a
- * field and what it reaches, or a table and what is read of it, with the jump to where it stands in lineage.
+ * field and what it reaches, or a table and what is read of it, with the jump to where it stands in lineage and, for a column
+ * of a table the flow reads, the assistant's trace of it back to its source.
  */
-export function OverviewInspector({ part, outline, tables, cached, yaml, values, lineage, onPick, onPreview, onClose }: {
+export function OverviewInspector({ part, outline, tables, cached, yaml, values, lineage, traced, onPick, onPreview, onClose }: {
   part: OverviewPart | null;
   outline: MappingOutline;
   tables: Parameters<typeof cardsOf>[2];
@@ -446,6 +449,11 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
   values: ReadonlyMap<string, string>;
   /** What the part picked opens in lineage: its table's node, or the nodes a property's value comes from. */
   lineage: readonly PartTarget[];
+  /**
+   * The column picked, as the assistant is asked to trace it back to its source; null for any other part, and for a
+   * column lineage holds no table of.
+   */
+  traced: LineageColumn | null;
   onPick: (part: OverviewPart) => void;
   /** Shows the rows of the table picked, or of the table holding the field picked. */
   onPreview: (part: OverviewPart) => void;
@@ -491,6 +499,7 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
                 <PartLineageButton targets={lineage} named={node !== null ? node.name : title} />
               </span>
             )}
+            {traced !== null && <ExplainColumnLineageButton subject={traced} testId="mapping-overview-explain-lineage" />}
             {preview !== null && (
               <Button variant="ghost" size="icon-xs" aria-label={preview} title={preview} onClick={() => onPreview(part)} data-testid="mapping-overview-inspector-preview">
                 {card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />}

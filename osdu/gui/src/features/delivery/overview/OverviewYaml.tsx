@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { COLUMN_LINEAGE_HINT, type LineageColumn } from "@/features/chat/columnLineage";
 import { ExplainIcon } from "@/features/chat/ExplainIcon";
 import { cn } from "@/lib/utils";
 import { TOKEN_CLASS, tokensOf, type Token } from "../dimensions/yamlTokens";
@@ -65,16 +66,22 @@ interface MenuTarget {
   range: LineRange | null;
   /** The property the lines write, when the click picked them by the property. */
   named: string | null;
+  /** The table columns the lines read that the menu offers the lineage of: the first of them, in the order the lines read them. */
+  columns: LineageColumn[];
 }
+
+/** The most columns a menu offers the lineage of, so a section's menu stays one to read. */
+const MAX_MENU_COLUMNS = 6;
 
 /**
  * The mapping as written, comments and all, each line tied to the canvas: pointing at a line lights the property it writes,
  * clicking picks that property, and whatever is lit on the canvas lights the lines that write it, a column or a table marked
  * where the lines name it. The first line of what is picked is brought into view. Explain asks the assistant about the lines
  * selected, or the whole mapping; a right click offers it over the lines selected, or else over the property the line
- * clicked writes, and copies the same lines.
+ * clicked writes, copies the same lines, and offers the lineage of each table column they read, traced by the assistant
+ * back to its source.
  */
-export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, onPick, onExplain, blockOf }: {
+export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, onPick, onExplain, columnsOf, onExplainLineage, blockOf }: {
   file: string;
   yaml: string;
   /** The lines lit, from 1. */
@@ -89,12 +96,16 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
   onPick: (line: number) => void;
   /** Asks the assistant about lines of the mapping, or all of it; null while the assistant is not configured. */
   onExplain: ((code: ExplainedYaml) => void) | null;
+  /** The table columns lines of the mapping read, in the order they read them; none for the whole mapping. */
+  columnsOf: (range: LineRange | null) => LineageColumn[];
+  /** Asks the assistant where a column comes from, back to its source; null while the assistant is not configured. */
+  onExplainLineage: ((column: LineageColumn) => void) | null;
   /** The lines of the property a line writes, with the property's path; null for a line that writes none. */
   blockOf: (line: number) => { range: LineRange; named: string } | null;
 }) {
   const lines = useMemo(() => yamlLines(yaml).map(runsOf), [yaml]);
   const box = useRef<HTMLDivElement>(null);
-  const [menu, setMenu] = useState<MenuTarget>({ range: null, named: null });
+  const [menu, setMenu] = useState<MenuTarget>({ range: null, named: null, columns: [] });
 
   useEffect(() => {
     // Inside the pane alone: anything larger would move the page around it.
@@ -105,21 +116,24 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
     }
   }, [focus, focusKey]);
 
-  const aimMenu = (target: EventTarget) => {
+  const aimedAt = (target: EventTarget): Pick<MenuTarget, "range" | "named"> => {
     const selected = selectedLines(box.current);
     if (selected !== null) {
-      setMenu({ range: selected, named: null });
-      return;
+      return { range: selected, named: null };
     }
 
     const row = target instanceof Element ? target.closest<HTMLElement>("[data-line]") : null;
     if (row === null) {
-      setMenu({ range: null, named: null });
-      return;
+      return { range: null, named: null };
     }
 
     const line = Number(row.dataset.line);
-    setMenu(blockOf(line) ?? { range: { start: line, end: line }, named: null });
+    return blockOf(line) ?? { range: { start: line, end: line }, named: null };
+  };
+
+  const aimMenu = (target: EventTarget) => {
+    const aimed = aimedAt(target);
+    setMenu({ ...aimed, columns: onExplainLineage === null ? [] : columnsOf(aimed.range).slice(0, MAX_MENU_COLUMNS) });
   };
 
   const copyMenu = () => {
@@ -186,7 +200,8 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
             </pre>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-64" data-testid="mapping-overview-yaml-menu">
+        {/* A column's name needs room beside the words offering its lineage, so a menu naming one is wider. */}
+        <ContextMenuContent className={menu.columns.length > 0 ? "w-80" : "w-64"} data-testid="mapping-overview-yaml-menu">
           <ContextMenuLabel className="flex min-w-0 items-baseline gap-1.5 text-[12px] font-normal text-muted-foreground">
             <span className="shrink-0">{menu.range === null ? "The whole mapping" : linesLabel(menu.range)}</span>
             {menu.named !== null && <span className="min-w-0 truncate font-mono" title={menu.named}>{menu.named}</span>}
@@ -196,6 +211,20 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
             <ExplainIcon className="size-3.5" />
             Explain this
           </ContextMenuItem>
+          {onExplainLineage !== null && menu.columns.map((column) => (
+            <ContextMenuItem
+              key={`${column.objectKey}\u0000${column.column}`}
+              onSelect={() => onExplainLineage(column)}
+              title={`${column.column}, of ${column.object}. ${COLUMN_LINEAGE_HINT}`}
+              data-testid="mapping-overview-yaml-menu-lineage"
+            >
+              <ExplainIcon className="size-3.5" />
+              <span className="flex min-w-0 items-baseline gap-1">
+                <span className="shrink-0">Explain the lineage of</span>
+                <span className="min-w-0 truncate font-mono text-[12px]">{column.column}</span>
+              </span>
+            </ContextMenuItem>
+          ))}
           <ContextMenuItem onSelect={copyMenu} data-testid="mapping-overview-yaml-menu-copy">
             <Copy className="size-3.5" />
             Copy

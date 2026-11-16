@@ -498,6 +498,7 @@ public static class LineageEndpoints
         lineage.MapGet("/objects/dossier", GetObjectDossierAsync).WithName("GetLineageObjectDossier");
         lineage.MapGet("/objects/refresh", GetObjectRefreshAsync).WithName("GetLineageObjectRefresh");
         lineage.MapGet("/objects/graph", GetObjectLineageAsync).WithName("GetLineageObjectGraph");
+        lineage.MapGet("/objects/column-trace", ColumnTrace.GetAsync).WithName("GetLineageObjectColumnTrace");
         lineage.MapGet("/objects/join-paths", GetJoinPathsAsync).WithName("GetLineageObjectJoinPaths");
         lineage.MapGet("/file-pipelines", MatchFilePipelinesAsync).WithName("MatchFilePipelines");
         lineage.MapGet("/script", GetNodeScriptAsync).WithName("GetLineageNodeScript");

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Network, X } from "lucide-react";
@@ -24,6 +24,8 @@ import { CodeView } from "../../components/CodeView";
 import { ConnectionRef } from "../../components/ConnectionRef";
 import { CorrelationError } from "../../components/CorrelationError";
 import { DetailPair } from "../../components/DetailPair";
+import { ExplainColumnLineageButton } from "../chat/ExplainColumnLineageButton";
+import { useExplain } from "../chat/ExplainContext";
 import { activeFilterClass, FilterBar } from "../../components/FilterBar";
 import { graphViewPath } from "./graphLocation";
 import { Mono } from "../../components/Mono";
@@ -76,12 +78,30 @@ const columnTableColumns: Column<LineageObjectColumn>[] = [
   },
 ];
 
-/** The drawer body: object detail (with the SQL definition when captured) plus the paged column list. */
+/**
+ * The drawer body: object detail (with the SQL definition when captured) plus the paged column list. Each column
+ * carries Explain its lineage, which asks the assistant to trace that column back to its source.
+ */
 function ObjectDrawerContent({ objectKey }: { objectKey: string }) {
   const detail = useQuery({
     queryKey: ["lineage-object-detail", objectKey],
     queryFn: () => lineageApi.objectDetail(objectKey),
   });
+  const objectName = detail.data?.name ?? null;
+  // Without the assistant there is nothing to ask, and the list keeps the columns it always had.
+  const assisted = useExplain() !== null;
+  const columns = useMemo<Column<LineageObjectColumn>[]>(() => objectName === null || !assisted ? columnTableColumns : [
+    ...columnTableColumns,
+    {
+      id: "lineage",
+      header: "",
+      width: 40,
+      align: "right",
+      render: (row) => (
+        <ExplainColumnLineageButton subject={{ column: row.name, object: objectName, objectKey }} testId="object-column-explain-lineage" />
+      ),
+    },
+  ], [objectName, objectKey, assisted]);
 
   if (detail.isPending) {
     return (
@@ -137,7 +157,7 @@ function ObjectDrawerContent({ objectKey }: { objectKey: string }) {
       <PagedTable<LineageObjectColumn>
         queryKey={["lineage-object-columns", objectKey]}
         fetchPage={(page, pageSize) => lineageApi.objectColumns(objectKey, { page, pageSize })}
-        columns={columnTableColumns}
+        columns={columns}
         rowKey={(row) => row.ordinal}
         emptyMessage="No columns recorded for this object."
         data-testid="object-columns-table"

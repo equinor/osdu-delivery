@@ -294,6 +294,8 @@ mod tests {
             ("source to target column mapping of a described step", &["flow-lin-columns"]),
             ("why are described steps not shown in the lineage graph by default", &["concept-described-lineage", "guide-lineage-graph"]),
             ("write a lineage description for a databricks job", &["guide-describe-an-upstream-step", "flow-lin"]),
+            ("trace a column back to its source", &["concept-column-trace"]),
+            ("where does this column come from and what is missing", &["concept-column-trace", "flow-lin-columns"]),
         ];
         let mut missed = Vec::new();
         for (question, answers) in questions {

@@ -30,6 +30,7 @@
     "src/features/chat/answerProvenance.ts",
     "src/features/chat/answerSql.ts",
     "src/features/chat/chatHandoff.ts",
+    "src/features/chat/columnLineage.ts",
     "src/features/chat/explain.ts",
     "src/features/chat/queryResultPlan.ts",
     "src/features/lineage/graphBands.ts",

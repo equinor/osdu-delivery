@@ -2646,7 +2646,10 @@
         "ask the assistant about a mapping",
         "show in the yaml",
         "where a column is read in the yaml",
-        "show the sql"
+        "show the sql",
+        "column lineage",
+        "trace a column",
+        "explain its lineage"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2657,7 +2660,9 @@
         "delivery-concept-api",
         "delivery-concept-dry-run",
         "delivery-concept-lineage",
-        "delivery-concept-mapping-overview-sql"
+        "delivery-concept-mapping-overview-sql",
+        "concept-column-trace",
+        "concept-described-lineage"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
@@ -2684,7 +2689,8 @@
         "osdu/gui/src/features/delivery/overview/recordMarkdown.ts",
         "osdu/gui/src/features/delivery/overview/tableRows.ts",
         "osdu/gui/src/features/delivery/overview/yamlExplain.ts",
-        "osdu/gui/src/features/delivery/lineageTargets.ts"
+        "osdu/gui/src/features/delivery/lineageTargets.ts",
+        "sqlflow/gui/src/features/chat/columnLineage.ts"
       ]
     },
     {

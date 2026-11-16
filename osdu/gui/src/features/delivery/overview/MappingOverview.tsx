@@ -13,7 +13,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExplainMark } from "@/components/ExplainTip";
 import { repoApi } from "@/api/endpoints";
 import { SearchInput } from "@/components/SearchInput";
+import { COLUMN_LINEAGE_HINT, columnLineageAsk, type LineageColumn } from "@/features/chat/columnLineage";
 import { useExplain } from "@/features/chat/ExplainContext";
+import { ExplainIcon } from "@/features/chat/ExplainIcon";
 import { usePersistentLayout } from "@/layout/workbench/usePersistentLayout";
 import { cn } from "@/lib/utils";
 import { deliveryApi, type DeliveryMappingDetail, type MappingDraftIssue, type MappingOutline, type MappingOutlineHow } from "../../../api/delivery";
@@ -37,7 +39,7 @@ import { OverviewYaml } from "./OverviewYaml";
 import { linesOfPart, type LineRun, type LinesPart } from "./partLines.ts";
 import { yamlLines, type ExplainedYaml } from "./yamlExplain.ts";
 import { layoutOf } from "./outlineLayout.ts";
-import { lineageOfPart, type LineageScope } from "./outlineLineage.ts";
+import { columnOfField, columnsOfLines, lineageOfPart, type LineageScope } from "./outlineLineage.ts";
 import {
   cardsOf, countsOf, defaultOpen, everyFolding, foundOf, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAt, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, rowShowing,
   rowsOf, type OutlineLight,
@@ -85,6 +87,8 @@ interface MenuItem {
   id: string;
   label: string;
   glyph: ReactNode;
+  /** What it does, said at more length when it is pointed at, for an item its label cannot say whole. */
+  title?: string;
   act: () => void;
 }
 
@@ -121,7 +125,7 @@ function OverviewMenu({ menu, named, items, onClose }: {
         {items.map((item) => ("targets" in item
           ? <PartLineageEntry key={item.id} targets={item.targets} onClose={onClose} />
           : (
-            <DropdownMenuItem key={item.id} onSelect={item.act} data-testid={`mapping-overview-menu-${item.id}`}>
+            <DropdownMenuItem key={item.id} onSelect={item.act} title={item.title} data-testid={`mapping-overview-menu-${item.id}`}>
               {item.glyph}
               {item.label}
             </DropdownMenuItem>
@@ -365,6 +369,20 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
 
     return partTargets(lineageOfPart(target, outline, cards, lineageScope), place);
   }, [mapping, partition, entity, version, outline, cards, lineageScope, place]);
+
+  // Explain its lineage asks the assistant to trace a column back to its source, in the drawer Explain opens over the page:
+  // the answer is a path through the estate, not a reading of the lines beside it. Only a column of a table the flow picked
+  // reads, or of a lookup table joined into it, is one lineage can trace; anything else offers none. The menus ask through
+  // this; the button on a column's panel asks the same for itself.
+  const explainLineage = useCallback((column: LineageColumn) => explainer?.ask(columnLineageAsk(column), frame.current), [explainer]);
+  const tracedOf = (part: OverviewMenuTarget | null): LineageColumn | null => {
+    if (explainer === null || part === null || part.type !== "field") {
+      return null;
+    }
+
+    const card = cards.find((candidate) => candidate.id === part.source);
+    return card === undefined ? null : columnOfField(card, part.field, lineageScope);
+  };
 
   useEffect(() => {
     canvas.current?.render(placed, {
@@ -653,6 +671,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     const table = card === undefined ? undefined : tables.data?.find((candidate) => (card.source.kind === "record" ? candidate.dataset === null : `dataset.${candidate.dataset}` === card.id));
     const named = target.type === "field" ? target.field : card?.title ?? target.source;
     const written = linesOfPart(outline, documentLines, linesPartOf(target)!).first !== null;
+    const traced = tracedOf(target);
     return {
       named,
       items: [
@@ -662,6 +681,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         { id: "details", label: "Details", glyph: <PanelRight />, act: () => openShown(target) },
         ...(written ? [{ id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } }] : []),
         lineage,
+        ...(traced === null ? [] : [{ id: "explain-lineage", label: "Explain its lineage", glyph: <ExplainIcon />, title: COLUMN_LINEAGE_HINT, act: () => explainLineage(traced) }]),
         target.type === "field"
           ? { id: "copy", label: "Copy the name", glyph: <Copy />, act: () => copyName(target.field, "the name") }
           : { id: "copy", label: table === undefined ? "Copy the name" : "Copy the table's name", glyph: <Copy />, act: () => copyName(table?.table ?? named, "the name") },
@@ -751,6 +771,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                     yaml={yaml}
                     values={record.on ? record.values : NO_VALUES}
                     lineage={inspected === null ? [] : lineageOf(inspected)}
+                    traced={tracedOf(inspected)}
                     onPick={openShown}
                     onPreview={lookAt}
                     onClose={() => setDetailsOpen(false)}
@@ -834,6 +855,8 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                     }
                   }}
                   onExplain={explainYaml}
+                  columnsOf={(range) => columnsOfLines(outline, cards, lineageScope, range)}
+                  onExplainLineage={explainer === null ? null : explainLineage}
                   blockOf={(line) => {
                     const node = nodeAtLine(outline, line);
                     return node?.line == null || node.endLine == null ? null : { range: { start: node.line, end: node.endLine }, named: outlinePathOf(node.path) };

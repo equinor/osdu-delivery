@@ -84,7 +84,7 @@ const SQLFLOW_OFFERED: &[&str] = &[
     "file_provenance", "catalog_tree", "lineage_edges", "lineage_waves", "lineage_dependencies",
     // The described lineage: what lineage descriptions say of steps other systems run, and their optional column
     // mappings. Both answer from the catalog's lineage metadata; neither returns a row of data.
-    "list_lineage_descriptions", "column_mapping",
+    "list_lineage_descriptions", "column_mapping", "trace_column",
     "database_schema_changes", "database_schema_history_databases", "database_object_ddl", "database_object_compare",
     "flow_definition_history", "flow_definition_file_history", "flow_definition_diff",
     "search_all", "search", "search_schema",

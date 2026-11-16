@@ -358,7 +358,7 @@ internal static class DescribedLineage
     }
 
     /// <summary>The stored documents of the given descriptions, read back through the loader that read them at sync.</summary>
-    private static async Task<Dictionary<Guid, StoredDescription>> LoadDocumentsAsync(
+    internal static async Task<Dictionary<Guid, StoredDescription>> LoadDocumentsAsync(
         CatalogDbContext db, IReadOnlyList<Guid> pipelineIds, CancellationToken ct)
     {
         var result = new Dictionary<Guid, StoredDescription>();
@@ -430,7 +430,7 @@ internal static class DescribedLineage
             .Select(g => g.Key.Column)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    private sealed record StoredDescription(Guid Id, Guid RepoId, string Name, string File, LineageDescriptionFlow? Flow);
+    internal sealed record StoredDescription(Guid Id, Guid RepoId, string Name, string File, LineageDescriptionFlow? Flow);
 
     /// <summary>What makes rows one mapped column: the description, the written object and the column.</summary>
     internal sealed record ColumnGroupKey(Guid PipelineId, string TargetObjectKey, string Column);
@@ -537,7 +537,7 @@ internal static class DescribedLineage
 
         /// <summary>The mapped columns of an object that <paramref name="column"/> is, each with the column name it is
         /// followed as.</summary>
-        private static List<(IGrouping<ColumnGroupKey, CatalogLineageColumnMapping> Group, string Followed)> Matching(
+        internal static List<(IGrouping<ColumnGroupKey, CatalogLineageColumnMapping> Group, string Followed)> Matching(
             List<IGrouping<ColumnGroupKey, CatalogLineageColumnMapping>> groups, string column, IReadOnlySet<string> listed)
         {
             static bool Star(IGrouping<ColumnGroupKey, CatalogLineageColumnMapping> g)

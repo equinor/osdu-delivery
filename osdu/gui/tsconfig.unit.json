@@ -61,6 +61,8 @@
     "src/features/delivery/explorer/dimension/flowFileQuestion.ts",
     "src/features/delivery/explorer/cache/cacheStory.ts",
     "src/features/delivery/compute/computeUsageModel.ts",
-    "../../sqlflow/gui/src/lib/time.ts"
+    "../../sqlflow/gui/src/lib/time.ts",
+    "../../sqlflow/gui/src/features/chat/columnLineage.ts",
+    "../../sqlflow/gui/src/features/chat/explain.ts"
   ]
 }
