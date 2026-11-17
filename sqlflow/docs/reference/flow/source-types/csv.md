@@ -57,8 +57,8 @@ load:
 Run or preview it with the CLI:
 
 ```bash
-dotnet run --project src/SqlFlow.Cli -- plan samples/csv/csv-basic.flow.yaml
-dotnet run --project src/SqlFlow.Cli -- run samples/csv/csv-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- plan samples/csv/csv-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/csv/csv-basic.flow.yaml
 ```
 
 ## Options reference

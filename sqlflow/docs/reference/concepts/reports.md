@@ -168,13 +168,16 @@ The row is kept as the **Compute tasks** storage area keeps it (`sqlflow.compute
 
 - The **Reports** page (`/reports`) lists the estate's reports by their `batch`, with a search. Opening one opens the report's own page (`/reports/{id}`).
 - Every shown query runs when the page opens, each on its own, so one slow query does not hold the others.
-- Parameters are controls above the tiles. Their values are kept in the page's address (`?p.<name>=<value>`), so a link reproduces the view. A parameter left at its default is not in the address; one that was cleared is written with nothing after it.
-- Changing a parameter runs again only the queries that bind it. While the new answer is read, the tile holds the answer before it, dimmed.
+- The report's header is one line, and it stays at the top of the page while the tiles scroll under it: the way back to the list, the report's title with its description behind an info mark, the page's filters, when the answers were read, **Refresh** and the report's menu. What the report is narrowed to is therefore in view wherever a mark is clicked. When the filters do not fit beside the title they take one line of their own under it.
+- A parameter is drawn where it acts. One that several queries bind is a filter of the page and is drawn in the header. One that a single shown query binds is drawn on that query's tile, in its heading, beside what it changes. The values are kept in the page's address (`?p.<name>=<value>`), so a link reproduces the view. A parameter left at its default is not in the address; one that was cleared is written with nothing after it.
+- Changing a parameter runs again only the queries that bind it. While the new answer is read, the tile holds the answer before it, dimmed, so the page keeps its shape and no tile goes blank.
+- Figures are drawn as one strip, a label over each value, with no heading of its own: its title names it in its menu and in the explanation behind its info mark, and the strip dims while it is read. A strip keeps a heading when it has something of its own to say there: a parameter's control, or that a filter of the page does not narrow it.
 - Each view is a tile. Its menu shows the answer as a table, downloads it as CSV (the values as the query answered them), shows how it was computed (the statement, the values bound, where it ran, the rows and the time it took), and runs the query again.
 - **Refresh** runs every query again. A running query can be stopped, from its tile or its menu, which cancels it on the worker.
 - An answer cut at `maxRows` says so on its tile, since a total over a cut answer is not the whole.
 - A tile whose query cannot run, failed or waits for a required parameter says which and why, in place of an answer.
-- A click on a mark of a view with `selects` sets that parameter to the mark's `by` value, and a second click clears it ([views](../flow/rpt-views.md)).
+- A click on a mark of a view with `selects` sets that parameter to the mark's `by` value, and a second click clears it ([views](../flow/rpt-views.md#a-click-that-sets-a-parameter)). The mark is marked as chosen at once, before any query has answered. The tile's heading names the filter its marks set, with a funnel; once a value is chosen it shows the value, with a cross that clears it.
+- A tile that a page filter in effect does not narrow says so in its heading (**Not narrowed by** and the filter's label): its query does not bind that parameter, so it shows the same whatever is chosen. The tile whose marks set the filter is not marked this way, since its marks staying whole is how the choice is seen and changed.
 
 ## API
 

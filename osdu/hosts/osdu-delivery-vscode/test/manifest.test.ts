@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -139,6 +139,11 @@ test('the package carries a readme and a change log, and every picture and page 
     // The Marketplace shows a picture only from an https address; a path into the repository would show nothing there.
     for (const [, source] of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)) {
         assert.match(source, /^https:\/\/.+\.(png|gif|jpg)$/, source);
+        // A picture of this folder is fetched from main, so it has to be in the folder to be there once this lands.
+        const own = source.match(/^https:\/\/raw\.githubusercontent\.com\/TahirRiaz\/osdu-delivery\/main\/osdu\/hosts\/osdu-delivery-vscode\/(.+)$/);
+        if (own) {
+            assert.ok(existsSync(join(folder, own[1])), own[1]);
+        }
     }
     for (const walkthrough of manifest.contributes.walkthroughs) {
         for (const step of walkthrough.steps) {
@@ -146,6 +151,41 @@ test('the package carries a readme and a change log, and every picture and page 
         }
     }
     assert.match(readFileSync(join(folder, 'CHANGELOG.md'), 'utf8'), new RegExp(`^## \\[${manifest.version.replace(/\./g, '\\.')}\\]`, 'm'));
+});
+
+// Publishing is a person's decision, taken per release. Nothing builds or publishes the extension on a push, a merge,
+// a tag, a release or a schedule, and no other workflow starts the two that do.
+test('the extension is built and published only when a person starts the workflow', () => {
+    const workflows = join(folder, '..', '..', '..', '.github', 'workflows');
+    /** The events a workflow starts on: the keys under its top-level `on:`. */
+    const startsOn = (file: string): string[] => {
+        const lines = readFileSync(join(workflows, file), 'utf8').split(/\r?\n/);
+        const from = lines.findIndex((line) => /^on:\s*$/.test(line));
+        assert.ok(from >= 0, `${file} names what starts it under a top-level 'on:'`);
+        const events: string[] = [];
+        for (const line of lines.slice(from + 1)) {
+            if (/^\S/.test(line)) {
+                break;
+            }
+            const event = /^ {2}([a-z_]+):/.exec(line);
+            if (event) {
+                events.push(event[1]);
+            }
+        }
+        return events;
+    };
+    for (const file of ['vscode-build.yml', 'vscode-publish.yml']) {
+        assert.deepEqual(startsOn(file), ['workflow_dispatch'], file);
+    }
+    for (const file of readdirSync(workflows).filter((name) => /\.ya?ml$/.test(name))) {
+        const text = readFileSync(join(workflows, file), 'utf8');
+        if (file !== 'vscode-publish.yml') {
+            assert.doesNotMatch(text, /\b(vsce|ovsx)\b[^\n]*\bpublish\b/, `${file} publishes nothing to a marketplace`);
+        }
+        assert.doesNotMatch(text, /gh\s+workflow\s+run\s+\S*vscode-(build|publish)/, `${file} starts neither release workflow`);
+        assert.doesNotMatch(text, /vscode-(build|publish)\.yml\/dispatches/, `${file} starts neither release workflow`);
+        assert.doesNotMatch(text, /uses:\s*\.\/\.github\/workflows\/vscode-(build|publish)\.yml/, `${file} calls neither release workflow`);
+    }
 });
 
 // OSDU is a registered trademark of The Open Group, which asks for the mark with its symbol at its first use and an

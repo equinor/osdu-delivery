@@ -11,14 +11,23 @@ description: What the staging area holds of well logs, by log source.
 batch: welldb
 connection: ${env:OSDU_DATA_DB}
 
+# How its tiles hang together: `source` is the page's filter, read by two statements, so it is drawn in the page's
+# header; the bars set it and their statement leaves it out, so they stay whole. `rows` is read by the list alone, so
+# it is drawn on the list's tile. The table's own size reads neither, and its tile says so once a source is chosen.
 parameters:
   source:
     label: Log source
     description: Only the well logs of this log source.
     choicesFrom: sources
+  rows:
+    label: Rows listed
+    description: How many well logs the list shows.
+    type: integer
+    default: 200
+    required: true
 
 queries:
-  # The log sources there are, as the choices of the filter above the tiles. Not a tile of its own.
+  # The log sources there are, as the choices of the filter in the page's header. Not a tile of its own.
   sources:
     sql: SELECT DISTINCT log_source FROM silver.WellLog ORDER BY log_source
     show: none
@@ -53,7 +62,7 @@ queries:
     title: Well logs
     description: The well logs staged, each with the file it was read from.
     sql: |
-      SELECT TOP 200 log_id AS LogId, wellbore_uwi AS Wellbore, log_source AS LogSource, FileName_DW AS SourceFile
+      SELECT TOP (@rows) log_id AS LogId, wellbore_uwi AS Wellbore, log_source AS LogSource, FileName_DW AS SourceFile
       FROM silver.WellLog
       WHERE (@source IS NULL OR log_source = @source)
       ORDER BY log_id
@@ -62,3 +71,14 @@ queries:
       LogId: { label: Log, format: code }
       LogSource: { label: Log source }
       SourceFile: { label: Source file, format: code }
+
+  # The table itself, from the server's own catalog: no row is read and no filter narrows it.
+  table_size:
+    title: The ingestion table
+    sql: |
+      SELECT SUM(p.rows) AS TableRows
+      FROM sys.partitions AS p
+      WHERE p.object_id = OBJECT_ID('silver.WellLog') AND p.index_id < 2
+    show: { type: figure, width: third }
+    columns:
+      TableRows: { label: Rows in the table }

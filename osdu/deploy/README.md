@@ -570,7 +570,9 @@ off by the rollout.
 
 ## Scale-in must not sever a delivery
 
-A node handles SIGTERM by draining: it stops taking work and lets the runs it already holds finish and record
+The autoscaler picks which node a lower replica target stops, so the target never asks for fewer nodes while any
+node of the pool runs work: a pool shrinks only once its runs have ended. Nodes are still stopped under running work
+when a new revision replaces them or the platform moves them. A node handles SIGTERM by draining: it stops taking work and lets the runs it already holds finish and record
 their outcomes, for up to `SQLFLOW_WORKER_DRAIN_SECONDS` (default 540). That only works if the orchestrator waits,
 and both Kubernetes and Container Apps default to a 30 second grace period. **Set the termination grace period
 above the drain window on every node workload**: `worker-pool.yaml` and `worker.bicep` both set 600. Left at the

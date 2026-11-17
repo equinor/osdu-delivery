@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>sqlflow</AssemblyName>
+    <RootNamespace>SqlFlow.Cli.Host</RootNamespace>
+    <Description>SQLFlow command-line tool: validate, plan, and run pipelines.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SqlFlow.Cli\SqlFlow.Cli.csproj" />
+  </ItemGroup>
+
+</Project>

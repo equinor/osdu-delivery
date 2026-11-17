@@ -1,13 +1,14 @@
-// The row of controls above a report's tiles: one per parameter the report declares, each saying what it is, what it
-// is set to and which tiles it narrows. A control only reports a value; the page keeps the values in its address.
+// The controls of a report's parameters, each saying what it is, what it is set to and which tiles it narrows. A
+// parameter several tiles read is a filter of the page and sits in the page's header; a parameter one tile reads sits
+// in that tile's heading, beside what it changes (reportModel.placeParameters). A control only reports a value; the
+// page keeps the values in its address.
 
 import { useState } from "react";
-import { FilterX, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { activeFilterClass, FilterBar } from "@/components/FilterBar";
+import { activeFilterClass } from "@/components/FilterBar";
 import { FilterCombobox, type FilterOption } from "@/components/FilterCombobox";
 import { cn } from "@/lib/utils";
 import type { Report, ReportParameter } from "../../api/types";
@@ -18,21 +19,18 @@ import type { QueryState } from "./useReportQueries";
 
 interface ReportParametersProps {
   report: Report;
+  /** The parameters to draw here: the page's filters in its header, or one tile's own in its heading. */
+  parameters: readonly ReportParameter[];
   given: GivenValues;
   states: ReadonlyMap<string, QueryState>;
   onChange: (parameter: ReportParameter, value: string | null) => void;
-  onReset: () => void;
 }
 
-export function ReportParameters({ report, given, states, onChange, onReset }: ReportParametersProps) {
-  if (report.parameters.length === 0) {
-    return null;
-  }
-
-  const anySet = report.parameters.some((parameter) => isSet(parameter, given));
+/** The controls of some of a report's parameters, in the document's order; the place they are drawn in lays them out. */
+export function ReportParameters({ report, parameters, given, states, onChange }: ReportParametersProps) {
   return (
-    <FilterBar>
-      {report.parameters.map((parameter) => (
+    <>
+      {parameters.map((parameter) => (
         <ParameterField
           key={parameter.name}
           report={report}
@@ -43,13 +41,7 @@ export function ReportParameters({ report, given, states, onChange, onReset }: R
           onChange={(value) => onChange(parameter, value)}
         />
       ))}
-      {anySet && (
-        <Button variant="ghost" size="sm" onClick={onReset} data-testid="report-parameters-reset">
-          <FilterX />
-          Reset
-        </Button>
-      )}
-    </FilterBar>
+    </>
   );
 }
 
@@ -77,7 +69,7 @@ function ParameterField({ report, parameter, value, changed, feeder, onChange }:
   const listed = parameter.choices.length > 0 || parameter.choicesFrom !== null;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-1.5">
       <Tooltip delayDuration={300} disableHoverableContent>
         <TooltipTrigger asChild>
           <span className="cursor-default text-xs text-muted-foreground">
@@ -134,7 +126,7 @@ function ChoiceControl({ parameter, label, value, feeder, onChange, testId }: {
       emptyText={unreadable ? "The query that lists the choices did not answer." : "No matches."}
       ariaLabel={label}
       testId={testId}
-      className="w-44"
+      className="w-36"
     />
   );
 }
@@ -164,7 +156,7 @@ function FlagControl({ label, value, changed, onChange, testId }: {
 }
 
 const INPUT_TYPE: Record<string, string> = { integer: "number", number: "number", date: "date", datetime: "datetime-local", text: "text" };
-const INPUT_WIDTH: Record<string, string> = { integer: "w-24", number: "w-28", date: "w-36", datetime: "w-52", text: "w-44" };
+const INPUT_WIDTH: Record<string, string> = { integer: "w-20", number: "w-28", date: "w-36", datetime: "w-52", text: "w-36" };
 
 /** Whether a date or a date and time, as a field writes it, is whole: a field reports a year still being typed as 0002. */
 function isWholeDate(text: string): boolean {
@@ -207,7 +199,7 @@ function TypedControl({ parameter, label, value, changed, onChange, testId }: {
         value={draft}
         placeholder={parameter.required ? "Required" : "Any"}
         aria-label={label}
-        className={cn("h-8 text-[13px]", INPUT_WIDTH[parameter.type] ?? "w-44", changed && activeFilterClass, draft !== "" && !picked && "pr-7")}
+        className={cn("h-8 text-[13px]", INPUT_WIDTH[parameter.type] ?? "w-36", changed && activeFilterClass, draft !== "" && !picked && "pr-7")}
         onChange={(event) => {
           setDraft(event.target.value);
           if (picked && (event.target.value === "" || isWholeDate(event.target.value))) commit(event.target.value);

@@ -51,11 +51,23 @@ pub const WITHHELD: &[&str] = &[
     "scaffold_ingestion_flow",
 ];
 
+/// The verbs the delivery module adds to the `sqlflow` command line that work with a sign-in alone, as `get_environment`
+/// shows them after SQLFlow's. The ledger verbs (`records`, `assertions`) read the module's database (`--db`), which a
+/// person's assistant does not hold; the delivery tools answer those through the control plane.
+const CLI_USES: &[(&str, &str)] = &[
+    (
+        "sqlflow check <flow.yaml>",
+        "the delivery preflight: the flow's documents and its mapping against the template it fills (a mapping that reads a cache needs --db)",
+    ),
+    ("sqlflow template folders", "the working copy's template folders and the template each file holds, read from disk"),
+];
+
 /// The delivery module: its tools, its instructions, the product's documentation, its GUI links and its key census.
 pub fn module() -> McpModule {
     let mut module = McpModule::new(MODULE_NAME)
         .tools(|ctx| (DeliveryTools::new(ctx), DeliveryTools::router()))
         .instructions(instructions::INSTRUCTIONS)
+        .cli_uses(CLI_USES.iter().copied())
         .docs(docs::pages())
         .link_rule(links::delivery_links);
     for census in docs::CENSUS {

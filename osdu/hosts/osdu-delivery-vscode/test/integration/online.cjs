@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const vscode = require('vscode');
 
 /**
@@ -35,6 +36,46 @@ module.exports = (estate, pageTabs, until) => ({
         await vscode.commands.executeCommand('sqlflow.openRuns');
         await until('the Runs page to name its tab', () => pageTabs().some((tab) => tab.label === 'Runs'), 60000);
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    },
+
+    async 'the Reports page names its tab, and a report leads to its own page'() {
+        await vscode.commands.executeCommand('sqlflow.openReports');
+        await until('the Reports page to name its tab', () => pageTabs().some((tab) => tab.label === 'Reports'), 60000);
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+        // A report is listed by its kind, as no flow is. An estate may declare none.
+        const [report] = await estate.pipelines({ kind: 'rpt' });
+        if (report === undefined) {
+            return;
+        }
+        assert.ok(report.id && report.relativePath && report.kind === 'rpt', JSON.stringify(report));
+        assert.equal((await estate.pipelineNamed(report.name, report.relativePath, 'rpt'))?.id, report.id);
+        const detail = await estate.pipeline(report.id);
+        assert.ok(/^flowType:\s*rpt\s*$/m.test(detail.yaml), detail.yaml.slice(0, 200));
+
+        // Its document carries the lens to the report's page, and no last run: a report has none. The estate's text is
+        // written into the working copy for the check, since the sample the editor has open declares no report.
+        const probe = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'flows', 'report-probe.yaml'));
+        await vscode.workspace.fs.writeFile(probe, Buffer.from(detail.yaml));
+        try {
+            await vscode.commands.executeCommand('sqlflow.refreshRepository');
+            const document = await vscode.workspace.openTextDocument(probe);
+            await vscode.window.showTextDocument(document);
+            const lenses = await until('the report\'s lenses', async () => {
+                const found = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', document.uri);
+                return found?.some((lens) => lens.command?.title.includes('Report Page')) ? found : undefined;
+            }, 60000);
+            const titles = lenses.map((lens) => lens.command?.title ?? '');
+            assert.ok(!titles.some((title) => title.startsWith('Last run') || title.includes('Flow Page')), titles.join(', '));
+
+            // The lens opens the report itself, which names its tab by the report's title once its page has read it.
+            await vscode.commands.executeCommand('sqlflow.openPipeline', probe);
+            const title = /^title:\s*(.+?)\s*$/m.exec(detail.yaml)?.[1]?.replace(/^["']|["']$/g, '') ?? report.name;
+            await until('the report\'s page to name its tab', () => pageTabs().some((tab) => tab.label === title), 60000);
+        } finally {
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+            await vscode.workspace.fs.delete(probe);
+        }
     },
 
     async 'a mapping\'s preview reads its file and places it in the estate'() {

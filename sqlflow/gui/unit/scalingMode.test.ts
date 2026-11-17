@@ -10,7 +10,7 @@ function pool(overrides: Partial<WorkerPool>): WorkerPool {
   return {
     pool: "", minReplicas: 0, manualReplicas: 0, manualUntilUtc: null, manualActive: false, queuedRuns: 0,
     replicaTarget: 0, onlineNodes: 0, updatedUtc: null, updatedBy: null, eligibleQueuedRuns: 0, eligibleWholeNodeRuns: 0, busyNodes: 0,
-    runSlotsPerNode: 4, managedBy: null, managed: null, builtInNode: null, ...overrides,
+    heldNodes: 0, runSlotsPerNode: 4, managedBy: null, managed: null, builtInNode: null, ...overrides,
   };
 }
 

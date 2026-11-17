@@ -65,7 +65,7 @@ internal sealed class CheckoutCommandLine : ICommandLine
 
     /// <summary>The command line's build output: its apphost, named as the platform names executables.</summary>
     public string Executable => Path.Combine(
-        _checkout.Root, Project, "bin", "Debug", "net9.0", _machine.IsWindows ? "SqlFlow.Delivery.Cli.Host.exe" : "SqlFlow.Delivery.Cli.Host");
+        _checkout.Root, Project, "bin", "Debug", "net9.0", _machine.IsWindows ? "sqlflow.exe" : "sqlflow");
 
     public void Prepare(CancellationToken ct)
     {

@@ -270,7 +270,7 @@ the tool description, not of the search.
   (worked out from the registered tables), and `run_query` returns one row per year.
 
 ### T33: running the registration refreshes the catalog (CLI, outside Claude Code)
-- Run: `dotnet run --project src/SqlFlow.Cli -- run samples/powerai-adventureworks/adventureworks_00_sch.yaml`
+- Run: `dotnet run --project src/SqlFlow.Cli.Host -- run samples/powerai-adventureworks/adventureworks_00_sch.yaml`
   with `SQLFLOW_CATALOG_DB` and `SQLFLOW_ADVENTUREWORKS_DB` set as in the README.
 - Pass: `OK  registered 31 table(s) and 5 view(s) (418 column(s)) from 'AdventureWorks'`, the run is recorded
   as succeeded, and the flow still has exactly 36 `Registers` edges.
@@ -278,7 +278,7 @@ the tool description, not of the search.
 ## G. Report specifications and uploads (CLI and GUI, outside Claude Code)
 
 ### T23: extraction through the isolated extractor
-- Run: `dotnet run --project src/SqlFlow.Cli -- powerbi extract "samples/powerbi/AdventureWorks Sales.pbix" --remote --url http://localhost:5000 --token <token> --out -`
+- Run: `dotnet run --project src/SqlFlow.Cli.Host -- powerbi extract "samples/powerbi/AdventureWorks Sales.pbix" --remote --url http://localhost:5000 --token <token> --out -`
 - Pass: stderr reports 3 pages, 5 visuals, 8 model tables (7 resolved to a warehouse table), 1 measure,
   8 relationships, and warns that model table `Table` is sourced via Json.Document. The control plane
   container never runs `pbix-extract`: `docker logs sqlflow-pbix-extractor-1` shows the request.

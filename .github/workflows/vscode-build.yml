@@ -204,7 +204,7 @@ jobs:
           mkdir -p "$stage"
           while IFS= read -r program; do
             echo "Signing $program"
-            if [ "$(basename "$program")" = "SqlFlow.Delivery.Cli.Host" ]; then
+            if [ "$(basename "$program")" = "sqlflow" ]; then
               codesign --force --options runtime --timestamp --entitlements "$entitlements" \
                 --keychain "$SIGNING_KEYCHAIN" -s "$APPLE_SIGNING_IDENTITY" "$program"
             else

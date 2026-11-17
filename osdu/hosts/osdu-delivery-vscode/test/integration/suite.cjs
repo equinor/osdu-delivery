@@ -60,9 +60,16 @@ const checks = {
         for (const program of ['sqlflow-lsp', 'osdu-delivery-mcp', 'sqlflow']) {
             assert.ok(fs.existsSync(path.join(extension.extensionPath, 'bin', `${program}${exe}`)), program);
         }
-        const answer = await extension.exports.estate.mcp.call('get_cli');
-        assert.ok(answer.path.endsWith(`sqlflow${exe}`), answer.path);
-        assert.ok(answer.conventions.includes('--json'));
+        const answer = await extension.exports.estate.mcp.call('get_environment');
+        assert.ok(answer.commandLine.path.endsWith(`sqlflow${exe}`), answer.commandLine.path);
+        assert.ok(answer.commandLine.conventions.includes('--json'));
+        const uses = answer.commandLine.uses.map((use) => use.command);
+        assert.ok(uses.some((command) => command.endsWith('validate .')), uses.join(', '));
+        assert.ok(uses.some((command) => command.endsWith('check <flow.yaml>')), uses.join(', '));
+        const commands = await vscode.commands.getCommands(true);
+        for (const id of ['sqlflow.shareWithOtherTools', 'sqlflow.unshareFromOtherTools']) {
+            assert.ok(commands.includes(id), id);
+        }
     },
 
     async 'a plain yaml flow opens as a pipeline document'() {
@@ -239,6 +246,55 @@ const checks = {
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
             await vscode.workspace.fs.delete(described);
         }
+    },
+
+    async 'a report is understood as it is typed: its keys checked and documented'() {
+        // SQLFlow's own sample of the kind, with one key the kind does not have put first: the language server packaged
+        // here knows flowType rpt, so the sample's own keys pass, the stray one is refused on its line, and a key is
+        // explained on hover. A package built from sources older than the kind fails here.
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        const fs = require('node:fs');
+        const extension = vscode.extensions.getExtension(EXTENSION);
+        const original = fs.readFileSync(
+            path.join(extension.extensionPath, '..', '..', '..', 'sqlflow', 'samples', 'reports', 'staging-overview.yaml'),
+            'utf8'
+        );
+        const text = `notAKeyOfRpt: 1\n${original}`;
+        const report = sample('flows/report-probe.yaml');
+        await vscode.workspace.fs.writeFile(report, Buffer.from(text));
+        try {
+            const document = await open('flows/report-probe.yaml');
+            const errors = await until('the language server\'s word on the report', () => {
+                const found = vscode.languages.getDiagnostics(document.uri).filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+                return found.length > 0 ? found : undefined;
+            });
+            assert.deepEqual(errors.map((d) => [d.range.start.line, d.message.includes('notAKeyOfRpt')]), [[0, true]], errors.map((d) => d.message).join('; '));
+
+            const queriesLine = text.split(/\r?\n/).findIndex((line) => line.startsWith('queries:'));
+            const hovers = await until('a hover on queries', async () => {
+                const found = await vscode.commands.executeCommand('vscode.executeHoverProvider', document.uri, new vscode.Position(queriesLine, 2));
+                return found?.length ? found : undefined;
+            });
+            assert.match(hoverText(hovers), /never as part of a flow/i);
+
+            // A report is never run, so it offers no run, here or anywhere.
+            const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', document.uri);
+            assert.ok(!lenses.some((lens) => lens.command?.command === 'sqlflow.runFlow'));
+        } finally {
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+            await vscode.workspace.fs.delete(report);
+        }
+    },
+
+    async 'Open Reports opens the Reports page in a tab'() {
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await vscode.commands.executeCommand('sqlflow.openReports');
+        await until('the Reports page in a tab', () => pageTabs().length === 1);
+        // Asked for again, it is the tab already on it.
+        await vscode.commands.executeCommand('sqlflow.openReports');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        assert.equal(pageTabs().length, 1);
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     },
 
     async 'the repository validates through the server, offline, and finds a broken file nobody has open'() {

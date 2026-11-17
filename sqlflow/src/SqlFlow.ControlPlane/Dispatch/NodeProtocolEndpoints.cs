@@ -1,7 +1,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
 using SqlFlow.Catalog;
+using SqlFlow.ControlPlane.Api;
+using SqlFlow.ControlPlane.Configuration;
 using SqlFlow.Core.Runs;
 using SqlFlow.Dispatch;
 using SqlFlow.Dispatch.Protocol;
@@ -57,13 +60,16 @@ public static class NodeProtocolEndpoints
     /// <summary>The replica target an autoscaler holds a pool's worker deployment at (<c>replicas</c>), with every
     /// term it was built from. <c>pool</c> names the pool; omitted or blank is the default (untargeted) pool. KEDA's
     /// metrics-api scaler reads <c>replicas</c> against a target value of 1, so the fleet is sized to exactly this
-    /// number: demand from the eligible backlog and the busy nodes, or the always-on floor, or an active manual
-    /// override, whichever is greatest.</summary>
+    /// number: demand from the eligible backlog and the busy nodes, the workers the pool holds while one of them runs
+    /// work, the always-on floor, or an active manual override, whichever is greatest. This control plane's own node,
+    /// when it serves the pool, is no worker the scaler runs, so it is never held.</summary>
     private static async Task<Ok<ScaleTarget>> ScaleTargetAsync(
-        string? pool, CatalogDbContext catalog, TimeProvider clock, CancellationToken ct)
+        string? pool, CatalogDbContext catalog, TimeProvider clock, IOptions<ControlPlaneOptions> options, RunWorker node,
+        CancellationToken ct)
     {
+        var builtInNode = NodeEndpoints.BuiltInNodeOf(WorkerPoolStore.PoolKey(pool), options.Value.Worker, node.NodeName);
         var target = await ScaleTargetStore
-            .ResolveAsync(catalog, pool, RunWorker.DefaultMaxConcurrentRuns, clock.GetUtcNow().UtcDateTime, ct)
+            .ResolveAsync(catalog, pool, RunWorker.DefaultMaxConcurrentRuns, clock.GetUtcNow().UtcDateTime, builtInNode?.Name, ct)
             .ConfigureAwait(false);
         return TypedResults.Ok(target);
     }

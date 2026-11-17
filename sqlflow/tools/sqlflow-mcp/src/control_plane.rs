@@ -201,6 +201,9 @@ pub struct ControlPlane {
     shared: Option<SharedCredentials>,
     /// When the shared file was last read, so it is read again only once another client has written it.
     shared_seen: RwLock<Option<std::time::SystemTime>>,
+    /// When this server last read its config, so a control plane another server of the same prefix names is followed:
+    /// one person's servers of one product reach one control plane, as they hold one sign-in.
+    config_seen: RwLock<Option<std::time::SystemTime>>,
 }
 
 impl ControlPlane {
@@ -265,6 +268,7 @@ impl ControlPlane {
             renew_lock: tokio::sync::Mutex::new(()),
             shared: None,
             shared_seen: RwLock::new(None),
+            config_seen: RwLock::new(identity.state.config_stamp()),
         }
     }
 
@@ -286,6 +290,42 @@ impl ControlPlane {
         let mut cfg = self.identity.state.load_config();
         cfg.control_plane_url = Some(self.base_url());
         let _ = self.identity.state.save_config(&cfg);
+        // This server's own write is nothing for it to follow.
+        *self.config_seen.write().unwrap() = self.identity.state.config_stamp();
+        self.retake_shared_credential();
+    }
+
+    /// Reads the shared sign-in again for the control plane now named: the one held for it, or none, so a token is
+    /// never sent to a control plane other than the one it was given by. A credential the environment gave stays.
+    fn retake_shared_credential(&self) {
+        if self.shared.is_none() {
+            return;
+        }
+        *self.shared_seen.write().unwrap() = None;
+        self.adopt_shared_credential();
+    }
+
+    /// Follows a control plane another server of this prefix was given since this one last looked (an editor's,
+    /// when its person names another): the address moves, and the sign-in held for it is read on the next adoption.
+    /// Only a server that shares the sign-in follows; one given its credential in the environment, or over HTTP, keeps
+    /// what it was started with.
+    fn follow_shared_config(&self) {
+        if self.shared.is_none() {
+            return;
+        }
+        let stamp = self.identity.state.config_stamp();
+        if *self.config_seen.read().unwrap() == stamp {
+            return;
+        }
+        *self.config_seen.write().unwrap() = stamp;
+        let Some(named) = self.identity.state.load_config().control_plane_url else {
+            return;
+        };
+        let named = normalize_base(&named);
+        if named != self.base_url() {
+            *self.base_url.write().unwrap() = named;
+            *self.shared_seen.write().unwrap() = None;
+        }
     }
 
     pub fn is_authenticated(&self) -> bool {
@@ -331,6 +371,7 @@ impl ControlPlane {
     /// Takes up what another client did to the shared sign-in: `sqlflow login`, an editor signing in or out, another
     /// server renewing. A cheap no-op until the file changes, so it is safe before every request.
     fn adopt_shared_credential(&self) {
+        self.follow_shared_config();
         let Some(shared) = &self.shared else {
             return;
         };
@@ -727,6 +768,65 @@ mod tests {
         assert!(!cp.has_token());
         let err = cp.get("/api/v1/repos", &[]).await.unwrap_err();
         assert!(err.to_string().contains("no bearer on this request"), "{err:#}");
+    }
+
+    /// A client sharing a sign-in through a credential file of its own, with its config in a folder of its own.
+    fn sharing(name: &str) -> (ControlPlane, SharedCredentials, StateStore) {
+        let folder = std::env::temp_dir().join(format!("sqlflow-mcp-cp-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a scratch folder");
+        let state = StateStore::in_folder("probe", folder.clone());
+        let identity = ClientIdentity { state: state.clone(), ..ClientIdentity::default() };
+        let mut cp = ControlPlane::new(&identity, "http://localhost:8080", None, true);
+        cp.shared = Some(SharedCredentials::at(folder.join("credentials.json")));
+        (cp, SharedCredentials::at(folder.join("credentials.json")), state)
+    }
+
+    fn session(token: &str) -> TokenCache {
+        TokenCache { access_token: token.to_string(), scope: "read operate author".to_string(), expires_at: None, renews: true }
+    }
+
+    #[test]
+    fn naming_a_control_plane_takes_the_sign_in_held_for_it_and_never_another() {
+        let (cp, shared, _) = sharing("named");
+        shared.save("https://estate.example.com", &session("estate-session")).expect("a credential");
+        cp.adopt_shared_credential();
+        assert!(!cp.has_token(), "nothing is held for the address the client started with");
+
+        cp.set_base_url("https://estate.example.com/");
+        assert_eq!(cp.current_token().map(|t| t.access_token).as_deref(), Some("estate-session"));
+
+        cp.set_base_url("https://elsewhere.example.com");
+        assert!(!cp.has_token(), "a token is not taken to a control plane it was not given by");
+    }
+
+    #[test]
+    fn a_control_plane_another_server_names_is_followed_with_its_sign_in() {
+        let (cp, shared, state) = sharing("followed");
+        shared.save("https://estate.example.com", &session("estate-session")).expect("a credential");
+        // Another server of the same prefix (an editor's, when its person names the control plane) writes the config.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        state.save_config(&config::McpConfig { control_plane_url: Some("https://estate.example.com".into()) }).expect("a config");
+
+        cp.adopt_shared_credential();
+        assert_eq!(cp.base_url(), "https://estate.example.com");
+        assert_eq!(cp.current_token().map(|t| t.access_token).as_deref(), Some("estate-session"));
+    }
+
+    #[test]
+    fn a_client_given_its_credential_in_the_environment_follows_nothing() {
+        let folder = std::env::temp_dir().join(format!("sqlflow-mcp-cp-{}-environment", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a scratch folder");
+        let state = StateStore::in_folder("probe", folder);
+        let identity = ClientIdentity { state: state.clone(), ..ClientIdentity::default() };
+        let cp = ControlPlane::new(&identity, "http://localhost:8080", Some(session("from-the-environment")), true);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        state.save_config(&config::McpConfig { control_plane_url: Some("https://estate.example.com".into()) }).expect("a config");
+
+        cp.adopt_shared_credential();
+        assert_eq!(cp.base_url(), "http://localhost:8080");
+        assert_eq!(cp.current_token().map(|t| t.access_token).as_deref(), Some("from-the-environment"));
     }
 
     #[test]

@@ -34,7 +34,7 @@ public static class CliBinary
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            var projectBin = Path.Combine(dir.FullName, "src", "SqlFlow.Cli", "bin");
+            var projectBin = Path.Combine(dir.FullName, "src", "SqlFlow.Cli.Host", "bin");
             if (Directory.Exists(projectBin))
             {
                 foreach (var config in new[] { "Release", "Debug" })

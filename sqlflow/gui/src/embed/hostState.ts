@@ -3,6 +3,7 @@
 // what reads it, and nothing here sets state from an effect.
 
 import { useEffect, useSyncExternalStore } from "react";
+import { useLocation } from "react-router-dom";
 import { pageHost } from "./hostBridge";
 import { PROTOCOL_VERSION, type HostStart, type WatchedDocument } from "./protocol";
 import type { ThemeMode } from "../theme/designs";
@@ -95,6 +96,21 @@ export function useHostStart(): HostStart {
   }
 
   return value;
+}
+
+/**
+ * The address the page in view is opened at, to hand to someone else: the browser's own on the web GUI; under a host,
+ * the same page on the GUI's public address, or null when the host knows none, since a hosted page's own address
+ * opens nothing anywhere else. Read by a page that offers a link to itself, wherever it is shown.
+ */
+export function usePageAddress(): string | null {
+  const hosted = useSyncExternalStore(start.subscribe, start.read);
+  const location = useLocation();
+  if (hosted === null) {
+    return window.location.href;
+  }
+
+  return hosted.guiBaseUrl === null ? null : `${hosted.guiBaseUrl}${location.pathname}${location.search}`;
 }
 
 const NOTHING_WATCHED = new Store<WatchedDocument | null>(null);

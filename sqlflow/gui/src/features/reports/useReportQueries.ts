@@ -3,7 +3,7 @@
 // (Refresh, or a changed value): nothing polls a database behind the reader's back.
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { keepPreviousData, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { isApiError, type ApiError } from "../../api/client";
 import { executeReportQuery, type ReportQueryRun } from "../../api/endpoints";
 import type { Report, ReportQuery, RunQueryResult } from "../../api/types";
@@ -16,11 +16,14 @@ export const REPORT_QUERY_ROOT = "report-query";
 /** Where one query of a report stands, and what the page shows for it. */
 export interface QueryState {
   query: ReportQuery;
+  /** What names the run this state is of: the query and the values it is bound with. */
+  key: string;
   /**
    * - `blocked`: the statement cannot run (it is not one read-only SELECT); `problem` says why.
    * - `waiting`: a required parameter the statement binds has no value yet; `waitingFor` names it.
    * - `running`: queued or on a worker, with no answer to show yet.
-   * - `answered`: `answer` holds the rows. `refreshing` says a newer answer is on its way and this one is held meanwhile.
+   * - `answered`: `answer` holds the rows. `refreshing` says a newer answer is on its way and this one is held
+   *   meanwhile: the same values asked again, or the answer to the values before while the changed ones are read.
    * - `failed`: the worker or the control plane refused or failed it; `failure` says why.
    * - `cancelled`: someone stopped it before it answered.
    */
@@ -57,11 +60,35 @@ function isAnswer(result: unknown): result is RunQueryResult {
     && Array.isArray((result as RunQueryResult).rows);
 }
 
+/**
+ * Whether two states of a query say the same. The two actions are left out: they act on the run the key names, so
+ * states of one key act alike.
+ */
+function sameState(a: QueryState, b: QueryState): boolean {
+  return a.key === b.key && a.query === b.query && a.status === b.status && a.answer === b.answer && a.run === b.run
+    && a.refreshing === b.refreshing && a.problem === b.problem && a.askedAtMs === b.askedAtMs
+    && a.waitingFor.join("\u0000") === b.waitingFor.join("\u0000")
+    && a.failure?.message === b.failure?.message && a.failure?.error === b.failure?.error;
+}
+
+/** The rows a run answered, or null when it did not succeed. */
+function answerOf(run: ReportQueryRun | null): RunQueryResult | null {
+  const task = run?.task ?? null;
+  return task !== null && task.status === "succeeded" && isAnswer(task.result) ? task.result : null;
+}
+
 export function useReportQueries(report: Report, given: GivenValues): ReportQueries {
   const client = useQueryClient();
   // A cancelled run leaves no error behind (the request was simply aborted), so what was cancelled is remembered here,
   // by the key it ran under, until it is asked for again.
   const [cancelled, setCancelled] = useState<ReadonlySet<string>>(new Set());
+  // The run each query showed last, by the query's name. A changed value is asked for under a key of its own, which
+  // has nothing to show until a worker answers, so the answer before it is held meanwhile: a click on a mark redraws
+  // the page in place and never blanks it.
+  const [shown, setShown] = useState<ReadonlyMap<string, ReportQueryRun>>(new Map());
+  // Each query's state as it was last given out, by the query's name. A state that says the same as the one before is
+  // the one before, so a tile is drawn again only when its own query moved, not whenever any query of the page did.
+  const [kept, setKept] = useState<ReadonlyMap<string, QueryState>>(new Map());
   // When each run in flight was asked for, by its key: written as the request is made, read for the "running for"
   // a tile shows. A run's start is not part of what the query library keeps.
   const askedAt = useRef(new Map<string, number>());
@@ -88,9 +115,6 @@ export function useReportQueries(report: Report, given: GivenValues): ReportQuer
       retry: false,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      // While a changed value's answer is on its way, the answer before it is held (and shown dimmed) rather than
-      // blanked, so the page never jumps.
-      placeholderData: keepPreviousData,
     })),
   });
 
@@ -106,14 +130,23 @@ export function useReportQueries(report: Report, given: GivenValues): ReportQuer
   const states = new Map<string, QueryState>();
   let running = false;
   let newest: Date | null = null;
+  let nowShown = shown;
+  let nowKept = kept;
   for (let index = 0; index < plans.length; index++) {
     const plan = plans[index];
     const result = results[index];
-    const run = result.data ?? null;
-    const task = run?.task ?? null;
-    const answer = task !== null && task.status === "succeeded" && isAnswer(task.result) ? task.result : null;
+    const own = result.data ?? null;
+    const ownAnswer = answerOf(own);
     const inFlight = result.fetchStatus === "fetching";
     const wasCancelled = cancelled.has(plan.keyText);
+    // What these values answered, or, while they are still being read, what the values before them answered.
+    const held = ownAnswer === null && inFlight ? shown.get(plan.query.name) ?? null : null;
+    const run = held ?? own;
+    const task = run?.task ?? null;
+    const answer = held !== null ? answerOf(held) : ownAnswer;
+    if (ownAnswer !== null && own !== null && nowShown.get(plan.query.name) !== own) {
+      nowShown = new Map(nowShown).set(plan.query.name, own);
+    }
 
     let status: QueryState["status"];
     let failure: QueryState["failure"] = null;
@@ -121,7 +154,7 @@ export function useReportQueries(report: Report, given: GivenValues): ReportQuer
       status = "blocked";
     } else if (plan.waitingFor.length > 0) {
       status = "waiting";
-    } else if (wasCancelled && !inFlight && (answer === null || result.isPlaceholderData)) {
+    } else if (wasCancelled && !inFlight && ownAnswer === null) {
       // Stopped before it answered. An answer held from other values is not this run's, so it is not shown as one.
       status = "cancelled";
     } else if (inFlight && answer === null) {
@@ -143,13 +176,14 @@ export function useReportQueries(report: Report, given: GivenValues): ReportQuer
     }
 
     if (inFlight) running = true;
-    if (status === "answered" && !result.isPlaceholderData && task !== null && task.endUtc !== null) {
+    if (status === "answered" && held === null && task !== null && task.endUtc !== null) {
       const ended = parseUtc(task.endUtc);
       if (newest === null || ended > newest) newest = ended;
     }
 
-    states.set(plan.query.name, {
+    const next: QueryState = {
       query: plan.query,
+      key: plan.keyText,
       status,
       answer: status === "answered" ? answer : null,
       run: status === "answered" || status === "failed" ? run : null,
@@ -166,7 +200,23 @@ export function useReportQueries(report: Report, given: GivenValues): ReportQuer
         setCancelled((current) => new Set(current).add(plan.keyText));
         void client.cancelQueries({ queryKey: plan.key, exact: true });
       },
-    });
+    };
+    const before = kept.get(plan.query.name);
+    const state = before !== undefined && sameState(before, next) ? before : next;
+    if (state !== before) {
+      nowKept = new Map(nowKept).set(plan.query.name, state);
+    }
+
+    states.set(plan.query.name, state);
+  }
+
+  // Both are derived from the answers that have arrived, so they are settled while rendering, not after.
+  if (nowShown !== shown) {
+    setShown(nowShown);
+  }
+
+  if (nowKept !== kept) {
+    setKept(nowKept);
   }
 
   const refresh = useCallback(() => {

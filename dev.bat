@@ -160,7 +160,7 @@ if errorlevel 1 (
     echo [X] The command line did not build. Fix the build above and start dev.bat again.
     exit /b 1
 )
-set "_cli=%_root%osdu\hosts\SqlFlow.Delivery.Cli.Host\bin\Debug\net9.0\SqlFlow.Delivery.Cli.Host.exe"
+set "_cli=%_root%osdu\hosts\SqlFlow.Delivery.Cli.Host\bin\Debug\net9.0\sqlflow.exe"
 
 REM --- Stop whatever the last run left behind ---
 REM A control plane from an earlier run keeps its DLL open, so the 'dotnet run' below fails its build

@@ -18,7 +18,7 @@ function touch(path: string): void {
 touch(join(root, 'sqlflow', 'tools', 'target', 'debug', 'sqlflow-lsp.exe'));
 touch(join(root, 'osdu', 'hosts', 'osdu-delivery-mcp', 'target', 'release', 'osdu-delivery-mcp.exe'));
 touch(join(root, 'osdu', 'hosts', 'osdu-delivery-mcp', 'target', 'debug', 'osdu-delivery-mcp.exe'));
-touch(join(root, 'osdu', 'hosts', 'osdu-delivery-vscode', 'publish', 'cli', 'SqlFlow.Delivery.Cli.Host.exe'));
+touch(join(root, 'osdu', 'hosts', 'osdu-delivery-vscode', 'publish', 'cli', 'sqlflow.exe'));
 
 test('a package takes release builds only, so a debug build left behind is never shipped', () => {
     const programs = shippedPrograms({ production: true, platform: 'win32', root, cargoTargetDir: '' });
@@ -29,7 +29,7 @@ test('a package takes release builds only, so a debug build left behind is never
     ]);
     assert.equal(programs[0].built, undefined);
     assert.equal(programs[1].built, join(root, 'osdu', 'hosts', 'osdu-delivery-mcp', 'target', 'release', 'osdu-delivery-mcp.exe'));
-    assert.equal(programs[2].built, join(root, 'osdu', 'hosts', 'osdu-delivery-vscode', 'publish', 'cli', 'SqlFlow.Delivery.Cli.Host.exe'));
+    assert.equal(programs[2].built, join(root, 'osdu', 'hosts', 'osdu-delivery-vscode', 'publish', 'cli', 'sqlflow.exe'));
 });
 
 test('a checkout runs a debug build when it has no release one', () => {

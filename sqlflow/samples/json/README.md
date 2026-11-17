@@ -13,7 +13,7 @@ SQL UNNEST style). Nested keys flatten with a separator (`address.city` becomes 
 
 ```
 $env:SQLFlowSinkConStr = "Server=localhost,1433;Database=TestDB;User ID=...;Password=...;TrustServerCertificate=True"
-dotnet run --project src/SqlFlow.Cli -- run samples/json/json-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/json/json-basic.flow.yaml
 ```
 
 To author a config against your own files, explore their structure first. Two commands help:
@@ -21,12 +21,12 @@ To author a config against your own files, explore their structure first. Two co
 ```
 # Point straight at a file or folder - no pipeline YAML needed - to list every JSONPath in it,
 # including the object/array container paths you target with rootPath / jsonPaths / excludePaths.
-dotnet run --project src/SqlFlow.Cli -- paths data/jsn/product.json
-dotnet run --project src/SqlFlow.Cli -- paths data/jsn/cia-factbook -r --values   # recurse a folder; print column paths only
+dotnet run --project src/SqlFlow.Cli.Host -- paths data/jsn/product.json
+dotnet run --project src/SqlFlow.Cli.Host -- paths data/jsn/cia-factbook -r --values   # recurse a folder; print column paths only
 
 # Against a pipeline, report the columns the flatten will produce, schema drift across files,
 # and a starter source.options block to paste in.
-dotnet run --project src/SqlFlow.Cli -- discover samples/json/json-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- discover samples/json/json-basic.flow.yaml
 ```
 
 `paths` shows each path's kind (value / object / array), the column a value would become, how many
@@ -39,12 +39,12 @@ with the resolved column schema, name collisions fixed (so it is lossless), and 
 typed as `nvarchar(max)`:
 
 ```
-dotnet run --project src/SqlFlow.Cli -- flatten data/jsn/product.json -o product.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- flatten data/jsn/product.json -o product.flow.yaml
 # fill in target.connection (or use the ${env:SQLFlowSinkConStr} default), then:
-dotnet run --project src/SqlFlow.Cli -- run product.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run product.flow.yaml
 
 # or dry-run the actual flattened rows as CSV (no database needed):
-dotnet run --project src/SqlFlow.Cli -- flatten data/jsn/product.json --data --max-records 20
+dotnet run --project src/SqlFlow.Cli.Host -- flatten data/jsn/product.json --data --max-records 20
 ```
 
 `flatten` accepts the same rules as inline options so you can shape the formula: `--root`, `--include`,

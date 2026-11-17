@@ -1623,11 +1623,30 @@ fn cli_beside_this_program() -> Option<String> {
 
 /// How an assistant scripts with the command line, carried on the answer rather than only in the instructions, since a
 /// client may cut those short.
-const CLI_CONVENTIONS: &str = "It signs in with this server's own sign-in, per control plane, so a script needs no token. \
-Add --json for an answer to read rather than a person's text; get_doc_by_cli_command gives a verb's page. Run a verb that \
-writes (run, trigger, cancel, or anything else that changes the estate) only when the person asked for that action. \
-`preview` and `values` print row values, which reach you and your model provider, so run those only when the person asks \
-for them too.";
+const CLI_CONVENTIONS: &str = "Run it in your shell, from the working copy's folder. Add --json for an answer to read rather than a person's text; get_doc_by_cli_command gives a verb's reference page. Run a verb that writes (trigger, sync, cancel, or anything else that changes the estate) only when the person asked for that action. A verb that prints row values (preview, values) puts them before you and your model provider, so run it only when the person asks for it too.";
+
+/// SQLFlow's own verbs, as `get_environment` shows them: a command as it is typed, and what it does. A module's follow.
+const CLI_USES: &[(&str, &str)] = &[
+    ("sqlflow --help", "every verb with its options, the module's among them"),
+    ("sqlflow validate .", "every document of the working copy against the language, offline"),
+    ("sqlflow whoami", "who the sign-in is, with the role and scopes the control plane gave it"),
+    ("sqlflow repos list", "the repositories the estate syncs, and where each stands"),
+    ("sqlflow repos sync <name>", "syncs a repository now (writes: only when asked)"),
+    ("sqlflow pipelines list --repo <name>", "the flows a repository holds"),
+    ("sqlflow trigger --repo <name> --flow <flow> --follow", "runs a flow and follows it to its end (writes: only when asked)"),
+    ("sqlflow runs list --flow <flow> --latest", "a flow's latest runs"),
+    ("sqlflow runs show <runId> --files --statements", "one run: its files, its statements and how each went"),
+    ("sqlflow runs trace <runId>", "a run's trace, as it was written"),
+    ("sqlflow search <term> --flows", "finds flows, objects and columns by name"),
+];
+
+/// Whether two paths name one program: the same file once each is resolved, or the same text when one cannot be.
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
 
 /// Runs the `sqlflow` CLI with the given arguments and returns its stdout on success.
 /// The child is spawned on a blocking thread (the workspace tokio build omits the
@@ -3105,23 +3124,71 @@ governance decision, so this needs the 'admin' scope, and it decides nothing."
     }
 
     #[tool(
-        description = "The `sqlflow` command line on this machine: where it is, and how to script with it. Use it when a \
-script does the job better than a tool: checking every file of a working copy (`validate .`), a flow's preflight \
-(`check`), or steps run in a row. Returns its path, or how to get it."
+        description = "Where this assistant works, and the `sqlflow` command line it can script with: the control plane this server reaches and whether a sign-in is held, the command line's path and the exact way to call it here, which control plane it reaches, and its verbs with what each does. Call it before doing by script what tools would do call by call: checking a working copy, a flow's preflight, triggering and following a run, reading a record's history."
     )]
-    async fn get_cli(&self, Parameters(_): Parameters<EmptyInput>) -> String {
+    async fn get_environment(&self, Parameters(_): Parameters<EmptyInput>) -> String {
+        let control_plane = self.cp.base_url();
+        let mode = match (self.registered, self.has_data_mode) {
+            (Some(mode), _) => format!("registered in {} mode", mode.name()),
+            (None, true) => format!("in {} mode, moved by the person's !data and !exit", self.current_mode(None).name()),
+            (None, false) => "answering about the estate".to_string(),
+        };
         if self.http_mode {
-            return "This server runs as a service, so a command line beside it is not on the person's machine.".to_string();
+            return json_str(&json!({
+                "server": { "runs": "as a service, each call as its caller", "mode": mode, "controlPlane": control_plane },
+                "commandLine": "This server runs as a service, so a command line beside it is not on the person's machine: work through this server's tools.",
+            }));
         }
+        let server = json!({
+            "runs": "on this machine, started by the assistant",
+            "mode": mode,
+            "controlPlane": control_plane,
+            "signedIn": self.cp.has_token(),
+        });
+        let paths = || std::env::var_os("PATH").map(|value| std::env::split_paths(&value).collect::<Vec<_>>()).unwrap_or_default();
         let command = sqlflow_cli_command();
-        let on_path = std::env::var_os("PATH").map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>()).unwrap_or_default();
-        match resolve_command(&command, on_path.into_iter()) {
-            Some(path) => json_str(&json!({ "path": path, "conventions": CLI_CONVENTIONS })),
-            None => format!(
-                "Error: the `sqlflow` command line was not found (looked for '{command}'). Install the editor's extension, \
-                 which carries it, or set SQLFLOW_CLI to the full path of the executable."
+        let Some(path) = resolve_command(&command, paths().into_iter()) else {
+            return json_str(&json!({
+                "server": server,
+                "commandLine": format!(
+                    "Not found (looked for '{command}'). The editor's extension carries it and, once the person signs in,                      puts it on their PATH; else set SQLFLOW_CLI to the full path of the executable."
+                ),
+            }));
+        };
+        // Called by its name where that name finds this very program; else by its path, which a shell takes quoted.
+        let by_name = resolve_command("sqlflow", paths().into_iter())
+            .is_some_and(|named| same_file(std::path::Path::new(&named), std::path::Path::new(&path)));
+        let call = if by_name { "sqlflow".to_string() } else { format!("\"{path}\"") };
+        // What a sandboxed shell has to be allowed, by path: the command line's folder, and the sign-in it reads and renews.
+        let folder = std::path::Path::new(&path).parent().map(|folder| folder.display().to_string()).unwrap_or_default();
+        let sandbox = match crate::config::SharedCredentials::located() {
+            Some(file) => format!(
+                "A sandboxed shell needs read and execute on {folder} and read and write on {}, the sign-in the command \
+                 line shares; without the second it runs signed out.",
+                file.path().display()
             ),
-        }
+            None => format!("A sandboxed shell needs read and execute on {folder}."),
+        };
+        let uses: Vec<Value> = CLI_USES
+            .iter()
+            .map(|(command, does)| (command.to_string(), does.to_string()))
+            .chain(self.modules.cli_uses().iter().map(|cli_use| (cli_use.command.clone(), cli_use.does.clone())))
+            .map(|(command, does)| json!({ "command": command.replacen("sqlflow", &call, 1), "does": does }))
+            .collect();
+        json_str(&json!({
+            "server": server,
+            "commandLine": {
+                "path": path,
+                "call": call,
+                "controlPlane": format!(
+                    "A verb that reaches a control plane goes to SQLFLOW_URL when the shell has it, else to the one control                      plane the shared sign-in holds. Add --url {control_plane} to reach this server's control plane whatever                      the shell holds."
+                ),
+                "signIn": "This server's own, per control plane: no login and no token in a command.",
+                "sandbox": sandbox,
+                "uses": uses,
+                "conventions": CLI_CONVENTIONS,
+            },
+        }))
     }
 
     #[tool(description = "Get the dashboard summary rollup (repos, pipelines, runs, health).")]
@@ -4731,8 +4798,9 @@ OFFLINE (always available):
   For ANY question about a SQLFlow CLI command, a `.flow.yaml` key, a source type, or a concept,
   search the docs FIRST and cite the page id; do not answer from memory.
 - Flow language: validate_flow (parse + census diagnostics), list_flow_kinds, list_flow_keys, describe_flow_key.
-- Scripting: get_cli says where the `sqlflow` command line is on this machine and how to use it, for what a script does
-  better than a tool. It shares this server's sign-in.
+- Scripting: the `sqlflow` command line is usually on this machine, signed in as this server is. Call get_environment
+  before work a script does better than tools call by call (a working copy checked, a flow's preflight, a run triggered
+  and followed, a record's history): it says how to call it here, which control plane it reaches, and its verbs.
   Before returning any `.flow.yaml` you authored or edited, run validate_flow and fix what it reports.
 ";
 

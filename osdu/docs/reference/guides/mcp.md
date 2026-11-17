@@ -243,7 +243,8 @@ osdu/hosts/osdu-delivery-mcp/target/release/osdu-delivery-mcp install claude
 ```
 
 `install` also prints a registration for `cursor`, `vscode` and `codex`. [The VS Code extension](vscode.md) holds the
-server already: it registers it with the editor's chat, and connects Claude Code, Cursor and Codex from a command.
+server already: it registers it with the editor's chat, registers it with Claude Code when you sign in, and connects
+Cursor and Codex from a command.
 
 An editor's session lists every tool, about 110 of them, since an editor keeps one session and does not refresh a
 changed list in time; GitHub Copilot then holds most of them back, and the model spends steps finding the one a

@@ -836,3 +836,13 @@ had drifted from their originals, and the extension as rebuilt: the GUI's hosted
 and the mapping preview that reads its file.
 
 Added decision 0060; amended decision 0039 (what of it the pages replaced); updated `delivery-guide-vscode`.
+
+## [2026-11-17] ingest | Signing in reaches the person's other tools, decision 0039 amended
+
+Source: the owner's requests that the command line be available to Copilot and Claude sessions, that "after we have
+authenticated, all tools should be available", and that the server tell an agent to use the command line and how; their
+choice that signing in registers the server with Claude Code with no further step; and the extension, the server and
+the command line as changed for it.
+
+Amended decision 0039 (signing in reaches the person's other tools; `get_environment` in place of `get_cli`); updated
+`delivery-guide-vscode` and `delivery-guide-mcp`.

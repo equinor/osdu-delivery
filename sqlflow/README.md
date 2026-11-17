@@ -23,10 +23,10 @@ you want in a small YAML file; SQLFlow figures out the SQL.
 export SQLFLOW_DW="Server=localhost;Database=DW;Trusted_Connection=True;TrustServerCertificate=True"
 
 # 2. preview exactly what SQL it would run - changes nothing
-dotnet run --project src/SqlFlow.Cli -- plan samples/quickstart/orders.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- plan samples/quickstart/orders.flow.yaml
 
 # 3. run it
-dotnet run --project src/SqlFlow.Cli -- run samples/quickstart/orders.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/quickstart/orders.flow.yaml
 ```
 
 A pipeline is a YAML file:
@@ -91,7 +91,8 @@ by the catalog database. See
 | `src/SqlFlow.Azure` | Azure auth, ADF/Automation invoke, service principal resolution |
 | `src/SqlFlow.HealthCheck` | ML anomaly-detection engine for health-check flows |
 | `src/SqlFlow.SourceControl` | SMO database scripting to git for source-control flows |
-| `src/SqlFlow.Cli` | The `sqlflow` command-line tool |
+| `src/SqlFlow.Cli` | The command line's verbs, and the `CliHost` a program runs them with |
+| `src/SqlFlow.Cli.Host` | The `sqlflow` command-line tool |
 | `tests/SqlFlow.Core.Tests` | Unit and integration tests |
 
 ## Build & test

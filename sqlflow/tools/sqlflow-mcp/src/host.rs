@@ -182,6 +182,7 @@ impl McpHost {
         let mut rules: Vec<LinkRule> = Vec::new();
         let mut builders = Vec::new();
         let mut instructions = Vec::new();
+        let mut cli_uses = Vec::new();
         let mut names: Vec<String> = Vec::new();
 
         for module in modules {
@@ -209,6 +210,15 @@ impl McpHost {
             if let Some(text) = parts.instructions {
                 instructions.push(text);
             }
+            for cli_use in &parts.cli_uses {
+                anyhow::ensure!(
+                    cli_use.command.starts_with("sqlflow ") && !cli_use.does.trim().is_empty(),
+                    "MCP module '{}' gives the command line use '{}' as one: a use is a command as it is typed, \n                     starting 'sqlflow ', and what it does",
+                    parts.name,
+                    cli_use.command
+                );
+            }
+            cli_uses.extend(parts.cli_uses);
             if let Some(build) = parts.tools {
                 builders.push((parts.name.clone(), build));
             }
@@ -241,6 +251,7 @@ impl McpHost {
         for text in &instructions {
             set.add_instructions(text);
         }
+        set.add_cli_uses(cli_uses);
 
         Ok(Composition {
             docs: Arc::new(docs),
@@ -601,6 +612,25 @@ mod tests {
         assert!(composed.modules.list().is_empty());
         assert_eq!(composed.modules.instructions(), "");
         assert_eq!(composed.docs.len(), DocsIndex::load().len());
+    }
+
+    #[test]
+    fn a_modules_command_line_uses_follow_each_other_in_order() {
+        let first = McpModule::new("probe").cli_uses([("sqlflow probe list", "every probe"), ("sqlflow probe show <id>", "one probe")]);
+        let second = McpModule::new("probe-two").cli_uses([("sqlflow other run", "the other thing")]);
+        let composed = compose(vec![first, second]).expect("both compose");
+        let commands: Vec<&str> = composed.modules.cli_uses().iter().map(|cli_use| cli_use.command.as_str()).collect();
+        assert_eq!(commands, ["sqlflow probe list", "sqlflow probe show <id>", "sqlflow other run"]);
+        assert!(compose(Vec::new()).expect("no modules compose").modules.cli_uses().is_empty());
+    }
+
+    #[test]
+    fn a_command_line_use_that_is_not_one_is_refused_naming_the_module() {
+        for (command, does) in [("probe list", "every probe"), ("sqlflowprobe", "every probe"), ("sqlflow probe list", "  ")] {
+            let refused = refusal(vec![McpModule::new("probe").cli_uses([(command, does)])]);
+            assert!(refused.contains("MCP module 'probe'"), "{command}: {refused}");
+            assert!(refused.contains("starting 'sqlflow '"), "{command}: {refused}");
+        }
     }
 
     #[test]

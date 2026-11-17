@@ -4,13 +4,13 @@ One runnable example per CSV use case. Each `*.flow.yaml` is a complete pipeline
 
 ```bash
 export SQLFlowSinkConStr="Server=localhost,1433;Database=TestDB;User ID=...;Password=...;TrustServerCertificate=True"
-dotnet run --project src/SqlFlow.Cli -- run samples/csv/csv-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/csv/csv-basic.flow.yaml
 ```
 
 `plan` first to see the exact SQL without touching the database:
 
 ```bash
-dotnet run --project src/SqlFlow.Cli -- plan samples/csv/csv-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- plan samples/csv/csv-basic.flow.yaml
 ```
 
 These same files are executed against a sink database by the integration test

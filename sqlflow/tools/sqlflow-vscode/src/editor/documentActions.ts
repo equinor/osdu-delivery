@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { DocumentIndex, IndexedDocument } from '../documents/documentIndex';
+import { neverRunKind, REPORT } from '../documents/recognition';
 import { DocumentProblem, Estate } from '../mcp/estate';
 import { ago } from '../time';
 
@@ -159,7 +160,10 @@ export class DocumentLenses implements vscode.CodeLensProvider {
                 commands.push({ title: 'Not synced', command: 'sqlflow.refreshCatalog' });
                 return commands;
             }
-            const [run] = await this.estate.runs({ pipelineId: pipeline.id, pageSize: 1 });
+            // A document that is never run as a flow has no run to show: a report leads to its own page instead, where
+            // its queries are run and drawn.
+            const neverRun = neverRunKind(document.flowType);
+            const [run] = neverRun === undefined ? await this.estate.runs({ pipelineId: pipeline.id, pageSize: 1 }) : [];
             if (run) {
                 commands.push({
                     title: `Last run: ${run.status} ${ago(run.endUtc ?? run.startUtc ?? run.writtenUtc)}`,
@@ -168,7 +172,11 @@ export class DocumentLenses implements vscode.CodeLensProvider {
                 });
             }
             commands.push({ title: 'Compare with Synced', command: 'sqlflow.compareWithSynced', arguments: [document.uri] });
-            commands.push({ title: '$(preview) Flow Page', command: 'sqlflow.openPipeline', arguments: [document.uri] });
+            commands.push({
+                title: neverRun === REPORT ? '$(graph) Report Page' : '$(preview) Flow Page',
+                command: 'sqlflow.openPipeline',
+                arguments: [document.uri],
+            });
         } catch {
             return commands;
         }

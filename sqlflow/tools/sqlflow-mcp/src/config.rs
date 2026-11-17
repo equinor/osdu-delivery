@@ -176,6 +176,11 @@ impl SharedCredentials {
         SharedCredentials { path }
     }
 
+    /// The file's path.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
     /// When the file last changed, so a server reads it only when another client has written it.
     pub fn stamp(&self) -> Option<std::time::SystemTime> {
         std::fs::metadata(&self.path).and_then(|m| m.modified()).ok()
@@ -268,12 +273,15 @@ pub fn credential_key(url: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateStore {
     prefix: String,
+    /// The folder in place of `~/.sqlflow/`, which only a test names, so a test never writes the person's own files.
+    folder: Option<PathBuf>,
 }
 
 impl Default for StateStore {
     fn default() -> Self {
         StateStore {
             prefix: DEFAULT_STATE_PREFIX.to_string(),
+            folder: None,
         }
     }
 }
@@ -296,19 +304,35 @@ impl StateStore {
         }
         Ok(StateStore {
             prefix: prefix.to_string(),
+            folder: None,
         })
+    }
+
+    /// A store whose files are in `folder`, for a test.
+    #[cfg(test)]
+    pub(crate) fn in_folder(prefix: &str, folder: PathBuf) -> Self {
+        StateStore { prefix: prefix.to_string(), folder: Some(folder) }
     }
 
     pub fn prefix(&self) -> &str {
         &self.prefix
     }
 
+    fn folder(&self) -> Option<PathBuf> {
+        self.folder.clone().or_else(sqlflow_dir)
+    }
+
     fn config_path(&self) -> Option<PathBuf> {
-        sqlflow_dir().map(|d| d.join(format!("{}-config.json", self.prefix)))
+        self.folder().map(|d| d.join(format!("{}-config.json", self.prefix)))
     }
 
     fn token_path(&self) -> Option<PathBuf> {
-        sqlflow_dir().map(|d| d.join(format!("{}-token.json", self.prefix)))
+        self.folder().map(|d| d.join(format!("{}-token.json", self.prefix)))
+    }
+
+    /// When the config was last written, by this server or another of the same prefix; None while there is none.
+    pub fn config_stamp(&self) -> Option<std::time::SystemTime> {
+        std::fs::metadata(self.config_path()?).and_then(|m| m.modified()).ok()
     }
 
     pub fn load_config(&self) -> McpConfig {

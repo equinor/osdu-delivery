@@ -35,7 +35,7 @@ Because Parquet files are binary, this folder ships flow definitions but no comm
 
 ```
 $env:SQLFlowSinkConStr = "Server=localhost,1433;Database=TestDB;User ID=...;Password=...;TrustServerCertificate=True"
-dotnet run --project src/SqlFlow.Cli -- run samples/parquet/parquet-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/parquet/parquet-basic.flow.yaml
 ```
 
 The columns come out strongly typed straight from the Parquet schema, so an `infer` pass is not needed.

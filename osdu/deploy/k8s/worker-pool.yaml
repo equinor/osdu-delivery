@@ -112,8 +112,9 @@ spec:
   # An idle pool is compute paid for nothing, so it goes to zero 60 seconds after the target last asked for a
   # replica (KEDA waits 300 by default): about what starting a node costs, so a shorter wait would stop nodes only to
   # start them again. The target reads zero only when nothing is queued that could start and nothing runs, and the
-  # scaler reads it four times inside the cool-down, so a job in flight never loses its nodes to it. A pool that is
-  # only partly idle shrinks on the autoscaler's own five minute window.
+  # scaler reads it four times inside the cool-down, so a job in flight never loses its nodes to it. Nor does a pool
+  # shrink while any of its workers runs work: the target holds every worker until the pool's runs have ended, since
+  # the autoscaler picks which pod a lower target stops. After that it shrinks on the autoscaler's own five minutes.
   cooldownPeriod: 60
   pollingInterval: 15
   triggers:

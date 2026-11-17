@@ -2,8 +2,10 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- The program people and assistants run is sqlflow, as every document names it, built and published alike. -->
+    <AssemblyName>sqlflow</AssemblyName>
     <RootNamespace>SqlFlow.Delivery.Cli.Host</RootNamespace>
-    <Description>The OSDU Delivery command line: SQLFlow's CLI composed with the OSDU module's verbs and flow kinds. Published as the product's sqlflow binary.</Description>
+    <Description>The OSDU Delivery command line, sqlflow: SQLFlow's CLI composed with the OSDU module's verbs and flow kinds.</Description>
   </PropertyGroup>
 
   <ItemGroup>

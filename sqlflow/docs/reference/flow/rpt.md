@@ -191,6 +191,8 @@ Because a parameter nobody set is NULL, write an optional filter so that NULL ke
 WHERE (@source IS NULL OR Source = @source)
 ```
 
+Where a parameter's control is drawn follows from which queries bind it: in the page's header when several do, on the tile of the one query that does otherwise ([on the page](../concepts/reports.md#on-the-page)).
+
 A `default` narrows the answer from the start, and a person may still clear it:
 
 ```yaml
@@ -410,7 +412,7 @@ queries:
 | Part | Effect |
 | --- | --- |
 | `sources` with `show: none` | Runs to fill the choices of `source`, and has no tile. |
-| `totals` with `show: figure` | One large figure per column of its one row. `columns` labels two of them and writes the count with digit grouping. |
+| `totals` with `show: figure` | A strip of figures, one per column of its one row. `columns` labels two of them and writes the count with digit grouping. |
 | `by_source` with two views | One answer shown twice: as bars and as a table. Its statement does not bind `source`, so the bars stay whole while a source is chosen. A click on a bar sets `source` to that bar's `Source`. |
 | `per_day` | Binds both parameters, so it runs again when either changes. |
 | `section:` | `totals` and `by_source` share the heading **Overview**, and `per_day` starts **Arrivals**. |

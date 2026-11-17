@@ -203,7 +203,7 @@ load:
 Run it with the CLI (src/SqlFlow.Cli/Program.cs, `run` command):
 
 ```bash
-dotnet run --project src/SqlFlow.Cli -- run samples/parquet/parquet-folder.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/parquet/parquet-folder.flow.yaml
 ```
 
 ## See also

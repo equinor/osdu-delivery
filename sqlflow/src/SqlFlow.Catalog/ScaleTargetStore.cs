@@ -7,8 +7,9 @@ namespace SqlFlow.Catalog;
 /// page and an autoscaler reading the scale-target endpoint see the same arithmetic: <see cref="Replicas"/> is the
 /// greatest of the demanded replicas (one for each of the <see cref="EligibleWholeNodeRuns"/> that take a node to
 /// themselves, the rest of <see cref="EligibleQueuedRuns"/> divided by <see cref="RunSlotsPerNode"/>, rounded up, plus
-/// <see cref="BusyNodes"/>), the always-on floor <see cref="MinReplicas"/>, and the manual override while its window is
-/// open. <see cref="Pool"/> is the empty string for the default (untargeted) pool.</summary>
+/// <see cref="BusyNodes"/>), the nodes the pool holds while it runs work (<see cref="HeldNodes"/>), the always-on floor
+/// <see cref="MinReplicas"/>, and the manual override while its window is open. <see cref="Pool"/> is the empty string
+/// for the default (untargeted) pool.</summary>
 public sealed record ScaleTarget(
     string Pool,
     int Replicas,
@@ -19,7 +20,8 @@ public sealed record ScaleTarget(
     int MinReplicas,
     int ManualReplicas,
     bool ManualActive,
-    int EligibleWholeNodeRuns = 0);
+    int EligibleWholeNodeRuns = 0,
+    int HeldNodes = 0);
 
 /// <summary>
 /// The one definition of a pool's replica target, the number an autoscaler holds the pool's worker deployment at.
@@ -31,12 +33,19 @@ public sealed record ScaleTarget(
 /// the pool's desired row supplies the floor and the override.
 /// <para>Demand is <c>ceil(eligible / slots) + busy nodes</c>, where a run that takes a node to itself counts as a whole
 /// node (<see cref="EligibleQueuedRuns.Nodes"/>). Queued runs ask for capacity to start; busy nodes hold
-/// the capacity they occupy, so scale-in only ever reclaims idle replicas' worth of target: a queued-only count
-/// reads zero the moment the fleet takes a batch, which would let the platform scale in mid-execution and kill
-/// replicas carrying live runs. The queued term is divided by what one node executes at once, because a replica is
-/// not worth one run: asking for one replica per queued run spawned four times the fleet a schedule wave needed,
-/// and the surplus found nothing left to take. Busy nodes are not divided; each holds one replica's worth of
-/// occupied capacity.</para>
+/// the capacity they occupy: a queued-only count reads zero the moment the fleet takes a batch. The queued term is
+/// divided by what one node executes at once, because a replica is not worth one run: asking for one replica per
+/// queued run spawned four times the fleet a schedule wave needed, and the surplus found nothing left to take. Busy
+/// nodes are not divided; each holds one replica's worth of occupied capacity.</para>
+/// <para>While any replica of the pool holds a run, the target never falls below the replicas the pool has: every node
+/// online, and every node the journal says holds a run, the control plane's own node apart, since no autoscaler runs
+/// it (<see cref="ScaleTarget.HeldNodes"/>). The autoscaler, not the
+/// control plane, picks which replica a scale-in removes, and it picks blindly: a target lowered by one when one node
+/// went idle stops whichever replica the platform chooses, as likely one in the middle of a run as the idle one. A
+/// stopped node drains, but a run longer than the drain is severed and executed again from its start on another
+/// node. So nothing shrinks while anything runs; once the pool's runs have ended, the target falls to what is queued,
+/// and the scaler's cool-down takes the pool down from there. Holding idle nodes for the length of the pool's longest
+/// run is the price, paid in idle compute instead of in severed runs.</para>
 /// <para>A node is busy when it is online and reported runs on its last heartbeat, or when the journal says it holds
 /// a running run, whatever its heartbeat says. The heartbeat alone is behind the journal twice: for the few seconds
 /// between a hand-out and the node's next flushed poll, and for as long as the control plane was away (nobody
@@ -51,9 +60,13 @@ public static class ScaleTargetStore
 {
     /// <summary>Resolves the target for <paramref name="pool"/> (null or blank is the default pool).
     /// <paramref name="defaultRunSlotsPerNode"/> is what a node executes at once when no node of the pool has yet
-    /// reported its own capacity (a pool at zero on a fresh estate): the node runtime's default.</summary>
+    /// reported its own capacity (a pool at zero on a fresh estate): the node runtime's default.
+    /// <paramref name="builtInNode"/> names the control plane's own node when it serves the pool: no autoscaler runs it,
+    /// so it is not one of the nodes the pool holds while it runs work, or the target would ask for a replica in its
+    /// place, then hold that one too, and climb with every replica that came up.</summary>
     public static async Task<ScaleTarget> ResolveAsync(
-        CatalogDbContext catalog, string? pool, int defaultRunSlotsPerNode, DateTime nowUtc, CancellationToken ct = default)
+        CatalogDbContext catalog, string? pool, int defaultRunSlotsPerNode, DateTime nowUtc, string? builtInNode = null,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentOutOfRangeException.ThrowIfLessThan(defaultRunSlotsPerNode, 1);
@@ -106,6 +119,14 @@ public static class ScaleTargetStore
 
         var busy = busyNodes.Count;
 
+        // While a replica runs anything, every replica the pool has stays: the platform would choose which one a lower
+        // target stops, and it cannot tell a busy one from an idle one. The control plane's own node is not a replica,
+        // so what it runs holds nothing and it is not held.
+        bool IsReplica(string name) => !string.Equals(name, builtInNode, StringComparison.Ordinal);
+        var held = busyNodes.Any(IsReplica)
+            ? online.Select(n => n.Name).Union(busyNodes, StringComparer.Ordinal).Count(IsReplica)
+            : 0;
+
         // What one node of the pool executes at once: what the online nodes report, else what the pool's last
         // known nodes reported (a pool scaled to zero remembers its shape), else the runtime default. Every
         // replica of a pool's deployment is configured alike, so the largest report is the deployment's value and
@@ -116,7 +137,7 @@ public static class ScaleTargetStore
             slots = defaultRunSlotsPerNode;
         }
 
-        var demanded = checked(eligible.Nodes(slots) + busy);
+        var demanded = Math.Max(checked(eligible.Nodes(slots) + busy), held);
         var desired = await WorkerPoolStore.GetDesiredAsync(catalog, key, ct).ConfigureAwait(false);
         var manualActive = desired?.ManualUntilUtc is { } until && until > nowUtc;
         return new ScaleTarget(
@@ -129,6 +150,7 @@ public static class ScaleTargetStore
             desired?.MinReplicas ?? 0,
             desired?.ManualReplicas ?? 0,
             manualActive,
-            eligible.WholeNodeRuns);
+            eligible.WholeNodeRuns,
+            held);
     }
 }

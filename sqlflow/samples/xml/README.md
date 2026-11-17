@@ -17,14 +17,14 @@ to select a different element, or `.` to treat the root element itself as one re
 
 ```
 $env:SQLFlowSinkConStr = "Server=localhost,1433;Database=TestDB;User ID=...;Password=...;TrustServerCertificate=True"
-dotnet run --project src/SqlFlow.Cli -- run samples/xml/xml-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/xml/xml-basic.flow.yaml
 ```
 
 Explore a file's structure or generate a formula (these work for JSON and XML alike):
 
 ```
-dotnet run --project src/SqlFlow.Cli -- paths   samples/xml/data/orders.xml
-dotnet run --project src/SqlFlow.Cli -- flatten samples/xml/data/purchase-orders.xml --explode /line -o po.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- paths   samples/xml/data/orders.xml
+dotnet run --project src/SqlFlow.Cli.Host -- flatten samples/xml/data/purchase-orders.xml --explode /line -o po.flow.yaml
 ```
 
 ## The samples

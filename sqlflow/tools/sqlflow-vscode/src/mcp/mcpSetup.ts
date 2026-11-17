@@ -1,15 +1,16 @@
 import { execFile } from 'child_process';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import * as vscode from 'vscode';
+import { stableCopy, upToDateCopy } from '../userBin';
+import { claudeHere } from './claudeCode';
 import { McpServer, serverEnvironment } from './mcpServer';
 
 const run = promisify(execFile);
 
 /** The two ways an assistant's session can be registered: questions about the estate, and questions answered from data. */
-const MODES = [
+export const MODES = [
     { id: 'estate', label: 'estate', detail: 'Flows, runs, lineage, the catalog and the docs.' },
     { id: 'data', label: 'data', detail: 'Questions answered from the data an approved AI context opens.' },
 ];
@@ -39,10 +40,13 @@ export function registerWithEditor(registration: McpRegistration, mcp: McpServer
     const provider = vscode.lm.registerMcpServerDefinitionProvider(registration.providerId, {
         onDidChangeMcpServerDefinitions: emitter.event,
         provideMcpServerDefinitions: () => {
-            const binary = mcp.binary();
-            if (!binary) {
+            const bundled = mcp.binary();
+            if (!bundled) {
                 return [];
             }
+            // The copy a sign-in keeps in ~/.sqlflow/bin, while it is up to date: the command line the server points an
+            // assistant to is then the one beside it there, which a sandboxed shell can be allowed once.
+            const binary = upToDateCopy(bundled) ?? bundled;
             return MODES.map((mode) => new vscode.McpStdioServerDefinition(
                 `${registration.product} (${mode.label})`,
                 binary,
@@ -56,42 +60,15 @@ export function registerWithEditor(registration: McpRegistration, mcp: McpServer
 }
 
 /**
- * The server at a path that outlives the extension's own: the extension's folder carries its version, so an assistant
- * registered with that path would break on the next update. The copy goes to `~/.sqlflow/bin`, beside the sign-in. A
- * running copy cannot be overwritten on Windows but can be renamed, so an update moves it aside, and what was moved aside
- * is cleared once nothing runs it.
- */
-function stableCopy(binary: string): string {
-    const folder = path.join(os.homedir(), '.sqlflow', 'bin');
-    const target = path.join(folder, path.basename(binary));
-    fs.mkdirSync(folder, { recursive: true });
-
-    const current = fs.statSync(binary);
-    const held = fs.existsSync(target) ? fs.statSync(target) : undefined;
-    if (held && held.size === current.size && held.mtimeMs >= current.mtimeMs) {
-        return target;
-    }
-    if (held) {
-        fs.renameSync(target, `${target}.${Date.now()}.old`);
-    }
-    fs.copyFileSync(binary, target);
-    for (const name of fs.readdirSync(folder).filter((file) => file.endsWith('.old'))) {
-        try {
-            fs.rmSync(path.join(folder, name), { force: true, maxRetries: 0 });
-        } catch {
-            // Still running somewhere: the next copy clears it.
-            continue;
-        }
-    }
-    return target;
-}
-
-/**
  * Connects an assistant that runs outside VS Code's own (Claude Code, Cursor, Codex). The registration is the program's
- * own `install` answer, so there is one definition of it, and it is shown or run in a terminal at the person's choice:
- * this never edits another tool's configuration behind them.
+ * own `install` answer, so there is one definition of it. Claude Code is registered through its own command line, as a
+ * sign-in registers it (`registerWithClaudeCode`); for Cursor and Codex the answer is shown for the person to add.
  */
-export async function connectAssistant(registration: McpRegistration, mcp: McpServer): Promise<void> {
+export async function connectAssistant(
+    registration: McpRegistration,
+    mcp: McpServer,
+    registerWithClaudeCode: () => Promise<void>
+): Promise<void> {
     const binary = mcp.binary();
     if (!binary) {
         void vscode.window.showErrorMessage(`${registration.program} was not found. Install the packaged extension, or set sqlflow.mcpBinaryPath.`);
@@ -112,6 +89,10 @@ export async function connectAssistant(registration: McpRegistration, mcp: McpSe
     }
     if (client.id === 'vscode') {
         void vscode.window.showInformationMessage(`${registration.product}: connected. Turn on "${registration.product} (estate)" or "(data)" among the chat's tools.`);
+        return;
+    }
+    if (client.id === 'claude' && claudeHere() !== undefined) {
+        await registerWithClaudeCode();
         return;
     }
 

@@ -98,7 +98,7 @@ const SQLFLOW_OFFERED: &[&str] = &[
     "prepare_query", "run_query", "auto_run_trusted_match",
     // The conversation's mode: which one it is in, and switching it on the person's own command, which the model relays.
     "get_mode", "start_data_mode", "end_data_mode",
-    "list_schedules", "get_schedule", "get_schedule_plan", "list_nodes", "list_datasources", "list_ai_contexts", "get_cli", "sync_repo_source", "run_schedule", "list_repo_sources", "summary",
+    "list_schedules", "get_schedule", "get_schedule_plan", "list_nodes", "list_datasources", "list_ai_contexts", "get_environment", "sync_repo_source", "run_schedule", "list_repo_sources", "summary",
     "insights_flows", "insights_attention", "insights_recommendations", "insights_steps", "detect_stream_anomalies",
     "trigger_run", "cancel_run", "propose_pipelines",
 ];

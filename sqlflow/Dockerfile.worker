@@ -22,7 +22,7 @@ WORKDIR /src
 COPY . .
 # Framework-dependent publish; building inside the linux SDK image restores the linux-x64 native assets the
 # engine carries (LibGit2Sharp for materialization, the DuckDB reader), so they ship under runtimes/linux-x64.
-RUN dotnet publish src/SqlFlow.Cli/SqlFlow.Cli.csproj \
+RUN dotnet publish src/SqlFlow.Cli.Host/SqlFlow.Cli.Host.csproj \
     -c Release -o /app /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/runtime:9.0 AS runtime

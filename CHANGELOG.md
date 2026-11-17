@@ -17,16 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Signing in to the VS Code extension gives your other tools the command line and the server.** `sqlflow` and the MCP
+  server go to `~/.sqlflow/bin`, at the end of your own PATH, so a Copilot or Claude Code session, a terminal of your own
+  and a script run `sqlflow` signed in as you; and the server is registered with Claude Code for all its sessions. The
+  extension says what it changed, with **Undo**, and two commands do and undo it
+  ([your other tools](osdu/docs/reference/guides/vscode.md#your-other-tools)).
 - **Reports: read-only queries over the data, shown as figures, charts and tables.** A report (`flowType: rpt`) is a
   document in a repository that names a connection and declares queries that only read; the new **Reports** page lists
   them, and a report's own page runs its queries when it is opened and shows each answer as figures, ranked bars,
-  columns, a line, a share of a whole, a matrix or a table, with the report's parameters as filters above the tiles and
-  a click on a bar setting one (the staging area narrowed to one log source, say). Each query runs on a worker as one
+  columns, a line, a share of a whole, a matrix or a table, with the report's parameters as its filters, kept in view
+  in a one-line header, and a click on a bar setting one (the staging area narrowed to one log source, say): the tile
+  that sets a filter names it, and a tile it does not narrow says so. Each query runs on a worker as one
   read-only `SELECT` in a transaction that is always rolled back, taking nothing from the page but typed values; a
   report is never run as a flow, and an assistant run can neither run one nor read its answers
   ([report](sqlflow/docs/reference/flow/rpt.md), [report views](sqlflow/docs/reference/flow/rpt-views.md),
   [how a report runs](sqlflow/docs/reference/concepts/reports.md),
-  [writing a report](sqlflow/docs/reference/guides/write-a-report.md)).
+  [writing a report](sqlflow/docs/reference/guides/write-a-report.md)). The VS Code extension lists and opens them
+  as well ([the extension](osdu/docs/reference/guides/vscode.md)).
 - **Lineage can be followed past the estate, into the steps other systems run.** A lineage description
   (`flowType: lin`) says what a step on another platform reads and writes: the job that fills a drop-off zone, the
   notebook before it, a report that reads a table afterwards. Descriptions chain by the objects they name, reach the
@@ -735,6 +742,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The MCP tool `get_cli` is `get_environment`.** Beside the command line's path it says how to call it where the
+  assistant runs, which control plane it reaches, and its verbs with what each does, the delivery module's among them; the
+  server's instructions send an assistant to it before work a script does better
+  ([the command line](osdu/docs/reference/guides/vscode.md#scripting-with-the-command-line)).
+- **A build's command line is `sqlflow`.** The OSDU Delivery command line builds as `sqlflow`, the name every document
+  gives it, where a build made `SqlFlow.Delivery.Cli.Host` beside SQLFlow's own `sqlflow`, which has none of the delivery
+  verbs; a script that ran `SqlFlow.Delivery.Cli.Host` from a build folder runs `sqlflow` now
+  ([getting started](osdu/docs/reference/guides/getting-started.md)).
 - **A dimension's full load writes only the keys whose content changed.** A key, a record id and a collected text are
   found by their text under a unique index, where they were found by a SHA-256 of it, and a key keeps the hash of its
   objects and of the attribute values read through its record: a build writes only the keys whose hash moved, and lays
@@ -1233,6 +1248,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **Asking `sqlflow` for its usage succeeds.** `sqlflow --help`, `sqlflow -h` and `sqlflow help` print the usage and exit 0,
+  where they exited 1 unless a whole command came with `--help`, which a script or an assistant read as a failure; the
+  usage shown because a command is missing what it needs still exits 1
+  ([getting started](osdu/docs/reference/guides/getting-started.md)).
+- **An autoscaler no longer stops a worker in the middle of a run.** The platform picks which worker a lower replica
+  target stops, and the target fell as soon as some of a pool's work ended: when a split delivery's first parts
+  finished, the platform could stop a worker still delivering another part. That part ran again on another worker, and
+  the records it had queued were held until the flow's next run, saying their work batch was pruned or rewritten. While
+  any worker of a pool runs work, the target now keeps every worker the pool has, and the Nodes page says so (**held
+  while running**); the pool shrinks once its runs have ended
+  ([scale-in](osdu/docs/reference/guides/deployment.md#scale-in-placement-and-the-modules-own-settings)).
+- **A chat's MCP server takes the editor's sign-in rather than asking for its own.** A server started before the
+  extension named the control plane (a Copilot chat's, Claude Code's) kept the address it started with and said no one was
+  signed in; one told another address kept the token it held, for the control plane it was given by. A server now follows
+  the control plane the extension or another server names, and takes the sign-in held for it, or none
+  ([signing in](osdu/docs/reference/guides/vscode.md#signing-in)).
 - **A right-click on a mapping's overview lights what its menu is on.** The light fell back to whatever had been
   clicked before as soon as the pointer moved onto the menu. A right-click on a part of the canvas now picks it, as a
   click does, and a right-click in the YAML keeps the lines its menu is over lit while it is open

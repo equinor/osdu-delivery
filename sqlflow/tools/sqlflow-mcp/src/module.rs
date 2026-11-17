@@ -229,6 +229,14 @@ impl<S: Send + Sync + 'static> ModuleTools for RoutedTools<S> {
 
 type ToolsBuilder = Box<dyn FnOnce(McpContext) -> Arc<dyn ModuleTools> + Send>;
 
+/// A use of the `sqlflow` command line, as `get_environment` shows it to an assistant: a command as it is typed
+/// (`sqlflow check <flow.yaml>`) and, in a few words, what it does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CliUse {
+    pub command: String,
+    pub does: String,
+}
+
 /// A module a host composes into the server. Built with the methods below and handed to
 /// [`McpHost::with_module`](crate::host::McpHost::with_module).
 pub struct McpModule {
@@ -238,6 +246,7 @@ pub struct McpModule {
     docs: Vec<DocPage>,
     link_rules: Vec<LinkRule>,
     census: Vec<String>,
+    cli_uses: Vec<CliUse>,
 }
 
 impl McpModule {
@@ -253,6 +262,7 @@ impl McpModule {
             docs: Vec::new(),
             link_rules: Vec::new(),
             census: Vec::new(),
+            cli_uses: Vec::new(),
         }
     }
 
@@ -305,6 +315,18 @@ impl McpModule {
         self
     }
 
+    /// The verbs the module adds to the `sqlflow` command line, as `get_environment` shows them to an assistant after
+    /// SQLFlow's own: each a command as it is typed, starting `sqlflow `, and what it does. The host checks the form
+    /// when it starts.
+    pub fn cli_uses<C, D>(mut self, uses: impl IntoIterator<Item = (C, D)>) -> Self
+    where
+        C: Into<String>,
+        D: Into<String>,
+    {
+        self.cli_uses.extend(uses.into_iter().map(|(command, does)| CliUse { command: command.into(), does: does.into() }));
+        self
+    }
+
     pub(crate) fn into_parts(self) -> ModuleParts {
         ModuleParts {
             name: self.name,
@@ -313,6 +335,7 @@ impl McpModule {
             docs: self.docs,
             link_rules: self.link_rules,
             census: self.census,
+            cli_uses: self.cli_uses,
         }
     }
 }
@@ -326,6 +349,7 @@ pub(crate) struct ModuleParts {
     pub docs: Vec<DocPage>,
     pub link_rules: Vec<LinkRule>,
     pub census: Vec<String>,
+    pub cli_uses: Vec<CliUse>,
 }
 
 /// Whether `name` is a module name: lowercase letters, digits and hyphens, starting with a letter,
@@ -353,6 +377,8 @@ pub struct ModuleSet {
     withheld: Vec<String>,
     /// How the host's server introduces itself at the top of the instructions; empty for SQLFlow's own.
     introduction: String,
+    /// The modules' uses of the command line, in registration order, shown after SQLFlow's own.
+    cli_uses: Vec<CliUse>,
 }
 
 impl ModuleSet {
@@ -462,5 +488,15 @@ impl ModuleSet {
     /// The modules' instruction sections, each led by a blank line; empty when none wrote any.
     pub fn instructions(&self) -> &str {
         &self.instructions
+    }
+
+    /// Records a module's uses of the command line, after those of the modules before it.
+    pub(crate) fn add_cli_uses(&mut self, uses: Vec<CliUse>) {
+        self.cli_uses.extend(uses);
+    }
+
+    /// The modules' uses of the command line, in the order the modules were added.
+    pub fn cli_uses(&self) -> &[CliUse] {
+        &self.cli_uses
     }
 }

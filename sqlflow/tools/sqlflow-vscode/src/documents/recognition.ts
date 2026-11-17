@@ -87,6 +87,16 @@ export function neverRunKind(flowType: string | undefined): string | undefined {
     return kind !== undefined && NEVER_RUN_KINDS.includes(kind) ? kind : undefined;
 }
 
+/**
+ * The page of the GUI a document's catalog entry opens on, by the kind the catalog lists it under: a report opens on its
+ * own page, where its queries run and are drawn; every other flow on its flow page.
+ */
+export function pagePathOf(pipelineId: string, kind: string | undefined): string {
+    return neverRunKind(kind) === REPORT
+        ? `/reports/${encodeURIComponent(pipelineId)}`
+        : `/pipelines/${encodeURIComponent(pipelineId)}`;
+}
+
 /** The word a person reads for a document's kind: its `flowType`, `documentType` or library. */
 export function kindLabel(document: RecognisedDocument): string {
     switch (document.kind) {

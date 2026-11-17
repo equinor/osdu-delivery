@@ -4,7 +4,7 @@
 
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { DataTable, type Column } from "@/components/DataTable";
-import { KpiCard } from "@/components/KpiCard";
+import { SummaryStrip } from "@/components/SummaryStrip";
 import { TablePager } from "@/components/TablePager";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePagedRows } from "@/hooks/useTablePaging";
@@ -97,19 +97,19 @@ function NoValue() {
 
 // ---- Figures -----------------------------------------------------------------------------------------------------------
 
-/** What one figure shows: the value at headline size, and under it what the headline had no room for. */
+/** What one figure shows: the value, and after it, quieter, what belongs to it but is not the figure itself. */
 function figureText(item: FigureItem): { value: string; caption: string | undefined } {
   const { column, value } = item;
   if (value === null) return { value: "No value", caption: undefined };
 
-  // A date and time is a date at headline size with its time under it; the whole stamp would not fit a tile.
+  // A date and time is its date, with the time of day after it.
   if (column.format === "datetime") {
     const whole = formatValue(value, column) ?? value;
     const [date, time] = whole.split(" ");
     return { value: date, caption: time };
   }
 
-  // A number leads without its unit, which goes under it; a long one is shortened, with the exact figure under it.
+  // A number leads without its unit, which follows it; a long one is shortened, with the exact figure after it.
   const bare = formatValue(value, { ...column, unit: null }) ?? value;
   const numeric = column.format === "integer" || column.format === "number";
   if (numeric && bare.length > 11 && Number.isFinite(Number(value))) {
@@ -119,22 +119,37 @@ function figureText(item: FigureItem): { value: string; caption: string | undefi
   return { value: bare, caption: column.unit ?? undefined };
 }
 
+/** How narrow one figure of a strip may be before the strip takes a second line; a date and its time need more. */
+const FIGURE_MIN_WIDTH = 132;
+const STAMP_MIN_WIDTH = 192;
+
+/**
+ * A query's figures as one strip: a caption over each value, hairlines between them, at the height of a toolbar. A
+ * report leads with its figures, and a row of cards as tall as a chart would push the charts off the first screen.
+ */
 export function FigureView({ items, testId }: { items: readonly FigureItem[]; testId: string }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-3" data-testid={testId}>
-      {items.map((item) => {
+    <SummaryStrip
+      minCellWidth={FIGURE_MIN_WIDTH}
+      fill
+      data-testid={testId}
+      cells={items.map((item) => {
         const text = figureText(item);
-        return (
-          <KpiCard
-            key={item.column.index}
-            label={item.column.label}
-            value={text.value}
-            caption={text.caption}
-            testId={`${testId}-${item.column.index}`}
-          />
-        );
+        return {
+          label: item.column.label,
+          value: (
+            <>
+              <span className="truncate">{text.value}</span>
+              {text.caption !== undefined && (
+                <span className="truncate text-xs font-normal text-muted-foreground">{text.caption}</span>
+              )}
+            </>
+          ),
+          testId: `${testId}-${item.column.index}`,
+          minWidth: item.column.format === "datetime" && item.value !== null ? STAMP_MIN_WIDTH : undefined,
+        };
       })}
-    </div>
+    />
   );
 }
 
@@ -164,7 +179,12 @@ export function BarView({ plan, selecting, testId }: { plan: BarPlan; selecting:
 
   // One row more than the limit is shown as it is: "show all 13" over twelve rows hides one row behind a click.
   const folds = plan.rows.length > plan.top + 1;
-  const rows = folds && !all ? plan.rows.slice(0, plan.top) : plan.rows;
+  const first = folds && !all ? plan.rows.slice(0, plan.top) : plan.rows;
+  // The row in effect is never left behind "Show all": it follows the first ones, so what is chosen is always in view.
+  const chosen = folds && !all && selecting !== null
+    ? plan.rows.slice(plan.top).find((row) => selecting.isSelected(row.raw))
+    : undefined;
+  const rows = chosen === undefined ? first : [...first, chosen];
   const span = plan.max - plan.min || 1;
   const zero = ((0 - plan.min) / span) * 100;
   const anySelected = selecting !== null && rows.some((row) => selecting.isSelected(row.raw));
@@ -185,9 +205,12 @@ export function BarView({ plan, selecting, testId }: { plan: BarPlan; selecting:
   return (
     <div className="flex flex-col gap-2" data-testid={testId}>
       <SeriesLegend series={plan.series} fillOf={fillOf} />
-      <ul className="flex flex-col">
+      {/* Every row, once asked for, scrolls in the room of a dozen, so the tile keeps its place among its neighbours. */}
+      <ul className={cn("flex flex-col", folds && all && "max-h-80 overflow-y-auto pr-1")}>
         {rows.map((row, index) => {
           const selected = selecting?.isSelected(row.raw) === true;
+          // While one row is in effect the others step back: their bars fade and their text goes quiet, still legible.
+          const aside = anySelected && !selected;
           const body = (
             <>
               <span className="truncate text-left text-[13px]" title={row.label}>{row.label}</span>
@@ -195,7 +218,10 @@ export function BarView({ plan, selecting, testId }: { plan: BarPlan; selecting:
                 {plan.stacked
                   ? (
                     // One bar, each series a segment, a hairline of the surface between them.
-                    <span className="flex h-4 gap-[2px]" style={{ width: `${(totals[index] / span) * 100}%` }}>
+                    <span
+                      className={cn("flex h-4 gap-[2px] transition-opacity", aside && "opacity-35")}
+                      style={{ width: `${(totals[index] / span) * 100}%` }}
+                    >
                       {plan.series.map((series, s) => {
                         const value = row.values[s];
                         if (value === null || value <= 0) return null;
@@ -221,7 +247,10 @@ export function BarView({ plan, selecting, testId }: { plan: BarPlan; selecting:
                             <span className="absolute inset-y-[-2px] w-px bg-border" style={{ left: `${zero}%` }} aria-hidden />
                           )}
                           <span
-                            className={cn("absolute inset-y-0", below ? "rounded-l-[4px]" : "rounded-r-[4px]")}
+                            className={cn(
+                              "absolute inset-y-0 transition-opacity", below ? "rounded-l-[4px]" : "rounded-r-[4px]",
+                              aside && "opacity-35",
+                            )}
                             style={{ left: `${below ? zero - width : zero}%`, width: `${width}%`, background: fillOf(series) }}
                           />
                         </span>
@@ -241,9 +270,9 @@ export function BarView({ plan, selecting, testId }: { plan: BarPlan; selecting:
           );
 
           const rowClass = cn(
-            "grid w-full items-center gap-x-3 rounded-md px-2 py-1 transition-opacity",
-            anySelected && !selected && "opacity-45",
-            selected && "bg-accent",
+            "grid w-full items-center gap-x-3 rounded-md px-2 py-1",
+            aside && "text-muted-foreground",
+            selected && "bg-accent font-medium",
           );
           const line = selecting !== null
             ? (
@@ -340,16 +369,20 @@ export function ShareView({ plan, selecting, testId }: { plan: SharePlan; select
           const selected = part.other !== true && selecting?.isSelected(part.raw) === true;
           const body = (
             <>
-              <span className="size-2.5 shrink-0 rounded-sm" style={{ background: fillOf(index) }} aria-hidden />
+              <span
+                className={cn("size-2.5 shrink-0 rounded-sm transition-opacity", anySelected && !selected && "opacity-40")}
+                style={{ background: fillOf(index) }}
+                aria-hidden
+              />
               <span className="min-w-0 flex-1 truncate text-left text-[13px]" title={part.label}>{part.label}</span>
               <span className="shrink-0 text-right font-mono text-xs tabular-nums" style={{ width: `${amountWidth + 1}ch` }}>{amounts[index]}</span>
               <span className="w-[6ch] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">{percent(part.share)}</span>
             </>
           );
           const rowClass = cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-1 transition-opacity",
-            anySelected && !selected && "opacity-45",
-            selected && "bg-accent",
+            "flex w-full items-center gap-2 rounded-md px-2 py-1",
+            anySelected && !selected && "text-muted-foreground",
+            selected && "bg-accent font-medium",
           );
           return (
             <li key={part.label}>
@@ -414,7 +447,7 @@ export function MatrixView({ plan, selecting, testId }: { plan: MatrixPlan; sele
           {plan.rows.map((row, r) => {
             const selected = selecting?.isSelected(row.raw) === true;
             return (
-              <tr key={row.label} className={cn("transition-opacity", anySelected && !selected && "opacity-45")}>
+              <tr key={row.label} className={cn("transition-opacity", anySelected && !selected && "opacity-60")}>
                 <th scope="row" className="max-w-56 px-2 py-1 text-left font-normal">
                   {selecting !== null
                     ? (

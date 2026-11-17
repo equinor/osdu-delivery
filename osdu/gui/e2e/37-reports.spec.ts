@@ -13,7 +13,7 @@ import { adminSession, expect, FIRST_PAGE_MS, test } from "./helpers";
 const ANSWER_MS = 60_000;
 
 /** The queries of the report that are tiles; `sources` only lists the filter's choices. */
-const TILES = ["totals", "by_source", "logs"] as const;
+const TILES = ["totals", "by_source", "logs", "table_size"] as const;
 
 /** A figure as a number: it is printed with its thousands separated. */
 const numberOf = (text: string | null) => Number((text ?? "").replace(/[^\d]/g, ""));
@@ -42,6 +42,28 @@ async function openReport(page: Page): Promise<void> {
   await listed.click();
   await expect(page.getByTestId("report-title")).toHaveText(REPORT_TITLE, { timeout: FIRST_PAGE_MS });
   await expectEveryTileAnswered(page);
+}
+
+/**
+ * Counts, from now on, the times a tile gives up its answer for the shape it waits in. A changed value is read while
+ * the answer before it stays on the page, so after the report has opened the count stays at nothing.
+ */
+async function watchForBlankedTiles(page: Page): Promise<() => Promise<number>> {
+  await page.evaluate(() => {
+    const held = window as unknown as { blankedTiles: number };
+    held.blankedTiles = 0;
+    new MutationObserver((changes) => {
+      for (const change of changes) {
+        for (const added of change.addedNodes) {
+          if (added instanceof HTMLElement
+            && (added.matches("[data-testid$='-running']") || added.querySelector("[data-testid$='-running']") !== null)) {
+            held.blankedTiles++;
+          }
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  return () => page.evaluate(() => (window as unknown as { blankedTiles: number }).blankedTiles);
 }
 
 /** Records every query the page asks the control plane to run, with the body it sent. */
@@ -81,9 +103,19 @@ test.describe("reports", () => {
     // Every query was asked for on its own and sent no statement: the page gives only the report's values. The query
     // that lists the filter's choices ran too, and is not a tile. (How often each was asked is not held here: the dev
     // server this suite runs on mounts a page twice, so it asks twice where the built GUI asks once.)
-    expect([...new Set(runs.map((run) => run.query))].sort()).toEqual(["by_source", "logs", "sources", "totals"]);
+    expect([...new Set(runs.map((run) => run.query))].sort()).toEqual(["by_source", "logs", "sources", "table_size", "totals"]);
     expect(runs.every((run) => run.body === JSON.stringify({ values: {} }))).toBe(true);
     await expect(adminPage.getByTestId("report-tile-sources")).toHaveCount(0);
+
+    // A filter is drawn where it acts: the one two queries read in the page's header, the one the list alone reads on
+    // the list's tile. The tile whose bars set a filter names it, and nothing is said to be left out while none is set.
+    const header = adminPage.getByTestId("report-header");
+    await expect(header.getByTestId("report-parameter-source")).toBeVisible();
+    await expect(header.getByTestId("report-parameter-rows")).toHaveCount(0);
+    await expect(adminPage.getByTestId("report-tile-logs").getByTestId("report-parameter-rows")).toHaveValue("200");
+    await expect(adminPage.getByTestId("report-tile-by_source-sets")).toHaveText("Log source");
+    await expect(adminPage.getByTestId("report-tile-table_size-whole")).toHaveCount(0);
+    await expect(adminPage.getByTestId("report-parameters-reset")).toBeHidden();
   });
 
   test("a click on a bar narrows the report to that log source, and Reset widens it again", async ({ adminPage }) => {
@@ -92,6 +124,9 @@ test.describe("reports", () => {
     const whole = numberOf(await figure(adminPage, 0).textContent());
     const ofTheSample = numberOf(await sampleBar(adminPage).locator("span").last().textContent());
     const before = runs.length;
+    const blanked = await watchForBlankedTiles(adminPage);
+    const headerTop = (await adminPage.getByTestId("report-header").boundingBox())!.y;
+    const barsTop = (await adminPage.getByTestId("report-tile-by_source").boundingBox())!.y;
 
     // The address carries the value, so the view can be linked; the filter shows it; and only the queries that bind it
     // run again, with that value and still no statement.
@@ -110,6 +145,17 @@ test.describe("reports", () => {
     await expect(rows.first()).toBeVisible();
     await expect(rows.filter({ hasNotText: LOG_SOURCE })).toHaveCount(0, { timeout: ANSWER_MS });
 
+    // The click redrew the page in place: no tile went blank while its new answer was read, and nothing moved under
+    // the pointer. The tile that set the filter says what it is set to, the tile no filter narrows says so, and the
+    // header with the filter stays in view at the foot of the page.
+    expect(await blanked()).toBe(0);
+    expect((await adminPage.getByTestId("report-tile-by_source").boundingBox())!.y).toBe(barsTop);
+    await expect(adminPage.getByTestId("report-tile-by_source-sets")).toContainText(LOG_SOURCE);
+    await expect(adminPage.getByTestId("report-tile-table_size-whole")).toHaveText("Not narrowed by Log source");
+    await adminPage.getByTestId("report-tile-table_size").scrollIntoViewIfNeeded();
+    await expect(adminPage.getByTestId("report-parameter-source")).toBeInViewport();
+    expect((await adminPage.getByTestId("report-header").boundingBox())!.y).toBe(headerTop);
+
     // How the tile was computed: the statement as the document declares it, and the value it was bound with.
     await adminPage.getByTestId("report-tile-totals-menu").click();
     await adminPage.getByTestId("report-tile-totals-details").click();
@@ -121,11 +167,29 @@ test.describe("reports", () => {
     await adminPage.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
 
-    // Reset takes the value out of the address, and the staging area is whole again.
-    await adminPage.getByTestId("report-parameters-reset").click();
+    // The cross on the tile that set the filter takes the value out of the address, and the staging area is whole again.
+    await adminPage.getByTestId("report-tile-by_source-sets-clear").click();
     await expect(adminPage).not.toHaveURL(/p\.source=/);
     await expect(figure(adminPage, 0)).toHaveText(whole.toLocaleString("en-US"), { timeout: ANSWER_MS });
     await expect(sampleBar(adminPage)).toHaveAttribute("aria-pressed", "false");
+    await expect(adminPage.getByTestId("report-tile-table_size-whole")).toHaveCount(0);
+
+    // The list's own parameter runs the list again and nothing else, and Reset puts every value back.
+    const afterClear = runs.length;
+    const listed = adminPage.getByTestId("report-tile-logs").getByTestId("report-parameter-rows");
+    await listed.fill("1");
+    await listed.press("Enter");
+    await expect(adminPage).toHaveURL(/[?&]p\.rows=1(&|$)/);
+    await expect(rows).toHaveCount(1, { timeout: ANSWER_MS });
+    expect(runs.slice(afterClear).map((run) => run.query)).toEqual(["logs"]);
+    expect(runs[afterClear].body).toBe(JSON.stringify({ values: { rows: "1" } }));
+    await sampleBar(adminPage).click();
+    await expect(adminPage).toHaveURL(new RegExp(`[?&]p\\.source=${LOG_SOURCE}(&|$)`));
+    await adminPage.getByTestId("report-parameters-reset").click();
+    await expect(adminPage).not.toHaveURL(/p\.(source|rows)=/);
+    await expect(listed).toHaveValue("200");
+    await expect(figure(adminPage, 0)).toHaveText(whole.toLocaleString("en-US"), { timeout: ANSWER_MS });
+    expect(await blanked()).toBe(0);
   });
 
   test("a report is a document that is never run as a flow", async ({ adminPage, request }) => {

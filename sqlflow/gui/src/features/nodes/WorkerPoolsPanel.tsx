@@ -123,6 +123,9 @@ function WorkerPoolRow({
   const target = managed?.target ?? pool.replicaTarget;
   const working = managed === null ? pool.onlineNodes : managed.ready + managed.due;
   const belowTarget = builtInMode && pool.onlineNodes < pool.replicaTarget;
+  // An autoscaler's pool whose target keeps idle workers because another of its workers still runs work.
+  const held = managed === null && !builtInMode && !unmanagedInManagedMode
+    && pool.heldNodes > pool.busyNodes && pool.replicaTarget === pool.heldNodes;
   const startingUp = unmanagedInManagedMode || builtInMode
     ? false
     : managed === null ? pool.onlineNodes < pool.replicaTarget : managed.starting > 0;
@@ -184,7 +187,9 @@ function WorkerPoolRow({
             <span>{managed?.busy ?? pool.busyNodes}</span>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs">
-            Online workers holding at least one run; each keeps its replica until it is idle.
+            {managed === null
+              ? "Online workers holding at least one run. While any does, the pool keeps every worker it has."
+              : "Online workers holding at least one run; each keeps its replica until it is idle."}
           </TooltipContent>
         </Tooltip>
       </TableCell>
@@ -211,6 +216,20 @@ function WorkerPoolRow({
             <TooltipContent className="max-w-xs">
               {pool.onlineNodes} of {pool.replicaTarget} workers are online. Managed workers are off, so this control plane
               starts none; only an autoscaler reading the target would.
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {held && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="block text-right text-xs text-muted-foreground" data-testid={`worker-pool-held-${suffix}`}>
+                held while running
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              {pool.busyNodes} of the {pool.heldNodes} workers run work. The autoscaler picks which worker a lower target
+              stops, as likely one mid-run as an idle one, so the target keeps all {pool.heldNodes} until the pool's runs
+              have ended, then falls to what is queued.
             </TooltipContent>
           </Tooltip>
         )}

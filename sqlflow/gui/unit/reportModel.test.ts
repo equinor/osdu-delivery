@@ -6,8 +6,9 @@ import { describe, it } from "node:test";
 import type { ReportColumn, ReportParameter, ReportQuery, ReportView } from "../src/api/types.ts";
 import {
   assignSlots, choicesFrom, clearValues, defaultFormat, effectiveValue, formatBytes, formatCompact, formatDuration,
-  formatNumber, formatTick, formatValue, humanize, isSet, layOut, missingRequired, parameterLabel, planView, queryTitle,
-  readValues, selectValue, seriesSpread, shownColumns, tileSpan, toCsv, valuesFor, valuesKey, writeValue,
+  formatNumber, formatTick, formatValue, humanize, isSet, layOut, missingRequired, notNarrowedBy, parameterLabel,
+  placeParameters, planView, queryTitle, readValues, selectValue, seriesSpread, shownColumns, tileSpan, toCsv, valueLabel,
+  valuesFor, valuesKey, writeValue,
   type BarPlan, type LinePlan, type MatrixPlan, type SharePlan,
 } from "../src/features/reports/reportModel.ts";
 import { isReport, reportPath } from "../src/modules/reportKind.ts";
@@ -342,6 +343,71 @@ describe("parameters and the address", () => {
   it("reads a parameter's choices from a query's rows", () => {
     assert.deepEqual(choicesFrom([["ERP"], ["CRM"], ["ERP"], [null]]), [{ value: "ERP", label: "ERP" }, { value: "CRM", label: "CRM" }]);
     assert.deepEqual(choicesFrom([["1", "One"], ["2", null]]), [{ value: "1", label: "One" }, { value: "2", label: "2" }]);
+  });
+});
+
+describe("which filter belongs to what", () => {
+  // A staging report in small: the page's two filters, a tile whose bars set one of them, a tile only its own
+  // parameter narrows, a tile nothing narrows, and the hidden query a filter's choices are read from.
+  const source = parameter("source", { label: "Source", choicesFrom: "sources" });
+  const project = parameter("project", { label: "Project" });
+  const days = parameter("days", { label: "Days back", type: "integer", default: "30", required: true });
+  const report = {
+    parameters: [source, project, days],
+    queries: [
+      query("sources", { views: [] }),
+      query("totals", { parameters: ["Source", "project"] }),
+      query("by_source", { parameters: ["project"], views: [view("bar", { selects: "SOURCE" })] }),
+      query("per_day", { parameters: ["source", "project", "days"] }),
+      query("tables"),
+    ],
+  };
+  const places = placeParameters(report);
+
+  it("draws a parameter one shown query reads on that query's tile, and every other in the page's header", () => {
+    assert.equal(places.get("source"), null);
+    assert.equal(places.get("project"), null);
+    assert.equal(places.get("days"), "per_day");
+  });
+
+  it("keeps in the header a parameter only a hidden query reads, and one nothing reads", () => {
+    const hidden = placeParameters({
+      parameters: [parameter("region"), parameter("unused")],
+      queries: [query("regions_of", { parameters: ["region"], views: [] }), query("totals")],
+    });
+    assert.equal(hidden.get("region"), null);
+    assert.equal(hidden.get("unused"), null);
+  });
+
+  it("names the page's filters in effect that a query does not read", () => {
+    const given = { source: "ERP" };
+    const names = (name: string) => notNarrowedBy(report.queries.find((q) => q.name === name)!, report.parameters, given, places)
+      .map((p) => p.name);
+    assert.deepEqual(names("totals"), []);
+    assert.deepEqual(names("tables"), ["source"]);
+    // The tile whose bars set the filter is not narrowed by it either, and is not named: that is how it is chosen.
+    assert.deepEqual(names("by_source"), []);
+  });
+
+  it("names no filter that is at its default, cleared, or drawn on another tile", () => {
+    const tables = report.queries[4];
+    assert.deepEqual(notNarrowedBy(tables, report.parameters, {}, places), []);
+    assert.deepEqual(notNarrowedBy(tables, report.parameters, { source: null }, places), []);
+    // Days back is the per-day tile's own: moving it says nothing about the other tiles.
+    assert.deepEqual(notNarrowedBy(tables, report.parameters, { days: "90" }, places), []);
+    assert.deepEqual(
+      notNarrowedBy(tables, report.parameters, { source: "ERP", project: "North" }, places).map((p) => p.name),
+      ["source", "project"]);
+  });
+
+  it("writes a value as its choice's label, from the document or from the rows its choices are read from", () => {
+    const listed = parameter("region", { choices: [{ value: "eu", label: "Europe" }, { value: "us", label: null }] });
+    assert.equal(valueLabel(listed, "eu", null), "Europe");
+    assert.equal(valueLabel(listed, "us", null), "us");
+    assert.equal(valueLabel(listed, "apac", null), "apac");
+    assert.equal(valueLabel(source, "ERP", [["ERP", "The ERP system"], ["CRM", null]]), "The ERP system");
+    assert.equal(valueLabel(source, "CRM", [["ERP", "The ERP system"], ["CRM", null]]), "CRM");
+    assert.equal(valueLabel(source, "ERP", null), "ERP");
   });
 });
 

@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <AssemblyName>sqlflow</AssemblyName>
     <RootNamespace>SqlFlow.Cli</RootNamespace>
-    <Description>SQLFlow command-line tool: validate, plan, and run pipelines.</Description>
+    <!-- A library, so a product's program can be named sqlflow too: SqlFlow.Cli.Host is SQLFlow's own, and a product's
+         runs CliHost.RunAsync with its modules. -->
+    <Description>SQLFlow's command line: its verbs, and CliHost, which a program named sqlflow runs them with.</Description>
   </PropertyGroup>
 
   <ItemGroup>

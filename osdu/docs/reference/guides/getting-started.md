@@ -79,7 +79,7 @@ flows are plain SQLFlow and are only sketched here; the OSDU steps are shown in 
 ## What you need
 
 - The `sqlflow` command line of OSDU Delivery: SQLFlow's CLI with the OSDU verbs added (the
-  `SqlFlow.Delivery.Cli.Host` project, published as `sqlflow`). Its banner reads
+  `SqlFlow.Delivery.Cli.Host` project, whose program is `sqlflow`, built and published alike). Its banner reads
   `sqlflow - the OSDU Delivery command line, powered by SQLFlow`.
 - A SQL Server with two databases: one for the catalog (SQLFlow's metadata, with the `osdu` schema beside it), and
   `OsduData` for the source data. SQLFlow creates schemas and tables, never the data database itself, so create

@@ -89,7 +89,7 @@ A `matrix` needs `across`, so it is always written as a mapping.
 | Type | What it draws | Keys it takes |
 | --- | --- | --- |
 | `auto` | A view chosen from the answer's shape: figures for a single row of up to six values, a line for rows over one date column with numbers, bars for rows of one name and one number, otherwise a table. | |
-| `figure` | One large figure per value of the first row. | `values` |
+| `figure` | One figure per value of the first row, side by side in a strip, each under its column's label. The strip has no heading: the labels say what the figures are. | `values` |
 | `bar` | Horizontal bars, one per row, in the order the query answers. | `by`, `values`, `series`, `stacked`, `top`, `selects` |
 | `column` | Vertical columns, one per row, in the order the query answers: for buckets that have an order. | `by`, `values`, `series`, `stacked`, `selects` |
 | `line` | A line over an ordered column, usually a date. | `by`, `values`, `series` |
@@ -143,6 +143,22 @@ queries:
 ```
 
 A click on the bar of one source sets `source` to that bar's `Source`. `per_day` binds `@source`, so it runs again and now counts that source alone. `by_source` does not bind it, so its bars stay whole and the choice can be changed with another click. A second click on the same bar clears the parameter.
+
+What the page shows of it:
+
+| Where | What |
+| --- | --- |
+| The clicked mark | Marked as chosen at once; the other marks of the tile step back. |
+| The heading of the tile with `selects` | A funnel and the parameter's label. Once a value is chosen: the value, and a cross that clears it. |
+| The parameter's control | The value, wherever the control is drawn ([on the page](../concepts/reports.md#on-the-page)). |
+| A tile whose query binds the parameter | The answer for the chosen value, the answer before it held dimmed while the new one is read. |
+| A tile whose query does not bind it | **Not narrowed by** and the parameter's label, when the parameter is a filter of the page. |
+
+Give each parameter one view that sets it, and leave that parameter out of that view's statement. A report whose reader can tell at a glance which tile sets a filter and which tiles answer to it follows three rules:
+
+- **One view sets a filter.** Two views with `selects` on one parameter give the reader two places to make one choice.
+- **The view that sets it does not bind it.** A statement that binds the parameter its own view sets shrinks to the chosen mark, and the reader has nothing left to click but the cross.
+- **Every other statement about the same rows binds it.** A tile left out says **Not narrowed by**, which is right for a tile about something else (the size of the tables) and a surprise on a tile about the same rows.
 
 The value clicked is bound like any other value of the parameter: it is checked against the parameter's type, and against its `choices` when it has a fixed list ([parameters](rpt.md#parameters)).
 

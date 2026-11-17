@@ -77,10 +77,12 @@ program it runs.
 The extension signs in through the MCP server and shows the GUI's own pages. It starts the server on first use and signs
 in through its `login` tool: the browser opens the control plane's approval, which goes on to the GUI, so an account that
 signs in with Microsoft Entra approves there. The server keeps the session, and an assistant registered with the same
-program shares it. The extension registers the server with VS Code's own assistants, once per mode, and
-**Connect an AI Assistant** prints another client's registration from the server's `install`. A package may carry the
-`sqlflow` command line beside the server, as `bin/sqlflow`: the extension puts it on the PATH of every integrated terminal,
-the server finds it there and `get_cli` tells an assistant, so what would be a person clicking can be a script. A person
+program shares it. The extension registers the server with VS Code's own assistants, once per mode, and with Claude Code
+when the person signs in; **Connect an AI Assistant** prints another client's registration from the server's `install`. A
+package may carry the `sqlflow` command line beside the server, as `bin/sqlflow`: the extension puts it on the PATH of
+every integrated terminal and, once the person signs in, copies it with the server to `~/.sqlflow/bin` on their own PATH.
+The server finds it there and `get_environment` tells an assistant how to call it and what its verbs do, a module's among
+them (`McpModule::cli_uses`), so what would be a person clicking can be a script. A person
 signs in once: `~/.sqlflow/credentials.json`, the file `sqlflow login` keeps per control plane, is shared by the command line
 and the server, which reads what another client wrote on its next call.
 

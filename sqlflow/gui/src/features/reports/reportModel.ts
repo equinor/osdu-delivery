@@ -794,6 +794,65 @@ export function choicesFrom(rows: readonly Row[]): { value: string; label: strin
   return choices;
 }
 
+// ---- Which filter belongs to what --------------------------------------------------------------------------------------
+
+function sameName(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+/** Whether a query's statement reads the parameter. */
+export function binds(query: Pick<ReportQuery, "parameters">, parameter: Pick<ReportParameter, "name">): boolean {
+  return query.parameters.some((name) => sameName(name, parameter.name));
+}
+
+/** Whether a click on a mark of one of the query's views sets the parameter. */
+export function sets(query: Pick<ReportQuery, "views">, parameter: Pick<ReportParameter, "name">): boolean {
+  return query.views.some((view) => view.selects !== null && sameName(view.selects, parameter.name));
+}
+
+/**
+ * Where each parameter's control is drawn, by the parameter's name: the name of a query, or null for the page's
+ * header. A parameter that one shown query reads and no other belongs to that query's tile and is drawn in its
+ * heading, beside what it changes. A parameter several queries read is a filter of the page and is drawn in the
+ * header, and so is one a hidden query reads (the choices of another filter) and one nothing reads.
+ */
+export function placeParameters(report: Pick<Report, "parameters" | "queries">): Map<string, string | null> {
+  const places = new Map<string, string | null>();
+  for (const parameter of report.parameters) {
+    const readers = report.queries.filter((query) => binds(query, parameter));
+    places.set(parameter.name, readers.length === 1 && readers[0].views.length > 0 ? readers[0].name : null);
+  }
+
+  return places;
+}
+
+/**
+ * The page's filters in effect that leave a query's answer as it is: those a person set that its statement does not
+ * read. A query one of whose views sets the filter is not named for it, since its marks staying whole is how the
+ * choice is made and changed; and a filter drawn on another tile is that tile's own, not the page's.
+ */
+export function notNarrowedBy(
+  query: Pick<ReportQuery, "parameters" | "views">, parameters: readonly ReportParameter[], given: GivenValues,
+  places: ReadonlyMap<string, string | null>,
+): ReportParameter[] {
+  return parameters.filter((parameter) => places.get(parameter.name) === null
+    && isSet(parameter, given)
+    && effectiveValue(parameter, given) !== null
+    && !binds(query, parameter)
+    && !sets(query, parameter));
+}
+
+/**
+ * A parameter's value as a person reads it: the label its choice carries, in the document or in the rows of the query
+ * its choices are read from, or the value itself.
+ */
+export function valueLabel(parameter: Pick<ReportParameter, "choices">, value: string, choiceRows: readonly Row[] | null): string {
+  const written = parameter.choices.find((choice) => choice.value === value);
+  if (written !== undefined) return written.label ?? written.value;
+  const read = choiceRows === null ? undefined : choicesFrom(choiceRows).find((choice) => choice.value === value);
+  return read?.label ?? value;
+}
+
 // ---- The page's layout -------------------------------------------------------------------------------------------------
 
 /** One view of one query, placed on the page. */

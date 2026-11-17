@@ -52,8 +52,6 @@ namespace SqlFlow.Cli;
 
 internal static class Program
 {
-    private static Task<int> Main(string[] args) => CliHost.RunAsync(args);
-
     /// <summary>
     /// The CLI with a host's modules: SQLFlow's verbs and the modules' verbs, with every command's service provider (and a
     /// worker node's) carrying the modules' registrations. <see cref="CliHost"/> is the public entry point.
@@ -74,10 +72,13 @@ internal static class Program
             or "health" or "login" or "logout" or "trigger" or "groups"
             or "whoami" or "doctor" or "summary" or "nodes" or "schedules" or "repos" or "pipelines"
             or "datasources" or "search" or "completions" or "powerbi" or "ai-context");
-        if (positional.Length < (needsFile ? 2 : 1) || args.Any(a => a is "-h" or "--help"))
+        // The usage asked for (--help, -h, help) is an answer and exits 0; shown because a command is missing what it needs,
+        // it is a refusal and exits 1. A script, and an assistant, read the exit code before the text.
+        var asksForHelp = command == "help" || args.Any(a => a is "-h" or "--help");
+        if (asksForHelp || positional.Length < (needsFile ? 2 : 1))
         {
             PrintUsage(modules);
-            return positional.Length < (needsFile ? 2 : 1) ? 1 : 0;
+            return asksForHelp ? 0 : 1;
         }
 
         // An option nobody reads is a mistake rather than a flag: taken for one, its value becomes a positional

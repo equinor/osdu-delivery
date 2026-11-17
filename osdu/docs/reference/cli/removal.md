@@ -32,7 +32,7 @@ sourceRefs:
 
 `sqlflow removal` reads the runs of a [removal flow](../flow/removal.md) where an operator already is, without a control
 plane to reach: a removal flow's runs in a partition, newest first, and one run with every count it kept. It is one of the
-verbs OSDU Delivery adds to SQLFlow's command line (`SqlFlow.Delivery.Cli.Host`, published as `sqlflow`). It reads the
+verbs OSDU Delivery adds to SQLFlow's command line (`sqlflow`, built from `SqlFlow.Delivery.Cli.Host`). It reads the
 module's database only and sends nothing to OSDU.
 
 The deletions a removal flow found are the delivery flow's, so they are read through that flow:

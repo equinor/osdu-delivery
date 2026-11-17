@@ -96,10 +96,10 @@ REM catalog, so its pending migrations are applied here through the CLI's guarde
 REM (upgrades an EXISTING catalog only; it refuses to provision anything, so a wrong connection
 REM string can never create a stray database).
 echo Applying pending catalog migrations ...
-dotnet run --project src\SqlFlow.Cli -- db migrate
+dotnet run --project src\SqlFlow.Cli.Host -- db migrate
 if errorlevel 1 (
     echo [!] Catalog migration failed. The control plane still starts, but any surface that needs the
-    echo     new schema will error until:  dotnet run --project src\SqlFlow.Cli -- db migrate
+    echo     new schema will error until:  dotnet run --project src\SqlFlow.Cli.Host -- db migrate
 )
 
 if /i "%~1"=="api" goto :api

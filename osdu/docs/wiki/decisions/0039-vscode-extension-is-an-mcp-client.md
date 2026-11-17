@@ -14,8 +14,11 @@ keywords:
   - extension host
   - credentials.json
   - sqlflow login
-  - get_cli
-updated: 2026-11-16
+  - get_environment
+  - other tools
+  - claude code
+  - user path
+updated: 2026-11-17
 sourceRefs:
   - sqlflow/tools/sqlflow-vscode/src/host.ts
   - sqlflow/tools/sqlflow-vscode/src/mcp/mcpServer.ts
@@ -24,6 +27,10 @@ sourceRefs:
   - sqlflow/tools/sqlflow-mcp/src/config.rs
   - sqlflow/src/SqlFlow.Cli/Remote/CredentialStore.cs
   - sqlflow/gui/src/auth/DeviceApprovalPage.tsx
+  - sqlflow/tools/sqlflow-vscode/src/otherTools.ts
+  - sqlflow/tools/sqlflow-vscode/src/userPath.ts
+  - sqlflow/tools/sqlflow-vscode/src/mcp/claudeCode.ts
+  - sqlflow/tools/sqlflow-mcp/src/module.rs
   - sqlflow/src/SqlFlow.ControlPlane/Security/DeviceApprovalPage.cs
   - osdu/hosts/osdu-delivery-vscode/src/extension.ts
   - osdu/hosts/osdu-delivery-vscode/src/templates.ts
@@ -113,14 +120,41 @@ control planes never read each other's credential.
 
 The package holds three programs: the language server, the MCP server and `sqlflow`, a single file for its platform, about
 118 MB of the package's size. The tools say what the estate is and the command line lets an assistant act on a working copy by
-script, in a loop, without a person clicking: every integrated terminal has it on its PATH, and `get_cli` tells an assistant
-where it is wherever it runs.
+script, in a loop, without a person clicking: every integrated terminal has it on its PATH, and `get_environment` tells an
+assistant how to call it wherever it runs, which control plane it reaches, and what its verbs do.
 
 The two have different rules on purpose, and the seam is stated rather than hidden. The MCP server answers from metadata
 ([its rule](../../reference/guides/mcp.md#metadata-and-a--questions-query)). The command line is the person's own, on their
 machine, and `preview` and `values` print row values, so an assistant that runs them sends those values to its model
-provider. Nothing can stop that from here, so `get_cli` and the instructions tell the assistant to run those two, and any verb
-that writes, only when the person asked.
+provider. Nothing can stop that from here, so `get_environment` and the instructions tell the assistant to run those two,
+and any verb that writes, only when the person asked.
+
+## Signing in reaches the person's other tools
+
+Amended on 2026-11-17. The owner, wanting the command line in Copilot and Claude sessions: "the goal is that after we have
+authenticated, all tools should be available", and, asked whether that may change Claude Code's settings without a
+further step, chose that it does. Until then the extension changed no other tool's configuration: the command line was on
+the PATH of its own terminals only, which Copilot's agent uses but Claude Code does not (its shell starts from Claude
+Code's own environment), and **Connect an AI Assistant** put Claude Code's registration in a terminal for the person to
+run.
+
+- **Signing in does it, and says so.** `~/.sqlflow/bin` (the command line and the server, which an update refreshes in
+  place) goes at the end of the person's own PATH, and the server is registered with Claude Code for all its sessions,
+  once per mode, through Claude Code's own command line (`claude mcp add-json --scope user`), never by writing its files.
+  The message names what changed and offers **Undo**; once undone, a sign-in leaves it alone until the person asks again.
+- **At the end of the PATH, and the user environment's `Path` as written.** A `sqlflow` the person installed keeps its
+  name, and an entry written with `%USERPROFILE%` stays one: reading the variable through `Environment` would have
+  rewritten every expandable entry as a fixed path.
+- **Rejected: `SQLFLOW_URL` for the whole account.** The command line lets the process environment outrank a repository's
+  `.sqlflow/env`, so it would have sent every repository's verbs to the extension's control plane, a developer's local
+  estate's included. The command line already reaches the one control plane the shared sign-in holds; the server's
+  registration in Claude Code carries the URL, which reaches that one process only.
+- **Rejected: `~/.sqlflow/env` as the shell's script.** The command line reads the nearest `.sqlflow/env` above the folder
+  it runs in as a settings file, and the home folder is above most of them; the script is `~/.sqlflow/path.sh`.
+- **The server says what the command line can do.** `get_environment` replaced `get_cli`: an assistant learns whether
+  `sqlflow` answers to its name there, which control plane it reaches, and the verbs with what each does, a module's
+  after SQLFlow's (`McpModule::cli_uses`). The delivery module lists only verbs a sign-in is enough for: its ledger verbs
+  read the module's database, which a person's assistant does not hold, and the delivery tools answer those questions.
 
 ## The extension is a host, as the server and the GUI are
 

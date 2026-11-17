@@ -71,7 +71,7 @@ public sealed class DevCommandLineTests : IDisposable
         Assert.Equal(["db", "migrate", "--create"], run.Arguments);
         Assert.True(run.Run.Attached);
         Assert.Equal("Server=x;Database=y", run.Run.Environment!["SQLFLOW_CATALOG_DB"]);
-        Assert.EndsWith(Path.Combine("bin", "Debug", "net9.0", "SqlFlow.Delivery.Cli.Host.exe"), commandLine.Executable, StringComparison.Ordinal);
+        Assert.EndsWith(Path.Combine("bin", "Debug", "net9.0", "sqlflow.exe"), commandLine.Executable, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.Core.Identity;
 using SqlFlow.Core.Runs;
+using SqlFlow.Dispatch;
 using Xunit;
 
 namespace SqlFlow.ControlPlane.Tests;
@@ -11,8 +12,8 @@ namespace SqlFlow.ControlPlane.Tests;
 /// the pool at, against the real catalog: only the eligible backlog counts (a run behind a busy pipeline asks for
 /// no node), it is divided by what one node of the pool executes at once (as the nodes report it, with the runtime
 /// default when none has), busy online nodes each hold a replica while a silent node's last busy count pins
-/// nothing, and the always-on floor and the manual override combine with the demand as a max. Gated on a
-/// reachable catalog database.
+/// nothing, every worker of the pool is held while one of them runs work, and the always-on floor and the manual
+/// override combine with the demand as a max. Gated on a reachable catalog database.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class ScaleTargetStoreTests
@@ -130,6 +131,72 @@ public sealed class ScaleTargetStoreTests
             await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
             await db.Nodes.Where(n => nodes.Contains(n.Name)).ExecuteDeleteAsync();
         }
+    }
+
+    [SkippableFact]
+    public async Task Resolve_HoldsEveryWorkerOfThePool_WhileOneRunsWork_AndLetsThemGoOnceNoneDoes()
+    {
+        var cs = CatalogTestDb.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var repoId = FlowIdentity.FromName("sh_" + suffix);
+        var pool = "sh-" + suffix;
+        var builtIn = $"sh-builtin-{suffix}";
+        string[] workers = [$"sh-busy-{suffix}", $"sh-idle-a-{suffix}", $"sh-idle-b-{suffix}", $"sh-silent-{suffix}"];
+
+        try
+        {
+            await using var db = CatalogDatabase.Create(cs);
+            var now = DateTime.UtcNow;
+
+            // One worker executes a run and nothing is queued: its parts have ended on the two idle workers. A fourth
+            // worker went silent holding a run the journal still gives it, and the control plane's own node serves the
+            // pool too, idle.
+            var busyRun = (await RunQueueStore.EnqueueAsync(db, new RunEnqueueRequest(repoId, $"sh_flow_0_{suffix}", "ing", pool), now)).RunId;
+            Assert.NotNull(await RunQueueStore.MarkHandedOutAsync(db, busyRun, 0, workers[0], now));
+            var silentRun = (await RunQueueStore.EnqueueAsync(db, new RunEnqueueRequest(repoId, $"sh_flow_1_{suffix}", "ing", pool), now)).RunId;
+            Assert.NotNull(await RunQueueStore.MarkHandedOutAsync(db, silentRun, 0, workers[3], now));
+            await NodeStore.HeartbeatAsync(db, workers[0], "t", now, pool, busyRuns: 1, runSlots: 4);
+            await NodeStore.HeartbeatAsync(db, workers[1], "t", now, pool, busyRuns: 0, runSlots: 4);
+            await NodeStore.HeartbeatAsync(db, workers[2], "t", now, pool, busyRuns: 0, runSlots: 4);
+            await NodeStore.HeartbeatAsync(db, workers[3], "t", now.AddMinutes(-2), pool, busyRuns: 1, runSlots: 4);
+            await NodeStore.HeartbeatAsync(db, builtIn, "t", now, pool, busyRuns: 0, runSlots: 4);
+
+            // Built on demand alone the target was the two busy workers, and the platform, told to remove two, would have
+            // picked which: as likely the one mid-run as an idle one. Every worker is held, the control plane's own node
+            // apart, since no autoscaler runs it: counting it would ask for a replica in its place and hold that one too.
+            var held = await ScaleTargetStore.ResolveAsync(db, pool, 4, now, builtIn);
+            Assert.Equal((0, 2, 4, 4), (held.EligibleQueuedRuns, held.BusyNodes, held.OnlineNodes, held.HeldNodes));
+            Assert.Equal(4, held.Replicas);
+
+            // When the only run is the control plane's own, no worker has anything to lose, and none is held.
+            await RecordFailedAsync(db, busyRun, workers[0], now);
+            await RecordFailedAsync(db, silentRun, workers[3], now);
+            await NodeStore.HeartbeatAsync(db, workers[0], "t", now, pool, busyRuns: 0, runSlots: 4);
+            var ownRun = (await RunQueueStore.EnqueueAsync(db, new RunEnqueueRequest(repoId, $"sh_flow_2_{suffix}", "ing", pool), now)).RunId;
+            Assert.NotNull(await RunQueueStore.MarkHandedOutAsync(db, ownRun, 0, builtIn, now));
+            var own = await ScaleTargetStore.ResolveAsync(db, pool, 4, now, builtIn);
+            Assert.Equal((1, 0), (own.BusyNodes, own.HeldNodes));
+
+            // Once nothing runs, the workers are let go: the target falls to what is queued, which is nothing.
+            await RecordFailedAsync(db, ownRun, builtIn, now);
+            var quiet = await ScaleTargetStore.ResolveAsync(db, pool, 4, now, builtIn);
+            Assert.Equal((0, 0, 0), (quiet.BusyNodes, quiet.HeldNodes, quiet.Replicas));
+        }
+        finally
+        {
+            await using var db = CatalogDatabase.Create(cs);
+            await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Nodes.Where(n => workers.Contains(n.Name) || n.Name == builtIn).ExecuteDeleteAsync();
+        }
+    }
+
+    /// <summary>Ends a handed-out run as its node would report a failure, under the attempt it was handed out with.</summary>
+    private static async Task RecordFailedAsync(CatalogDbContext db, Guid runId, string node, DateTime now)
+    {
+        var attempt = await db.Runs.AsNoTracking().Where(r => r.RunId == runId).Select(r => r.Attempt).SingleAsync();
+        await RunQueueStore.RecordOutcomeAsync(db, runId, node, attempt, RunOutcomeKind.Failed, "ended by the test", null, now);
+        Assert.Equal(RunStatuses.Failed, await db.Runs.AsNoTracking().Where(r => r.RunId == runId).Select(r => r.Status).SingleAsync());
     }
 
     [SkippableFact]

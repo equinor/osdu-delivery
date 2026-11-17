@@ -102,7 +102,7 @@ queries:
 
 | Line | Effect |
 | --- | --- |
-| `days:` | A control labelled **Days back** above the tiles. |
+| `days:` | A control labelled **Days back**. One query binds it here, so it is drawn on that query's tile; a parameter several queries bind is drawn in the page's header. |
 | `type: integer` | Only a whole number is accepted, and the database is sent a `bigint`, never text. |
 | `default: 30` | The page opens on the last 30 days. |
 | `@days` | The statement takes the value. Changing it on the page runs this query again, and no query that does not bind `@days`. |
@@ -157,8 +157,9 @@ queries:
 | --- | --- |
 | `selects: source` | A click on a bar sets `source` to that bar's `Source`. A second click clears it. |
 | `by: Source` | Names the column the clicked value is read from. `selects` needs it. |
-| `by_source` does not bind `@source` | Its bars stay whole, so another source can be clicked. |
-| `per_day` binds `@source` | It runs again on every click, and counts the chosen source alone. |
+| `by_source` does not bind `@source` | Its bars stay whole, so another source can be clicked. Its heading names the filter its bars set, and shows the chosen source with a cross that clears it. |
+| `per_day` binds `@source` | It runs again on every click, and counts the chosen source alone. It is the one query that binds `source`, so the **Source** control is drawn on its tile. |
+| Both bind `@days` | **Days back** is now a filter of the page, drawn in its header. |
 
 ## 4. Add a choices query
 

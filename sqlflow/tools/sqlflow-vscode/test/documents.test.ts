@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { kindLabel, neverRunKind, NEVER_RUN_KINDS, recogniseDocument } from '../src/documents/recognition.ts';
+import { kindLabel, neverRunKind, NEVER_RUN_KINDS, pagePathOf, recogniseDocument } from '../src/documents/recognition.ts';
 import { keyPathAtLine, scalarKeys } from '../src/documents/yamlPath.ts';
 
 test('a flow is told by its flowType, whatever the file is called', () => {
@@ -117,4 +117,14 @@ test('a value is read and placed, quoted or not', () => {
 test('scalar keys leave out what opens a block', () => {
     const keys = scalarKeys(['a: 1', 'b:', '  c: |', '    text', 'd: [1, 2]', 'e: "x"']).map((key) => key.path);
     assert.deepEqual(keys, ['a', 'e']);
+});
+
+test('a report opens on its own page, and every other flow on its flow page', () => {
+    assert.equal(pagePathOf('3f2a', 'rpt'), '/reports/3f2a');
+    assert.equal(pagePathOf('3f2a', ' RPT '), '/reports/3f2a');
+    // A lineage description is never run either, and has no page of its own: it is read on its flow page.
+    assert.equal(pagePathOf('3f2a', 'lin'), '/pipelines/3f2a');
+    assert.equal(pagePathOf('3f2a', 'ing'), '/pipelines/3f2a');
+    assert.equal(pagePathOf('3f2a', undefined), '/pipelines/3f2a');
+    assert.equal(pagePathOf('a b/c', 'rpt'), '/reports/a%20b%2Fc');
 });

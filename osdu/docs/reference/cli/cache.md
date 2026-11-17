@@ -58,7 +58,7 @@ sqlflow cache keep <partition> --versions <n> [--dry-run] [--db <conn-ref>] [--j
 
 ## Description
 
-`cache` is one of the verbs OSDU Delivery adds to SQLFlow's command line (`sqlflow`, built as
+`cache` is one of the verbs OSDU Delivery adds to SQLFlow's command line (`sqlflow`, built from
 `SqlFlow.Delivery.Cli.Host`). It reads and writes the [partition cache](../concepts/partition-cache.md) in the module's
 database.
 

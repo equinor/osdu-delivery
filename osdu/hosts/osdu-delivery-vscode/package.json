@@ -1,8 +1,8 @@
 {
   "name": "osdu-delivery",
   "displayName": "OSDU Delivery, powered by SQLFlow",
-  "description": "Write the pipelines that deliver subsurface records into an OSDU® data platform: every YAML document understood, a mapping previewed as you write it, your estate's pages beside your files, and an AI assistant built in.",
-  "version": "1.0.0",
+  "description": "Get any data into an OSDU® data platform. Configured, not coded: describe a delivery in YAML, see each record before it is sent, and trace every record that lands.",
+  "version": "1.0.2",
   "publisher": "delta-forge",
   "icon": "resources/icon.png",
   "galleryBanner": {
@@ -241,6 +241,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "sqlflow.openReports",
+        "title": "Open Reports",
+        "category": "OSDU Delivery",
+        "icon": "$(graph)"
+      },
+      {
         "command": "sqlflow.showLineage",
         "title": "Open Lineage",
         "category": "OSDU Delivery",
@@ -263,6 +269,16 @@
         "title": "Connect an AI Assistant",
         "category": "OSDU Delivery",
         "icon": "$(server)"
+      },
+      {
+        "command": "sqlflow.shareWithOtherTools",
+        "title": "Make the Command Line and Server Available to Other Tools",
+        "category": "OSDU Delivery"
+      },
+      {
+        "command": "sqlflow.unshareFromOtherTools",
+        "title": "Remove the Command Line and Server from Other Tools",
+        "category": "OSDU Delivery"
       },
       {
         "command": "sqlflow.showStatus",

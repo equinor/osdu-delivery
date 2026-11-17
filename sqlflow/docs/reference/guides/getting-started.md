@@ -40,16 +40,16 @@ This guide takes you from a clean checkout to a loaded SQL Server table, then wa
 
 ## Prerequisites
 
-- .NET 9 SDK (the CLI is `src/SqlFlow.Cli`, run via `dotnet run`).
+- .NET 9 SDK (the CLI is `src/SqlFlow.Cli.Host`, run via `dotnet run`).
 - A SQL Server you can create tables in (local instance, container, or Azure SQL).
 
 All CLI examples below use the source-tree invocation form:
 
 ```bash
-dotnet run --project src/SqlFlow.Cli -- <command> <file>
+dotnet run --project src/SqlFlow.Cli.Host -- <command> <file>
 ```
 
-Everything after `--` is the `sqlflow` command line, so `sqlflow plan orders.flow.yaml` becomes `dotnet run --project src/SqlFlow.Cli -- plan orders.flow.yaml`.
+Everything after `--` is the `sqlflow` command line, so `sqlflow plan orders.flow.yaml` becomes `dotnet run --project src/SqlFlow.Cli.Host -- plan orders.flow.yaml`.
 
 ## Step 1: point at your SQL Server
 
@@ -78,13 +78,13 @@ The quickstart pipeline `samples/quickstart/orders.flow.yaml` loads `samples/qui
 
 ```bash
 # check the definition only (no database access needed for the definition itself)
-dotnet run --project src/SqlFlow.Cli -- validate samples/quickstart/orders.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- validate samples/quickstart/orders.flow.yaml
 
 # preview the exact T-SQL that would run; changes nothing
-dotnet run --project src/SqlFlow.Cli -- plan samples/quickstart/orders.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- plan samples/quickstart/orders.flow.yaml
 
 # create/evolve the table and load the data
-dotnet run --project src/SqlFlow.Cli -- run samples/quickstart/orders.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/quickstart/orders.flow.yaml
 ```
 
 `plan` is the safety net: it shows the generated `CREATE`/`ALTER` DDL and the load plan before anything touches the database. A successful `run` prints a one-line result plus a per-operation trace:
@@ -230,7 +230,7 @@ Known limits of the schema, so you are not surprised by editor squiggles:
 
 ```bash
 export SQLFlowSinkConStr="Server=localhost,1433;Database=TestDB;User ID=...;Password=...;TrustServerCertificate=True"
-dotnet run --project src/SqlFlow.Cli -- run samples/csv/csv-basic.flow.yaml
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/csv/csv-basic.flow.yaml
 ```
 
 [Environment variables](../concepts/environment-variables.md) declares `SQLFLOW_TEST_DB` the canonical spelling for this repository's test sink, with the legacy `SQLFlowSinkConStr` name still honored.

@@ -52,7 +52,7 @@ sourceRefs:
 table, the values an attribute holds, the search filter of the values picked, the search composed across dimensions,
 its builds and change log, and the flow's views; it exports a dimension whole and removes a dimension or a view the
 flow no longer declares. It is one of the
-verbs OSDU Delivery adds to SQLFlow's command line (`SqlFlow.Delivery.Cli.Host`, published as `sqlflow`). It reads the
+verbs OSDU Delivery adds to SQLFlow's command line (`sqlflow`, built from `SqlFlow.Delivery.Cli.Host`). It reads the
 module's database only: it needs no control plane and sends nothing to OSDU.
 
 Building a dimension is a run of its flow, not this verb:

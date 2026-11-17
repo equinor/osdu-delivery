@@ -36,6 +36,8 @@
     <ProjectReference Include="..\..\src\SqlFlow.Dataverse\SqlFlow.Dataverse.csproj" />
     <ProjectReference Include="..\..\src\SqlFlow.Catalog\SqlFlow.Catalog.csproj" />
     <ProjectReference Include="..\..\src\SqlFlow.Cli\SqlFlow.Cli.csproj" />
+    <!-- Built, not referenced: the tests of the compiled command line run it as a child process (Integration/CliBinary.cs). -->
+    <ProjectReference Include="..\..\src\SqlFlow.Cli.Host\SqlFlow.Cli.Host.csproj" ReferenceOutputAssembly="false" />
     <!-- The assistant's MCP tool allowlist is asserted against the MCP server's shipped tool list. -->
     <ProjectReference Include="..\..\src\SqlFlow.Assistant\SqlFlow.Assistant.csproj" />
   </ItemGroup>

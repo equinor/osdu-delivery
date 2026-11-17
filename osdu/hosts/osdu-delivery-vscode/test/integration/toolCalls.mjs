@@ -11,7 +11,7 @@ const CALLS = {
     delivery_osdu_schemas: ['release', 'kind'],
     lineage_objects: ['name'],
     lineage_object_columns: ['key'],
-    get_cli: [],
+    get_environment: [],
     get_control_plane_url: [],
     delivery_partitions: [],
     delivery_templates: [],

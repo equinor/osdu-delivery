@@ -289,8 +289,9 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         // would stop nodes only to start them again. The target reads zero only when nothing is queued that could start
         // and nothing runs (the control plane counts a node as busy from the run journal, not only from its last
         // heartbeat), and the scaler reads it four times inside the cool-down, so a job in flight never loses its nodes
-        // to it. A pool that is only partly idle shrinks on the platform's own five minute window, which Container Apps
-        // does not let a template set.
+        // to it. Nor does a pool shrink while any of its workers runs work: the target holds every replica until the
+        // pool's runs have ended, since the platform picks which replica a lower target stops. After that it shrinks on
+        // the platform's own five minute window, which Container Apps does not let a template set.
         cooldownPeriod: 60
         pollingInterval: 15
         rules: scaleRules

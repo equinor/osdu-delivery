@@ -29,12 +29,14 @@ public sealed record NodeDto(
 /// the launcher that starts the pool's workers (null for a pool that is not managed), and <see cref="Managed"/> is the
 /// pool as the managed fleet's last tick saw it (null on a replica that does not own dispatch, or before the first tick).
 /// <see cref="BuiltInNode"/> is this control plane's own node when it serves the pool (null on an API-only replica and
-/// for a pool the node does not serve), so a reader can tell the node it sees online from a worker anything started.</summary>
+/// for a pool the node does not serve), so a reader can tell the node it sees online from a worker anything started.
+/// <see cref="HeldNodes"/> is how many workers the target keeps because a worker of the pool still runs work (zero while
+/// none does): the autoscaler picks which worker a lower target stops, so none goes until the pool's runs have ended.</summary>
 public sealed record WorkerPoolDto(
     string Pool, int MinReplicas, int ManualReplicas, DateTime? ManualUntilUtc, bool ManualActive,
     int QueuedRuns, int ReplicaTarget, int OnlineNodes, DateTime? UpdatedUtc, string? UpdatedBy,
     int EligibleQueuedRuns, int BusyNodes, int RunSlotsPerNode, string? ManagedBy = null, ManagedPoolStatus? Managed = null,
-    BuiltInNodeDto? BuiltInNode = null, int EligibleWholeNodeRuns = 0);
+    BuiltInNodeDto? BuiltInNode = null, int EligibleWholeNodeRuns = 0, int HeldNodes = 0);
 
 /// <summary>The node a control plane runs in its own process (<c>ControlPlane:Worker</c>): the name it polls under and
 /// how many runs it executes at once. Nothing starts or stops it but the control plane itself.</summary>
@@ -204,7 +206,7 @@ public static class NodeEndpoints
         DateTime now, CancellationToken ct)
     {
         var queued = await WorkerPoolStore.CountQueuedAsync(db, key, ct).ConfigureAwait(false);
-        var target = await ScaleTargetStore.ResolveAsync(db, key, RunWorker.DefaultMaxConcurrentRuns, now, ct).ConfigureAwait(false);
+        var target = await ScaleTargetStore.ResolveAsync(db, key, RunWorker.DefaultMaxConcurrentRuns, now, builtInNode?.Name, ct).ConfigureAwait(false);
         var managed = fleet?.Settings.PoolOf(key) is null ? null : fleet;
         return new WorkerPoolDto(
             key,
@@ -223,7 +225,8 @@ public static class NodeEndpoints
             managed?.LauncherName,
             managed?.Status().Pools.FirstOrDefault(p => string.Equals(p.Pool, key, StringComparison.Ordinal)),
             builtInNode,
-            target.EligibleWholeNodeRuns);
+            target.EligibleWholeNodeRuns,
+            target.HeldNodes);
     }
 
     private static async Task<Results<Ok<WorkerPoolDto>, ProblemHttpResult>> ScalePoolAsync(

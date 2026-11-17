@@ -54,6 +54,42 @@ public sealed class CliModuleTests : IDisposable
         Assert.Single(module.Calls);
     }
 
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    [InlineData("help")]
+    [InlineData("validate --help")]
+    public async Task AskingForTheUsage_PrintsIt_AndSucceeds(string command)
+    {
+        var (exit, said) = await Output(() => CliHost.RunAsync(command.Split(' ')));
+        Assert.Equal(0, exit);
+        Assert.Contains("Usage:", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ACommandMissingWhatItNeeds_PrintsTheUsage_AndFails()
+    {
+        var (exit, said) = await Output(() => CliHost.RunAsync(["validate"]));
+        Assert.Equal(1, exit);
+        Assert.Contains("Usage:", said, StringComparison.Ordinal);
+    }
+
+    /// <summary>The exit code of <paramref name="command"/>, and what it wrote to stdout.</summary>
+    private static async Task<(int Exit, string Said)> Output(Func<Task<int>> command)
+    {
+        var original = Console.Out;
+        var said = new StringWriter();
+        Console.SetOut(said);
+        try
+        {
+            return (await command().ConfigureAwait(false), said.ToString());
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+    }
+
     /// <summary>What the CLI wrote to stderr while <paramref name="command"/> ran, with the exit code checked as a refusal.</summary>
     private static async Task<string> Refusal(Func<Task<int>> command)
     {

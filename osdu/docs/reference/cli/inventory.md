@@ -42,7 +42,7 @@ sourceRefs:
 `sqlflow inventory` reads what [inventory flows](../flow/inventory.md) found: the inventories of a partition, one
 inventory's ids by finding, a page of its ids, what every inventory holds of one OSDU id, its builds and reconciles, a
 CSV of its ids, and the removals and restores asked of it with what each did to each id. It is one of the verbs OSDU Delivery adds to
-SQLFlow's command line (`SqlFlow.Delivery.Cli.Host`, published as `sqlflow`). It reads the module's database only: it needs no flow file, no control plane, and
+SQLFlow's command line (`sqlflow`, built from `SqlFlow.Delivery.Cli.Host`). It reads the module's database only: it needs no flow file, no control plane, and
 sends nothing to OSDU.
 
 Building, reconciling, removing and restoring are runs of the flow, not this verb:

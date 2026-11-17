@@ -350,12 +350,14 @@ environment's variables and secrets.
 
 ## Scale-in, placement and the module's own settings
 
-- **An idle node is removed quickly, and a job in flight keeps its nodes.** An idle node is compute paid for nothing,
-  and a delivery split over many nodes leaves one per part behind. With an autoscaler, `worker.bicep` and
-  `worker-pool.yaml` take an idle pool to zero 60 seconds after the replica target last asked for a worker (the
-  platforms wait 300 by default); the target counts a node as busy from the run journal, so it reads zero only when
-  nothing is queued that could start and nothing runs. The autoscaler removes nodes itself, so the wait is one number
-  for the pool, and a pool that is only partly idle shrinks on the platform's own five minutes. With
+- **No node is stopped under a running job, and an idle pool goes quickly.** With an autoscaler, the platform picks
+  which node a lower replica target stops, as likely one in the middle of a delivery's part as an idle one, and a
+  part stopped that way runs again on another node, where the documents it had queued are not. So while any worker of
+  a pool runs work, the target holds every worker the pool has: the workers a split delivery's finished parts leave
+  idle stay until its last part and its first run have ended. Then `worker.bicep` and `worker-pool.yaml` take the
+  idle pool to zero 60 seconds after the target last asked for a worker (the platforms wait 300 by default); the
+  target counts a node as busy from the run journal, so it reads zero only when nothing is queued that could start and
+  nothing runs. A pool still asked for some workers shrinks on the platform's own five minutes. With
   [managed workers](managed-workers.md) the control plane picks the node and the moment: the idle workers a pool can
   spare share `ControlPlane__ManagedWorkers__IdleMinutes` (2) between them, so one waits two minutes and of six, three
   leave after 30 seconds, then one each after 40, 60 and 120, never sooner than 30 seconds and never below the pool's

@@ -10,6 +10,10 @@ run-name: >-
 # as published, so a retry pushes only what failed. A version is published once: raise `version` in
 # osdu/hosts/osdu-delivery-vscode/package.json, with its change log entry, for the next one.
 #
+# Publishing is a person's decision, taken per release: this workflow starts only when someone runs it. No push, merge,
+# tag, release or schedule publishes the extension, and no other workflow starts this one; the extension's tests hold
+# the workflows to that (osdu/hosts/osdu-delivery-vscode/test/manifest.test.ts).
+#
 # Needs: a signed vscode-build.yml run whose packages have not expired (30 days), and the secret VSCE_PAT, a token of
 # the Marketplace publisher the manifest names (delta-forge) with the scope Marketplace (Manage). Open VSX is not
 # published to.

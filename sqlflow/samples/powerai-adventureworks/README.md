@@ -21,7 +21,7 @@ From the repository root, with the stack up (SQL Server published on the host po
 ```bash
 export SQLFLOW_CATALOG_DB="Server=localhost,14333;Database=SqlFlowCatalog;User ID=sa;Password=<MSSQL_SA_PASSWORD>;TrustServerCertificate=True"
 export SQLFLOW_ADVENTUREWORKS_DB="Server=localhost,14333;Database=AdventureWorks;User ID=sa;Password=<MSSQL_SA_PASSWORD>;TrustServerCertificate=True"
-dotnet run --project src/SqlFlow.Cli -- db sync samples/powerai-adventureworks --repo powerai-adventureworks --connect
+dotnet run --project src/SqlFlow.Cli.Host -- db sync samples/powerai-adventureworks --repo powerai-adventureworks --connect
 ```
 
 `--connect` makes the sync read the registered database, so the catalog holds its tables, views, columns,
@@ -29,7 +29,7 @@ and scripts and the report links onto them. Running the registration flow refres
 without a sync:
 
 ```bash
-dotnet run --project src/SqlFlow.Cli -- run samples/powerai-adventureworks/adventureworks_00_sch.yaml --db '${env:SQLFLOW_CATALOG_DB}'
+dotnet run --project src/SqlFlow.Cli.Host -- run samples/powerai-adventureworks/adventureworks_00_sch.yaml --db '${env:SQLFLOW_CATALOG_DB}'
 ```
 
 The semantic layer needs the registered tables before an AI context can open them. Everything is off by

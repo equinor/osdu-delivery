@@ -224,7 +224,7 @@ if ! dotnet build osdu/hosts/SqlFlow.Delivery.Cli.Host -v q -nologo; then
     echo "[X] The command line did not build. Fix the build above and start ./dev.sh again." >&2
     exit 1
 fi
-cli="$root/osdu/hosts/SqlFlow.Delivery.Cli.Host/bin/Debug/net9.0/SqlFlow.Delivery.Cli.Host"
+cli="$root/osdu/hosts/SqlFlow.Delivery.Cli.Host/bin/Debug/net9.0/sqlflow"
 
 # --- Stop whatever the last run left behind ---
 # A control plane from an earlier run holds its port and keeps taking runs; a managed worker of one keeps polling. This

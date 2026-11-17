@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { cliCommand, offerCliInTerminals } from './cli';
 import { Docs } from './docs/docs';
 import { DocumentIndex, IndexedDocument, recogniseOpenedDocuments } from './documents/documentIndex';
+import { pagePathOf } from './documents/recognition';
 import { keyPathAtLine } from './documents/yamlPath';
 import {
     cliTaskProvider,
@@ -29,6 +30,7 @@ import { connectAssistant, registerWithEditor } from './mcp/mcpSetup';
 import { McpServer } from './mcp/mcpServer';
 import { SignIn } from './mcp/signIn';
 import { SignInNeeded } from './mcp/toolAnswer';
+import { OtherTools } from './otherTools';
 
 const DOCUMENT_SELECTOR: vscode.DocumentSelector = [{ language: 'sqlflow-flow' }];
 
@@ -118,6 +120,21 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const docs = new Docs(host.docCorpora(extensionPath), mcp);
     const session = new HostedSession(mcp, signIn, host.product);
     context.subscriptions.push(mcp, signIn, documents, session);
+    // Signed in here is signed in for the person's other tools too: their terminals and Claude Code get the command line
+    // and the server.
+    const otherTools = new OtherTools(context, host.product, mcp, output);
+    // The control plane the settings name is every server's of this product, not only this extension's: one the chat
+    // or Claude Code started before it was named follows the server config it is written to, and takes the sign-in
+    // held for it, rather than asking the person to sign in again.
+    const shareControlPlane = (): void => {
+        const url = vscode.workspace.getConfiguration('sqlflow').get<string>('controlPlaneUrl', '').trim();
+        if (url === '') {
+            return;
+        }
+        mcp.text('set_control_plane_url', { url }).catch((err: unknown) => {
+            output.warn(`[mcp] the control plane could not be given to the other servers: ${err instanceof Error ? err.message : String(err)}`);
+        });
+    };
 
     const onRefresh = new vscode.EventEmitter<void>();
     const onServerChange = new vscode.EventEmitter<void>();
@@ -193,13 +210,27 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
             }
         }),
         signIn.changed(() => onServerChange.fire()),
+        signIn.changed(() => {
+            if (signIn.identity !== undefined) {
+                otherTools.signedIn();
+            }
+        }),
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('sqlflow.controlPlaneUrl') || event.affectsConfiguration('sqlflow.guiUrl')
                 || event.affectsConfiguration('sqlflow.mcpBinaryPath')) {
                 mcp.restart();
                 onServerChange.fire();
                 offerCliInTerminals(context, host.product);
-                void signIn.check();
+                shareControlPlane();
+            }
+            if (event.affectsConfiguration('sqlflow.controlPlaneUrl') || event.affectsConfiguration('sqlflow.guiUrl')
+                || event.affectsConfiguration('sqlflow.mcpBinaryPath') || event.affectsConfiguration('sqlflow.cliPath')) {
+                // Claude Code's registration carries these, so a signed-in person's is brought up to date.
+                void signIn.check().then((signedIn) => {
+                    if (signedIn) {
+                        otherTools.signedIn();
+                    }
+                });
             }
         })
     );
@@ -308,7 +339,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     };
 
     const openRun = (runId: string, where?: OpenPage): void => pages.open(`/runs/${encodeURIComponent(runId)}`, where);
-    const openFlowPage = (pipeline: Pipeline, where?: OpenPage): void => pages.open(`/pipelines/${encodeURIComponent(pipeline.id)}`, where);
+    const openFlowPage = (pipeline: Pipeline, where?: OpenPage): void => pages.open(pagePathOf(pipeline.id, pipeline.kind), where);
 
     command('sqlflow.openPipeline', async (arg: unknown) => {
         const resolved = await resolvePipeline(arg);
@@ -330,6 +361,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     });
     register('sqlflow.openHome', () => pages.open('/'));
     register('sqlflow.openRuns', () => pages.open('/runs'));
+    register('sqlflow.openReports', () => pages.open('/reports'));
     register('sqlflow.showLineage', () => pages.open('/lineage'));
 
     command('sqlflow.compareWithSynced', async (arg: unknown) => {
@@ -354,8 +386,11 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
 
     register('sqlflow.setupMcp', () => connectAssistant(
         { providerId: host.mcp.providerId, product: host.product, program: host.mcp.program, version },
-        mcp
+        mcp,
+        () => otherTools.shareNow()
     ));
+    register('sqlflow.shareWithOtherTools', () => otherTools.shareNow());
+    register('sqlflow.unshareFromOtherTools', () => otherTools.unshareNow());
 
     register('sqlflow.showStatus', async () => {
         const signedIn = signIn.who !== undefined;
@@ -425,6 +460,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     });
 
     offerCliInTerminals(context, host.product);
+    shareControlPlane();
     void signIn.check();
     output.info(`${host.product} extension activated.`);
     return { estate, pages };

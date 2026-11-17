@@ -43,7 +43,7 @@ export function shippedPrograms(options: { production: boolean; platform?: NodeJ
         { name: 'sqlflow-lsp', candidates: rust('sqlflow-lsp', join(root, 'sqlflow', 'tools', 'target')) },
         { name: 'osdu-delivery-mcp', candidates: rust('osdu-delivery-mcp', join(root, 'osdu', 'hosts', 'osdu-delivery-mcp', 'target')) },
         // The command line, published as a single file for one platform (package.mjs), under the name it is documented by.
-        { name: 'sqlflow', candidates: [join(extension, 'publish', 'cli', `SqlFlow.Delivery.Cli.Host${exe}`)] },
+        { name: 'sqlflow', candidates: [join(extension, 'publish', 'cli', `sqlflow${exe}`)] },
     ];
     return programs.map((program) => ({
         ...program,
