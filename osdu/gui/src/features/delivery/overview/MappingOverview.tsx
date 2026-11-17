@@ -18,7 +18,7 @@ import { useExplain } from "@/features/chat/ExplainContext";
 import { ExplainIcon } from "@/features/chat/ExplainIcon";
 import { usePersistentLayout } from "@/layout/workbench/usePersistentLayout";
 import { cn } from "@/lib/utils";
-import { deliveryApi, type DeliveryMappingDetail, type MappingDraftIssue, type MappingOutline, type MappingOutlineHow } from "../../../api/delivery";
+import { deliveryApi, type MappingDraftIssue, type MappingOutline, type MappingOutlineHow } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
 import { LedgerStanding } from "../LedgerStanding";
 import { mappingLineageTarget, osduTypeLineageTarget } from "../lineageTargets";
@@ -27,6 +27,7 @@ import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
 import { isWithin, outlinePathOf } from "../recordPath";
+import type { WorkspaceDetail } from "../workspaceMapping";
 import { OverviewCanvas, type OverviewHandlers, type OverviewMenuTarget, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
 import { OverviewExplain } from "./OverviewExplain";
 import { INSPECTOR_WIDTH, OverviewInspector } from "./OverviewInspector";
@@ -225,7 +226,7 @@ function RecordLine({ record, session }: { record: RecordValues; session: ValueC
 
 /** The canvas and what surrounds it, for a mapping whose outline has been read. */
 function OverviewBody({ detail, outline, unfilled, issues, session, tools, onProperties }: {
-  detail: DeliveryMappingDetail;
+  detail: WorkspaceDetail;
   outline: MappingOutline;
   unfilled: number | null;
   issues: MappingDraftIssue[];
@@ -269,8 +270,8 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   // The flow's node in lineage is listed under its repository's name: only the flow's parameters open it.
   const repo = useQuery({
     queryKey: ["repos", "detail", mapping.repoId],
-    queryFn: () => repoApi.getById(mapping.repoId),
-    enabled: flow !== null,
+    queryFn: () => repoApi.getById(mapping.repoId!),
+    enabled: flow !== null && mapping.repoId !== null,
     retry: false,
   });
 
@@ -361,11 +362,14 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   // Where each part stands in lineage: a table's node, a column's table's, the nodes a property's value comes from, the record's
   // kind on its heading, and the mapping on the canvas itself.
   const repoName = repo.data?.name ?? null;
-  const place = useMemo<LineagePlace>(() => ({ partition, flow, repo: { id: mapping.repoId, name: repoName }, cached }), [partition, flow, mapping.repoId, repoName, cached]);
+  const place = useMemo<LineagePlace>(
+    () => ({ partition, flow, repo: mapping.repoId === null ? null : { id: mapping.repoId, name: repoName }, cached }),
+    [partition, flow, mapping.repoId, repoName, cached]);
   const lineageScope = useMemo<LineageScope>(() => ({ tables: tables.data ?? null, flow: flow !== null }), [tables.data, flow]);
   const lineageOf = useCallback((target: OverviewMenuTarget): PartTarget[] => {
     if (target.type === "canvas") {
-      return [{ id: "mapping", title: mapping.reference, mark: "mapping", target: mappingLineageTarget(mapping, partition) }];
+      // A document the estate has not seen is no node of its lineage yet.
+      return mapping.id === null ? [] : [{ id: "mapping", title: mapping.reference, mark: "mapping", target: mappingLineageTarget(mapping, partition) }];
     }
 
     if (target.type === "record") {
@@ -884,7 +888,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
  * follow a record through it (osdu/docs/reference/concepts/mapping-overview.md).
  */
 export function MappingOverview({ detail, session, tools, onProperties }: {
-  detail: DeliveryMappingDetail;
+  detail: WorkspaceDetail;
   session: ValueCheckSession;
   /** Where in the page's toolbar the overview's own controls go. */
   tools: HTMLElement | null;

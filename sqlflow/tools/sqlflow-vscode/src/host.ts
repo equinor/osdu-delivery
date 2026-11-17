@@ -3,7 +3,6 @@ import * as vscode from 'vscode';
 import { cliCommand, offerCliInTerminals } from './cli';
 import { Docs } from './docs/docs';
 import { DocumentIndex, IndexedDocument, recogniseOpenedDocuments } from './documents/documentIndex';
-import { isLineageDescription, isRunnable } from './documents/recognition';
 import { keyPathAtLine } from './documents/yamlPath';
 import {
     cliTaskProvider,
@@ -23,7 +22,6 @@ import { HostedBuild, readHostedBuild } from './gui/hostedFiles';
 import { HostedSurroundings } from './gui/hostedLink';
 import { HostedPages, OpenPage } from './gui/hostedPages';
 import { HostedSession } from './gui/hostedSession';
-import { DocumentOffers } from './gui/documentOffers';
 import { HostedSideBar, SIDE_BAR_VIEW } from './gui/hostedSideBar';
 import { startLspClient, stopLspClient } from './lsp/lspClient';
 import { Estate, Pipeline } from './mcp/estate';
@@ -31,7 +29,6 @@ import { connectAssistant, registerWithEditor } from './mcp/mcpSetup';
 import { McpServer } from './mcp/mcpServer';
 import { SignIn } from './mcp/signIn';
 import { SignInNeeded } from './mcp/toolAnswer';
-import { RunParameter, RunPayloadReader, runFlow } from './runs/runFlow';
 
 const DOCUMENT_SELECTOR: vscode.DocumentSelector = [{ language: 'sqlflow-flow' }];
 
@@ -84,8 +81,6 @@ export interface ModuleContext {
     documents: DocumentIndex;
     /** The GUI's pages, the module's own among them: what a module shows instead of drawing a view of its own. */
     pages: Pages;
-    /** What the side bar offers on a document's row, and the heading a module's documents are listed under. */
-    offers: DocumentOffers<IndexedDocument, Pipeline>;
     output: vscode.LogOutputChannel;
     /** What keys refer to: a module adds a provider per key it owns. */
     references: References;
@@ -94,10 +89,6 @@ export interface ModuleContext {
     command(id: string, action: (...args: unknown[]) => Promise<void>): void;
     /** Everything read from the estate changed: read it again. */
     refreshed: vscode.Event<void>;
-    /** The parameters a run of a flow takes, when a module knows them. */
-    addRunParameters(parameters: (pipeline: Pipeline, document: IndexedDocument | undefined) => Promise<RunParameter[] | undefined>): void;
-    /** What a run of a kind may be given beyond its operation and parameters. */
-    addRunPayload(payload: RunPayloadReader): void;
 }
 
 /** The folder of an extension the hosted build is in: the GUI's pages and side bar, built for the editor's webviews. */
@@ -181,8 +172,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
             }
         },
     };
-    const offers = new DocumentOffers<IndexedDocument, Pipeline>();
-    const sideBar = new HostedSideBar(build, around, documents, estate, signIn, offers, guarded);
+    const sideBar = new HostedSideBar(build, around);
     context.subscriptions.push(
         hostedPages,
         sideBar,
@@ -191,7 +181,6 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
 
     const refreshAll = (): void => {
         estate.forget();
-        sideBar.refresh();
         lenses.refresh();
         onRefresh.fire();
     };
@@ -221,9 +210,6 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const command = (id: string, action: (...args: unknown[]) => Promise<void>): void => {
         register(id, (...args: unknown[]) => guarded(() => action(...args)));
     };
-
-    const runParameters: ((pipeline: Pipeline, document: IndexedDocument | undefined) => Promise<RunParameter[] | undefined>)[] = [];
-    let runPayload: RunPayloadReader = async () => undefined;
 
     register('sqlflow.signIn', async () => {
         await signIn.signIn();
@@ -324,34 +310,6 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const openRun = (runId: string, where?: OpenPage): void => pages.open(`/runs/${encodeURIComponent(runId)}`, where);
     const openFlowPage = (pipeline: Pipeline, where?: OpenPage): void => pages.open(`/pipelines/${encodeURIComponent(pipeline.id)}`, where);
 
-    const startRun = async (resolved: { pipeline: Pipeline; document?: IndexedDocument }): Promise<void> => {
-        let parameters: RunParameter[] = [];
-        for (const reader of runParameters) {
-            parameters = (await reader(resolved.pipeline, resolved.document)) ?? parameters;
-        }
-        const runId = await runFlow(estate, resolved.pipeline, parameters, runPayload);
-        if (runId !== undefined) {
-            // The run's own page follows it: its trace as it is written, and how it ended. Beside the file, so the
-            // document that ran stays in view.
-            openRun(runId, { beside: true });
-            lenses.refresh();
-        }
-    };
-
-    command('sqlflow.runFlow', async (arg: unknown) => {
-        const resolved = await resolvePipeline(arg);
-        if (resolved?.document !== undefined && isLineageDescription(resolved.document)) {
-            // The editor's title button is on every flow document; on a lineage description it says why nothing runs.
-            void vscode.window.showInformationMessage(
-                `${host.product}: '${resolved.pipeline.name}' is a lineage description. It describes a step another system runs, is read for lineage only, and is never executed.`
-            );
-            return;
-        }
-        if (resolved) {
-            await startRun(resolved);
-        }
-    });
-
     command('sqlflow.openPipeline', async (arg: unknown) => {
         const resolved = await resolvePipeline(arg);
         if (resolved) {
@@ -429,23 +387,6 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     context.subscriptions.push(status, signIn.changed(showStatus));
     showStatus();
 
-    // What the side bar offers on a flow's row: run it, and for a flow the estate has, its page and what differs from it.
-    offers.register((document, pipeline) => {
-        if (document.kind !== 'flow') {
-            return [];
-        }
-        return [
-            // A lineage description is never run, so its row offers its page and its comparison, and no Run.
-            ...(isRunnable(document)
-                ? [{ id: 'run', label: 'Run', icon: 'run', primary: true, run: () => vscode.commands.executeCommand('sqlflow.runFlow', document.uri) as Promise<void> }]
-                : []),
-            ...(pipeline === undefined ? [] : [
-                { id: 'page', label: 'Open the flow\'s page', icon: 'page', run: async () => openFlowPage(pipeline, { beside: true }) },
-                { id: 'compare', label: 'Compare with what the estate runs', icon: 'compare', run: () => compareWithSynced(estate, documents, document.uri) },
-            ]),
-        ];
-    });
-
     context.subscriptions.push(
         recogniseOpenedDocuments(),
         vscode.languages.registerCompletionItemProvider(DOCUMENT_SELECTOR, references, ':', ' '),
@@ -467,16 +408,11 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         estate,
         documents,
         pages,
-        offers,
         output,
         references,
         lenses,
         command,
         refreshed: onRefresh.event,
-        addRunParameters: (parameters) => runParameters.push(parameters),
-        addRunPayload: (payload) => {
-            runPayload = payload;
-        },
     };
     for (const module of host.modules ?? []) {
         module.activate(moduleContext);

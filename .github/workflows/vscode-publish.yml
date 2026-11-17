@@ -1,0 +1,118 @@
+name: VS Code extension · publish
+
+run-name: >-
+  Publish the OSDU Delivery extension to the Marketplace${{ inputs.build_run && format(' (build {0})', inputs.build_run) || ' (latest build)' }}
+
+# The cheap, repeatable half of the extension's release, as DeltaForge publishes its own (vscode-publish.yml there):
+# take the packages a signed vscode-build.yml run made and publish them to the Visual Studio Marketplace. Nothing is
+# built or signed here, so a publish that fails (a token, a passing 5xx) is retried by running this again against the
+# same build. Each platform's package is published on its own; one the Marketplace already holds at this version counts
+# as published, so a retry pushes only what failed. A version is published once: raise `version` in
+# osdu/hosts/osdu-delivery-vscode/package.json, with its change log entry, for the next one.
+#
+# Needs: a signed vscode-build.yml run whose packages have not expired (30 days), and the secret VSCE_PAT, a token of
+# the Marketplace publisher the manifest names (delta-forge) with the scope Marketplace (Manage). Open VSX is not
+# published to.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: The vscode-build run whose packages to publish (blank takes the latest successful one)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vscode-publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to the Marketplace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Find the build
+        id: build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BUILD_RUN: ${{ inputs.build_run }}
+        run: |
+          set -euo pipefail
+          run="$BUILD_RUN"
+          if [ -z "$run" ]; then
+            run=$(gh run list --repo "$REPO" --workflow vscode-build.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId // ""')
+          fi
+          if [ -z "$run" ]; then
+            echo "::error::No successful vscode-build run was found: run vscode-build.yml first."
+            exit 1
+          fi
+          title=$(gh run view "$run" --repo "$REPO" --json displayTitle,conclusion --jq '"\(.displayTitle)|\(.conclusion)"')
+          echo "Build $run: $title"
+          case "$title" in
+            *unsigned*) echo "::error::Build $run did not sign its programs, and an unsigned build is never published."; exit 1 ;;
+          esac
+          case "$title" in
+            *"|success") ;;
+            *) echo "::error::Build $run did not succeed."; exit 1 ;;
+          esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: vsix-*
+          path: packages
+          merge-multiple: true
+          run-id: ${{ steps.build.outputs.run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          BUILD_RUN: ${{ steps.build.outputs.run }}
+        run: |
+          set -u
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "::error::The secret VSCE_PAT is not set, so nothing can be published."
+            exit 1
+          fi
+          shopt -s nullglob
+          packages=(packages/*.vsix)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "::error::Build $BUILD_RUN kept no package (expired, or the wrong run)."
+            exit 1
+          fi
+          published=0
+          already=0
+          failed=0
+          for package in "${packages[@]}"; do
+            echo "Publishing $package"
+            if output=$(npx --yes @vscode/vsce@4 publish --packagePath "$package" 2>&1); then
+              echo "$output"
+              published=$((published + 1))
+            elif echo "$output" | grep -qiE 'already exists|already published|same version'; then
+              echo "$output"
+              echo "  (the Marketplace already holds this version for this platform)"
+              already=$((already + 1))
+            else
+              echo "$output"
+              echo "::warning::$package was not published."
+              failed=$((failed + 1))
+            fi
+          done
+          echo "Published $published, already held $already, failed $failed, from build $BUILD_RUN."
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::$failed package(s) were not published: run this again to retry them."
+            exit 1
+          fi

@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { CloudOff, FileCode, FilePen, Info, LayoutTemplate, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GlyphRef } from "@/components/GlyphRef";
 import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import { useWatchedDocument } from "@/embed/hostState";
@@ -12,12 +11,10 @@ import { useTabTitle } from "@/layout/workbench/TabsContext";
 import { deliveryApi, type DeliveryMapping } from "../api/delivery";
 import { MappingWorkspace } from "../features/delivery/DeliveryMappingPage";
 import { KindText } from "../features/delivery/KindText";
-import { MappingCoverageView } from "../features/delivery/MappingCoverageView";
 import { mappingRoute } from "../features/delivery/mappingSearch";
-import { MappingShapeView } from "../features/delivery/MappingShapeView";
 import { ProblemView } from "../features/delivery/TemplateSheet";
-import { WindowFrame } from "../features/delivery/WindowFrame";
-import { declaredMapping, placeWorkingCopy, textKey } from "./workingCopy";
+import type { WorkspaceMapping } from "../features/delivery/workspaceMapping";
+import { declaredMapping, placeWorkingCopy, textKey, workspaceMappingOf } from "./workingCopy";
 
 /** The text the page shows, and the document it is of. */
 interface ShownText {
@@ -40,36 +37,10 @@ function Note({ icon: Icon, testId, children }: { icon: LucideIcon; testId: stri
 }
 
 /**
- * A mapping the estate has not seen yet, read from the document alone: what its template makes of it attribute by
- * attribute, and the shape of the record it renders. Its rows and its dry run wait for a flow to render with it, which
- * the estate learns of when the repository is synced.
+ * The mapping's page over the text an editor holds: the same workspace a synced mapping's page is, read from the file,
+ * whether or not the estate has seen it. What is drawn from the text (Overview, Properties, Record shape) is drawn for
+ * either; what reads rows renders them with the mapping the estate synced, and says it waits for a sync while there is none.
  */
-function UnsyncedWorkspace({ yaml, path, contentHash, repoId, templatePath }: {
-  yaml: string;
-  path: string;
-  contentHash: string;
-  repoId: string | null;
-  templatePath: string | null;
-}) {
-  return (
-    <WindowFrame testId="working-copy-mapping-unsynced">
-      <Tabs defaultValue="coverage" className="min-h-0 flex-1">
-        <TabsList className="h-8">
-          <TabsTrigger value="coverage" className="text-[13px]" data-testid="working-copy-tab-coverage">Properties</TabsTrigger>
-          <TabsTrigger value="shape" className="text-[13px]" data-testid="working-copy-tab-shape">Record shape</TabsTrigger>
-        </TabsList>
-        <TabsContent value="coverage" className="flex min-h-0 flex-col">
-          <MappingCoverageView yaml={yaml} path={path} contentHash={contentHash} repoId={repoId} templatePath={templatePath} />
-        </TabsContent>
-        <TabsContent value="shape" className="flex min-h-0 flex-col">
-          <MappingShapeView yaml={yaml} path={path} contentHash={contentHash} repoId={repoId} />
-        </TabsContent>
-      </Tabs>
-    </WindowFrame>
-  );
-}
-
-/** The mapping's page over the text an editor holds: the same workspace a synced mapping's page is, read from the file. */
 function WorkingCopy({ shown, path, unsavedAhead, onShowUnsaved }: {
   shown: ShownText;
   path: string;
@@ -106,6 +77,10 @@ function WorkingCopy({ shown, path, unsavedAhead, onShowUnsaved }: {
     enabled: place !== null && synced === null && place.repoId !== null && declared.kind !== null,
     retry: false,
   });
+  const templatePath = template.data?.found === true ? template.data.file ?? "" : "";
+  const mapping = useMemo<WorkspaceMapping | null>(
+    () => (place === null ? null : workspaceMappingOf(place, { path, reference: declared.reference, contentHash, templatePath })),
+    [place, path, declared.reference, contentHash, templatePath]);
 
   return (
     <div className="flex flex-col gap-2" data-testid="page-working-copy-mapping">
@@ -157,19 +132,10 @@ function WorkingCopy({ shown, path, unsavedAhead, onShowUnsaved }: {
       )}
 
       {place === null && !mappings.isError && <Skeleton className="h-80 w-full" data-testid="working-copy-mapping-placing" />}
-      {place !== null && synced !== null && (
+      {mapping !== null && (
         // Keyed by the mapping alone: a save draws the text again inside the workspace, and the tab, the scope and what
-        // a dry run found stay as they were, where another mapping starts afresh.
-        <MappingWorkspace key={synced.id} detail={{ mapping: { ...synced, contentHash }, yaml: shown.text }} />
-      )}
-      {place !== null && synced === null && (
-        <UnsyncedWorkspace
-          yaml={shown.text}
-          path={path}
-          contentHash={contentHash}
-          repoId={place.repoId}
-          templatePath={template.data?.found === true ? template.data.file ?? null : null}
-        />
+        // a dry run found stay as they were, where another mapping, or this one once the estate has synced it, starts afresh.
+        <MappingWorkspace key={mapping.id ?? `working-copy|${path}`} detail={{ mapping, yaml: shown.text }} />
       )}
     </div>
   );

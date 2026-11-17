@@ -5,3 +5,4 @@ bin/
 .vscode-test/
 LICENSE
 publish/
+THIRD-PARTY-NOTICES.txt

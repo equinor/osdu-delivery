@@ -1,0 +1,248 @@
+name: VS Code extension · build
+
+run-name: >-
+  Build the OSDU Delivery extension${{ inputs.sign && ' · signed' || ' · unsigned' }}
+
+# The expensive half of the extension's release, as DeltaForge builds its own (vscode-build.yml there): build the three
+# programs a package carries on a runner of each platform, sign them, and package one .vsix per platform with the
+# extension's own packager (osdu/hosts/osdu-delivery-vscode/package.mjs, which a developer runs for their machine).
+# The packages are kept as artifacts for 30 days, and vscode-publish.yml publishes them. The two are apart so that a
+# publish that fails (a token, a version the Marketplace already holds, a passing 5xx) is retried in seconds against
+# the same packages, never by building and signing again.
+#
+# Signing is on by default, because these packages exist to be published; vscode-publish.yml refuses an unsigned build.
+#   Windows: DigiCert KeyLocker, through DigiCert's action (SM_HOST, SM_API_KEY, SM_CLIENT_CERT_FILE_B64,
+#            SM_CLIENT_CERT_PASSWORD, SM_KEYPAIR_ALIAS).
+#   macOS:   a Developer ID Application certificate, the hardened runtime and notarization (APPLE_CERT_P12_B64,
+#            APPLE_CERT_PASSWORD, APPLE_ID, APPLE_APP_PASSWORD, APPLE_TEAM_ID). The command line is a .NET program and is
+#            signed with the entitlements its runtime needs (signing/sqlflow.entitlements.plist).
+#   Linux:   nothing to sign.
+# They are the secrets DeltaForge signs with, set on this repository too.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: Sign the programs (required for a build that is published)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-build-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      # One platform failing says nothing of the others, and their packages are still worth having.
+      fail-fast: false
+      matrix:
+        include:
+          - target: win32-x64
+            runner: windows-latest
+          - target: linux-x64
+            runner: ubuntu-latest
+          - target: darwin-arm64
+            runner: macos-latest
+          # The Intel image GitHub keeps after macos-13 was retired.
+          - target: darwin-x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7
+
+      # A clean build fills a Linux runner's disk unless the runner's unused toolchains go first, as in CI.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: bash tools/github/free-runner-disk.sh
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # The pages the extension shows are built from the GUI's sources, with the GUI's packages.
+      - name: Install OSDU GUI dependencies
+        working-directory: osdu/gui
+        run: npm ci
+
+      - name: Install the extension's dependencies
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: npm ci
+
+      - name: Unit test the extension
+        shell: bash
+        run: |
+          (cd osdu/hosts/osdu-delivery-vscode && npm run compile && npm test)
+          node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
+
+      # Builds the three programs for this runner's platform and lists where each is: what the next steps sign is what
+      # the packager stages.
+      - name: Build the programs
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          node package.mjs --target ${{ matrix.target }} --programs-only | tee "$RUNNER_TEMP/programs.log"
+          sed -n 's/^\[package\] program //p' "$RUNNER_TEMP/programs.log" | tr -d '\r' > "$RUNNER_TEMP/programs.txt"
+          if [ "$(wc -l < "$RUNNER_TEMP/programs.txt")" -ne 3 ]; then
+            echo "::error::The packager listed $(wc -l < "$RUNNER_TEMP/programs.txt") programs, not 3."
+            exit 1
+          fi
+
+      # ---- Windows: DigiCert KeyLocker ------------------------------------------------------------------------------
+      - name: Prepare the KeyLocker client certificate
+        if: inputs.sign && runner.os == 'Windows'
+        shell: bash
+        env:
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+        run: |
+          set -eu
+          if [ -z "$SM_CLIENT_CERT_FILE_B64" ]; then
+            echo "::error::Signing is asked for but the secret SM_CLIENT_CERT_FILE_B64 is empty."
+            exit 1
+          fi
+          printf '%s' "$SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/sm-client.p12"
+
+      - name: Install DigiCert's signing tool
+        if: inputs.sign && runner.os == 'Windows'
+        # Pinned to the commit of its v1.2.1 tag: a third-party action is taken by commit, never by a tag that can move.
+        uses: digicert/code-signing-software-trust-action@fae23a455ba4bde62b64fd7cb2f81ade788f5a95 # v1.2.1
+        with:
+          simple-signing-mode: true
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\sm-client.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+
+      # Signed one by one with smctl and verified with signtool, as DeltaForge signs its programs: smctl can print a
+      # failure and still exit 0, so its output is read, and signtool's verification is the gate.
+      - name: Sign the programs (Authenticode)
+        if: inputs.sign && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\sm-client.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_KEYPAIR_ALIAS: ${{ secrets.SM_KEYPAIR_ALIAS }}
+        run: |
+          if (-not $env:SM_KEYPAIR_ALIAS) { Write-Host "::error::The secret SM_KEYPAIR_ALIAS is empty."; exit 1 }
+          $smctl = (Get-Command smctl -ErrorAction SilentlyContinue).Source
+          if (-not $smctl) {
+            $smctl = Get-ChildItem -Path $env:RUNNER_TOOL_CACHE, $env:RUNNER_TEMP, 'C:\Program Files\DigiCert' -Recurse -Filter 'smctl.exe' -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $smctl) { Write-Host "::error::smctl.exe is not where DigiCert's action installs it."; exit 1 }
+          $signtool = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { Write-Host "::error::signtool.exe is not on this runner."; exit 1 }
+          foreach ($program in Get-Content (Join-Path $env:RUNNER_TEMP 'programs.txt')) {
+            Write-Host "Signing $program"
+            $output = & $smctl sign --simple --keypair-alias $env:SM_KEYPAIR_ALIAS --input $program 2>&1
+            $exit = $LASTEXITCODE
+            $output | ForEach-Object { Write-Host "   $_" }
+            if (($exit -ne 0) -or ($output -match 'FAILED|failed|error|access_denied')) {
+              Write-Host "::error::smctl did not sign $program (exit $exit)."
+              exit 1
+            }
+            & $signtool.FullName verify /pa /v $program
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::signtool does not verify $program."; exit 1 }
+          }
+
+      # ---- macOS: Developer ID and notarization --------------------------------------------------------------------
+      - name: Import the Developer ID certificate
+        if: inputs.sign && runner.os == 'macOS'
+        env:
+          APPLE_CERT_P12_B64: ${{ secrets.APPLE_CERT_P12_B64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -eu
+          if [ -z "$APPLE_CERT_P12_B64" ]; then
+            echo "::error::Signing is asked for but the secret APPLE_CERT_P12_B64 is empty."
+            exit 1
+          fi
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/osdu-delivery.keychain-db"
+          printf '%s' "$APPLE_CERT_P12_B64" | base64 --decode > "$certificate"
+          security create-keychain -p "$APPLE_CERT_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$APPLE_CERT_PASSWORD" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_CERT_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/ {print $2; exit}')
+          if [ -z "$identity" ]; then
+            echo "::error::The certificate holds no Developer ID Application identity."
+            exit 1
+          fi
+          rm -f "$certificate"
+          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Sign and notarize the programs
+        if: inputs.sign && runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -eu
+          entitlements="$GITHUB_WORKSPACE/osdu/hosts/osdu-delivery-vscode/signing/sqlflow.entitlements.plist"
+          stage="$RUNNER_TEMP/notarize"
+          mkdir -p "$stage"
+          while IFS= read -r program; do
+            echo "Signing $program"
+            if [ "$(basename "$program")" = "SqlFlow.Delivery.Cli.Host" ]; then
+              codesign --force --options runtime --timestamp --entitlements "$entitlements" \
+                --keychain "$SIGNING_KEYCHAIN" -s "$APPLE_SIGNING_IDENTITY" "$program"
+            else
+              codesign --force --options runtime --timestamp \
+                --keychain "$SIGNING_KEYCHAIN" -s "$APPLE_SIGNING_IDENTITY" "$program"
+            fi
+            codesign --verify --strict --verbose=2 "$program"
+            cp "$program" "$stage/"
+          done < "$RUNNER_TEMP/programs.txt"
+          # A bare program cannot be stapled; notarizing it lets Gatekeeper find the ticket online.
+          ditto -c -k "$stage" "$RUNNER_TEMP/notarize.zip"
+          answer=$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait --output-format json)
+          echo "$answer"
+          status=$(printf '%s' "$answer" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')
+          if [ "$status" != "Accepted" ]; then
+            id=$(printf '%s' "$answer" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')
+            [ -n "$id" ] && xcrun notarytool log "$id" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" || true
+            echo "::error::Apple did not accept the programs for notarization (status '$status')."
+            exit 1
+          fi
+
+      # Packages the signed programs: the packager stages them from where they were built and signed.
+      - name: Package
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: node package.mjs --target ${{ matrix.target }} --skip-programs
+
+      - name: Keep the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: vsix-${{ matrix.target }}
+          path: osdu/hosts/osdu-delivery-vscode/*.vsix
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove the signing material
+        if: always() && inputs.sign
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/sm-client.p12" "$RUNNER_TEMP/developer-id.p12"
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi

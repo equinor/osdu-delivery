@@ -109,19 +109,6 @@ export interface Datasource {
     targetPipelines: number;
 }
 
-export interface FlowKindOperation {
-    name: string;
-    label: string;
-    description: string;
-    writesTarget: boolean;
-}
-
-export interface FlowKinds {
-    flowKinds: string[];
-    documentKinds: string[];
-    runOperations?: { flowType: string; description: string; operations: FlowKindOperation[]; defaultOperation?: string | null }[];
-}
-
 export interface DocumentProblem {
     severity: string;
     line: number;
@@ -231,29 +218,12 @@ export class Estate {
         return items(await this.mcp.call<Paged<Run> | Run[]>('list_runs', { ...query, pageSize: query.pageSize ?? 50 }));
     }
 
-    async triggerRun(arguments_: {
-        repoId: string;
-        flowName: string;
-        fullLoad?: boolean;
-        operation?: string;
-        values?: Record<string, unknown>;
-        payload?: Record<string, unknown>;
-    }): Promise<{ runId: string; status: string }> {
-        const accepted = await this.mcp.call<{ runId: string; status: string }>('trigger_run', arguments_);
-        this.forget();
-        return accepted;
-    }
-
     async schedules(): Promise<Schedule[]> {
         return items(await this.remembered<Paged<Schedule> | Schedule[]>('list_schedules'));
     }
 
     async datasources(): Promise<Datasource[]> {
         return items(await this.remembered<Paged<Datasource> | Datasource[]>('list_datasources'));
-    }
-
-    flowKinds(): Promise<FlowKinds> {
-        return this.remembered('list_flow_kinds');
     }
 
     /** What the language engine reports of a document's text: the same analysis as the editor's, without opening it. */

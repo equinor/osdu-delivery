@@ -159,12 +159,6 @@
         "icon": "$(sync)"
       },
       {
-        "command": "sqlflow.runFlow",
-        "title": "Run Flow",
-        "category": "SQLFlow",
-        "icon": "$(play)"
-      },
-      {
         "command": "sqlflow.openPipeline",
         "title": "Open Flow Page",
         "category": "SQLFlow",
@@ -259,24 +253,14 @@
       ],
       "view/title": [
         {
-          "command": "sqlflow.refreshCatalog",
-          "when": "view == sqlflow.sideBar",
-          "group": "navigation@1"
-        },
-        {
           "command": "sqlflow.openHome",
           "when": "view == sqlflow.sideBar",
-          "group": "navigation@2"
+          "group": "navigation@1"
         }
       ],
       "editor/title": [
         {
           "command": "sqlflow.validateFlow",
-          "when": "resourceLangId == sqlflow-flow",
-          "group": "navigation"
-        },
-        {
-          "command": "sqlflow.runFlow",
           "when": "resourceLangId == sqlflow-flow",
           "group": "navigation"
         }

@@ -110,3 +110,44 @@ export function placeWorkingCopy<T extends PlacedMapping>(mappings: readonly T[]
   });
   return { synced: null, repoId: neighbour?.repoId ?? null };
 }
+
+/** What the page knows of the document it shows, beside where it stands. */
+export interface WorkingCopyDocument {
+  path: string;
+  /** What the text declares itself, `name@version`; null while either is missing. */
+  reference: string | null;
+  /** The key of the text shown (textKey). */
+  contentHash: string;
+  /** The template folder file its template settles to; empty when none is found. */
+  templatePath: string;
+}
+
+/** A mapping the estate has not seen, as the workspace reads it: the document alone, which no flow renders with. */
+export interface UnseenMapping {
+  id: null;
+  repoId: string | null;
+  reference: string;
+  relativePath: string;
+  contentHash: string;
+  templatePath: string;
+}
+
+/**
+ * The mapping the page's workspace shows for a working copy: the synced mapping it is a copy of, keyed by the text
+ * shown so what is drawn from the text follows a save, or, for one the estate has not seen, the document itself, with
+ * no id, since no flow renders with it until the repository is synced.
+ */
+export function workspaceMappingOf<T extends PlacedMapping>(place: WorkingCopyPlace<T>, document: WorkingCopyDocument): T | UnseenMapping {
+  if (place.synced !== null) {
+    return { ...place.synced, contentHash: document.contentHash };
+  }
+
+  return {
+    id: null,
+    repoId: place.repoId,
+    reference: document.reference ?? document.path,
+    relativePath: document.path,
+    contentHash: document.contentHash,
+    templatePath: document.templatePath,
+  };
+}

@@ -13,7 +13,8 @@ import type { SourceLineage } from "./outlineLineage.ts";
 export interface LineagePlace {
   partition: string | null;
   flow: DeliveryMappingFlow | null;
-  repo: { id: string; name: string | null };
+  /** The repository the mapping was synced from; null for a document the estate has not seen, which no flow renders with. */
+  repo: { id: string; name: string | null } | null;
   /** The partition's cache types, whose entity types name them in the picker. */
   cached: readonly DeliveryCachedType[] | null;
 }
@@ -35,7 +36,7 @@ function targetOf({ card, node }: SourceLineage, place: LineagePlace): LineageJu
     case "table":
       return tableLineageTarget(node.objectKey, card.title, card.subtitle);
     case "flow":
-      return place.flow === null ? null : flowLineageTarget(place.flow, place.repo);
+      return place.flow === null || place.repo === null ? null : flowLineageTarget(place.flow, place.repo);
     case "cache":
       return cacheTypeLineageTarget({ name: node.type, entityType: place.cached?.find((type) => type.name === node.type)?.entityType }, place.partition);
     case "type":

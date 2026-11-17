@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const vscode = require('vscode');
 
-const EXTENSION = 'business-iq.osdu-delivery';
+const EXTENSION = 'delta-forge.osdu-delivery';
 
 const sample = (relative) => vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, relative));
 
@@ -155,10 +155,11 @@ const checks = {
         assert.ok(links);
     },
 
-    async 'a flow carries its actions at the top'() {
+    async 'a flow is run from its page, so the editor offers no run of its own'() {
         const document = await open('flows/welldb-wellbore-03-delivery.yaml');
         const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', document.uri);
-        assert.ok(lenses.some((lens) => lens.command?.command === 'sqlflow.runFlow'));
+        assert.ok(!lenses.some((lens) => lens.command?.command === 'sqlflow.runFlow'));
+        assert.ok(!(await vscode.commands.getCommands(true)).includes('sqlflow.runFlow'));
     },
 
     async 'a mapping offers its preview'() {
@@ -203,6 +204,40 @@ const checks = {
             });
             const errors = diagnostics[0].filter((d) => d.severity === vscode.DiagnosticSeverity.Error).map((d) => d.message);
             assert.deepEqual(errors, [], skeleton.label);
+        }
+    },
+
+    async 'a lineage description is understood as it is typed: its keys checked and documented'() {
+        // SQLFlow's own sample of the kind, with one key the kind does not have put first: the language server packaged
+        // here knows flowType lin, so the sample's own keys pass, the stray one is refused on its line, and a key is
+        // explained on hover. A package built from sources older than the kind fails here.
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        const fs = require('node:fs');
+        const extension = vscode.extensions.getExtension(EXTENSION);
+        const original = fs.readFileSync(
+            path.join(extension.extensionPath, '..', '..', '..', 'sqlflow', 'samples', 'lineage-described', 'lineage', 'orders-u1-curate.yaml'),
+            'utf8'
+        );
+        const text = `notAKeyOfLin: 1\n${original}`;
+        const described = sample('flows/lineage-probe.yaml');
+        await vscode.workspace.fs.writeFile(described, Buffer.from(text));
+        try {
+            const document = await open('flows/lineage-probe.yaml');
+            const errors = await until('the language server\'s word on the lineage description', () => {
+                const found = vscode.languages.getDiagnostics(document.uri).filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+                return found.length > 0 ? found : undefined;
+            });
+            assert.deepEqual(errors.map((d) => [d.range.start.line, d.message.includes('notAKeyOfLin')]), [[0, true]], errors.map((d) => d.message).join('; '));
+
+            const systemLine = text.split('\n').findIndex((line) => line.startsWith('system:'));
+            const hovers = await until('a hover on system', async () => {
+                const found = await vscode.commands.executeCommand('vscode.executeHoverProvider', document.uri, new vscode.Position(systemLine, 2));
+                return found?.length ? found : undefined;
+            });
+            assert.match(hoverText(hovers), /the system that performs the step/i);
+        } finally {
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+            await vscode.workspace.fs.delete(described);
         }
     },
 

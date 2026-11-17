@@ -19,13 +19,13 @@ The first release.
 
 ### The estate in the editor
 
-- One drawn side bar: the working copy by kind, each document with what can be done with it, and the menu of the
-  estate's pages.
+- One drawn side bar, the web GUI's own navigation: its search, its menu, and a button that syncs a repository on the
+  control plane signed in to, after a confirmation for one that holds its commit.
 - Every page of the web GUI opens in a tab of the editor, in the colours of the editor's theme, and comes back after a
   restart on the page it showed.
 - Preview Mapping opens a mapping's page beside its file and reads the file: its overview, its staged records with the
   documents they render to, and the properties of its template. It follows the file as it is saved.
-- Run Flow asks what the run should do and opens the run's page, which shows its trace as it is written.
+- A flow runs from its page, with the GUI's own run form, and the run's page shows its trace as it is written.
 
 ### Sign-in, the assistant and the command line
 

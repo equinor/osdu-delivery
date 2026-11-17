@@ -7,12 +7,12 @@ import { repoSourceApi } from "@/api/endpoints";
 import type { RepoSource } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { RelativeTime } from "@/components/RelativeTime";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { syncNowConfirmText, syncNowMoves, syncsOnRequest } from "@/features/repos/autoSync";
+import { syncNowConfirmText, syncNowMoves } from "@/features/repos/autoSync";
 import { announceSyncOutcome, repoSourcesRefetchInterval } from "@/features/repos/syncOutcome";
+import { SyncStanding } from "@/features/repos/SyncStanding";
 import { useFollowSyncTrace, useSyncTracePanel } from "@/features/repos/useSyncTracePanel";
 import { pickedSource, rememberedRepository, rememberRepository, syncsEnded } from "./repositorySync";
 
@@ -20,33 +20,6 @@ import { pickedSource, rememberedRepository, rememberRepository, syncsEnded } fr
 const FETCH_CAP = 200;
 
 const errorText = (error: unknown) => (isApiError(error) ? error.detail ?? error.title : String(error));
-
-/** How a repository's last sync went, under its name in the list. */
-function SyncStanding({ source }: { source: RepoSource }) {
-  if (!source.enabled) {
-    return <span>paused, so it does not sync</span>;
-  }
-
-  if (source.syncPending) {
-    return <span>syncing</span>;
-  }
-
-  if (source.lastError !== null) {
-    return <span className="text-destructive">the last sync failed</span>;
-  }
-
-  if (source.lastSyncUtc === null) {
-    return <span>not synced yet</span>;
-  }
-
-  return (
-    <span>
-      synced <RelativeTime value={source.lastSyncUtc} absolute={false} />
-      {source.lastSyncedSha !== null && <>, <span className="font-mono">{source.lastSyncedSha.slice(0, 10)}</span></>}
-      {syncsOnRequest(source) && <>, syncs on request</>}
-    </span>
-  );
-}
 
 /**
  * Syncs a repository from the Delivery page (osdu/docs/reference/concepts/gui-ledger.md, Delivery), so a commit reaches the flows

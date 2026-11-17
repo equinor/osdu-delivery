@@ -16,4 +16,7 @@ dist/hosted/assets/worker-*.js
 dist/hosted/assets/*.wasm
 media/**
 package.mjs
+notices.mts
+programs.mts
+signing/**
 *.vsix

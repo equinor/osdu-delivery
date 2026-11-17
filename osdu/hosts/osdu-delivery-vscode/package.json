@@ -1,9 +1,9 @@
 {
   "name": "osdu-delivery",
-  "displayName": "OSDU Delivery",
-  "description": "Develop OSDU Delivery pipelines in the editor: every YAML document understood, a mapping previewed as you write it, the estate's pages beside your files, and an AI assistant built in. Powered by SQLFlow.",
+  "displayName": "OSDU Delivery, powered by SQLFlow",
+  "description": "Write the pipelines that deliver subsurface records into an OSDU® data platform: every YAML document understood, a mapping previewed as you write it, your estate's pages beside your files, and an AI assistant built in.",
   "version": "1.0.0",
-  "publisher": "business-iq",
+  "publisher": "delta-forge",
   "icon": "resources/icon.png",
   "galleryBanner": {
     "color": "#283e56",
@@ -213,12 +213,6 @@
         "icon": "$(sync)"
       },
       {
-        "command": "sqlflow.runFlow",
-        "title": "Run Flow",
-        "category": "OSDU Delivery",
-        "icon": "$(play)"
-      },
-      {
         "command": "sqlflow.openPipeline",
         "title": "Open Flow Page",
         "category": "OSDU Delivery",
@@ -313,7 +307,7 @@
         {
           "id": "sqlflow",
           "title": "OSDU Delivery",
-          "icon": "./resources/flow.svg"
+          "icon": "./resources/osdu-delivery.svg"
         }
       ]
     },
@@ -324,7 +318,7 @@
           "name": "",
           "type": "webview",
           "contextualTitle": "OSDU Delivery",
-          "icon": "./resources/flow.svg"
+          "icon": "./resources/osdu-delivery.svg"
         }
       ]
     },
@@ -345,24 +339,14 @@
       ],
       "view/title": [
         {
-          "command": "sqlflow.refreshCatalog",
-          "when": "view == sqlflow.sideBar",
-          "group": "navigation@1"
-        },
-        {
           "command": "sqlflow.openHome",
           "when": "view == sqlflow.sideBar",
-          "group": "navigation@2"
+          "group": "navigation@1"
         }
       ],
       "editor/title": [
         {
           "command": "sqlflow.validateFlow",
-          "when": "resourceLangId == sqlflow-flow",
-          "group": "navigation"
-        },
-        {
-          "command": "sqlflow.runFlow",
           "when": "resourceLangId == sqlflow-flow",
           "group": "navigation"
         },

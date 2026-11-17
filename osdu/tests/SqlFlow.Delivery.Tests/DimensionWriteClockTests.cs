@@ -91,7 +91,11 @@ public sealed class DimensionWriteClockTests
         var told = heard.Lines.Count;
         await Task.Delay(TimeSpan.FromMilliseconds(80));
 
-        Assert.Equal(["started writing its table: dim_X"], heard.Lines);
+        // A machine busy enough to stall the step for the first report's 20 ms may hear that the step runs before it
+        // fails; what never comes is its end, or a report once it has failed.
+        Assert.Equal("started writing its table: dim_X", heard.Lines[0]);
+        Assert.All(heard.Lines.Skip(1), l => Assert.StartsWith("running writing its table", l, StringComparison.Ordinal));
+        Assert.DoesNotContain(heard.Lines, l => l.StartsWith("ended", StringComparison.Ordinal));
         Assert.Equal(told, heard.Lines.Count);
     }
 

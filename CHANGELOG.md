@@ -370,13 +370,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The VS Code extension.** `osdu-delivery-vscode` makes the editor the place a pipeline is developed: a repository's plain `*.yaml`
   files open as what they are, every key of every kind has completion, hover and checks, and a mapping completes and is checked
-  against the template folders on its path as it is typed. A run is started with its kind's operations and followed on its
-  own page ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
+  against the template folders on its path as it is typed. A flow is run from its page, with the GUI's own run form
+  ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
 
-- **The GUI's pages in the editor.** The extension draws one side bar, the working copy by kind with what each document offers
-  and the GUI's own menu, and opens every page of the GUI in a tab, in the colours of the editor's theme and under your
-  sign-in: a flow, a run with its trace, lineage, templates, a record's history. No tree view or panel of the editor's own is
-  left ([the side bar and the pages](osdu/docs/reference/guides/vscode.md#the-side-bar-and-the-pages)).
+- **The GUI's pages in the editor.** The extension's side bar is the GUI's own navigation, its search and its menu, with a
+  button that syncs a repository on the control plane signed in to, after a confirmation for one that holds its commit. Every
+  page of the GUI opens in a tab, in the colours of the editor's theme and under your sign-in: a flow, a run with its trace,
+  lineage, templates, a record's history. The files are the editor's own Explorer's, and no tree view or panel of the
+  editor's own is left ([the side bar and the pages](osdu/docs/reference/guides/vscode.md#the-side-bar-and-the-pages)).
 
 - **A mapping previewed from its file.** `Preview Mapping` (Ctrl+K V) opens the mapping's page beside its file and reads the
   file: its overview, its properties against the template and the shape of its record show a mapping before it is pushed,

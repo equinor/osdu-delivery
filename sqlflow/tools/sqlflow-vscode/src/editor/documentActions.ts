@@ -1,7 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { DocumentIndex, IndexedDocument } from '../documents/documentIndex';
-import { isRunnable } from '../documents/recognition';
 import { DocumentProblem, Estate } from '../mcp/estate';
 import { ago } from '../time';
 
@@ -148,14 +147,12 @@ export class DocumentLenses implements vscode.CodeLensProvider {
         if (document.kind !== 'flow') {
             return [];
         }
-        // A lineage description has no Run: it is never executed. It keeps what the estate says of it.
-        const commands: vscode.Command[] = isRunnable(document)
-            ? [{ title: '$(play) Run', command: 'sqlflow.runFlow', arguments: [document.uri] }]
-            : [];
+        // A flow is run from its page, where the run's form is the GUI's own; the lenses say how it stands and lead there.
+        const commands: vscode.Command[] = [];
         if (!document.name) {
             return commands;
         }
-        // The estate is a bonus on a lens: signed out or unreachable, the document still has its Run.
+        // The estate is read for the lenses: signed out or unreachable, a flow has none.
         try {
             const pipeline = await this.estate.pipelineNamed(document.name, document.relativePath, document.flowType);
             if (!pipeline) {

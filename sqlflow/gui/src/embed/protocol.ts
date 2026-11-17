@@ -5,7 +5,7 @@
 // anything a browser or Node alone has, so both compile it and the unit suites read it.
 
 /** The version of this contract. A host and a page of different versions do not talk: each is built with the other. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Who is signed in, as the host knows it. The credential itself never reaches the page. */
 export interface HostSession {
@@ -27,50 +27,6 @@ export interface HostStart {
   sessionProblem: string | null;
   /** The GUI's public address, when the host knows it: where "open in the browser" goes. */
   guiBaseUrl: string | null;
-}
-
-/**
- * How a document of the working copy stands against the estate: it is what the estate runs (`same`), it differs from it
- * (`differs`), the estate has it and the two were not compared (`estate`), the estate does not have it (`local`), or
- * the estate could not be asked (`unknown`).
- */
-export type DocumentStanding = "same" | "differs" | "estate" | "local" | "unknown";
-
-/** A document of the working copy the host has open, as its side bar lists it. */
-export interface WorkspaceDocument {
-  /** The host's name for the document, given back to open it or act on it. */
-  id: string;
-  /** What the document calls itself, or its file's name. */
-  name: string;
-  /** Its path from the working copy's root, forward slashed. */
-  path: string;
-  /** The sort of document, as a heading names its group: "Ingestion flows", "Mappings". */
-  group: string;
-  /** The kind of a flow, which draws its icon; absent for a document that is not a flow. */
-  flowKind?: string;
-  standing: DocumentStanding;
-  /** What can be done with it, each by a name the host gave. */
-  actions: DocumentAction[];
-}
-
-/** Something the host does with a document: run it, show its page, compare it with what runs. */
-export interface DocumentAction {
-  id: string;
-  label: string;
-  /** A name from the side bar's icon table (HostedSideBar.tsx); an unknown one draws no icon. */
-  icon?: string;
-  /** Shown on the row itself, beside the name, and not only in its menu. */
-  primary?: boolean;
-}
-
-/** The working copy as the host's side bar shows it. */
-export interface WorkspaceState {
-  /** The documents, in path order. */
-  documents: WorkspaceDocument[];
-  /** The document in the editor in front of the person, when it is one of these. */
-  active: string | null;
-  /** True while the host has not finished reading the working copy. */
-  reading: boolean;
 }
 
 /** The text of a working copy document a page watches, as the editor holds it now, saved or not. */
@@ -133,9 +89,7 @@ export type PageMessage =
   /** Hand the person a file the page made or was served. */
   | { type: "save"; name: string; contentType: string; bytes: Uint8Array }
   /** Something the host does for the page, by a name from `HOST_ACTIONS`. */
-  | { type: "act"; action: HostAction; argument?: string }
-  /** Something the host offered for a document of the working copy (`WorkspaceDocument.actions`). */
-  | { type: "documentAction"; document: string; action: string }
+  | { type: "act"; action: HostAction }
   /** Tell the page the text of a working copy document now and whenever it changes, until `unwatch`. */
   | { type: "watch"; document: string }
   | { type: "unwatch"; document: string };
@@ -151,8 +105,6 @@ export type HostMessage =
   | { type: "end"; id: number }
   /** A call never reached the control plane, or was dropped. */
   | { type: "failed"; id: number; reason: string; aborted: boolean }
-  /** The working copy, to a side bar: once it is ready and whenever it changes. */
-  | { type: "workspace"; workspace: WorkspaceState }
   /** A watched document's text. */
   | { type: "document"; watched: WatchedDocument };
 
@@ -165,10 +117,8 @@ export const HOST_ACTIONS = [
   "signInWithToken",
   "signOut",
   "setControlPlane",
-  "openDocument",
-  "newDocument",
-  "validateWorkspace",
-  "refreshWorkspace",
+  /** What the control plane runs has changed (a repository was synced): the host reads again what it keeps of it. */
+  "refreshEstate",
   "connectAssistant",
   "searchDocs",
 ] as const;

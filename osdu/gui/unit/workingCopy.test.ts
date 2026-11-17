@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { declaredMapping, placeWorkingCopy, sameFile, textKey, type PlacedMapping } from "../src/hosted/workingCopy.ts";
+import { declaredMapping, placeWorkingCopy, sameFile, textKey, workspaceMappingOf, type PlacedMapping } from "../src/hosted/workingCopy.ts";
 
 const text = `# Mapping: well logs into the WellLog template.
 documentType: mapping
@@ -90,5 +90,33 @@ describe("a working copy among the estate's mappings", () => {
   it("belongs to no repository when nothing of its folder was synced", () => {
     assert.deepEqual(placeWorkingCopy(mappings, "elsewhere/New@1.0.0.yaml", "New@1.0.0"), { synced: null, repoId: null });
     assert.deepEqual(placeWorkingCopy([], "welldb/mappings/Well@1.3.0.yaml", "Well@1.3.0"), { synced: null, repoId: null });
+  });
+});
+
+describe("the mapping a working copy's page shows", () => {
+  const synced = { id: "m2", repoId: "r1", reference: "WellLog@1.4.0", relativePath: "welldb/mappings/WellLog@1.4.0.yaml", templatePath: "welldb/templates/WellLog.1.4.0.json", contentHash: "synced" };
+  const document = { path: "welldb/mappings/WellLog@1.4.0.yaml", reference: "WellLog@1.4.0", contentHash: "working-copy-1", templatePath: "" };
+
+  it("is the synced mapping, keyed by the text shown, so what is drawn from the text follows a save", () => {
+    assert.deepEqual(workspaceMappingOf({ synced, repoId: "r1" }, document), { ...synced, contentHash: "working-copy-1" });
+  });
+
+  it("is the document itself when the estate has not seen it: the same workspace, with no id for a flow to render with", () => {
+    const fresh = { path: "welldb/mappings/WellLogCopy@1.0.0.yaml", reference: "WellLogCopy@1.0.0", contentHash: "working-copy-2", templatePath: "welldb/templates/WellLog.1.4.0.json" };
+    assert.deepEqual(workspaceMappingOf({ synced: null, repoId: "r1" }, fresh), {
+      id: null,
+      repoId: "r1",
+      reference: "WellLogCopy@1.0.0",
+      relativePath: "welldb/mappings/WellLogCopy@1.0.0.yaml",
+      contentHash: "working-copy-2",
+      templatePath: "welldb/templates/WellLog.1.4.0.json",
+    });
+  });
+
+  it("goes by its file while its text names no version, and by no repository when nothing of its folder was synced", () => {
+    const unnamed = workspaceMappingOf({ synced: null, repoId: null }, { path: "elsewhere/draft.yaml", reference: null, contentHash: "working-copy-3", templatePath: "" });
+    assert.equal(unnamed.id, null);
+    assert.equal(unnamed.reference, "elsewhere/draft.yaml");
+    assert.equal(unnamed.repoId, null);
   });
 });

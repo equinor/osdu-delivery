@@ -6,5 +6,5 @@ import white from "../../public/brand/logo-white.png";
 import { osduDeliveryModule } from "../module";
 import { hostedDeliveryModule } from "./module";
 
-// The OSDU Delivery extension's side bar: the working copy, and the menu of the module's pages and SQLFlow's.
+// The OSDU Delivery extension's side bar: the workbench's search and the menu of the module's pages and SQLFlow's.
 renderHostedSideBar([osduDeliveryModule, hostedDeliveryModule], { logos: { full, icon, white } });

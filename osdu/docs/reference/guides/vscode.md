@@ -17,6 +17,7 @@ keywords:
   - preview mapping
   - working copy
   - side bar
+  - sync repository
   - pages in tabs
   - webview
   - marketplace
@@ -74,7 +75,9 @@ sourceRefs:
   - osdu/gui/src/hosted/workingCopy.ts
   - osdu/gui/vite.hosted.config.ts
   - osdu/hosts/osdu-delivery-vscode/package.mjs
-  - .github/workflows/vscode-extension.yml
+  - .github/workflows/vscode-build.yml
+  - .github/workflows/vscode-publish.yml
+  - osdu/hosts/osdu-delivery-vscode/notices.mts
 ---
 
 # The VS Code extension
@@ -131,15 +134,17 @@ for files nobody has open.
 
 ## The side bar and the pages
 
-The extension's side bar has two parts, with a search over them and who is signed in beside it.
+The extension's side bar is the GUI's own navigation. Its header holds the search, which opens the search page; a
+**Sync** button; and who is signed in, and to which control plane. Under it is the GUI's menu, and every entry opens its
+page in a tab of the editor. The files of the folder you have open are in the editor's own Explorer, and a flow is run from
+its page or from the lens at the top of its file.
 
-| Part | Shows |
-| --- | --- |
-| **Working copy** | The documents of the folder open in the editor, by kind, read from disk: flows by their kind, mappings, dictionaries, schedules. A row opens its file, and offers what can be done with it on the row and in its menu: run a flow, open its page, compare it with what the estate runs, preview a mapping. A flow the estate does not have yet is marked, and so is the file in front of you when it differs from what runs. It needs no sign-in. |
-| **Estate** | The GUI's own menu. Every entry opens its page in a tab of the editor. |
-
-Typing in the search narrows the working copy to the documents with a word starting that way, in their name or their
-path; Enter searches the estate.
+**Sync** has the control plane you are signed in to read the latest commit of a repository's branch: it is how a commit
+you pushed reaches that environment, and runs started afterwards use it. Its tooltip names the repository, the commit it
+holds and the control plane. A repository that syncs only on request moves from the commit it holds only after you
+confirm, in the words the Repos page confirms it with. With several repositories registered, the button opens a menu of
+them, each with how its last sync went. When the sync ends the editor reads the control plane again, so a flow's lenses
+and **Compare with Synced** follow it.
 
 A page in a tab is the page [the GUI](../concepts/gui.md) shows, with the same data and the same actions, under your
 sign-in: a flow with its records, issues, submissions and preview, a run with its trace as it is written, lineage,
@@ -154,8 +159,8 @@ when the editor closes come back on the pages they showed.
 | **Open Delivery**, **Open Templates**, **Find a Record** | The delivery overview, the Templates page, the record lookup. |
 | **Open Flow Page** | The page of the flow in the editor, beside its file. Also a lens at the top of a flow. |
 
-The lenses at the top of a flow run it, say how it last ran, open its page, and **Compare with Synced** shows what your
-file changes from what runs. **Open in the Browser** opens the flow's page in the web GUI when `sqlflow.guiUrl` is set.
+The lenses at the top of a flow say how it last ran, open its page, and **Compare with Synced** shows what your file
+changes from what runs. **Open in the Browser** opens the flow's page in the web GUI when `sqlflow.guiUrl` is set.
 
 ### Previewing a mapping
 
@@ -171,15 +176,15 @@ file changes from what runs. **Open in the Browser** opens the flow's page in th
   sync to render rows with the new text.
 - The page follows the file as you save it. While the editor holds changes you have not saved it shows the file as last
   saved and says so, with a link to show the unsaved text at once, so a line half typed never redraws the page.
-- A mapping the estate has not seen yet shows Properties and Record shape, with its template settled from the template
-  folders of the repository its neighbours were synced from.
+- A mapping the estate has not seen yet, such as a new file, has the same page: Overview, Properties and Record shape
+  from its text, with its template settled from the template folders of the repository its neighbours were synced from,
+  and Staged records and the dry run saying they wait until it is pushed and synced.
 
 ### Running a flow
 
-**Run** asks what the run should do, from the operations the control plane registers, asks for the partition of a flow
-serving several and for the flow's parameters, offers what that operation takes (force, a submission, only some records,
-interfaces or types, what to send again), and confirms an operation that writes to the flow's target. The run's own page
-then opens beside the file and follows the run: its trace as it is written, and what it reported when it ended.
+A flow runs from its page, as in the GUI: **Open Flow Page** (or the lens at the top of the flow) opens it beside the file,
+and its run form asks what the run should do and confirms an operation that writes to the flow's target. The run's page
+follows it: its trace as it is written, and what it reported when it ended.
 
 **Run a Command Line Verb** runs `validate`, [`check`](../cli/check.md), [`preview`](../cli/preview.md) and
 [`values`](../cli/values.md) on the open file as a task, on this machine. They read your working copy whole, flow and
@@ -247,7 +252,13 @@ npm run package                  # builds the three programs, the pages and the 
 A package holds three programs built for its platform (the language server, the MCP server and the command line), so
 there is one package per platform: `win32-x64`, `linux-x64`, `darwin-arm64` and `darwin-x64`. `npm run package` builds
 the one for the machine it runs on, and stops when a program is missing. `node package.mjs --skip-programs` packages again
-from the programs already built.
+from the programs already built, and `--programs-only` builds them and lists where each is, for signing before packaging.
+
+Every package carries `THIRD-PARTY-NOTICES.txt`, written as it is packaged from what the builds left: each npm package
+bundled into the pages and the extension, each Rust crate compiled into the two servers, and each NuGet package and the
+.NET runtime published into the command line, with its license (`notices.mts`). A component that states no license stops
+the package. A version is packaged only once the extension's `CHANGELOG.md` has its section, since the Marketplace shows
+it as the release notes.
 
 `npm run bundle` builds the extension for a checkout: F5 from this folder then runs it, finding the two servers in their
 target folders. It builds the pages when the folder has none; `npm run bundle:hosted` builds them again after the GUI
@@ -263,10 +274,25 @@ that control plane and checks that each one loads, is signed in and names its ta
 
 ### Publishing it
 
-The workflow **VS Code extension** (`.github/workflows/vscode-extension.yml`) builds the package of every platform, each
-on a runner of that platform, and keeps them as artifacts. It runs by hand only. Ticking **publish** sends the packages to
-the Visual Studio Marketplace, which needs the repository secret `VSCE_PAT`: a personal access token of the publisher the
-manifest names, with the Marketplace scope Manage. The Marketplace takes a version once, so raise `version` in
+The extension is published as `delta-forge.osdu-delivery`, under DeltaForge's Marketplace publisher, in two workflows run
+by hand, as DeltaForge publishes its own extension:
+
+1. **VS Code extension · build** (`.github/workflows/vscode-build.yml`) builds the three programs on a GitHub runner of
+   each platform, signs them, and packages one `.vsix` per platform, kept as artifacts for 30 days. The Windows programs
+   are signed with DigiCert KeyLocker; the macOS ones with a Developer ID certificate under the hardened runtime and are
+   notarized, the command line with the entitlements its .NET runtime needs (`signing/sqlflow.entitlements.plist`); the
+   Linux ones are not signed. Signing is on unless unticked.
+2. **VS Code extension · publish** (`.github/workflows/vscode-publish.yml`) publishes the packages of a build, the latest
+   successful one unless a run is named. It refuses an unsigned build. A platform the Marketplace already holds at that
+   version counts as published, so running it again retries only what failed.
+
+| Secret | For |
+| --- | --- |
+| `VSCE_PAT` | Publishing: a token of the publisher `delta-forge` with the scope Marketplace (Manage). |
+| `SM_HOST`, `SM_API_KEY`, `SM_CLIENT_CERT_FILE_B64`, `SM_CLIENT_CERT_PASSWORD`, `SM_KEYPAIR_ALIAS` | Signing on Windows, with DigiCert KeyLocker. |
+| `APPLE_CERT_P12_B64`, `APPLE_CERT_PASSWORD`, `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` | Signing and notarizing on macOS. |
+
+They are the secrets DeltaForge's own workflows use. The Marketplace takes a version once, so raise `version` in
 `osdu/hosts/osdu-delivery-vscode/package.json` and add its section to the extension's `CHANGELOG.md` before the next one.
 
 ## See also

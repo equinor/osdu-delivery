@@ -24,6 +24,7 @@ import { useStagedView } from "./useStagedView";
 import { ValueCheckContext, useValueCheckSession } from "./useValueCheck";
 import { DryRunButton, ValueCheckControls, ValueCheckScope } from "./ValueCheckBar";
 import { WindowFrame } from "./WindowFrame";
+import type { WorkspaceDetail } from "./workspaceMapping";
 
 /** The way back to the list of mappings. */
 function BackToMappings() {
@@ -97,7 +98,7 @@ function MappingHeader({ detail, id, loading }: { detail: DeliveryMappingDetail 
  * Staged records marks each record with what it found, and neither loses it when the reader moves between them. The page
  * of a mapping being written in an editor (hosted/WorkingCopyMappingPage.tsx) is this too, over the editor's text.
  */
-export function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
+export function MappingWorkspace({ detail }: { detail: WorkspaceDetail }) {
   const { mapping, yaml } = detail;
   const session = useValueCheckSession(mapping.id, mapping.reference);
   const staged = useStagedView(session);

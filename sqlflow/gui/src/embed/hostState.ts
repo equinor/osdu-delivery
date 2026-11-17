@@ -1,11 +1,10 @@
 // What a hosted page knows from its host (protocol.ts), kept where React reads it: who is signed in and where the
-// control plane is, the working copy a side bar lists, the text of the documents a page watches, and the mode of the
-// host's own theme. Each is a small store read with useSyncExternalStore, so a message from the host re-renders exactly
+// control plane is, the text of the documents a page watches, and the mode of the host's own theme. Each is a small store read with useSyncExternalStore, so a message from the host re-renders exactly
 // what reads it, and nothing here sets state from an effect.
 
 import { useEffect, useSyncExternalStore } from "react";
 import { pageHost } from "./hostBridge";
-import { PROTOCOL_VERSION, type HostStart, type WatchedDocument, type WorkspaceState } from "./protocol";
+import { PROTOCOL_VERSION, type HostStart, type WatchedDocument } from "./protocol";
 import type { ThemeMode } from "../theme/designs";
 
 /** A value that changes, and who wants to know. */
@@ -37,7 +36,6 @@ class Store<T> {
 }
 
 const start = new Store<HostStart | null>(null);
-const workspace = new Store<WorkspaceState | null>(null);
 const watched = new Map<string, { store: Store<WatchedDocument | null>; readers: number }>();
 
 let connected: Promise<HostStart> | null = null;
@@ -45,7 +43,7 @@ let connected: Promise<HostStart> | null = null;
 /**
  * Tells the host this page is ready and waits for what it starts the page with. Called once, before the page renders:
  * a page cannot make a call until it knows where the control plane is. What the host says afterwards (another person
- * signed in, another control plane, the working copy, a watched document) lands in the stores above.
+ * signed in, another control plane, a watched document) lands in the stores above.
  */
 export function connectHost(): Promise<HostStart> {
   connected ??= new Promise<HostStart>((resolve, reject) => {
@@ -63,9 +61,6 @@ export function connectHost(): Promise<HostStart> {
 
           start.set(message.start);
           resolve(message.start);
-          return;
-        case "workspace":
-          workspace.set(message.workspace);
           return;
         case "document":
           watched.get(message.watched.document)?.store.set(message.watched);
@@ -100,11 +95,6 @@ export function useHostStart(): HostStart {
   }
 
   return value;
-}
-
-/** The working copy as the host lists it; null until the host has said. */
-export function useWorkspace(): WorkspaceState | null {
-  return useSyncExternalStore(workspace.subscribe, workspace.read);
 }
 
 const NOTHING_WATCHED = new Store<WatchedDocument | null>(null);

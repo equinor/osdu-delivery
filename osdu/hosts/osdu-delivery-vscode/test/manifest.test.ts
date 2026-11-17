@@ -92,7 +92,8 @@ test('the language files match SQLFlow\'s, which they are copies of', () => {
 
 // What the Marketplace needs of a package, and refuses one without.
 test('the package says what the Marketplace shows of it', () => {
-    assert.match(manifest.publisher, /^[a-z0-9][a-z0-9-]*$/i);
+    // DeltaForge's publisher, whose token the release workflow publishes with: an extension's id never changes.
+    assert.equal(manifest.publisher, 'delta-forge');
     assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
     assert.ok(manifest.displayName && manifest.description.length <= 250, 'a name and a description that fits a listing');
     assert.ok(manifest.repository?.url && manifest.bugs?.url && manifest.homepage && manifest.license);
@@ -115,6 +116,21 @@ test('the icon is a PNG of at least 128 pixels a side, which the Marketplace ask
     assert.ok(width >= 128, `${width} pixels`);
 });
 
+test('the activity bar and the side bar carry the product\'s own mark, not the glyph a flow\'s file carries', () => {
+    const container = manifest.contributes.viewsContainers.activitybar[0];
+    const view = manifest.contributes.views.sqlflow[0];
+    const flowGlyph = manifest.contributes.languages.find((language: { id: string }) => language.id === 'sqlflow-flow').icon.dark;
+    for (const icon of [container.icon, view.icon]) {
+        assert.equal(icon, './resources/osdu-delivery.svg');
+        assert.notEqual(icon, flowGlyph);
+        const mark = readFileSync(join(folder, icon), 'utf8');
+        // The editor draws an activity bar icon as a mask in the theme's colour: one colour, in a box of 24, with no
+        // picture or page of its own to fetch.
+        assert.match(mark, /^<svg [^>]*viewBox="0 0 24 24"[^>]*fill="currentColor"/);
+        assert.doesNotMatch(mark, /<image|href=|#[0-9a-f]{3,6}\b/i);
+    }
+});
+
 test('the package carries a readme and a change log, and every picture and page they and the walkthrough name', () => {
     for (const file of ['README.md', 'CHANGELOG.md']) {
         assert.ok(existsSync(join(folder, file)), file);
@@ -132,13 +148,31 @@ test('the package carries a readme and a change log, and every picture and page 
     assert.match(readFileSync(join(folder, 'CHANGELOG.md'), 'utf8'), new RegExp(`^## \\[${manifest.version.replace(/\./g, '\\.')}\\]`, 'm'));
 });
 
+// OSDU is a registered trademark of The Open Group, which asks for the mark with its symbol at its first use and an
+// attribution naming it. The product is independent of them, so its listing says so: "powered by SQLFlow" says whose it is.
+test('the listing names the product as powered by SQLFlow, and attributes the OSDU trademark to The Open Group', () => {
+    assert.equal(manifest.displayName, 'OSDU Delivery, powered by SQLFlow');
+    assert.match(manifest.description, /OSDU® data platform/);
+    const readme = readFileSync(join(folder, 'README.md'), 'utf8');
+    assert.match(readme, /^# OSDU Delivery, powered by SQLFlow$/m);
+    const first = readme.indexOf('OSDU', readme.indexOf('\n'));
+    assert.equal(readme.slice(first, first + 5), 'OSDU®', 'the first use of the mark after the heading carries its symbol');
+    assert.match(readme, /^## Trademarks$/m);
+    assert.match(readme, /OSDU is a registered trademark of The Open Group\./);
+    assert.match(readme, /not affiliated with, sponsored by, endorsed by or certified by The Open Group/);
+});
+
 test('a package leaves out its sources and what a hosted page never loads, and keeps what it runs', () => {
     const ignored = readFileSync(join(folder, '.vscodeignore'), 'utf8').split(/\r?\n/).filter((line) => line !== '');
     for (const pattern of ['src/**', 'test/**', 'node_modules/**', 'dist/hosted/assets/*.wasm', 'dist/hosted/assets/*.worker-*.js']) {
         assert.ok(ignored.includes(pattern), pattern);
     }
     assert.ok(ignored.includes('!dist/hosted/.vite/manifest.json'), 'the list of the hosted build\'s files, which the extension reads');
-    for (const kept of ['dist/**', 'bin/**', 'resources/**', 'dist/hosted/**']) {
+    for (const kept of ['dist/**', 'bin/**', 'resources/**', 'dist/hosted/**', 'THIRD-PARTY-NOTICES.txt', 'LICENSE']) {
         assert.ok(!ignored.includes(kept), kept);
+    }
+    // The packager's own scripts and the signing configuration are a release's, not the extension's.
+    for (const script of ['package.mjs', 'notices.mts', 'programs.mts', 'signing/**']) {
+        assert.ok(ignored.includes(script), script);
     }
 });

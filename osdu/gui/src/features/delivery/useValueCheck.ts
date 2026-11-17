@@ -294,17 +294,21 @@ export function useValueCheckContext(): ValueCheckSession | null {
  * The value check of one mapping document: the flows that render with it in the title bar's partition (a check reads a
  * flow's rows), the scope's values and the row budget, the checks queued on nodes and polled to their end, and what they
  * found, merged variable by variable so a check of one variable refines what a check of every variable found. Choosing
- * another flow starts afresh, since its rows are others.
+ * another flow starts afresh, since its rows are others. A mapping the estate has not seen (`mappingId` null) has no flow
+ * rendering with it, and the session says so rather than looking for one.
  */
-export function useValueCheckSession(mappingId: string, reference: string): ValueCheckSession {
+export function useValueCheckSession(mappingId: string | null, reference: string): ValueCheckSession {
   const { hasScope } = useAuth();
   const canOperate = hasScope("operate");
   const [active] = useActivePartition();
   const flowsQuery = useQuery({
     queryKey: ["delivery", "mapping-flows", mappingId],
-    queryFn: () => deliveryApi.mappingFlows(mappingId),
+    queryFn: () => deliveryApi.mappingFlows(mappingId!),
+    enabled: mappingId !== null,
     staleTime: 30000,
   });
+  // A query that is never asked stays pending; the flows of a mapping the estate has not seen are known: there are none.
+  const flowsLoading = mappingId !== null && flowsQuery.isPending;
   const flows = useMemo(
     () => (flowsQuery.data ?? []).filter((flow) => flow.partition === null || flow.partition === active),
     [flowsQuery.data, active]);
@@ -427,7 +431,9 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   let blocked: string | null = null;
   if (!canOperate) {
     blocked = "A check runs on a node, which takes a signed-in session.";
-  } else if (flowsQuery.isPending) {
+  } else if (mappingId === null) {
+    blocked = "The estate has not seen this mapping yet, so no flow renders with it: push it and sync the repository to check its rows.";
+  } else if (flowsLoading) {
     blocked = "Finding the flows that render with this mapping.";
   } else if (flow === null) {
     blocked = otherPartitions.length > 0
@@ -522,7 +528,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     reference,
     flows,
     otherPartitions,
-    flowsLoading: flowsQuery.isPending,
+    flowsLoading,
     flowsError: flowsQuery.isError ? flowsQuery.error : null,
     flow,
     chooseFlow: setPicked,

@@ -16,7 +16,7 @@ keywords:
   - editor theme
   - marketplace
   - platform package
-updated: 2026-11-16
+updated: 2026-11-17
 sourceRefs:
   - sqlflow/gui/src/embed/protocol.ts
   - sqlflow/gui/src/embed/hostTransport.ts
@@ -37,7 +37,8 @@ sourceRefs:
   - osdu/gui/vite.hosted.config.ts
   - osdu/hosts/osdu-delivery-vscode/src/deliveryModule.ts
   - osdu/hosts/osdu-delivery-vscode/package.mjs
-  - .github/workflows/vscode-extension.yml
+  - .github/workflows/vscode-build.yml
+  - .github/workflows/vscode-publish.yml
 referenceRefs:
   - delivery-guide-vscode
   - delivery-guide-mcp
@@ -115,12 +116,21 @@ and the fonts are the editor theme's own variables, so a page reads as part of t
 works in. The status hues and the chart palette do not follow the theme. They are measured values and mean the same thing
 wherever a run or a record is shown, so they stay the workbench's own, in the step for the theme's mode.
 
-## One side bar: the working copy, and the GUI's menu
+## One side bar: the GUI's own navigation
 
-The side bar lists the working copy from disk, so it shows what is being written before any of it is pushed, and under it
-the GUI's own menu, each entry opening its page in a tab. What the first version's Document, Runs, Schedules, Data Streams
-and Delivery views listed is on those pages, with more than a row could say. A module no longer adds sections of rows: it
-adds what a document's row offers, and its pages are its GUI module's.
+The side bar is the workbench's navigation: its search, its menu, each entry opening its page in a tab, who is signed in,
+and a button that syncs a repository on the control plane signed in to. What the first version's Document, Runs,
+Schedules, Data Streams and Delivery views listed is on those pages, with more than a row could say, and a module adds no
+rows: its pages are its GUI module's.
+
+- **Rejected: listing the working copy in the side bar.** The first cut listed the documents of the open folder by kind,
+  each with what could be done with it. The editor's Explorer already lists the folder, so the list said it twice.
+- **Rejected: running a flow from the editor.** A flow's page has the GUI's own run form, which offers what each operation
+  takes and confirms one that writes to the flow's target. The editor's run button asked the same questions again in quick
+  picks, so the editor has none, and a flow's lenses lead to its page.
+- **Sync is a deploy, so it says where.** One repository feeds every environment's control plane, and a commit reaches an
+  environment when that control plane syncs it. The button names the control plane it acts on, and a repository that holds
+  its commit until asked moves only after the person confirms, in the words the Repos page confirms it with.
 
 ## A mapping's preview reads the file, and its rows read the sync
 
@@ -148,8 +158,22 @@ where the language server analyses it, and a page's code views are read-only.
 
 A package carries three programs built for the platform it installs on, so the Marketplace holds one package per
 platform and gives each editor its own. A single package holding every platform's programs would be several hundred
-megabytes, most of it never run. Each is built on a runner of its platform by the packager a developer runs for their own
-machine, and publishing is a box the person ticks: a run without it only keeps the packages.
+megabytes, most of it never run. Each is built on a GitHub runner of its platform by the packager a developer runs for
+their own machine.
+
+Releasing follows DeltaForge's own extension, under its Marketplace publisher (`delta-forge.osdu-delivery`). One workflow
+builds, signs and packages, and keeps the packages; another publishes a signed build's packages. Building and
+notarizing take long and publishing can fail for reasons of its own (a token, a version the Marketplace holds, a passing
+5xx), so a failed publish is run again against the same packages, never built again. Hosted runners, not DeltaForge's own
+machines: the repository is public, so they cost nothing, and no machine of anyone's has to be online for a release.
+
+- **Every package carries its third-party notices.** The pages bundle hundreds of npm packages, the servers compile Rust
+  crates, and the command line carries NuGet packages and the .NET runtime; their licenses ask for their notices to go
+  with them. They are read from what each build left as the package is made, so a package lists exactly what it ships,
+  and a component that states no license stops it.
+- **Rejected: a package with no programs, for any platform.** DeltaForge publishes one as a fallback. This extension
+  without its language server, MCP server and command line is a YAML highlighter, so an editor on a platform with no
+  package of its own gets none.
 
 ## Known limits
 
@@ -157,5 +181,3 @@ machine, and publishing is a box the person ticks: a run without it only keeps t
   plane on its estate's. A call a newer page makes of an older control plane is answered by the API's own error, which
   the page shows; nothing checks the two versions against each other yet, because the control plane does not say its
   version.
-- **The run form is the editor's own prompts.** Starting a run asks its questions in the editor's quick picks, as the
-  first version did, and only then opens the run's page.

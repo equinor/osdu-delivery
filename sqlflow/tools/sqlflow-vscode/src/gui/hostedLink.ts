@@ -32,23 +32,17 @@ export interface HostedSurroundings {
 
 /** What one surface adds to the wiring every surface shares. */
 export interface LinkHooks {
-    /** The surface is ready and has been started: the moment to tell it what it shows besides. */
-    started?(): void;
     /** The page shown, and what it is called. */
     located?(path: string, title: string, flowKind: string | undefined): void;
-    /** Something the surface offered for a document was picked. */
-    documentAction?(document: string, action: string): void;
 }
 
-/** The command each thing a page may ask of the editor runs. `openDocument` opens a file and is answered apart. */
-const ACTION_COMMANDS: Readonly<Record<Exclude<HostAction, 'openDocument'>, string>> = {
+/** The command each thing a page may ask of the editor runs. */
+const ACTION_COMMANDS: Readonly<Record<HostAction, string>> = {
     signIn: 'sqlflow.signIn',
     signInWithToken: 'sqlflow.signInWithToken',
     signOut: 'sqlflow.signOut',
     setControlPlane: 'sqlflow.setControlPlaneUrl',
-    newDocument: 'sqlflow.newFlow',
-    validateWorkspace: 'sqlflow.validateRepository',
-    refreshWorkspace: 'sqlflow.refreshRepository',
+    refreshEstate: 'sqlflow.refreshCatalog',
     connectAssistant: 'sqlflow.setupMcp',
     searchDocs: 'sqlflow.searchDocs',
 };
@@ -147,7 +141,7 @@ export class HostedLink implements vscode.Disposable {
                     this.around.output.warn(`[pages] a page speaks protocol ${message.protocol}, this extension ${PROTOCOL_VERSION}.`);
                 }
                 this.ready = true;
-                void this.start().then(() => this.hooks.started?.());
+                void this.start();
                 return;
             case 'request':
                 if (typeof message.id === 'number' && typeof message.url === 'string' && typeof message.method === 'string') {
@@ -174,12 +168,7 @@ export class HostedLink implements vscode.Disposable {
                 void this.save(message.name, message.bytes).catch((error: unknown) => this.failed('The file could not be saved', error));
                 return;
             case 'act':
-                void this.act(message.action, message.argument).catch((error: unknown) => this.failed('That could not be done', error));
-                return;
-            case 'documentAction':
-                if (typeof message.document === 'string' && typeof message.action === 'string') {
-                    this.hooks.documentAction?.(message.document, message.action);
-                }
+                void this.act(message.action).catch((error: unknown) => this.failed('That could not be done', error));
                 return;
             case 'watch':
                 void this.watch(message.document).catch((error: unknown) => this.failed('The document could not be read', error));
@@ -207,23 +196,16 @@ export class HostedLink implements vscode.Disposable {
         void vscode.env.openExternal(vscode.Uri.parse(url, true));
     }
 
-    private async act(action: unknown, argument: unknown): Promise<void> {
+    private async act(action: unknown): Promise<void> {
         if (!isHostAction(action)) {
-            return;
-        }
-        if (action === 'openDocument') {
-            const uri = await this.workspaceDocument(argument);
-            if (uri) {
-                await vscode.window.showTextDocument(uri, { preview: true });
-            }
             return;
         }
         await vscode.commands.executeCommand(ACTION_COMMANDS[action]);
     }
 
     /**
-     * The file a page names, when it is a pipeline document of the open workspace: the only files a page is shown or may
-     * open. A page names a document by what the extension called it, so anything else is a name the extension never gave.
+     * The file a page names, when it is a pipeline document of the open workspace: the only files a page is shown. A page
+     * names a document by what the extension called it, so anything else is a name the extension never gave.
      */
     private async workspaceDocument(name: unknown): Promise<vscode.Uri | undefined> {
         if (typeof name !== 'string') {

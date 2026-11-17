@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isLineageDescription, isRunnable, kindLabel, recogniseDocument } from '../src/documents/recognition.ts';
+import { kindLabel, recogniseDocument } from '../src/documents/recognition.ts';
 import { keyPathAtLine, scalarKeys } from '../src/documents/yamlPath.ts';
 
 test('a flow is told by its flowType, whatever the file is called', () => {
@@ -13,20 +13,11 @@ test('a document names itself and a flowType still wins', () => {
     assert.equal(recogniseDocument('m.yaml', 'flowType: ing\ndocumentType: mapping\n')?.kind, 'flow');
 });
 
-test('a lineage description is a flow document that nothing offers to run', () => {
+test('a lineage description is a flow document of its own kind, in whatever case it is written', () => {
     const described = recogniseDocument('lineage/curate.yaml', 'flowType: lin\nname: orders-u1-curate-lin\nsystem: databricks\n')!;
     assert.deepEqual(described, { kind: 'flow', flowType: 'lin', name: 'orders-u1-curate-lin' });
     assert.equal(kindLabel(described), 'lin');
-    assert.equal(isLineageDescription(described), true);
-    assert.equal(isRunnable(described), false);
-    // Written in another case it is the same kind, as the loader reads it.
-    assert.equal(isRunnable(recogniseDocument('a.yaml', 'flowType: LIN\nname: a\n')!), false);
-
-    // Every other flow runs, a file flow (which declares no flowType) included; a library or a document is no flow.
-    assert.equal(isRunnable(recogniseDocument('a.yaml', 'flowType: ing\nname: a\n')!), true);
-    assert.equal(isRunnable(recogniseDocument('a.yaml', 'source:\n  type: csv\ntarget:\n  table: t\n')!), true);
-    assert.equal(isRunnable(recogniseDocument('m.yaml', 'documentType: mapping\nname: Well\n')!), false);
-    assert.equal(isLineageDescription(recogniseDocument('m.yaml', 'documentType: mapping\nname: lin\n')!), false);
+    assert.equal(recogniseDocument('a.yaml', 'flowType: LIN\nname: a\n')?.kind, 'flow');
 });
 
 test('the library files are told by their root key', () => {

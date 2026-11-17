@@ -3,11 +3,10 @@ import * as vscode from 'vscode';
 import { IndexedDocument } from '../../../../sqlflow/tools/sqlflow-vscode/src/documents/documentIndex';
 import { scalarKeys } from '../../../../sqlflow/tools/sqlflow-vscode/src/documents/yamlPath';
 import { ModuleContext, VscodeModule } from '../../../../sqlflow/tools/sqlflow-vscode/src/host';
-import { askRunPayload } from './deliveryRuns';
 import { fetchTemplate } from './deliverySchemas';
 import { MappingEditing, WorkingCopyTemplates } from './mappingEditing';
-import { declaredPartitions, objectParts } from './runOptions';
-import { declaredParameters, recordPath } from './templates';
+import { objectParts } from './objectNames';
+import { recordPath } from './templates';
 
 /** The page of a mapping being written, in the hosted build (osdu/gui/src/hosted/module.tsx). */
 const WORKING_COPY_MAPPING_PAGE = '/delivery/working-copy/mapping';
@@ -26,7 +25,7 @@ interface LineageObject {
 /** The OSDU Delivery module: what the module's kinds and documents add to the extension. */
 export const deliveryModule: VscodeModule = {
     activate(context: ModuleContext): void {
-        const { estate, pages, offers, documents, references, lenses, command, extension } = context;
+        const { estate, pages, documents, references, lenses, command, extension } = context;
         const mcp = estate.mcp;
         const templates = new WorkingCopyTemplates();
         const editing = new MappingEditing(templates, documents);
@@ -40,18 +39,10 @@ export const deliveryModule: VscodeModule = {
             vscode.languages.registerHoverProvider(selector, editing)
         );
 
-        // The headings the side bar lists this product's documents under.
-        offers.nameGroup('mapping', 'Mappings');
-        offers.nameGroup('dictionary', 'Dictionaries');
-        offers.nameGroup('repository', 'Repository settings');
-
         /** Shows what a mapping makes, beside its file: the mapping's page, read from the file as it is saved. */
         const previewMapping = (uri: vscode.Uri): void => {
             pages.open(`${WORKING_COPY_MAPPING_PAGE}?document=${encodeURIComponent(uri.toString())}`, { beside: true });
         };
-        offers.register((document) => (document.documentType === 'mapping'
-            ? [{ id: 'preview', label: 'Preview what it makes', icon: 'preview', primary: true, run: async () => previewMapping(document.uri) }]
-            : []));
 
         // The menus offer a mapping's preview while a mapping is the document in front.
         const sayDocumentInFront = async (): Promise<void> => {
@@ -161,17 +152,5 @@ export const deliveryModule: VscodeModule = {
         lenses.register(async (document) => (document.documentType === 'mapping'
             ? [{ title: '$(open-preview) Preview', command: 'osduDelivery.previewMapping', arguments: [document.uri] }]
             : []));
-
-        context.addRunParameters(async (pipeline, document) => {
-            const lines = (document ? (await vscode.workspace.openTextDocument(document.uri)).getText() : (await estate.pipeline(pipeline.id)).yaml).split(/\r?\n/);
-            // A run acts in one partition, and a flow serving several has to be told which.
-            const partitions = declaredPartitions(lines);
-            return [
-                ...(partitions.length > 1 ? [{ name: 'partition', required: true, options: partitions }] : []),
-                ...declaredParameters(lines),
-            ];
-        });
-
-        context.addRunPayload((pipeline, operation) => askRunPayload(estate, pipeline, operation));
     },
 };

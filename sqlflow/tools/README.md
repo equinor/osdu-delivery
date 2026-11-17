@@ -100,7 +100,7 @@ page follows the person's theme), and hands every call to its host instead of to
 | The page of a webview | `src/gui/hostedHtml.ts` | The HTML and its content security policy. |
 | A webview's link | `src/gui/hostedLink.ts` | Everything said between one webview and the extension, each message checked. |
 | The tabs | `src/gui/hostedPages.ts` | A page per tab, reused by address, restored after a restart. |
-| The side bar | `src/gui/hostedSideBar.ts` | The working copy from disk, and the workbench's menu. |
+| The side bar | `src/gui/hostedSideBar.ts` | The workbench's search and menu, a repository's sync, and who is signed in. The files are the editor's Explorer's. |
 
 A page is given no credential. Its content security policy admits no host (`connect-src` is the extension's own files),
 so it reaches the control plane only by asking the extension, which makes the call under the person's sign-in and refuses
@@ -133,12 +133,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 | A module adds | With | What it gets |
 | --- | --- | --- |
-| What a row of the side bar offers | `offers.register`, `offers.nameGroup` | Actions on a document of the working copy, and the heading its documents are listed under. |
 | A page | `pages.open` | A page of the GUI, its own among them, in a tab of the editor. |
 | References | `references.register` | What a key may hold and the file a value refers to, as completion, links and go to definition. |
 | Lenses | `lenses.register` | Actions at the top of a document. |
 | Commands | `command` | A command that reads the estate: a failure is shown, a missing sign-in offers one. |
-| A run's form | `addRunParameters`, `addRunPayload` | What a run of its kinds takes. The run itself is followed on its page. |
 
 A module's pages are its GUI module's: a host builds the hosted entries with its modules registered (`renderHosted`,
 `renderHostedSideBar`) and lays the build out with `../gui/hosted.build.ts`, so the extension finds the same files in a

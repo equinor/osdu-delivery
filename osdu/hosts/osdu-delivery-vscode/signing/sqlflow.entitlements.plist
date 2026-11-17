@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What the sqlflow command line needs from macOS's hardened runtime, which notarization requires (.github/workflows/
+  vscode-build.yml signs it with these). It is a self-contained .NET program in one file: the runtime compiles code as it
+  runs (allow-jit, allow-unsigned-executable-memory), and loads the native libraries the file carries, which it writes
+  out on first start and which are not signed with this team's identity (disable-library-validation). The language
+  server and the MCP server are Rust programs and are signed with none of these.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

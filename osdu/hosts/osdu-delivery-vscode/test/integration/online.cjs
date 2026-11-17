@@ -45,14 +45,6 @@ module.exports = (estate, pageTabs, until) => ({
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     },
 
-    async 'the kinds carry the operations a run form offers'() {
-        const kinds = await estate.flowKinds();
-        assert.ok(kinds.flowKinds.includes('delivery') && kinds.flowKinds.includes('ing'));
-        assert.ok(kinds.documentKinds.includes('mapping'));
-        const delivery = kinds.runOperations.find((kind) => kind.flowType === 'delivery');
-        assert.ok(delivery.operations.some((operation) => operation.name === 'deliver' && operation.writesTarget), JSON.stringify(delivery));
-    },
-
     async 'schedules and datasources read as typed'() {
         const schedules = await estate.schedules();
         // An estate may hold none: the end-to-end one strips them, since a fire would write to its target.

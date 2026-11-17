@@ -2,14 +2,18 @@ import { execFileSync, execSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeNotices } from './notices.mts';
+import { shippedPrograms } from './programs.mts';
 
-// Packages the extension for one platform: `node package.mjs [--target <platform>] [--skip-programs]`.
+// Packages the extension for one platform: `node package.mjs [--target <platform>] [--programs-only | --skip-programs]`.
 //
 // A package carries three programs built for the platform it installs on (the language server, the MCP server and the
 // sqlflow command line), so the Marketplace holds one package per platform and gives each editor its own. This builds
-// the three for the platform of the machine it runs on and packages them under that platform's name; the release
-// workflow runs it once on a runner of each platform. `--skip-programs` packages the programs already built, for a
-// second package from the same build.
+// the three for the platform of the machine it runs on and packages them under that platform's name, with the notices
+// of every third-party component they and the pages carry (notices.mts). A release runs it twice on a runner of each
+// platform (.github/workflows/vscode-build.yml): `--programs-only` builds the programs and prints where each is, the
+// release signs them there, and `--skip-programs` packages the signed programs. A version is packaged only once the
+// change log has its entry: the Marketplace shows it, and a published version cannot be given notes afterwards.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, '..', '..', '..');
@@ -36,15 +40,26 @@ if (platform === undefined) {
 if (platform.platform !== process.platform || platform.arch !== process.arch) {
     throw new Error(`A ${target} package is built on a ${target} machine; this one is ${process.platform}-${process.arch}.`);
 }
+const programsOnly = process.argv.includes('--programs-only');
+const skipPrograms = process.argv.includes('--skip-programs');
+if (programsOnly && skipPrograms) {
+    throw new Error('--programs-only builds the programs and --skip-programs packages the ones built: give one of them.');
+}
+
+const manifest = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'));
+const changelog = readFileSync(join(here, 'CHANGELOG.md'), 'utf8');
+if (!new RegExp(`^## \\[${manifest.version.replace(/\./g, '\\.')}\\]`, 'm').test(changelog)) {
+    throw new Error(`[package] CHANGELOG.md has no '## [${manifest.version}]' entry. The Marketplace shows it as the release notes, and a published version cannot be given notes afterwards: add them first.`);
+}
 
 const run = (command, cwd = here) => {
     console.log(`[package] ${command}`);
     execSync(command, { cwd, stdio: 'inherit' });
 };
 
-if (!process.argv.includes('--skip-programs')) {
-    run('cargo build --release --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-lsp', repository);
-    run('cargo build --release --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml', repository);
+if (!skipPrograms) {
+    run('cargo build --release --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-lsp', repository);
+    run('cargo build --release --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml', repository);
     // A file of the last platform's command line would be staged as this one's: the folder holds one platform at a time.
     rmSync(join(here, 'publish', 'cli'), { recursive: true, force: true });
     run(
@@ -54,7 +69,20 @@ if (!process.argv.includes('--skip-programs')) {
     );
 }
 
-const manifest = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'));
+if (programsOnly) {
+    // What a release signs before it packages: the files the packager stages, where the builds left them.
+    for (const program of shippedPrograms({ production: true })) {
+        if (program.built === undefined) {
+            throw new Error(`[package] ${program.name} has no release build after building it; looked in ${program.candidates.join(', ')}.`);
+        }
+        console.log(`[package] program ${program.built}`);
+    }
+    process.exit(0);
+}
+
+const notices = writeNotices(join(here, 'THIRD-PARTY-NOTICES.txt'), target);
+console.log(`[package] THIRD-PARTY-NOTICES.txt: ${notices.map((section) => `${section.components.length} ${section.title}`).join(', ')}`);
+
 const out = join(here, `${manifest.name}-${target}-${manifest.version}.vsix`);
 rmSync(out, { force: true });
 

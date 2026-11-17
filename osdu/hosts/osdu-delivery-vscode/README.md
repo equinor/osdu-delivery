@@ -1,8 +1,12 @@
-# OSDU Delivery for VS Code
+# OSDU Delivery, powered by SQLFlow
 
-Write OSDU Delivery pipelines where you write code. Every flow, mapping, template and schedule is understood as you
-type, a mapping shows what it makes while you write it, and the pages of your estate (runs, lineage, records, the
-ledger) open in tabs beside your files. Powered by SQLFlow.
+Write the pipelines that deliver subsurface records (wells, wellbores, well logs and the rest) into an OSDU® data
+platform, where you write code. Every flow, mapping, template and schedule is understood as you type, a mapping shows
+what it makes while you write it, and the pages of your estate (runs, lineage, records, the ledger) open in tabs beside
+your files.
+
+OSDU Delivery is an independent product built on SQLFlow. It is not affiliated with, sponsored by or endorsed by The
+Open Group or the OSDU® Forum ([trademarks](#trademarks)).
 
 ![A mapping's file with its preview beside it](https://raw.githubusercontent.com/TahirRiaz/osdu-delivery/main/osdu/hosts/osdu-delivery-vscode/media/mapping-preview.png)
 
@@ -23,8 +27,8 @@ reads your file, and follows it as you save.
 
 ![The properties of a template with what a mapping fills](https://raw.githubusercontent.com/TahirRiaz/osdu-delivery/main/osdu/hosts/osdu-delivery-vscode/media/mapping-properties.png)
 
-**Your estate in the editor.** The side bar lists your working copy by kind, each document with what can be done with
-it, and under it the menu of the estate's pages. Every page is the one the web GUI shows, in the colours of your editor
+**Your estate in the editor.** The side bar is the web GUI's own navigation: its search, its menu, and a button that
+syncs your repository on the control plane you are signed in to, after you confirm. Every page is the one the web GUI shows, in the colours of your editor
 theme: a flow with its records, issues and submissions, a run with its trace as it is written, lineage, schedules,
 templates, the cache, and a record's whole history.
 
@@ -55,15 +59,14 @@ plane and no sign-in.
 - VS Code 1.101 or later, on Windows x64, Linux x64, macOS arm64 or macOS x64.
 - An OSDU Delivery control plane you can sign in to, for the estate's pages, the assistant and running flows.
 
-The package carries its own language server, MCP server and `sqlflow` command line for your platform. Nothing else
-needs installing.
+The package carries its own language server, MCP server and `sqlflow` command line for your platform, signed on Windows
+and signed and notarized on macOS. Nothing else needs installing.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | Preview Mapping | Opens the mapping's page beside its file, read from the file. |
-| Run Flow | Asks what the run should do, starts it, and opens the run's page with its live trace. |
 | Open Flow Page | Opens the page of the flow in the editor: its records, issues, runs and schedules. |
 | Compare with Synced | Shows what your file changes from what the estate runs. |
 | Validate Repository | Checks every document of the working copy and lists what it finds in Problems. |
@@ -97,4 +100,10 @@ needs installing.
 - [Writing a mapping](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/guides/writing-a-mapping.md)
 - [Report a problem](https://github.com/TahirRiaz/osdu-delivery/issues)
 
-OSDU Delivery is free software under the GNU General Public License, version 3 or later.
+OSDU Delivery is free software under the GNU General Public License, version 3 or later. The third-party components
+the package carries, and their licenses, are listed in `THIRD-PARTY-NOTICES.txt` inside it.
+
+## Trademarks
+
+OSDU is a registered trademark of The Open Group. OSDU Delivery is an independent product built on SQLFlow, and is
+not affiliated with, sponsored by, endorsed by or certified by The Open Group or the OSDU® Forum.

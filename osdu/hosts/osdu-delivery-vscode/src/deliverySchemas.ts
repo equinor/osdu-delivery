@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { McpServer } from '../../../../sqlflow/tools/sqlflow-vscode/src/mcp/mcpServer';
-import { templateFileName } from './runOptions';
+import { templateFileName } from './objectNames';
 
 interface Releases {
     releases: { name: string; local?: boolean; publishedUtc?: string | null }[];
