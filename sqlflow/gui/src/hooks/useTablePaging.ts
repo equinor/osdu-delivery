@@ -18,9 +18,9 @@ export interface TablePaging {
  * render, and the page returned is already the first, so a server-paged table's first request is for page 1, not a
  * discarded fetch of a page past the end.
  */
-export function useTablePaging(listKey: string): TablePaging {
+export function useTablePaging(listKey: string, initialPageSize: number = DEFAULT_PAGE_SIZE): TablePaging {
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const [shownList, setShownList] = useState(listKey);
   const changed = listKey !== shownList;
   if (changed) {
@@ -49,10 +49,13 @@ export interface PagedRows<T> {
  * Pages a list a page already holds (read whole, then searched and filtered in the browser) as a server-paged table
  * pages its rows, so both read and move alike: give `rows` to the DataTable and `pager` to its TablePager. `listKey`
  * names the list as `useTablePaging` says; a list that shrinks under the page shown (a refresh dropped rows) moves to its
- * last page.
+ * last page. `initialPageSize` is the size the list starts at (one of the pager's sizes), for a table that shares its
+ * page with other things and should start short.
  */
-export function usePagedRows<T>(rows: readonly T[] | undefined, listKey: string): PagedRows<T> {
-  const paging = useTablePaging(listKey);
+export function usePagedRows<T>(
+  rows: readonly T[] | undefined, listKey: string, initialPageSize: number = DEFAULT_PAGE_SIZE,
+): PagedRows<T> {
+  const paging = useTablePaging(listKey, initialPageSize);
   if (rows === undefined) {
     return { rows: undefined, pager: { ...paging, total: 0 } };
   }

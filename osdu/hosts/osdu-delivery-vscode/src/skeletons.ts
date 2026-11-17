@@ -174,6 +174,46 @@ context: |
 `,
     },
     {
+        label: 'Report',
+        detail: 'flowType: rpt, read-only queries over the ingestion tables, run on demand from the report\'s page and never as a flow',
+        content: `flowType: rpt
+name: newsystem-thing-rpt
+title: Things staged for delivery
+description: What the ingestion table holds, and what changed lately.
+batch: newsystem
+connection: \${env:OSDU_DATA_DB}
+
+parameters:
+  days:
+    label: Days back
+    type: integer
+    default: 30
+
+queries:
+  totals:
+    title: Staged rows
+    sql: |
+      SELECT COUNT(*) AS Staged, MAX(update_date) AS LastChanged
+      FROM OsduData.silver.Thing
+    show: figure
+    columns:
+      Staged: { label: Rows staged, format: integer }
+      LastChanged: { label: Last change, format: datetime }
+
+  per_day:
+    title: Rows changed per day
+    sql: |
+      SELECT CAST(update_date AS date) AS Day, COUNT(*) AS Changed
+      FROM OsduData.silver.Thing
+      WHERE update_date >= DATEADD(day, -@days, SYSUTCDATETIME())
+      GROUP BY CAST(update_date AS date)
+      ORDER BY Day
+    show:
+      - { type: column, by: Day, values: Changed }
+      - table
+`,
+    },
+    {
         label: 'Schedule library',
         detail: 'schedules.yaml, named schedules flows join',
         content: `schedules:

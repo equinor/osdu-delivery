@@ -107,6 +107,10 @@ to narrow a search to one kind of page.
 - [A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes](decisions/lineage-descriptions-beside-the-graph.md) -
   why `flowType: lin` is metadata with no execution model and no references, why its edges carry relations of their
   own instead of a flag, why what a step does is prose, and why an open end is a fact.
+- [A report is a flow type that is never run: a document of read-only queries a person runs on demand](decisions/reports-are-documents-run-on-demand.md) -
+  why `flowType: rpt` is a pipeline row and takes no schedule, why its queries run on a worker through the compute
+  queue with a statement only the synced document supplies, and why it is closed to assistant runs instead of held
+  to the column allow-list.
 - [A report visual's query is translated into T-SQL at sync, or refused with a reason](decisions/visual-sql-translation.md) -
   why the output is T-SQL only, why a stated Power Query and DAX subset refuses rather than approximates, why it
   runs in the graph builder, and why the translation is served as a dashboard match's SQL.

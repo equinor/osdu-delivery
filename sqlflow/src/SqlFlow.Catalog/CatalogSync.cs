@@ -861,11 +861,11 @@ public sealed class CatalogSync
                 row.DefinitionJson = projected.DefinitionJson;
                 row.Active = true;
                 row.LastSeenUtc = nowUtc;
-                if (string.Equals(projected.Kind, Core.Lineage.LineageDescriptionFlow.FlowType, StringComparison.OrdinalIgnoreCase))
+                if (YamlDocumentLoader.NeverRunReason(projected.Kind) is not null)
                 {
-                    // A lineage description is in no wave. A document rewritten as one keeps nothing of the place the
-                    // flow it replaced had in the plan, which nothing else would reset: a wave is stamped only on the
-                    // flows the plan holds.
+                    // A lineage description and a report are in no wave. A document rewritten as one keeps nothing of
+                    // the place the flow it replaced had in the plan, which nothing else would reset: a wave is stamped
+                    // only on the flows the plan holds.
                     row.Wave = -1;
                 }
 

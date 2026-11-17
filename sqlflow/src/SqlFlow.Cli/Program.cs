@@ -288,6 +288,21 @@ internal static class Program
                             return 0;
                         }
 
+                        case ReportFlowDocument doc:
+                        {
+                            // The reader cannot tell whether a statement is one read-only SELECT; the T-SQL parser can,
+                            // so a report with a statement it refuses is not valid, here as in the estate form.
+                            DocumentLoader.CheckOffline(doc, file);
+                            var flow = doc.Flow;
+                            var shown = flow.Queries.Sum(q => q.Views.Count);
+                            Console.WriteLine(
+                                $"OK  '{flow.Name}' is valid (report: {flow.Queries.Count} quer{(flow.Queries.Count == 1 ? "y" : "ies")} " +
+                                $"shown as {shown} view(s)" +
+                                (flow.Parameters.Count == 0 ? string.Empty : $", {flow.Parameters.Count} parameter(s)") +
+                                $", on {flow.Connection}; read-only, run on demand from its page).");
+                            return 0;
+                        }
+
                         case RegisteredFlowDocument doc:
                         {
                             // What the document names beside it is checked on disk too, as the estate form checks it.

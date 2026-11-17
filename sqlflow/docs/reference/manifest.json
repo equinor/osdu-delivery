@@ -499,10 +499,12 @@
         "cli-run",
         "cli-plan",
         "flow-overview",
+        "flow-rpt",
         "concept-cli-conventions"
       ],
       "sourceRefs": [
         "src/SqlFlow.Cli/Program.cs",
+        "src/SqlFlow.SqlServer/Query/ReportStatements.cs",
         "src/SqlFlow.Execution/DocumentLoader.cs",
         "src/SqlFlow.Core/Secrets/SecretHygiene.cs",
         "src/SqlFlow.Yaml/YamlDocumentLoader.cs"
@@ -850,7 +852,8 @@
         "guide-github-app",
         "concept-maintenance",
         "concept-external-triggers",
-        "concept-repository-auto-sync"
+        "concept-repository-auto-sync",
+        "concept-reports"
       ],
       "sourceRefs": [
         "src/SqlFlow.ControlPlane/Background/RunReferences.cs",
@@ -873,6 +876,7 @@
         "src/SqlFlow.ControlPlane/Api/PipelineRunDurations.cs",
         "src/SqlFlow.ControlPlane/Api/SearchEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/NodeEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/ReportEndpoints.cs",
         "src/SqlFlow.Catalog/RepoSourceStore.cs",
         "src/SqlFlow.Catalog/RunQueueStore.cs",
         "src/SqlFlow.Catalog/DispatchLeaseStore.cs",
@@ -1454,7 +1458,8 @@
         "concept-lineage-graph-and-plan",
         "guide-lineage-demo",
         "concept-run-artifacts",
-        "concept-described-lineage"
+        "concept-described-lineage",
+        "concept-reports"
       ],
       "sourceRefs": [
         "src/SqlFlow.Core/Lineage/LineageReport.cs",
@@ -1588,6 +1593,70 @@
         "src/SqlFlow.Core/Engine/FlowRunner.cs",
         "src/SqlFlow.Execution/DocumentLoader.cs",
         "src/SqlFlow.Cli/Program.cs"
+      ]
+    },
+    {
+      "id": "concept-reports",
+      "corpus": "reference",
+      "path": "concepts/reports.md",
+      "title": "Reports: read-only queries run on demand on a worker, never scheduled and never stored as results",
+      "type": "concept",
+      "summary": "How a report (flowType rpt) runs: a pipeline row that is not a flow, a statement only the synced document supplies, typed values, a worker, who may run one.",
+      "keywords": [
+        "report",
+        "reports page",
+        "flowtype rpt",
+        "report query",
+        "reportQuery",
+        "run on demand",
+        "why a report cannot be scheduled",
+        "not scheduled",
+        "read-only",
+        "compute task",
+        "worker",
+        "typed parameters",
+        "no sql from a client",
+        "assistant run",
+        "column allow-list",
+        "api reports"
+      ],
+      "related": [
+        "flow-rpt",
+        "flow-rpt-views",
+        "guide-write-a-report",
+        "concept-control-plane",
+        "concept-data-operations",
+        "concept-connections-and-secrets",
+        "concept-maintenance",
+        "concept-authentication-and-identity"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.ControlPlane/Api/ReportEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DatasourceEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Hosting/ControlPlaneHost.cs",
+        "src/SqlFlow.ControlPlane/Security/AssistantDelegation.cs",
+        "src/SqlFlow.ControlPlane/Background/RunDispatcher.cs",
+        "src/SqlFlow.ControlPlane/Maintenance/CatalogStorageContributor.cs",
+        "src/SqlFlow.Catalog/ComputeTaskStore.cs",
+        "src/SqlFlow.Catalog/CatalogSync.cs",
+        "src/SqlFlow.Catalog/CatalogEntities.cs",
+        "src/SqlFlow.Catalog/FlowLoadProfiles.cs",
+        "src/SqlFlow.Core/Compute/ComputeTaskModels.cs",
+        "src/SqlFlow.Core/Reports/ReportFlow.cs",
+        "src/SqlFlow.Core/Query/QueryModels.cs",
+        "src/SqlFlow.Core/Query/QueryParameter.cs",
+        "src/SqlFlow.Execution/ComputeTaskExecutor.cs",
+        "src/SqlFlow.SqlServer/Query/ReadOnlyQueryGuard.cs",
+        "src/SqlFlow.SqlServer/Query/ReportStatements.cs",
+        "src/SqlFlow.SqlServer/Query/SqlServerQueryRunner.cs",
+        "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
+        "src/SqlFlow.Lineage/Collection/RunArtifactCollector.cs",
+        "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlDocumentLoader.cs"
       ]
     },
     {
@@ -2739,9 +2808,9 @@
       "id": "flow-overview",
       "corpus": "reference",
       "path": "flow/overview.md",
-      "title": "Anatomy of a flow file: the fifteen document kinds",
+      "title": "Anatomy of a flow file: the sixteen document kinds",
       "type": "flow-reference",
-      "summary": "How the top-level flowType key selects one of fifteen flow document kinds, what each kind contains, and how loading and validation behave.",
+      "summary": "How the top-level flowType key selects one of sixteen flow document kinds, what each kind contains, and how loading and validation behave.",
       "keywords": [
         "flowtype",
         "document kinds",
@@ -2754,6 +2823,7 @@
         "flow-ing",
         "flow-batch",
         "flow-lin",
+        "flow-rpt",
         "concept-flow-identity",
         "cli-validate"
       ],
@@ -2764,6 +2834,7 @@
         "src/SqlFlow.Yaml/YamlSourceControlFlowLoader.cs",
         "src/SqlFlow.Yaml/YamlBatchFlowLoader.cs",
         "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
         "src/SqlFlow.Core/SqlFlowException.cs",
         "src/SqlFlow.Core/Model/FlowDefinition.cs",
         "src/SqlFlow.Core/Runs/RunHistoryWriter.cs",
@@ -2773,6 +2844,102 @@
         "src/SqlFlow.Orchestration/BatchOrchestrator.cs",
         "src/SqlFlow.DuckDb/DuckDbSourceReader.cs",
         "src/SqlFlow.Cli/Program.cs"
+      ]
+    },
+    {
+      "id": "flow-rpt",
+      "corpus": "reference",
+      "path": "flow/rpt.md",
+      "title": "Report (flowType: rpt): read-only queries, their parameters and the keys reference",
+      "type": "flow-reference",
+      "summary": "flowType: rpt declares read-only SQL queries a person runs on demand from the report's page, shown as figures, charts and tables. Never run, never scheduled.",
+      "keywords": [
+        "report",
+        "flowtype rpt",
+        "rpt keys",
+        "read-only query",
+        "select",
+        "parameters",
+        "filter a report by a parameter",
+        "@name",
+        "choices",
+        "choicesFrom",
+        "maxRows",
+        "timeoutSeconds",
+        "on demand",
+        "never scheduled",
+        "cannot be scheduled",
+        "how many rows",
+        "dashboard"
+      ],
+      "yamlPath": "(root, flowType: rpt)",
+      "related": [
+        "flow-rpt-views",
+        "concept-reports",
+        "guide-write-a-report",
+        "flow-overview",
+        "cli-validate",
+        "concept-connections-and-secrets",
+        "concept-data-operations"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlDocumentLoader.cs",
+        "src/SqlFlow.Core/Reports/ReportFlow.cs",
+        "src/SqlFlow.Core/Reports/ReportSql.cs",
+        "src/SqlFlow.Core/Query/QueryParameter.cs",
+        "src/SqlFlow.Core/Query/QueryModels.cs",
+        "src/SqlFlow.SqlServer/Query/ReadOnlyQueryGuard.cs",
+        "src/SqlFlow.SqlServer/Query/ReportStatements.cs",
+        "src/SqlFlow.SqlServer/Query/SqlServerQueryRunner.cs",
+        "src/SqlFlow.Execution/ComputeTaskExecutor.cs",
+        "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
+        "src/SqlFlow.ControlPlane/Api/RunTriggerEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs",
+        "src/SqlFlow.Cli/Program.cs",
+        "docs/reference/flow/keys.rpt.json",
+        "samples/reports/staging-overview.yaml"
+      ]
+    },
+    {
+      "id": "flow-rpt-views",
+      "corpus": "reference",
+      "path": "flow/rpt-views.md",
+      "title": "Report views: show a query's answer as figures, a bar chart, a line or a table (queries.<query>.show, columns)",
+      "type": "flow-reference",
+      "summary": "How a report shows a query's answer: the forms of show, each view type and its keys, a click that sets a parameter, and how columns are labelled and written.",
+      "keywords": [
+        "report view",
+        "show",
+        "show a query as a bar chart",
+        "bar chart",
+        "column chart",
+        "line chart",
+        "figure",
+        "share",
+        "table",
+        "matrix",
+        "selects",
+        "click a bar to filter",
+        "columns",
+        "format",
+        "bytes",
+        "percent",
+        "duration",
+        "width",
+        "tile",
+        "flowtype rpt"
+      ],
+      "yamlPath": "queries.<query>.show",
+      "related": [
+        "flow-rpt",
+        "concept-reports",
+        "guide-write-a-report"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+        "src/SqlFlow.Core/Reports/ReportFlow.cs",
+        "samples/reports/staging-overview.yaml"
       ]
     },
     {
@@ -3953,6 +4120,43 @@
       ]
     },
     {
+      "id": "guide-write-a-report",
+      "corpus": "reference",
+      "path": "guides/write-a-report.md",
+      "title": "Write a report: one query that shows how many rows each source holds, then a parameter, a bar that sets it, and a list of choices",
+      "type": "guide",
+      "summary": "Write a report (flowType rpt) step by step: one query, validate, sync, add a parameter, make a chart filter the page, and read the reader's messages.",
+      "keywords": [
+        "write a report",
+        "report",
+        "flowtype rpt",
+        "how do I see how many rows a table holds",
+        "rows per source",
+        "staging area",
+        "first report",
+        "add a parameter",
+        "filter a report by a parameter",
+        "click a bar to filter",
+        "choices from a query",
+        "validate a report",
+        "common mistakes",
+        "dashboard"
+      ],
+      "related": [
+        "flow-rpt",
+        "flow-rpt-views",
+        "concept-reports",
+        "cli-validate"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+        "src/SqlFlow.Core/Reports/ReportFlow.cs",
+        "src/SqlFlow.SqlServer/Query/ReadOnlyQueryGuard.cs",
+        "src/SqlFlow.Cli/Program.cs",
+        "samples/reports/staging-overview.yaml"
+      ]
+    },
+    {
       "id": "source-type-csv",
       "corpus": "reference",
       "path": "flow/source-types/csv.md",
@@ -4696,7 +4900,8 @@
       ],
       "related": [
         "wiki-schema-registration-flows",
-        "wiki-the-mcp-server-is-the-assistants-one-definition"
+        "wiki-the-mcp-server-is-the-assistants-one-definition",
+        "wiki-reports-are-documents-run-on-demand"
       ],
       "sourceRefs": [
         "src/SqlFlow.Yaml/YamlLineageDescriptionFlowLoader.cs",
@@ -5261,6 +5466,60 @@
         "wiki-pattern-catalog"
       ],
       "sourceRefs": []
+    },
+    {
+      "id": "wiki-reports-are-documents-run-on-demand",
+      "corpus": "wiki",
+      "path": "decisions/reports-are-documents-run-on-demand.md",
+      "title": "A report is a flow type that is never run: a document of read-only queries a person runs on demand",
+      "type": "decision",
+      "summary": "Why flowType rpt is a pipeline row, takes no schedule and keeps no result, why a worker runs its queries, and why it is closed to assistant runs.",
+      "keywords": [
+        "report",
+        "flowType rpt",
+        "why a report cannot be scheduled",
+        "run on demand",
+        "read-only query",
+        "compute queue",
+        "typed parameters",
+        "no sql from a client",
+        "server catalog",
+        "column allow-list",
+        "assistant run",
+        "no stored results",
+        "health check",
+        "rejected alternatives"
+      ],
+      "related": [
+        "wiki-lineage-descriptions-beside-the-graph",
+        "wiki-semantic-layer-is-the-allow-list",
+        "wiki-ai-contexts-are-files-an-admin-approves",
+        "wiki-dispatch-in-control-plane"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+        "src/SqlFlow.Yaml/YamlDocumentLoader.cs",
+        "src/SqlFlow.Core/Reports/ReportFlow.cs",
+        "src/SqlFlow.Core/Reports/ReportSql.cs",
+        "src/SqlFlow.Core/Query/QueryParameter.cs",
+        "src/SqlFlow.Core/Query/QueryModels.cs",
+        "src/SqlFlow.Core/Compute/ComputeTaskModels.cs",
+        "src/SqlFlow.SqlServer/Query/ReadOnlyQueryGuard.cs",
+        "src/SqlFlow.SqlServer/Query/ReportStatements.cs",
+        "src/SqlFlow.SqlServer/Query/SqlServerQueryRunner.cs",
+        "src/SqlFlow.Execution/ComputeTaskExecutor.cs",
+        "src/SqlFlow.ControlPlane/Api/ReportEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DatasourceEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/DescribedLineage.cs",
+        "src/SqlFlow.ControlPlane/Security/AssistantDelegation.cs",
+        "src/SqlFlow.ControlPlane/Background/RunDispatcher.cs",
+        "src/SqlFlow.ControlPlane/Maintenance/CatalogStorageContributor.cs",
+        "src/SqlFlow.Catalog/ComputeTaskStore.cs",
+        "src/SqlFlow.Catalog/CatalogSync.cs",
+        "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
+        "src/SqlFlow.HealthCheck/HealthCheckSqlBuilder.cs",
+        "src/SqlFlow.Cli/Program.cs"
+      ]
     },
     {
       "id": "wiki-schema-registration-flows",

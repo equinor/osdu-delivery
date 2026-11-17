@@ -293,6 +293,11 @@ $0",
             "flowType: lin\nname: ${1:source-object-u1-step-lin}\ndescription: ${2:What the step does, in a sentence.}\nsystem: ${3:databricks}\nunit: ${4:the job and task, pipeline and activity, or notebook}\nevidence:\n  - { repo: ${5:repository}, path: ${6:path/to/the/code}, commit: ${7:commit} }\nreads:\n  - { name: ${8:schema.source_table}, as: ${9:src} }\nwrites:\n  - feeds: ${10:name-of-the-flow-that-reads-the-output}\ncontext: |\n  ${11:What happens to the data: which rows are left out or added and why, how keys are formed, when it runs, what becomes of a deleted record.}\n$0",
         ),
         (
+            "report",
+            "Report skeleton (flowType: rpt): read-only queries a person runs from the report's page, never run as a flow",
+            "flowType: rpt\nname: ${1:subject-overview-rpt}\ntitle: ${2:What the report shows}\ndescription: ${3:What the report is for, in a sentence.}\nconnection: \\${env:${4:SQLFLOW_DW}}\n\nparameters:\n  ${5:days}:\n    label: ${6:Days back}\n    type: integer\n    default: ${7:30}\n\nqueries:\n  ${8:per_day}:\n    title: ${9:Rows loaded per day}\n    sql: |\n      SELECT CAST(${10:LoadedUtc} AS date) AS Day, COUNT(*) AS Loaded\n      FROM ${11:stg.Orders}\n      WHERE ${10} >= DATEADD(day, -@${5}, SYSUTCDATETIME())\n      GROUP BY CAST(${10} AS date)\n      ORDER BY Day\n    show:\n      - { type: ${12|column,bar,line|}, by: Day, values: Loaded }\n      - table\n$0",
+        ),
+        (
             "ai-context",
             "AI context skeleton (*.ai-context.yaml), approved by an admin before an assistant uses it",
             "aiContext: ${1:sales}\ndescription: ${2:What the context covers}\ninstructions: |\n  ${3:Amounts are in the reporting currency, excluding tax.}\ntables:\n  - table: ${4:dw.sales.Orders}\n    name: ${5:Order lines}\n    description: ${6:One row per order line.}\n    key: [${7:OrderId}]\n    columns:\n      - column: ${8:Amount}\n        description: ${9:Line amount excluding tax.}\n    deny: [${10:CostPrice}]\n$0",
@@ -304,13 +309,24 @@ $0",
         .map(|(i, (label, detail, body))| CompletionItem {
             label: label.to_string(),
             detail: Some(detail.to_string()),
-            documentation: Some(format!("```yaml\n{}\n```", body.replace("$0", "").replace(['$'], ""))),
+            documentation: Some(format!("```yaml\n{}\n```", snippet_preview(body))),
             insert_text: body.to_string(),
             kind: CompletionKind::Snippet,
             sort_text: format!("2{i:04}"),
             is_snippet: true,
         })
         .collect()
+}
+
+/// A skeleton's body as its documentation shows it: without the final tab stop and without the dollar of each
+/// placeholder. A dollar the body escapes (`\$`) is text the skeleton inserts as it is, the start of a `${env:NAME}`
+/// reference, so it stays a dollar.
+fn snippet_preview(body: &str) -> String {
+    const ESCAPED: char = '\u{0}';
+    body.replace("\\$", &ESCAPED.to_string())
+        .replace("$0", "")
+        .replace('$', "")
+        .replace(ESCAPED, "$")
 }
 
 /// Names of keys already present under `parent` in the parsed document.
@@ -1234,6 +1250,205 @@ mod tests {
         let diags = diagnostics(&FlowDocument::parse("flowType: lin\nname: orders-step-lin\nwrites:\n  - { name: out }\n"));
         let missing: Vec<_> = diags.iter().filter(|d| d.code.as_deref() == Some("flow-missing-required")).map(|d| d.message.as_str()).collect();
         assert_eq!(missing, ["required key 'system' is missing"], "{diags:?}");
+    }
+
+    /// A whole report: a parameter whose choices are read from a query, a query that is not shown, a view written
+    /// as a type alone, as one mapping and as a list, and columns written as a mapping.
+    const REPORT: &str = r#"flowType: rpt
+name: staging-overview-rpt
+title: Staging overview
+description: What the staging area holds, by source, and what arrived lately.
+batch: staging
+connection: ${env:SQLFLOW_DW}
+database: Staging
+timeoutSeconds: 60
+maxRows: 1000
+
+parameters:
+  source:
+    label: Source
+    description: Only rows of this source.
+    choicesFrom: sources
+  days:
+    label: Days back
+    type: integer
+    default: 30
+
+queries:
+  sources:
+    sql: SELECT DISTINCT Source FROM stg.Orders ORDER BY Source
+    show: none
+
+  totals:
+    title: The staging area
+    section: Overview
+    sql: |
+      SELECT COUNT(*) AS Staged, COUNT(DISTINCT Source) AS Sources, MAX(LoadedUtc) AS LastLoaded
+      FROM stg.Orders
+      WHERE (@source IS NULL OR Source = @source)
+    show: figure
+    columns:
+      Staged: { label: Rows staged, format: integer }
+      LastLoaded: { label: Last load, format: datetime }
+
+  by_source:
+    title: Rows by source
+    section: Overview
+    sql: |
+      SELECT Source, COUNT(*) AS Staged
+      FROM stg.Orders
+      GROUP BY Source
+      ORDER BY Staged DESC
+    show:
+      - { type: bar, by: Source, values: Staged, selects: source }
+      - table
+
+  per_day:
+    title: Rows loaded per day
+    section: Arrivals
+    sql: |
+      SELECT CAST(LoadedUtc AS date) AS Day, COUNT(*) AS Staged
+      FROM stg.Orders
+      WHERE LoadedUtc >= DATEADD(day, -@days, SYSUTCDATETIME())
+        AND (@source IS NULL OR Source = @source)
+      GROUP BY CAST(LoadedUtc AS date)
+      ORDER BY Day
+    show: { type: column, by: Day, values: Staged }
+"#;
+
+    /// A skeleton's body as it stands once inserted and left as offered: each placeholder is its default, each choice
+    /// its first option, a mirror the default of the tab stop it repeats, and an escaped dollar a dollar.
+    fn filled(body: &str) -> String {
+        let chars: Vec<char> = body.chars().collect();
+        let mut defaults = std::collections::HashMap::new();
+        let mut out = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            match (chars[i], chars.get(i + 1)) {
+                ('\\', Some('$')) => {
+                    out.push('$');
+                    i += 2;
+                }
+                ('$', Some('{')) => {
+                    let end = (i..chars.len()).find(|&j| chars[j] == '}').expect("a placeholder closes");
+                    let inner: String = chars[i + 2..end].iter().collect();
+                    let index: String = inner.chars().take_while(char::is_ascii_digit).collect();
+                    let rest = &inner[index.len()..];
+                    let value = match rest.chars().next() {
+                        Some(':') => rest[1..].to_string(),
+                        Some('|') => rest[1..].split([',', '|']).next().unwrap_or_default().to_string(),
+                        _ => defaults.get(&index).cloned().unwrap_or_default(),
+                    };
+                    defaults.entry(index).or_insert_with(|| value.clone());
+                    out.push_str(&value);
+                    i = end + 1;
+                }
+                ('$', Some(digit)) if digit.is_ascii_digit() => i += 2,
+                (c, _) => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_report_takes_its_own_keys_and_nothing_a_running_flow_takes() {
+        let diags = diagnostics(&FlowDocument::parse(REPORT));
+        assert!(diags.is_empty(), "a valid report was flagged: {diags:?}");
+
+        // The least a report is: a name, a connection and one query with a statement.
+        let least = "flowType: rpt\nname: orders-rpt\nconnection: ${env:SQLFLOW_DW}\nqueries:\n  orders:\n    sql: SELECT 1 AS One\n";
+        let diags = diagnostics(&FlowDocument::parse(least));
+        assert!(diags.is_empty(), "the least report was flagged: {diags:?}");
+
+        // It is never run as a flow and names its one connection as a reference, so the envelope and the shared
+        // blocks other kinds take are unknown to it, and as errors: its loader refuses a document that carries one.
+        for key in ["schedule: nightly", "mode: manual", "connections:\n  dwh: x", "lifecycle: production", "preInvoke: [a]"] {
+            let name = key.split(':').next().unwrap_or(key);
+            let diags = diagnostics(&FlowDocument::parse(&format!("{REPORT}{key}\n")));
+            let hit = diags.iter().find(|d| d.code.as_deref() == Some("flow-unknown-key") && d.message.contains(&format!("'{name}'")));
+            assert!(hit.is_some(), "'{name}' on a report should be flagged, got: {diags:?}");
+            assert_eq!(hit.map(|d| d.severity), Some(Severity::Error), "'{name}' should be an error on a strict kind");
+        }
+
+        // What every report must have is asked for, and nothing else.
+        let diags = diagnostics(&FlowDocument::parse("flowType: rpt\nname: orders-rpt\n"));
+        let mut missing: Vec<_> = diags.iter().filter(|d| d.code.as_deref() == Some("flow-missing-required")).map(|d| d.message.as_str()).collect();
+        missing.sort_unstable();
+        assert_eq!(missing, ["required key 'connection' is missing", "required key 'queries' is missing"], "{diags:?}");
+    }
+
+    #[test]
+    fn a_report_checks_a_key_and_a_word_where_it_is_written() {
+        let report = |query: &str| format!("flowType: rpt\nname: orders-rpt\nconnection: ${{env:SQLFLOW_DW}}\n{query}");
+        let codes = |source: &str| -> Vec<(String, Severity)> {
+            diagnostics(&FlowDocument::parse(source)).into_iter().map(|d| (d.code.unwrap_or_default(), d.severity)).collect()
+        };
+
+        // A view key belongs to a view, a column's key to a column, and a parameter's key to a parameter: written one
+        // level off, it is refused, and the message says where a key of that name goes.
+        for misplaced in [
+            "queries:\n  orders:\n    sql: SELECT 1 AS One\n    across: Region\n",
+            "queries:\n  orders:\n    sql: SELECT 1 AS One\n    format: integer\n",
+            "queries:\n  orders:\n    sql: SELECT 1 AS One\n    show: { type: bar, by: Region, decimals: 2 }\n",
+            "queries:\n  orders:\n    sql: SELECT 1 AS One\n    columns:\n      One: { label: One, selects: region }\n",
+            "parameters:\n  region:\n    by: Region\nqueries:\n  orders:\n    sql: SELECT 1 AS One WHERE @region IS NULL\n",
+        ] {
+            assert_eq!(codes(&report(misplaced)), [("flow-misplaced-key".to_string(), Severity::Error)], "{misplaced}");
+        }
+
+        // A word of a closed set is checked where it stands: a view type alone, in a mapping and in a list, a width, a
+        // column's format alone and in a mapping, and a parameter's type.
+        for (written, flagged) in [
+            ("    show: table\n", false),
+            ("    show: chart\n", true),
+            // A matrix lays one column out across, so it is a mapping, never a type alone.
+            ("    show: matrix\n", true),
+            ("    show: { type: matrix, by: Region, across: Year, values: Orders, width: full }\n", false),
+            ("    show: { type: pie }\n", true),
+            ("    show: { type: bar, width: wide }\n", true),
+            ("    show:\n      - type: line\n        by: Day\n        values: [Orders, Returns]\n      - table\n", false),
+            ("    show:\n      - type: area\n", true),
+            ("    columns:\n      Size: bytes\n      Share: { format: percent, decimals: 1, unit: of all }\n", false),
+            ("    columns:\n      Size: megabytes\n", true),
+            ("    columns:\n      Size: { format: megabytes }\n", true),
+        ] {
+            let source = report(&format!("queries:\n  orders:\n    sql: SELECT 1 AS One\n{written}"));
+            let expected = if flagged { vec![("flow-invalid-enum".to_string(), Severity::Warning)] } else { Vec::new() };
+            assert_eq!(codes(&source), expected, "{written}");
+        }
+        let typed = |ty: &str| report(&format!("parameters:\n  since:\n    type: {ty}\n    required: true\nqueries:\n  orders:\n    sql: SELECT 1 AS One WHERE @since IS NOT NULL\n"));
+        assert!(codes(&typed("datetime")).is_empty());
+        assert_eq!(codes(&typed("timestamp")), [("flow-invalid-enum".to_string(), Severity::Warning)]);
+
+        // A parameter may be listed with nothing after it, and its choices are values or mappings.
+        let listed = report("parameters:\n  region:\n  size:\n    choices:\n      - small\n      - { value: large, label: Large orders }\nqueries:\n  orders:\n    sql: SELECT 1 AS One WHERE @region IS NULL AND @size IS NULL\n");
+        let found = codes(&listed);
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn the_report_skeleton_is_a_report_the_editor_takes_as_offered() {
+        let doc = FlowDocument::parse("");
+        let offered = completion(&doc, Position { line: 0, character: 0 });
+        let labels: Vec<_> = offered.iter().map(|c| c.label.as_str()).collect();
+        let skeleton = offered.iter().find(|c| c.label == "report").unwrap_or_else(|| panic!("expected the report skeleton, got {labels:?}"));
+        assert!(skeleton.is_snippet);
+
+        // Left as offered it is a whole report: its connection a reference, its statement bound to its parameter.
+        let text = filled(&skeleton.insert_text);
+        assert!(text.contains("\nconnection: ${env:SQLFLOW_DW}\n"), "{text}");
+        assert!(text.contains("DATEADD(day, -@days, SYSUTCDATETIME())"), "{text}");
+        assert!(!text.contains("${1") && !text.contains("$0"), "a placeholder was left in: {text}");
+        let diags = diagnostics(&FlowDocument::parse(&text));
+        assert!(diags.is_empty(), "the report skeleton was flagged: {diags:?}\n{text}");
+
+        // Its preview keeps the dollar of the reference, which is text and no placeholder.
+        let preview = skeleton.documentation.as_deref().unwrap_or_default();
+        assert!(preview.contains("connection: ${env:"), "{preview}");
+        assert!(!preview.contains('\\'), "{preview}");
     }
 
     #[test]

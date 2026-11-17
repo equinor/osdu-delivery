@@ -5,11 +5,12 @@ using SqlFlow.Dispatch.Protocol;
 namespace SqlFlow.Catalog;
 
 /// <summary>What to enqueue: the operation, the connection REFERENCE (never a secret), the validated payload
-/// as JSON, optional pool routing, and the requester for audit. Bundled so the optional fields can never be
-/// passed in the wrong order.</summary>
+/// as JSON, optional pool routing, the requester for audit, and the repository the task belongs to when it belongs
+/// to one (a report's query), whose supplied references it then resolves with exactly as a run of that repository
+/// does. Bundled so the optional fields can never be passed in the wrong order.</summary>
 public sealed record ComputeTaskEnqueueRequest(
     string Operation, string SourceRef, string? ProviderKind, string ArgumentsJson,
-    string? TargetPool = null, string? RequestedBy = null);
+    string? TargetPool = null, string? RequestedBy = null, Guid? RepoId = null);
 
 /// <summary>The outcome of enqueuing a compute task: its new id and its placement row for the dispatcher.</summary>
 public sealed record ComputeTaskEnqueueResult(Guid TaskId, DispatchTask Placement);

@@ -5,10 +5,12 @@
 //! libraries. They are embedded here at compile time (`include_str!`) so the
 //! analysis engine ships as a single binary with no runtime file dependency.
 //! Each flow kind's file is selected by the open document's `flowType`; the
-//! shared file (`keys.shared.json`) is always merged in because its blocks
-//! (`connections`, `servicePrincipals`, the invoke hooks) are reused across
-//! kinds, and so are the envelope keys the document loader reads for every
-//! built-in kind (`schedule`, `mode`). A library is selected by its root key.
+//! shared file (`keys.shared.json`) is merged into every kind that runs because
+//! its blocks (`connections`, `servicePrincipals`, the invoke hooks) are reused
+//! across kinds, and so are the envelope keys the document loader reads for
+//! every such kind (`schedule`, `mode`). The kinds that are never run as a flow
+//! (`lin`, `rpt`) take neither: each is its own keys. A library is selected by
+//! its root key.
 //!
 //! A census `path` is a dot-path with three segment shapes:
 //!   * a plain key            `source.options.header`
@@ -302,6 +304,7 @@ impl Census {
             Some("cal") => CAL,
             Some("trl") => TRL,
             Some("lin") => LIN,
+            Some("rpt") => RPT,
             // Unknown flowType: fall back to the file flow so hover/completion
             // still work on the shared and root keys while diagnostics flag the
             // bad discriminator.
@@ -324,10 +327,12 @@ impl Census {
                 .collect();
             entries.extend(envelope);
         }
-        // A lineage description (flowType: lin) is metadata and is never run: it declares no connection, takes no
-        // invoke hook, and its loader refuses a schedule or a mode. Its census is its own keys and nothing merged in,
-        // and it is strict as its loader is, so a key that would keep the document from loading is an error here too.
-        if ft == Some("lin") {
+        // A document that is never run as a flow: a lineage description (flowType: lin), which is metadata, and a
+        // report (flowType: rpt), whose read-only queries a person runs from the report's page. Neither takes a
+        // connections block, a service principal or an invoke hook, and the loader of each refuses a schedule, a mode
+        // or a lifecycle. Its census is its own keys and nothing merged in, and it is strict as its loader is, so a
+        // key that would keep the document from loading is an error here too.
+        if ft.is_some_and(|t| NEVER_RUN_FLOW_TYPES.contains(&t)) {
             return Census { entries, strict: true };
         }
         // Merge shared blocks that the primary file does not already define.
@@ -515,7 +520,11 @@ const PROBED_ENVELOPE_KEYS: &[&str] = &["schedule", "mode"];
 
 /// The flow kinds SQLFlow compiles in; a module cannot register a census for one of them.
 pub const BUILT_IN_FLOW_TYPES: &[&str] =
-    &["ing", "exp", "sp", "inv", "hc", "scm", "sch", "batch", "api", "cpy", "sftp", "cal", "trl", "lin"];
+    &["ing", "exp", "sp", "inv", "hc", "scm", "sch", "batch", "api", "cpy", "sftp", "cal", "trl", "lin", "rpt"];
+
+/// The built-in kinds that are documents and never run as a flow: a lineage description and a report. Each is read by
+/// a strict loader of its own, and takes none of what a running flow takes (the shared blocks, the probed envelope).
+pub const NEVER_RUN_FLOW_TYPES: &[&str] = &["lin", "rpt"];
 
 fn registry() -> &'static std::sync::RwLock<BTreeMap<CensusKind, ModuleCensus>> {
     static REGISTRY: std::sync::OnceLock<std::sync::RwLock<BTreeMap<CensusKind, ModuleCensus>>> = std::sync::OnceLock::new();
@@ -654,6 +663,7 @@ const SFTP: &str = include_str!("../../../docs/reference/flow/keys.sftp.json");
 const CAL: &str = include_str!("../../../docs/reference/flow/keys.cal.json");
 const TRL: &str = include_str!("../../../docs/reference/flow/keys.trl.json");
 const LIN: &str = include_str!("../../../docs/reference/flow/keys.lin.json");
+const RPT: &str = include_str!("../../../docs/reference/flow/keys.rpt.json");
 const SHARED: &str = include_str!("../../../docs/reference/flow/keys.shared.json");
 const SUBSCRIBERS: &str = include_str!("../../../docs/reference/flow/keys.subscribers.json");
 const SCHEDULES: &str = include_str!("../../../docs/reference/flow/keys.schedules.json");
@@ -825,6 +835,93 @@ mod tests {
             assert!(matches!(c.resolve(&ak(&[foreign])), Resolution::Unknown), "{foreign} should be unknown on lin");
         }
         assert!(BUILT_IN_FLOW_TYPES.contains(&"lin"));
+    }
+
+    #[test]
+    fn report_census_is_its_own_keys_and_strict() {
+        let c = Census::for_flow_type(Some("rpt"));
+        assert!(c.strict, "a report's loader refuses an unknown key, so its census is strict");
+        // A shape mismatch in keys.rpt.json empties the census silently, so assert it loaded before trusting it.
+        assert!(c.entries.len() > 50, "the report census should load, got {}", c.entries.len());
+        for leaf in [
+            "flowType", "name", "title", "description", "batch", "connection", "database", "pool", "timeoutSeconds",
+            "maxRows", "parameters", "queries",
+        ] {
+            assert!(matches!(c.resolve(&ak(&[leaf])), Resolution::Exact(_)), "{leaf} should be known");
+        }
+
+        // A parameter and a query are named by the author, so their keys resolve under any name.
+        assert!(matches!(c.resolve(&ak(&["parameters", "source"])), Resolution::Exact(_)));
+        for leaf in ["label", "description", "type", "default", "required", "choices", "choicesFrom"] {
+            assert!(
+                matches!(c.resolve(&ak(&["parameters", "days_back", leaf])), Resolution::Exact(_)),
+                "parameters.<parameter>.{leaf} should be known"
+            );
+        }
+        // A choice is a value on its own, or a mapping with a value and a label.
+        let choice = [AuthoredSeg::Key("parameters".into()), AuthoredSeg::Key("source".into()), AuthoredSeg::Key("choices".into()), AuthoredSeg::List];
+        assert!(matches!(c.resolve(&choice), Resolution::Exact(_)));
+        for leaf in ["value", "label"] {
+            let mut path = choice.to_vec();
+            path.push(AuthoredSeg::Key(leaf.into()));
+            assert!(matches!(c.resolve(&path), Resolution::Exact(_)), "choices[].{leaf} should be known");
+        }
+        for leaf in ["title", "description", "section", "connection", "database", "timeoutSeconds", "maxRows", "sql", "show", "columns"] {
+            assert!(
+                matches!(c.resolve(&ak(&["queries", "by-source", leaf])), Resolution::Exact(_)),
+                "queries.<query>.{leaf} should be known"
+            );
+        }
+
+        // A view is one mapping under show, or an entry of a list under it; a view key resolves in both forms.
+        let show = [AuthoredSeg::Key("queries".into()), AuthoredSeg::Key("by-source".into()), AuthoredSeg::Key("show".into())];
+        let mut listed = show.to_vec();
+        listed.push(AuthoredSeg::List);
+        assert!(matches!(c.resolve(&listed), Resolution::Exact(_)), "the short form of a listed view is a type on its own");
+        for leaf in ["type", "title", "description", "width", "by", "values", "series", "across", "stacked", "top", "selects"] {
+            for form in [&show[..], &listed[..]] {
+                let mut path = form.to_vec();
+                path.push(AuthoredSeg::Key(leaf.into()));
+                assert!(matches!(c.resolve(&path), Resolution::Exact(_)), "the view key {leaf} should be known in both forms");
+            }
+        }
+        // The short form of show cannot be a matrix, which needs a mapping; the mapping's type can.
+        let Resolution::Exact(short) = c.resolve(&show) else {
+            panic!("queries.<query>.show should be a documented attribute");
+        };
+        let short = short.enum_values.as_ref().expect("show lists the view types its short form takes");
+        assert!(short.iter().any(|v| v == "none") && !short.iter().any(|v| v == "matrix"), "{short:?}");
+        let mut view_type = show.to_vec();
+        view_type.push(AuthoredSeg::Key("type".into()));
+        let Resolution::Exact(view_type) = c.resolve(&view_type) else {
+            panic!("queries.<query>.show.type should be a documented attribute");
+        };
+        assert!(view_type.enum_values.as_ref().is_some_and(|v| v.iter().any(|t| t == "matrix")));
+
+        // A column is named by the author, and its value is a format or a mapping.
+        let column = ak(&["queries", "by-source", "columns", "Staged"]);
+        assert!(matches!(c.resolve(&column), Resolution::Exact(_)));
+        for leaf in ["label", "format", "decimals", "unit"] {
+            let mut path = column.clone();
+            path.push(AuthoredSeg::Key(leaf.into()));
+            assert!(matches!(c.resolve(&path), Resolution::Exact(_)), "columns.<column>.{leaf} should be known");
+        }
+
+        // A key no part of a report takes is unknown under a free name too.
+        assert!(matches!(c.resolve(&ak(&["parameters", "source", "values"])), Resolution::Unknown));
+        assert!(matches!(c.resolve(&ak(&["queries", "by-source", "query"])), Resolution::Unknown));
+        assert!(matches!(c.resolve(&ak(&["queries", "by-source", "columns", "Staged", "width"])), Resolution::Unknown));
+
+        // Nothing a running flow takes is merged in: no envelope, no connections, no invoke hooks.
+        for foreign in ["schedule", "mode", "connections", "servicePrincipals", "lifecycle", "preInvoke"] {
+            assert!(matches!(c.resolve(&ak(&[foreign])), Resolution::Unknown), "{foreign} should be unknown on rpt");
+        }
+        // What a report must have, and nothing conditional: a key needed only beside another is not required alone.
+        let mut required: Vec<&str> = c.required_top_level().iter().map(|e| e.path.as_str()).collect();
+        required.sort_unstable();
+        assert_eq!(required, ["connection", "name", "queries"]);
+        assert!(BUILT_IN_FLOW_TYPES.contains(&"rpt"));
+        assert!(NEVER_RUN_FLOW_TYPES.iter().all(|t| BUILT_IN_FLOW_TYPES.contains(t)));
     }
 
     #[test]

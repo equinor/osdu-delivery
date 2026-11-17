@@ -23,10 +23,20 @@ public static class ReadOnlyQueryGuard
     public const int MaxLength = 20_000;
 
     /// <summary>
-    /// Validates the statement and returns it trimmed. Throws <see cref="SqlFlowException"/> naming what was
-    /// refused and why, so the caller can rewrite rather than guess.
+    /// Validates a statement composed for a question and returns it trimmed. Throws <see cref="SqlFlowException"/>
+    /// naming what was refused and why, so the caller can rewrite rather than guess.
     /// </summary>
-    public static string Validate(string sql)
+    public static string Validate(string sql) => Validate(sql, declared: false);
+
+    /// <summary>
+    /// Validates the statement and returns it trimmed. Throws <see cref="SqlFlowException"/> naming what was
+    /// refused and why, so the caller can rewrite rather than guess. <paramref name="declared"/> is true for a
+    /// statement a repository's own document declares (a report's query): it is held to every rule that keeps a
+    /// statement read-only, and may read the server's own catalog (<c>sys</c>, <c>INFORMATION_SCHEMA</c> and the
+    /// metadata functions), which a statement composed for a question may not, since the column policy that governs
+    /// such a statement knows the estate's objects only.
+    /// </summary>
+    public static string Validate(string sql, bool declared)
     {
         if (string.IsNullOrWhiteSpace(sql))
         {
@@ -68,14 +78,16 @@ public static class ReadOnlyQueryGuard
 
         if (statements[0] is not SelectStatement select)
         {
+            var kind = Describe(statements[0]);
+            var article = "AEIOU".Contains(kind[0], StringComparison.OrdinalIgnoreCase) ? "an" : "a";
             throw new SqlFlowException(
-                $"Only a SELECT may be run here; this is a {Describe(statements[0])}. The query surface is " +
+                $"Only a SELECT may be run here; this is {article} {kind}. The query surface is " +
                 "read-only, and nothing that changes data or schema is accepted.");
         }
 
         // WITH ... AS (...) SELECT is a SelectStatement, so common table expressions are allowed by
         // construction; a CTE that hides an INSERT still trips the visitor below.
-        var visitor = new RefusalVisitor();
+        var visitor = new RefusalVisitor(serverCatalog: declared);
         select.Accept(visitor);
         if (visitor.Refusal is { } refusal)
         {
@@ -86,11 +98,14 @@ public static class ReadOnlyQueryGuard
     }
 
     /// <summary>True when the statement passes, for a caller that wants a boolean rather than an exception.</summary>
-    public static bool IsReadOnly(string sql, out string? refusal)
+    public static bool IsReadOnly(string sql, out string? refusal) => IsReadOnly(sql, declared: false, out refusal);
+
+    /// <summary>True when the statement passes as <see cref="Validate(string, bool)"/> reads it.</summary>
+    public static bool IsReadOnly(string sql, bool declared, out string? refusal)
     {
         try
         {
-            Validate(sql);
+            Validate(sql, declared);
             refusal = null;
             return true;
         }
@@ -129,7 +144,7 @@ public static class ReadOnlyQueryGuard
     /// <c>SELECT * FROM OPENQUERY(srv, 'DELETE ...')</c> is a SelectStatement that deletes rows on another
     /// server.
     /// </summary>
-    private sealed class RefusalVisitor : TSqlFragmentVisitor
+    private sealed class RefusalVisitor(bool serverCatalog) : TSqlFragmentVisitor
     {
         public string? Refusal { get; private set; }
 
@@ -191,7 +206,7 @@ public static class ReadOnlyQueryGuard
         public override void Visit(NamedTableReference node)
         {
             var schema = node?.SchemaObject?.SchemaIdentifier?.Value;
-            if (schema is not null && IsSystemCatalogSchema(schema))
+            if (!serverCatalog && schema is not null && IsSystemCatalogSchema(schema))
             {
                 Refuse(SystemCatalogRefusal(schema));
             }
@@ -213,7 +228,8 @@ public static class ReadOnlyQueryGuard
             }
 
             // A system-schema function (sys.fn_..., sys.dm_...) reads the server's own metadata, as its views do.
-            if (node?.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: { Count: > 0 } target }
+            if (!serverCatalog
+                && node?.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: { Count: > 0 } target }
                 && IsSystemCatalogSchema(target[^1].Value))
             {
                 Refuse(SystemCatalogRefusal(target[^1].Value));
@@ -229,7 +245,7 @@ public static class ReadOnlyQueryGuard
             }
 
             var schema = node?.SchemaObject?.SchemaIdentifier?.Value;
-            if (schema is not null && IsSystemCatalogSchema(schema))
+            if (!serverCatalog && schema is not null && IsSystemCatalogSchema(schema))
             {
                 Refuse(SystemCatalogRefusal(schema));
             }
@@ -246,10 +262,12 @@ public static class ReadOnlyQueryGuard
             "COL_NAME", "COL_LENGTH", "COLUMNPROPERTY", "INDEX_COL", "INDEXKEY_PROPERTY", "OBJECT_DEFINITION",
         };
 
-        private static bool IsRefusedFunction(string name)
+        // The extended-procedure-style names are refused for every statement: they can act outside the query. The
+        // metadata functions only read the catalog, so a declared statement, which may read it, may call them.
+        private bool IsRefusedFunction(string name)
             => name.StartsWith("xp_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("sp_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("fn_trace", StringComparison.OrdinalIgnoreCase)
-                || MetadataFunctions.Contains(name);
+                || (!serverCatalog && MetadataFunctions.Contains(name));
     }
 }

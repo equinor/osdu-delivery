@@ -12,6 +12,14 @@ export const DESCRIPTION_HIDDEN_TABS: readonly string[] = ["transforms", "runs",
 export const DESCRIPTION_HIDDEN_FACTS: readonly string[] = ["wave", "sourceServer", "targetServer"];
 
 /**
+ * The built-in tabs and header facts that say nothing of a report (flowType: rpt). It is a document of read-only
+ * queries run from the report's own page: it has no run, no file, no schedule and no transform, writes to no server and
+ * is in no wave. It does read a connection, so the source server stays.
+ */
+export const REPORT_HIDDEN_TABS: readonly string[] = DESCRIPTION_HIDDEN_TABS;
+export const REPORT_HIDDEN_FACTS: readonly string[] = ["wave", "targetServer"];
+
+/**
  * A pipeline page's tabs in the order its kind asks (`FlowKindContribution.pipelineTabOrder`): the tabs it names, in its
  * order, then the others as they come (the kind's own, then the built-in ones). A name that is no tab of the page, such
  * as a tab the kind hides or one this version does not have, is passed over, and a name given twice keeps its first

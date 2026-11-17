@@ -81,6 +81,7 @@ SQLFlow's.
 | | | Discover | `/discover` |
 | | | Key detection | `/key-detection` |
 | Explore | | Catalog | `/catalog` |
+| | | Reports | `/reports`, a report's page at `/reports/{id}` |
 | | | Lineage | `/lineage` |
 | | | Subscribers | `/subscribers` |
 | | | Schema changes | `/schema-changes` |
@@ -107,8 +108,9 @@ SQLFlow's.
   their pipelines and their schedules. **Delivery** is what a delivered record is built from (the mapping, the template
   it pins, the cache it reads) and the order records reach OSDU in. **Sources** are the connections and acquisition flows
   the pipelines read, and the tools that look at a source before a flow is written for it.
-- **Explore**: the data the flows read and write and how it connects: the catalog, its lineage, the reports and apps that
-  read it (Subscribers), changes to its definitions, and the search over all of it.
+- **Explore**: the data the flows read and write and how it connects: the catalog, the read-only queries the estate
+  declares to look at it (Reports), its lineage, the reports and apps that read it (Subscribers), changes to its
+  definitions, and the search over all of it.
 - **Admin**, shown to an admin only: every page an admin runs ([decision 0048](../../wiki/decisions/0048-admin-holds-admin-pages.md)).
   Who and what may act: the users, the external systems that may fire schedules, and what the assistant may read; the
   groups a record's access can be restricted to (Access restrictions); the partitions the flows deliver to

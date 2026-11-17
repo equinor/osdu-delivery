@@ -25,6 +25,7 @@ import type {
   ConfirmQuestionRequest, ConfirmedQuestion, SemanticExampleAdmin,
   SemanticReportCapabilities, SemanticReportSpec, SemanticReportSpecDetail, SemanticReportSubscriber,
   PrepareQueryRequest, PreparedQuery,
+  Report, ReportRunAccepted, ReportSummary,
   FlowParameters,
   PipelineColumn, PipelineDetail, PipelineFile, PipelineFileStats, PipelineRunDurations, PipelineSummary, RegisterRepoSourceRequest, Repo, RepoAccess, RepoDeletionResult, RepoSource, RepoSourceRegistered, RepoFile, RepoSyncResult, RepoTree, Role,
   RunAssertion, RunDetail, RunFile, RunGroup, RunHealthCheckMetric, RunScope, RunScopePreview, RunStartedByKind, RunStatement,
@@ -422,9 +423,18 @@ export const datasourceApi = {
  */
 export async function executeComputeTask(request: ComputeTaskRequest, signal?: AbortSignal): Promise<ComputeTask> {
   const accepted = await datasourceApi.createTask(request);
+  return awaitComputeTask(accepted.taskId, signal);
+}
+
+/**
+ * Long-polls a queued compute task until it reaches a terminal state, and resolves with it. Rejects only on a
+ * transport or auth error, or when the signal aborts; an abort also best-effort cancels the server-side task, so
+ * work nobody is waiting for never keeps a worker busy. Every way the GUI waits on a compute task waits here.
+ */
+export async function awaitComputeTask(taskId: string, signal?: AbortSignal): Promise<ComputeTask> {
   try {
     for (;;) {
-      const task = await datasourceApi.task(accepted.taskId, 10_000, signal);
+      const task = await datasourceApi.task(taskId, 10_000, signal);
       if (task.status === "succeeded" || task.status === "failed" || task.status === "cancelled" || task.status === "skipped") {
         return task;
       }
@@ -432,7 +442,7 @@ export async function executeComputeTask(request: ComputeTaskRequest, signal?: A
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       // The caller walked away (unmounted, changed scope): stop the server-side work too, best-effort.
-      datasourceApi.cancelTask(accepted.taskId).catch(() => undefined);
+      datasourceApi.cancelTask(taskId).catch(() => undefined);
     }
 
     throw error;
@@ -461,20 +471,39 @@ export const dataOpsApi = {
 export async function executeQueryRun(request: PrepareQueryRequest, signal?: AbortSignal): Promise<ComputeTask> {
   const prepared = await dataOpsApi.prepare(request);
   const accepted = await dataOpsApi.run(prepared.planId);
-  try {
-    for (;;) {
-      const task = await datasourceApi.task(accepted.taskId, 10_000, signal);
-      if (task.status === "succeeded" || task.status === "failed" || task.status === "cancelled" || task.status === "skipped") {
-        return task;
-      }
-    }
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      datasourceApi.cancelTask(accepted.taskId).catch(() => undefined);
-    }
+  return awaitComputeTask(accepted.taskId, signal);
+}
 
-    throw error;
-  }
+// ---- Reports (flowType: rpt) --------------------------------------------------------------------------------------
+
+/** The values a person set for one run of a report's query, by parameter name; null or "" is a cleared parameter. */
+export type ReportValues = Record<string, string | null>;
+
+export const reportsApi = {
+  /** The estate's reports, by batch and title. */
+  list: (repoId?: string) => get<ReportSummary[]>("/api/v1/reports", { repoId }),
+  /** One report as its page reads it: its parameters and its queries, with how each answer is shown. */
+  get: (reportId: string) => get<Report>(`/api/v1/reports/${reportId}`),
+  /** Queues one query of the report. The statement is the report's own; the request gives only values. */
+  run: (reportId: string, query: string, values: ReportValues) =>
+    post<ReportRunAccepted>(`/api/v1/reports/${reportId}/queries/${encodeURIComponent(query)}/run`, { values }),
+};
+
+/** One query of a report, run: what it was bound with and the terminal compute task that holds its answer. */
+export interface ReportQueryRun {
+  accepted: ReportRunAccepted;
+  task: ComputeTask;
+}
+
+/**
+ * Runs one query of a report end to end: queue it, then wait for the worker to answer (awaitComputeTask, so the
+ * signal cancels the server-side query too). The answer is the task's result, a RunQueryResult, when it succeeded.
+ */
+export async function executeReportQuery(
+  reportId: string, query: string, values: ReportValues, signal?: AbortSignal,
+): Promise<ReportQueryRun> {
+  const accepted = await reportsApi.run(reportId, query, values);
+  return { accepted, task: await awaitComputeTask(accepted.taskId, signal) };
 }
 
 // ---- Repo sources -------------------------------------------------------------------------------------------------------------

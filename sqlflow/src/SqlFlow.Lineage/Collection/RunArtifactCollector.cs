@@ -31,10 +31,11 @@ public static class RunArtifactCollector
         var runsRoots = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var flow in flows)
         {
-            if (flow.IsLineageDescription)
+            if (flow.NeverRuns)
             {
-                // A lineage description never runs, so it has no run history: it claims no run folder (one a flow
-                // whose name is written the same way on disk may own) and its folder is no place to look for runs.
+                // A lineage description and a report never run, so they have no run history: neither claims a run
+                // folder (one a flow whose name is written the same way on disk may own) and their folder is no place
+                // to look for runs.
                 continue;
             }
 

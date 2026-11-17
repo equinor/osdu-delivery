@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Reports: read-only queries over the data, shown as figures, charts and tables.** A report (`flowType: rpt`) is a
+  document in a repository that names a connection and declares queries that only read; the new **Reports** page lists
+  them, and a report's own page runs its queries when it is opened and shows each answer as figures, ranked bars,
+  columns, a line, a share of a whole, a matrix or a table, with the report's parameters as filters above the tiles and
+  a click on a bar setting one (the staging area narrowed to one log source, say). Each query runs on a worker as one
+  read-only `SELECT` in a transaction that is always rolled back, taking nothing from the page but typed values; a
+  report is never run as a flow, and an assistant run can neither run one nor read its answers
+  ([report](sqlflow/docs/reference/flow/rpt.md), [report views](sqlflow/docs/reference/flow/rpt-views.md),
+  [how a report runs](sqlflow/docs/reference/concepts/reports.md),
+  [writing a report](sqlflow/docs/reference/guides/write-a-report.md)).
 - **Lineage can be followed past the estate, into the steps other systems run.** A lineage description
   (`flowType: lin`) says what a step on another platform reads and writes: the job that fills a drop-off zone, the
   notebook before it, a report that reads a table afterwards. Descriptions chain by the objects they name, reach the

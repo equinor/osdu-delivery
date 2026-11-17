@@ -68,6 +68,25 @@ export function recogniseDocument(path: string, text: string): RecognisedDocumen
 /** The `flowType` of a lineage description: a document that says what a step another system runs reads and writes. */
 export const LINEAGE_DESCRIPTION = 'lin';
 
+/** The `flowType` of a report: a document of read-only queries a person runs on demand from the report's page. */
+export const REPORT = 'rpt';
+
+/**
+ * The kinds of flow document that are never run as a flow: a lineage description is read for lineage only, and a
+ * report's queries are run from the report's page. The catalog keeps each as a pipeline so its text has one home, and
+ * lists it only when it is asked for by its kind.
+ */
+export const NEVER_RUN_KINDS: readonly string[] = [LINEAGE_DESCRIPTION, REPORT];
+
+/**
+ * The kind the catalog lists a document by when its `flowType` is one that is never run as a flow, written as the
+ * catalog writes it; undefined for a flow that runs, a file flow included.
+ */
+export function neverRunKind(flowType: string | undefined): string | undefined {
+    const kind = flowType?.trim().toLowerCase();
+    return kind !== undefined && NEVER_RUN_KINDS.includes(kind) ? kind : undefined;
+}
+
 /** The word a person reads for a document's kind: its `flowType`, `documentType` or library. */
 export function kindLabel(document: RecognisedDocument): string {
     switch (document.kind) {

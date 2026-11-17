@@ -31,12 +31,13 @@ public static class SqlServerQueryRunner
 
         // Re-validated here even though the control plane validated at prepare: the queue row is data from
         // the database, and this is the last point before the statement reaches an engine.
-        var sql = ReadOnlyQueryGuard.Validate(request.Sql);
+        var sql = ReadOnlyQueryGuard.Validate(request.Sql, request.Declared);
+        request.Validate();
         var columns = new List<QueryColumn>();
         var rows = new List<IReadOnlyList<string?>>();
         var truncated = false;
         var database = await ExecuteAsync(
-            connectionString, sql, request.Database, NoParameters, request.TimeoutSeconds,
+            connectionString, sql, request.Database, [.. request.Parameters.Select(Typed)], request.TimeoutSeconds,
             async (reader, token) =>
             {
                 columns.AddRange(Columns(reader));
@@ -91,7 +92,7 @@ public static class SqlServerQueryRunner
         read.Validate();
         long handed = 0;
         await ExecuteAsync(
-            connectionString, sql, null, read.Parameters, read.TimeoutSeconds,
+            connectionString, sql, null, [.. read.Parameters.Select(p => Text(p.Key, p.Value))], read.TimeoutSeconds,
             async (reader, token) =>
             {
                 var columns = Columns(reader);
@@ -108,7 +109,42 @@ public static class SqlServerQueryRunner
         return handed;
     }
 
-    private static readonly IReadOnlyDictionary<string, string?> NoParameters = new Dictionary<string, string?>(StringComparer.Ordinal);
+    /// <summary>A parameter sent as <c>nvarchar</c>: text of any length, null as SQL NULL.</summary>
+    private static SqlParameter Text(string name, string? value)
+        => new("@" + name, SqlDbType.NVarChar, (value?.Length ?? 0) <= 4000 ? 4000 : -1)
+        {
+            Value = value is null ? DBNull.Value : value,
+        };
+
+    /// <summary>
+    /// A parameter sent in its declared type, so the engine compares it as that type and can use an index on the
+    /// column it is compared with: a number is never sent as text for the engine to convert row by row. Null is SQL
+    /// NULL of the type.
+    /// </summary>
+    private static SqlParameter Typed(QueryParameter parameter)
+    {
+        var name = "@" + parameter.Name;
+        object? read = null;
+        if (parameter.Value is not null && !QueryParameter.TryRead(parameter.Type, parameter.Value, out read, out _, out var problem))
+        {
+            // Validate() has already refused this at both ends; reaching here means a caller skipped it.
+            throw new SqlFlowException($"The value of parameter '{parameter.Name}' is not {QueryParameterTypes.Named(parameter.Type)}: {problem}.");
+        }
+
+        var value = read ?? DBNull.Value;
+        return parameter.Type switch
+        {
+            QueryParameterTypes.WholeNumber => new SqlParameter(name, SqlDbType.BigInt) { Value = value },
+            QueryParameterTypes.Number => new SqlParameter(name, SqlDbType.Decimal) { Precision = 38, Scale = 10, Value = value },
+            QueryParameterTypes.Date => new SqlParameter(name, SqlDbType.Date)
+            {
+                Value = read is DateOnly date ? date.ToDateTime(TimeOnly.MinValue) : DBNull.Value,
+            },
+            QueryParameterTypes.DateTime => new SqlParameter(name, SqlDbType.DateTime2) { Value = value },
+            QueryParameterTypes.Flag => new SqlParameter(name, SqlDbType.Bit) { Value = value },
+            _ => Text(parameter.Name, parameter.Value),
+        };
+    }
 
     private static List<QueryColumn> Columns(SqlDataReader reader)
     {
@@ -123,11 +159,11 @@ public static class SqlServerQueryRunner
 
     /// <summary>
     /// Opens the connection, runs <paramref name="sql"/> (already validated) inside a transaction that is always
-    /// rolled back, with <paramref name="parameters"/> bound as <c>nvarchar</c> values, and hands the reader to
+    /// rolled back, with <paramref name="parameters"/> bound as values, and hands the reader to
     /// <paramref name="consume"/>. Returns the database the statement ran in.
     /// </summary>
     private static async Task<string> ExecuteAsync(
-        string connectionString, string sql, string? database, IReadOnlyDictionary<string, string?> parameters, int timeoutSeconds,
+        string connectionString, string sql, string? database, IReadOnlyList<SqlParameter> parameters, int timeoutSeconds,
         Func<SqlDataReader, CancellationToken, Task> consume, CancellationToken ct)
     {
         await using var connection = new SqlConnection(connectionString);
@@ -147,13 +183,9 @@ public static class SqlServerQueryRunner
             command.Transaction = transaction;
             command.CommandText = sql;
             command.CommandTimeout = timeoutSeconds;
-            foreach (var (name, value) in parameters)
+            foreach (var parameter in parameters)
             {
-                var text = value ?? string.Empty;
-                command.Parameters.Add(new SqlParameter("@" + name, SqlDbType.NVarChar, text.Length <= 4000 ? 4000 : -1)
-                {
-                    Value = value is null ? DBNull.Value : value,
-                });
+                command.Parameters.Add(parameter);
             }
 
             await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);

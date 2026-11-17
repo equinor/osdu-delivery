@@ -1,0 +1,61 @@
+flowType: rpt
+name: staging-overview-rpt
+title: Staging overview
+description: What the staging area holds, by source, and what arrived lately.
+batch: staging
+connection: ${env:SQLFLOW_DW}
+database: Staging
+timeoutSeconds: 60
+maxRows: 1000
+
+parameters:
+  source:
+    label: Source
+    description: Only rows of this source.
+    choicesFrom: sources
+  days:
+    label: Days back
+    type: integer
+    default: 30
+    required: true
+
+queries:
+  sources:
+    sql: SELECT DISTINCT Source FROM stg.Orders ORDER BY Source
+    show: none
+
+  totals:
+    title: The staging area
+    section: Overview
+    sql: |
+      SELECT COUNT(*) AS Staged, COUNT(DISTINCT Source) AS Sources, MAX(LoadedUtc) AS LastLoaded
+      FROM stg.Orders
+      WHERE (@source IS NULL OR Source = @source)
+    show: figure
+    columns:
+      Staged: { label: Rows staged, format: integer }
+      LastLoaded: { label: Last load, format: datetime }
+
+  by_source:
+    title: Rows by source
+    section: Overview
+    sql: |
+      SELECT Source, COUNT(*) AS Staged
+      FROM stg.Orders
+      GROUP BY Source
+      ORDER BY Staged DESC
+    show:
+      - { type: bar, by: Source, values: Staged, selects: source }
+      - table
+
+  per_day:
+    title: Rows loaded per day
+    section: Arrivals
+    sql: |
+      SELECT CAST(LoadedUtc AS date) AS Day, COUNT(*) AS Staged
+      FROM stg.Orders
+      WHERE LoadedUtc >= DATEADD(day, -@days, SYSUTCDATETIME())
+        AND (@source IS NULL OR Source = @source)
+      GROUP BY CAST(LoadedUtc AS date)
+      ORDER BY Day
+    show: { type: column, by: Day, values: Staged }

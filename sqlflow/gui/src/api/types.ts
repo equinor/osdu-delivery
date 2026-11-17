@@ -3511,6 +3511,134 @@ export interface RunQueryResult {
   sql: string;
 }
 
+// ---- Reports (/api/v1/reports; flowType: rpt) ----------------------------------------------------------------------
+
+/** The type of a report parameter's value; each names the one way the value is written as text. */
+export type ReportParameterType = "text" | "integer" | "number" | "date" | "datetime" | "flag";
+
+/** How a query's answer is shown. A query hidden with `none` carries no view at all. */
+export type ReportViewType = "auto" | "figure" | "bar" | "column" | "line" | "share" | "table" | "matrix";
+
+/** How wide a view is on the page. */
+export type ReportWidth = "quarter" | "third" | "half" | "two-thirds" | "full";
+
+/** How a column's values are written. */
+export type ReportFormat =
+  | "text" | "integer" | "number" | "percent" | "bytes" | "duration" | "date" | "datetime" | "flag" | "code";
+
+/** A report as the list shows it. `problem` is set when the synced document no longer reads as a report. */
+export interface ReportSummary {
+  id: string;
+  repoId: string;
+  repoName: string;
+  name: string;
+  title: string;
+  description: string | null;
+  batch: string | null;
+  relativePath: string;
+  connection: string | null;
+  database: string | null;
+  queries: number;
+  views: number;
+  parameters: number;
+  lastSeenUtc: string;
+  problem: string | null;
+}
+
+/** One value a parameter may take, with the words shown for it (the value itself when null). */
+export interface ReportChoice {
+  value: string;
+  label: string | null;
+}
+
+/** One value a person may set on a report; `usedBy` names the queries whose statements bind it. */
+export interface ReportParameter {
+  name: string;
+  label: string;
+  description: string | null;
+  type: ReportParameterType;
+  default: string | null;
+  required: boolean;
+  choices: ReportChoice[];
+  /** The query of the report whose rows are the choices: first column the value, second the label. */
+  choicesFrom: string | null;
+  usedBy: string[];
+}
+
+/** One way a query's answer is shown, as the document wrote it; what it leaves out is decided from the answer. */
+export interface ReportView {
+  type: ReportViewType;
+  title: string | null;
+  description: string | null;
+  width: ReportWidth | null;
+  by: string | null;
+  values: string[];
+  series: string | null;
+  across: string | null;
+  stacked: boolean | null;
+  top: number | null;
+  /** The parameter a click on a mark sets to the mark's `by` value. */
+  selects: string | null;
+}
+
+/** How one column of a query's answer is labelled and written. */
+export interface ReportColumn {
+  name: string;
+  label: string | null;
+  format: ReportFormat | null;
+  decimals: number | null;
+  unit: string | null;
+}
+
+/** One query of a report. `problem` is why its statement cannot run (it is not one read-only SELECT), or null. */
+export interface ReportQuery {
+  name: string;
+  title: string;
+  description: string | null;
+  section: string | null;
+  connection: string;
+  database: string | null;
+  timeoutSeconds: number;
+  maxRows: number;
+  sql: string;
+  parameters: string[];
+  views: ReportView[];
+  columns: ReportColumn[];
+  problem: string | null;
+}
+
+/** A report as its page reads it. */
+export interface Report {
+  id: string;
+  repoId: string;
+  repoName: string;
+  name: string;
+  title: string;
+  description: string | null;
+  batch: string | null;
+  relativePath: string;
+  connection: string;
+  database: string | null;
+  lastSeenUtc: string;
+  parameters: ReportParameter[];
+  queries: ReportQuery[];
+}
+
+/** A value a query was bound with: the parameter, its type, and the value as text (null is SQL NULL). */
+export interface ReportBoundValue {
+  name: string;
+  type: ReportParameterType;
+  value: string | null;
+}
+
+/** The acknowledgement of a queued report query: the task to read the answer from and what it was bound with. */
+export interface ReportRunAccepted {
+  taskId: string;
+  status: string;
+  query: string;
+  parameters: ReportBoundValue[];
+}
+
 // ---- Chat assistant (/api/v1/chat) ---------------------------------------------------------------------------------
 
 /** What the chat feature can do under the current deployment, so the GUI shows only affordances that work. */

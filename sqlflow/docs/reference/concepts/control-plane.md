@@ -22,6 +22,7 @@ related:
   - concept-maintenance
   - concept-external-triggers
   - concept-repository-auto-sync
+  - concept-reports
 sourceRefs:
   - src/SqlFlow.ControlPlane/Background/RunReferences.cs
   - src/SqlFlow.ControlPlane/Background/BootstrapSteps.cs
@@ -43,6 +44,7 @@ sourceRefs:
   - src/SqlFlow.ControlPlane/Api/PipelineRunDurations.cs
   - src/SqlFlow.ControlPlane/Api/SearchEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/NodeEndpoints.cs
+  - src/SqlFlow.ControlPlane/Api/ReportEndpoints.cs
   - src/SqlFlow.Catalog/RepoSourceStore.cs
   - src/SqlFlow.Catalog/RunQueueStore.cs
   - src/SqlFlow.Catalog/DispatchLeaseStore.cs
@@ -136,6 +138,7 @@ Read surface (policy `read`):
 | `GET /schedules/{id}/parameters` | What each flow the schedule runs is given when it fires: the value of each parameter and where it comes from, and what would refuse its run ([Run inputs](run-inputs.md#what-a-schedule-gives-each-flow)) |
 | `GET /nodes` | Worker fleet with a derived online flag |
 | `GET /repos/sources` | Managed repo sources |
+| `GET /reports`, `GET /reports/{reportId}` | The reports the repositories declare (`flowType: rpt`): the list, by batch and title, and one report as its page reads it, with its parameters, its queries and their statements ([reports](reports.md#api)) |
 | `GET /summary` | Estate summary |
 | `GET /dataops/capabilities` | Whether the data-operations surface is enabled here, the operations available, and the linked servers a baseline comparison may name (concept-data-operations) |
 | `GET /maintenance/storage`, `GET /maintenance/areas/{areaId}/cleanups` | What the catalog's database holds, area by area, with each area's verdict, size, limit and cleanups, and one area's cleanup log ([Maintenance](maintenance.md)); closed to an assistant run's delegated token |
@@ -154,8 +157,9 @@ Operate surface (policy `operate`):
 | `POST /repos/sources/{id}/sync` | Force a sync now |
 | `POST /repos/discover` | Preview a repo's flows without importing (the selective-scan wizard) |
 | `POST /repos/sources/{id}/proposals` | Propose pipelines to a source as a pull request (`author` scope) |
-| `POST /datasources/tasks` | Enqueue an ad-hoc compute task against a datasource: browse/introspect, detect a unique key, the warehouse-health DMV probes, and (behind `DataOps:Enabled`) `duplicateKeys` and `compareBaseline`. `runQuery` is refused here: a query runs only through a prepared plan. References only; the executing node resolves the credential |
+| `POST /datasources/tasks` | Enqueue an ad-hoc compute task against a datasource: browse/introspect, detect a unique key, the warehouse-health DMV probes, and (behind `DataOps:Enabled`) `duplicateKeys` and `compareBaseline`. `runQuery` is refused here: a query runs only through a prepared plan. `reportQuery` is refused too: a report's query is queued by the report route below. References only; the executing node resolves the credential |
 | `POST /datasources/tasks/{taskId}/cancel` | Cancel a queued or running compute task |
+| `POST /reports/{reportId}/queries/{query}/run` | Queue one query of a report (202 with the task to read the answer from). The body gives values for the report's parameters and never a statement: the statement is the synced document's, parsed as one read-only SELECT and run on a worker with the values bound as typed parameters. Closed to an assistant run ([reports](reports.md)) |
 | `POST /dataops/queries/prepare` | Validate an ad-hoc SELECT and mint a one-time plan token; nothing runs. Behind `AiContext:Enabled` |
 | `POST /dataops/queries/{planId}/run` | Redeem an approved plan token and queue the query. Takes a token, never a statement, so the confirmation cannot be skipped |
 | `POST /maintenance/areas/{areaId}/preview` | What a cleanup of a storage area at the days named would remove; changes nothing ([Maintenance](maintenance.md)) |

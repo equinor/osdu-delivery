@@ -308,6 +308,32 @@ mod tests {
         assert_eq!(idx.by_yaml_path("writes[].columns").map(|page| page.id.as_str()), Some("flow-lin-columns"));
     }
 
+    /// What a person or an assistant asks about reports (`flowType: rpt`), and the page that answers each. A report is
+    /// written by whoever wants to look at their data, so its pages are held to the questions that person arrives with.
+    #[test]
+    fn a_question_about_a_report_finds_its_page() {
+        let idx = DocsIndex::load();
+        let questions: &[(&str, &[&str])] = &[
+            ("how do I see how many rows the staging area holds per source", &["guide-write-a-report", "flow-rpt"]),
+            ("flowType rpt keys", &["flow-rpt"]),
+            ("show a query as a bar chart", &["flow-rpt-views"]),
+            ("filter a report by a parameter", &["flow-rpt", "guide-write-a-report"]),
+            ("why can a report not be scheduled", &["concept-reports", "flow-rpt"]),
+            ("write a report", &["guide-write-a-report"]),
+            ("who may run a report query and what is recorded", &["concept-reports"]),
+            ("click a bar to set a parameter", &["flow-rpt-views", "guide-write-a-report"]),
+        ];
+        let mut missed = Vec::new();
+        for (question, answers) in questions {
+            let top: Vec<&str> = idx.search(question, None, 5).iter().map(|hit| hit.meta.id.as_str()).collect();
+            if !answers.iter().any(|answer| top.contains(answer)) {
+                missed.push(format!("'{question}' found {top:?}, not any of {answers:?}"));
+            }
+        }
+        assert!(missed.is_empty(), "questions whose answer is not in the top five:\n{}", missed.join("\n"));
+        assert_eq!(idx.by_yaml_path("queries.<query>.show").map(|page| page.id.as_str()), Some("flow-rpt-views"));
+    }
+
     fn page(id: &str, body: &'static str) -> DocPage {
         DocPage {
             meta: DocMeta::page(id, "Probe targets", "concept", "probe/targets.md", "What a probe target is.", &["probe", "target"])

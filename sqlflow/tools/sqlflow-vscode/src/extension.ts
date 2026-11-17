@@ -35,6 +35,11 @@ const SQLFLOW: VscodeHost = {
             content: 'flowType: lin\nname: newStep-lin\ndescription: What the step does, in a sentence.\nsystem: databricks\nreads:\n  - { name: schema.source, as: src, origin: true }\nwrites:\n  - feeds: newFlow\n    columns:\n      id: src.id\ncontext: |\n  Which rows are left out or added and why, how keys are formed, and when the step runs.\n',
         },
         {
+            label: 'Report',
+            detail: 'flowType: rpt, read-only queries shown as figures, charts and tables, run on demand and never as a flow',
+            content: 'flowType: rpt\nname: newReport-rpt\ntitle: What the report shows\nconnection: ${env:SQLFLOW_DW}\nparameters:\n  days:\n    label: Days back\n    type: integer\n    default: 30\nqueries:\n  per_day:\n    title: Rows loaded per day\n    sql: |\n      SELECT CAST(LoadedUtc AS date) AS Day, COUNT(*) AS Loaded\n      FROM stg.newFlow\n      WHERE LoadedUtc >= DATEADD(day, -@days, SYSUTCDATETIME())\n      GROUP BY CAST(LoadedUtc AS date)\n      ORDER BY Day\n    show:\n      - { type: column, by: Day, values: Loaded }\n      - table\n',
+        },
+        {
             label: 'Schedule library',
             detail: 'schedules.yaml, named schedules flows join',
             content: 'schedules:\n  nightly:\n    cron: "0 1 * * *"\n    timezone: UTC\n',

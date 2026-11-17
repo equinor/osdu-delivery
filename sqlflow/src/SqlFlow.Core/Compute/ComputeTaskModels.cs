@@ -67,6 +67,12 @@ public static class ComputeOperations
     /// <c>ControlPlane:AiContext:Enabled</c>, and never queued through the compute task endpoint.</summary>
     public const string RunQuery = "runQuery";
 
+    /// <summary>Run one query a report declares (<c>flowType: rpt</c>). The statement is the one the repository's
+    /// document holds, placed on the queue row by the control plane and never by a client: a request that runs a
+    /// report's query names the report and the query, and gives only values for the parameters the report declares,
+    /// each bound as a typed parameter. It runs as <see cref="RunQuery"/> runs, read-only and rolled back.</summary>
+    public const string ReportQuery = "reportQuery";
+
     /// <summary>Compare the current estate against the OLD production baseline over a configured linked
     /// server: object inventory, one object's shape, or one object's rows. Read-only on both estates and
     /// gated by <c>ControlPlane:DataOps:Enabled</c>.</summary>
@@ -76,7 +82,12 @@ public static class ComputeOperations
     public static readonly string[] All =
         [TestConnection, ListDatabases, ListSchemas, ListObjects, SearchObjects, IntrospectObject, DetectUniqueKey,
          MissingIndexes, StatisticsHealth, IndexUsage, TopQueries, DuplicateKeys, CompareBaseline,
-         RunQuery];
+         RunQuery, ReportQuery];
+
+    /// <summary>The operations that run a statement the control plane placed on the queue row: an approved query, or a
+    /// query a report declares. Neither is ever queued through the compute task endpoint.</summary>
+    public static bool IsQuery(string? operation)
+        => operation is RunQuery or ReportQuery;
 
     /// <summary>The operations the DataOps feature switch gates. Off, the control plane refuses them with a
     /// clear "not enabled" problem instead of queueing a task no policy permits.</summary>
@@ -90,7 +101,7 @@ public static class ComputeOperations
 
     public static bool IsKnown(string? operation)
         => operation is TestConnection or ListDatabases or ListSchemas or ListObjects or SearchObjects
-            or IntrospectObject or DetectUniqueKey or RunQuery || IsWarehouseHealth(operation) || IsDataOps(operation);
+            or IntrospectObject or DetectUniqueKey || IsQuery(operation) || IsWarehouseHealth(operation) || IsDataOps(operation);
 
     /// <summary>The longest name an operation a host module registers may have.</summary>
     public const int MaxRegisteredNameLength = 32;
@@ -188,6 +199,20 @@ public sealed record ComputeTaskPayload
 
     /// <summary>runQuery: the command timeout.</summary>
     public int? TimeoutSeconds { get; init; }
+
+    /// <summary>reportQuery: the values the statement's <c>@name</c> parameters take, each with its declared type. Null
+    /// when the statement binds none, so a queue row reads back equal to the payload that wrote it.</summary>
+    public IReadOnlyList<QueryParameter>? Parameters { get; init; }
+
+    /// <summary>reportQuery: the name of the report the statement is from, so the task history says which report was
+    /// read, by whom and when.</summary>
+    public string? Report { get; init; }
+
+    /// <summary>reportQuery: the name of the report's query the statement is.</summary>
+    public string? ReportQuery { get; init; }
+
+    /// <summary>The longest report name and query name a task carries.</summary>
+    public const int MaxReportNameLength = 400;
 
     /// <summary>duplicateKeys: the columns that identify one real row. Left empty the check reads the key
     /// the TABLE declares; this is where the answer to a report's <c>question</c> comes back when the table
@@ -421,9 +446,30 @@ public sealed record ComputeTaskPayload
                 ToComparisonRequest(LinkedServer is null ? [] : [LinkedServer]);
                 break;
 
-            case ComputeOperations.RunQuery:
+            case ComputeOperations.RunQuery or ComputeOperations.ReportQuery:
                 ToQueryRunRequest();
                 break;
+        }
+
+        if (Parameters is not null && Operation != ComputeOperations.ReportQuery)
+        {
+            throw new SqlFlowException(
+                $"Only the {ComputeOperations.ReportQuery} operation binds parameters; '{Operation}' takes none.");
+        }
+
+        if ((Report is not null || ReportQuery is not null) && Operation != ComputeOperations.ReportQuery)
+        {
+            throw new SqlFlowException(
+                $"Only the {ComputeOperations.ReportQuery} operation names a report and a query; '{Operation}' names none.");
+        }
+
+        foreach (var (name, value) in new[] { ("report", Report), ("reportQuery", ReportQuery) })
+        {
+            if (value is not null && (value.Length is 0 or > MaxReportNameLength || HasControlCharacters(value)))
+            {
+                throw new SqlFlowException(
+                    $"{name} must be a name of 1 to {MaxReportNameLength} characters with no control characters.");
+            }
         }
 
         if (ComputeOperations.IsWarehouseHealth(Operation))
@@ -538,16 +584,20 @@ public sealed record ComputeTaskPayload
     /// </summary>
     public QueryRunRequest ToQueryRunRequest()
     {
-        if (Operation != ComputeOperations.RunQuery)
-        {
-            throw new SqlFlowException($"Only the {ComputeOperations.RunQuery} operation carries a query.");
-        }
-
-        if (string.IsNullOrWhiteSpace(Sql))
+        if (!ComputeOperations.IsQuery(Operation))
         {
             throw new SqlFlowException(
-                "runQuery carries the approved statement. A client does not send SQL here: it prepares a query, " +
-                "a person approves it, and the control plane redeems the token into this payload.");
+                $"Only the {ComputeOperations.RunQuery} and {ComputeOperations.ReportQuery} operations carry a query.");
+        }
+
+        var report = Operation == ComputeOperations.ReportQuery;
+        if (string.IsNullOrWhiteSpace(Sql))
+        {
+            throw new SqlFlowException(report
+                ? "reportQuery carries the statement a report declares. A client does not send SQL here: it names " +
+                  "the report and the query, and the control plane places the document's statement in this payload."
+                : "runQuery carries the approved statement. A client does not send SQL here: it prepares a query, " +
+                  "a person approves it, and the control plane redeems the token into this payload.");
         }
 
         return new QueryRunRequest
@@ -556,6 +606,11 @@ public sealed record ComputeTaskPayload
             Database = NullIfBlank(Database),
             MaxRows = MaxRows ?? QueryRunRequest.DefaultMaxRows,
             TimeoutSeconds = TimeoutSeconds ?? QueryRunRequest.DefaultTimeoutSeconds,
+            Parameters = Parameters ?? [],
+
+            // What a report's document declares may read the server's own catalog; an approved query may not. The
+            // operation decides, never a field a payload could set for itself.
+            Declared = report,
         }.Validate();
     }
 

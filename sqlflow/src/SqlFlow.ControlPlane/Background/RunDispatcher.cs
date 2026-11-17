@@ -152,7 +152,10 @@ public sealed class InProcessRunDispatcher : IRunDispatcher
         ArgumentNullException.ThrowIfNull(request);
         if (_references.HasSources)
         {
-            request = request with { ArgumentsJson = await WithReferencesAsync(request.ArgumentsJson, ct).ConfigureAwait(false) };
+            request = request with
+            {
+                ArgumentsJson = await WithReferencesAsync(request.ArgumentsJson, request.RepoId, ct).ConfigureAwait(false),
+            };
         }
 
         var result = await ComputeTaskStore
@@ -163,10 +166,11 @@ public sealed class InProcessRunDispatcher : IRunDispatcher
     }
 
     /// <summary>
-    /// A task's payload carrying the values supplied for work of no repository, unless it names references already. The
-    /// payload's own shape is the node's to validate; only its <c>references</c> member is read and written here.
+    /// A task's payload carrying the values supplied for the repository it belongs to (<paramref name="repoId"/>), or for
+    /// work of no repository when it belongs to none, unless it names references already. The payload's own shape is the
+    /// node's to validate; only its <c>references</c> member is read and written here.
     /// </summary>
-    private async Task<string> WithReferencesAsync(string argumentsJson, CancellationToken ct)
+    private async Task<string> WithReferencesAsync(string argumentsJson, Guid? repoId, CancellationToken ct)
     {
         JsonObject? payload;
         try
@@ -189,7 +193,7 @@ public sealed class InProcessRunDispatcher : IRunDispatcher
             return argumentsJson;
         }
 
-        var supplied = await _references.ForAsync(null, ct).ConfigureAwait(false);
+        var supplied = await _references.ForAsync(repoId, ct).ConfigureAwait(false);
         if (supplied.Count == 0)
         {
             return argumentsJson;

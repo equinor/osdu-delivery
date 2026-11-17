@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { HeartPulse, ListChecks, Loader2, Network, Play } from "lucide-react";
+import { ChartColumn, HeartPulse, ListChecks, Loader2, Network, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,11 +35,14 @@ import { describedStepFacts, embeddedHealthCheckName } from "../../lib/definitio
 import { formatBytes, formatDurationSeconds } from "../../lib/time";
 import { flowKindIdentity, flowKindToneClasses } from "../../modules/flowKinds";
 import { isLineageDescription } from "../../modules/lineageDescriptionKind";
+import { isReport, reportPath } from "../../modules/reportKind";
 import { kindContribution } from "../../modules/registry";
 import { projectOf } from "../repos/project";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
 import { hasCensus } from "../../lib/lsp/sqlflowLsp";
-import { DESCRIPTION_HIDDEN_FACTS, DESCRIPTION_HIDDEN_TABS, orderPipelineTabs } from "./pipelineTabs";
+import {
+  DESCRIPTION_HIDDEN_FACTS, DESCRIPTION_HIDDEN_TABS, REPORT_HIDDEN_FACTS, REPORT_HIDDEN_TABS, orderPipelineTabs,
+} from "./pipelineTabs";
 
 /** Definition JSON arrives as one compact string; pretty-print it, falling back to the raw text if malformed. */
 function prettyJson(raw: string): string {
@@ -488,10 +491,17 @@ export default function PipelineDetailPage() {
   // step it describes (who runs it, where, who to ask) is what its header says in their place.
   const described = isLineageDescription(detail.kind);
   const step = described ? describedStepFacts(detail.definitionJson) : null;
+  // A report is a document too: its queries are run from the report's own page, which this page links to, and
+  // nothing here runs it as a flow.
+  const report = isReport(detail.kind);
+  // Either way the page is a document's, not a flow's: nothing to trigger, no run times, no mode to speak of.
+  const documentOnly = described || report;
   const shows = (builtInTab: string) => !(kind?.hiddenPipelineTabs ?? []).includes(builtInTab)
-    && !(described && DESCRIPTION_HIDDEN_TABS.includes(builtInTab));
+    && !(described && DESCRIPTION_HIDDEN_TABS.includes(builtInTab))
+    && !(report && REPORT_HIDDEN_TABS.includes(builtInTab));
   const showsFact = (builtInFact: string) => !(kind?.hiddenPipelineFacts ?? []).includes(builtInFact)
-    && !(described && DESCRIPTION_HIDDEN_FACTS.includes(builtInFact));
+    && !(described && DESCRIPTION_HIDDEN_FACTS.includes(builtInFact))
+    && !(report && REPORT_HIDDEN_FACTS.includes(builtInFact));
   // The kind's own tabs, then the built-in ones it shows, in the order the kind asks for.
   const tabs = orderPipelineTabs([
     ...(kind?.pipelineTabs ?? []).map((contributed) => ({ value: contributed.value, label: contributed.label, testId: contributed.testId })),
@@ -519,7 +529,7 @@ export default function PipelineDetailPage() {
       <DetailHeaderCard
         title={detail.name}
         leading={<FlowKindTile kind={detail.kind} testId="pipeline-kind" />}
-        subtitle={<span data-testid="pipeline-kind-label">{described ? identity.label : `${identity.label} flow`}</span>}
+        subtitle={<span data-testid="pipeline-kind-label">{documentOnly ? identity.label : `${identity.label} flow`}</span>}
         edgeClassName={flowKindToneClasses(identity.tone).edge}
         badges={(
           <>
@@ -556,7 +566,20 @@ export default function PipelineDetailPage() {
                 </TooltipContent>
               </Tooltip>
             )}
-            {!described && detail.executionMode === "disabled" && (
+            {report && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Badge variant="outline" data-testid="pipeline-never-run">run from its page</Badge>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">
+                  A report is a set of read-only queries a person runs from the report's own page. Nothing here
+                  runs, schedules or triggers it as a flow, and it is in no wave.
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {!documentOnly && detail.executionMode === "disabled" && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
@@ -579,15 +602,18 @@ export default function PipelineDetailPage() {
         )}
         actions={(
           <>
-            <Button variant="outline" size="sm" asChild data-testid="pipeline-view-lineage">
-              <RouterLink
-                // A description is in the graph only with the described lineage on, so its link turns it on.
-                to={`/lineage?repoId=${encodeURIComponent(detail.repoId)}&focus=${encodeURIComponent(pipelineId)}${described ? "&described=on" : ""}`}
-              >
-                <Network />
-                View in lineage
-              </RouterLink>
-            </Button>
+            {/* A report moves no data, so the lineage graph holds nothing of it to show. */}
+            {!report && (
+              <Button variant="outline" size="sm" asChild data-testid="pipeline-view-lineage">
+                <RouterLink
+                  // A description is in the graph only with the described lineage on, so its link turns it on.
+                  to={`/lineage?repoId=${encodeURIComponent(detail.repoId)}&focus=${encodeURIComponent(pipelineId)}${described ? "&described=on" : ""}`}
+                >
+                  <Network />
+                  View in lineage
+                </RouterLink>
+              </Button>
+            )}
             {detail.kind === "ing" && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -655,11 +681,20 @@ export default function PipelineDetailPage() {
                 </TooltipContent>
               </Tooltip>
             )}
-            {/* A lineage description is a step another system runs: there is nothing here to trigger. */}
-            {!isLineageDescription(detail.kind) && (
+            {/* A lineage description is a step another system runs, and a report's queries run from its own page:
+                there is nothing here to trigger. A report's page is one click away instead. */}
+            {!documentOnly && (
               <Button size="sm" onClick={() => setTriggerOpen(true)} data-testid="open-trigger-run">
                 <Play />
                 Trigger run
+              </Button>
+            )}
+            {report && (
+              <Button size="sm" asChild data-testid="pipeline-open-report">
+                <RouterLink to={reportPath(pipelineId)}>
+                  <ChartColumn />
+                  Open report
+                </RouterLink>
               </Button>
             )}
           </>
@@ -713,7 +748,7 @@ export default function PipelineDetailPage() {
         <DetailPair label="Path">
           <TruncatedText text={detail.relativePath} mono maxWidth={240} copy copyTestId="copy-pipeline-path" />
         </DetailPair>
-        {!described && <RunTimes pipelineId={pipelineId} />}
+        {!documentOnly && <RunTimes pipelineId={pipelineId} />}
         {shows("files") && <DetailPair label="Avg file size"><AvgFileSize pipelineId={pipelineId} /></DetailPair>}
         <DetailPair label="First seen"><RelativeTime value={detail.firstSeenUtc} absolute /></DetailPair>
         <DetailPair label="Last seen"><RelativeTime value={detail.lastSeenUtc} absolute /></DetailPair>

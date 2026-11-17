@@ -4,8 +4,8 @@
 // shown by its value with a neutral icon.
 
 import {
-  Braces, CalendarDays, Copy, FileInput, FileOutput, GitBranch, Globe, HeartPulse, Import, ListOrdered, Server,
-  SquareFunction, TableProperties, Waypoints, Workflow, Zap,
+  Braces, CalendarDays, ChartColumn, Copy, FileInput, FileOutput, GitBranch, Globe, HeartPulse, Import, ListOrdered,
+  Server, SquareFunction, TableProperties, Waypoints, Workflow, Zap,
 } from "lucide-react";
 import { kindContribution, type FlowKindIdentity, type FlowKindTone } from "./registry";
 
@@ -52,6 +52,8 @@ const BUILT_IN = new Map<string, FlowKindIdentity>([
   ["cal", { label: "Calendar", icon: CalendarDays, tone: "violet" }],
   // A step another system runs, written down for lineage and never executed: neutral, since it moves no data here.
   ["lin", { label: "Lineage description", icon: Waypoints, tone: "neutral" }],
+  // Read-only queries a person runs from the report's own page: neutral, since it moves no data either.
+  ["rpt", { label: "Report", icon: ChartColumn, tone: "neutral" }],
 ]);
 
 /** SQLFlow's own kinds, in the order above. */

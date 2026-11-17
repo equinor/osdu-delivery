@@ -112,6 +112,8 @@ The tier list in the header is exactly the tiers used, lowercased and joined wit
 
 The `described lineage:` lines appear only when the estate holds [lineage descriptions](../flow/lin.md) (`flowType: lin`). They are listed after the plan because they are no part of it: the header's counts and the waves are those of the estate's own flows. Each step prints with what it reads and writes; a read where the data starts is marked `[origin]`, one nothing describes further `[not described further]`, and an object reached through a flow of the estate names that flow. A connection that could not be placed prints as `WARN  described lineage: ...` and never changes the exit code. `--of` and `--explain` walk the computed lineage only.
 
+A [report](../flow/rpt.md) (`flowType: rpt`) is no part of the plan either: it is not counted in the header and is in no wave. A report left out because it has the name of a flow or of an earlier report, and a statement of a report that is not one read-only `SELECT`, each print as a `WARN` line ([what a sync reports](../flow/rpt.md#what-a-sync-reports)).
+
 With plain `--json` (no `--of`, no `--explain`), the full `LineageReport` prints to stdout instead, and nothing else is printed.
 
 ### Impact walks: --of

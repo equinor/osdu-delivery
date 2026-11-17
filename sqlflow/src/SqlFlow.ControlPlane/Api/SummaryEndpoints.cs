@@ -51,8 +51,8 @@ public static class SummaryEndpoints
         // label (its filter applied per branch) and a single GROUP BY counts them, so the dashboard costs two
         // round trips no matter how many tiles it shows. A label with no rows is simply absent (count 0).
         var counted = await db.Repos.Select(r => "repos")
-            .Concat(db.Pipelines.WithoutLineageDescriptions().Select(p => "pipelines"))
-            .Concat(db.Pipelines.WithoutLineageDescriptions().Where(p => p.Active).Select(p => "activePipelines"))
+            .Concat(db.Pipelines.ThatAreFlows().Select(p => "pipelines"))
+            .Concat(db.Pipelines.ThatAreFlows().Where(p => p.Active).Select(p => "activePipelines"))
             .Concat(db.Runs.Where(r => r.WrittenUtc >= dayAgo).Select(r => "runsLast24h"))
             .Concat(db.Nodes.Where(n => n.LastSeenUtc >= onlineSince).Select(n => "nodesOnline"))
             .Concat(db.Nodes.Select(n => "nodesTotal"))

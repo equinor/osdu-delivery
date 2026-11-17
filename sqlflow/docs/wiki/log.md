@@ -444,3 +444,14 @@ with why one column's trace is computed by the control plane and names the basis
 the request that the assistant explain a column's lineage and say that information is missing where no description
 covers it, and from the first version's wrong stop at a partly declared column list. What was built is documented in
 `concept-column-trace`.
+
+## [2026-11-17] ingest | A report is a flow type that is never run
+
+Added [A report is a flow type that is never run: a document of read-only queries a person runs on demand](decisions/reports-are-documents-run-on-demand.md)
+from the new kind's reader and model (`YamlReportFlowLoader`, `ReportFlow`), the read-only guard's `declared` flag and
+the runner both query operations share (`ReadOnlyQueryGuard`, `SqlServerQueryRunner`), the report endpoints and the
+assistant fence on a task's answer (`ReportEndpoints`, `DatasourceEndpoints`), and the brief the kind was built to.
+Updated [A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes](decisions/lineage-descriptions-beside-the-graph.md):
+the rule that keeps a description out of the listings of pipelines now covers every kind that is not a flow, under a
+new name (`PipelineListings.ThatAreFlows`). What was built is documented in `flow-rpt`, `flow-rpt-views`,
+`concept-reports` and `guide-write-a-report`.

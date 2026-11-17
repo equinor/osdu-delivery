@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { kindLabel, recogniseDocument } from '../src/documents/recognition.ts';
+import { kindLabel, neverRunKind, NEVER_RUN_KINDS, recogniseDocument } from '../src/documents/recognition.ts';
 import { keyPathAtLine, scalarKeys } from '../src/documents/yamlPath.ts';
 
 test('a flow is told by its flowType, whatever the file is called', () => {
@@ -18,6 +18,35 @@ test('a lineage description is a flow document of its own kind, in whatever case
     assert.deepEqual(described, { kind: 'flow', flowType: 'lin', name: 'orders-u1-curate-lin' });
     assert.equal(kindLabel(described), 'lin');
     assert.equal(recogniseDocument('a.yaml', 'flowType: LIN\nname: a\n')?.kind, 'flow');
+});
+
+test('a report is a flow document of its own kind, in whatever case it is written', () => {
+    const report = recogniseDocument(
+        'reports/staging.yaml',
+        'flowType: rpt\nname: staging-overview-rpt\nconnection: ${env:SQLFLOW_DW}\nqueries:\n  totals:\n    sql: SELECT COUNT(*) AS Staged FROM stg.Orders\n'
+    )!;
+    assert.deepEqual(report, { kind: 'flow', flowType: 'rpt', name: 'staging-overview-rpt' });
+    assert.equal(kindLabel(report), 'rpt');
+    assert.equal(recogniseDocument('a.yaml', 'flowType: RPT\nname: a\n')?.kind, 'flow');
+    // A parameter a report calls name is no root key: the report keeps the name it declares.
+    assert.equal(recogniseDocument('a.yaml', 'flowType: rpt\nparameters:\n  name:\n    label: Name\nname: customers-rpt\n')?.name, 'customers-rpt');
+});
+
+test('a lineage description and a report are asked for by their kind, and a flow that runs by none', () => {
+    assert.deepEqual([...NEVER_RUN_KINDS], ['lin', 'rpt']);
+    // The catalog lists these two only when asked for by kind, written as it writes them, whatever the document's case.
+    assert.equal(neverRunKind(recogniseDocument('a.yaml', 'flowType: lin\nname: a\n')!.flowType), 'lin');
+    assert.equal(neverRunKind(recogniseDocument('a.yaml', 'flowType: rpt\nname: a\n')!.flowType), 'rpt');
+    assert.equal(neverRunKind(' RPT '), 'rpt');
+    assert.equal(neverRunKind('Lin'), 'lin');
+
+    // Every other flow is in the list of flows that run: a file flow, which declares no flowType, included.
+    assert.equal(neverRunKind(recogniseDocument('a.yaml', 'flowType: ing\nname: a\n')!.flowType), undefined);
+    assert.equal(neverRunKind(recogniseDocument('a.yaml', 'source:\n  type: csv\ntarget:\n  table: t\n')!.flowType), undefined);
+    assert.equal(neverRunKind(undefined), undefined);
+    assert.equal(neverRunKind(''), undefined);
+    // A kind is a whole word: one that only starts like a report's is a flow that runs.
+    assert.equal(neverRunKind('rpts'), undefined);
 });
 
 test('the library files are told by their root key', () => {

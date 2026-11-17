@@ -167,6 +167,33 @@ public sealed class FlowSetCollector
         var described = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         result.Flows.RemoveAll(f => f.IsLineageDescription && (running.Contains(f.Node.Name) || !described.Add(f.Node.Name)));
 
+        // A report is no flow of the plan either, and may not stand in the place of one for the same reason: a report
+        // sorted before a flow of its name would become that flow's pipeline, and the flow would never run again. A
+        // report that has the name of a flow that runs, or of a report read before it, is taken out of the flow set and
+        // said so here, since nothing else reports on a report.
+        var flows = result.Flows
+            .Where(f => !f.NeverRuns)
+            .GroupBy(f => f.Node.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Node, StringComparer.OrdinalIgnoreCase);
+        var reports = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var report in result.Flows.Where(f => f.IsReport).ToList())
+        {
+            if (flows.TryGetValue(report.Node.Name, out var taken))
+            {
+                result.Flows.Remove(report);
+                result.Warnings.Add(
+                    $"{report.Node.File}: report '{report.Node.Name}' has the name of the {taken.Kind} flow in {taken.File}; "
+                    + "a pipeline is identified by its name, so the report is left out until it has a name of its own.");
+            }
+            else if (!reports.TryAdd(report.Node.Name, report.Node.File))
+            {
+                result.Flows.Remove(report);
+                result.Warnings.Add(
+                    $"{report.Node.File}: report '{report.Node.Name}' has the name of the report in {reports[report.Node.Name]}; "
+                    + "the first is kept, and this one is left out until it has a name of its own.");
+            }
+        }
+
         var duplicates = result.Flows
             .GroupBy(f => f.Node.Name, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1);
@@ -1114,6 +1141,17 @@ public sealed class FlowSetCollector
         if (document is LineageDescriptionFlowDocument lineageDescription)
         {
             result.Descriptions.Add(new CollectedDescription(lineageDescription.Flow, file));
+        }
+
+        // A report is a pipeline row and nothing to the graph either. What the scan adds is the one thing its reader
+        // cannot say: whether each statement is one read-only SELECT. A statement that is not is reported here and the
+        // report is kept, so its page says the same on that query's tile and the report's other queries still run.
+        if (document is ReportFlowDocument report)
+        {
+            foreach (var refused in SqlServer.Query.ReportStatements.Problems(report.Flow))
+            {
+                result.Warnings.Add($"{file}: report '{report.Flow.Name}': query '{refused.Query}' cannot run: {refused.Problem}");
+            }
         }
 
         switch (document)

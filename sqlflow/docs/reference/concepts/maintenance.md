@@ -162,9 +162,9 @@ limit.
   conversation anyone wrote in within the limit keeps every message, its oldest included. Each person still deletes
   their own on the Chat page, and a user's go with the user.
 - **Compute tasks** (`sqlflow.compute-tasks`: `catalog.ComputeTask`): a finished task (succeeded, failed or cancelled)
-  enqueued before the cut-off goes with its result, the rows a query returned among them. A task still queued or running
-  stays whatever its age. A chat answer that showed a removed result says it was removed and that running the query
-  again shows it.
+  enqueued before the cut-off goes with its result, the rows a query returned among them: a question's query and a
+  [report](reports.md#what-is-recorded)'s query alike. A task still queued or running stays whatever its age. A chat
+  answer that showed a removed result says it was removed and that running the query again shows it.
 
 ## SQLFlow's areas
 

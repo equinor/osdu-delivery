@@ -120,6 +120,12 @@ export default function globalSetup(): void {
     inDataDatabase(withoutSchedule(readFileSync(join(samplesDir, "cache", `${LOOKUPS}.yaml`), "utf8"), LOOKUPS), LOOKUPS, dataDatabase),
   );
 
+  // The report over the staging area: what the well log ingestion table holds, by log source. A report is synced and
+  // read, never run as a flow, so it joins no schedule and nothing of it is rewritten: it names its table by schema in
+  // the database its connection opens, which is the one the chain above loads into.
+  mkdirSync(join(sourceDir, "reports"), { recursive: true });
+  cpSync(join(fixtureDocuments, "reports", `${REPORT}.yaml`), join(sourceDir, "reports", `${REPORT}.yaml`));
+
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: repoDir, stdio: "pipe" }).toString("utf8").trim();
 
@@ -188,6 +194,15 @@ export const DELIVERY_FLOW = "welldb-welllog-03-header-delivery";
 
 /** The log source the sample's schedule delivers, and so the value the specs run the delivery flow with. */
 export const LOG_SOURCE = "COMPOSITE";
+
+/**
+ * The report the estate holds over the well log ingestion table, a fixture document: `<SOURCE>/reports/<REPORT>.yaml`.
+ * Its queries read the table the chain loads, so its page shows what the seed staged.
+ */
+export const REPORT = "welldb-staging-overview-rpt";
+
+/** The title the report is listed and opened under. */
+export const REPORT_TITLE = "Staging overview";
 
 /** The source that delivers several kinds as interfaces, each with a ledger of its own. */
 export const INTERFACES_FLOW = "wells-source-03-interfaces-delivery";

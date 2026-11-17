@@ -42,14 +42,27 @@ public static class DocumentLoader
     /// <summary>
     /// The offline check <c>validate</c> adds to a load, for the single-file and the estate form alike: a document of a
     /// registered kind whose companion files are not on disk where it says
-    /// (<see cref="RegisteredFlowDocument.CheckOffline"/>) is refused with every problem, naming the file. Only
+    /// (<see cref="RegisteredFlowDocument.CheckOffline"/>) is refused with every problem, naming the file, and so is a
+    /// report with a statement that is not one read-only <c>SELECT</c>, which only the T-SQL parser can tell. Only
     /// <c>validate</c> calls it; a run, the estate scan and the catalog sync load the document as it stands.
     /// </summary>
-    /// <exception cref="SqlFlow.Core.FlowValidationException">The document names a companion that is not there.</exception>
+    /// <exception cref="SqlFlow.Core.FlowValidationException">The document names a companion that is not there, or is a
+    /// report with a statement that cannot run.</exception>
     public static void CheckOffline(FlowDocument document, string file)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentException.ThrowIfNullOrWhiteSpace(file);
+        if (document is ReportFlowDocument report)
+        {
+            var refused = SqlServer.Query.ReportStatements.Problems(report.Flow);
+            if (refused.Count > 0)
+            {
+                throw new SqlFlow.Core.FlowValidationException(
+                    $"{file}: {refused.Count} quer{(refused.Count == 1 ? "y" : "ies")} of the report cannot run:{Environment.NewLine}  "
+                    + string.Join(Environment.NewLine + "  ", refused.Select(r => $"query '{r.Query}': {r.Problem}")));
+            }
+        }
+
         if (document is not RegisteredFlowDocument registered)
         {
             return;

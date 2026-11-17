@@ -2078,7 +2078,7 @@ public static class LineageEndpoints
         // this cannot grow without bound for a given repo. A lineage description is no part of the plan: it is in no
         // wave, so it is not listed as a flow lineage gave none.
         var rows = await db.Pipelines.AsNoTracking()
-            .WithoutLineageDescriptions()
+            .ThatAreFlows()
             .Where(x => x.RepoId == repoId && x.Active)
             .OrderBy(x => x.Wave).ThenBy(x => x.Name).ThenBy(x => x.Id)
             .Select(x => new { x.Wave, x.Id, x.Name, x.Kind })
@@ -2132,7 +2132,7 @@ public static class LineageEndpoints
         // A folder that holds only lineage descriptions is no scope of its own: descriptions are drawn with the flows
         // they connect to, when asked for.
         var rows = await db.Pipelines.AsNoTracking()
-            .WithoutLineageDescriptions()
+            .ThatAreFlows()
             .Where(p => p.Active)
             .Join(db.Repos.AsNoTracking(), p => p.RepoId, r => r.Id,
                 (p, r) => new { p.RepoId, RepoName = r.Name, p.RelativePath })

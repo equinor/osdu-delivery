@@ -14,9 +14,11 @@ related:
   - cli-run
   - cli-plan
   - flow-overview
+  - flow-rpt
   - concept-cli-conventions
 sourceRefs:
   - src/SqlFlow.Cli/Program.cs
+  - src/SqlFlow.SqlServer/Query/ReportStatements.cs
   - src/SqlFlow.Execution/DocumentLoader.cs
   - src/SqlFlow.Core/Secrets/SecretHygiene.cs
   - src/SqlFlow.Yaml/YamlDocumentLoader.cs
@@ -82,6 +84,19 @@ ERROR  <file>: unknown flowType '<value>'. Use 'ing' for a table-to-table ingest
 ```
 
 A document kind the CLI cannot dispatch fails with `ERROR  Unhandled document kind.`.
+
+### Reports
+
+A report (`flowType: rpt`) validates through the same command, and is the one kind whose validation also parses SQL. Once the document reads, each statement is parsed as one read-only `SELECT`; a report with a statement the parser refuses is not valid, and every refused query is named with the reason:
+
+```text
+OK  '<name>' is valid (report: <N> quer(y|ies) shown as <M> view(s)[, <P> parameter(s)], on <connection>; read-only, run on demand from its page).
+
+ERROR  <file>: 1 query of the report cannot run:
+  query '<query>': Only a SELECT may be run here; this is an INSERT. The query surface is read-only, and nothing that changes data or schema is accepted.
+```
+
+The folder form (below) holds each report to the same rule. See [Report (flowType: rpt)](../flow/rpt.md#the-strict-reader).
 
 ### File-relative path fixups
 

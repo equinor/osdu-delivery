@@ -63,6 +63,15 @@ public sealed record CollectedFlow
     public bool IsLineageDescription
         => string.Equals(Node.Kind, LineageDescriptionFlow.FlowType, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>True for a report (<c>flowType: rpt</c>): a document whose queries a person runs from its page. Like a
+    /// lineage description it is collected so it becomes a pipeline row that holds its text, and it is nothing else: it
+    /// never runs as a flow, has no run history, and stands in no flow's place.</summary>
+    public bool IsReport
+        => string.Equals(Node.Kind, SqlFlow.Core.Reports.ReportFlow.FlowType, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True for a document that is a pipeline row and no flow: a lineage description or a report.</summary>
+    public bool NeverRuns => IsLineageDescription || IsReport;
+
     public required DateTime FileWriteUtc { get; init; }
 }
 

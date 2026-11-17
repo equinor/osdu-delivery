@@ -56,7 +56,7 @@ const MENU: MenuGroup[] = [
       { id: "sources", label: "Sources", entries: ["nav-datasources", "nav-integrations", "nav-discover", "nav-key-detection"] },
     ],
   },
-  { id: "explore", label: "Explore", entries: ["nav-catalog", "nav-lineage", "nav-subscribers", "nav-schema-changes", "nav-search"], sections: [] },
+  { id: "explore", label: "Explore", entries: ["nav-catalog", "nav-reports", "nav-lineage", "nav-subscribers", "nav-schema-changes", "nav-search"], sections: [] },
   {
     id: "admin",
     label: "Admin",

@@ -412,7 +412,7 @@ pub struct ValidateFlowInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FlowTypeInput {
-    /// The flow kind: omit for the file flow, or one of ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl, lin.
+    /// The flow kind: omit for the file flow, or one of ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl, lin, rpt.
     #[serde(rename = "flowType")]
     pub flow_type: Option<String>,
     /// A document that is not a flow, instead of a flow kind: "schedules", "subscribers", "ai-context", or a
@@ -492,8 +492,9 @@ pub struct RunTraceInput {
 pub struct ListPipelinesInput {
     #[serde(rename = "repoId")]
     pub repo_id: Option<String>,
-    /// Flow kind filter (e.g. ing, exp, sp). Lineage descriptions (kind lin) are documents that never run and are
-    /// listed only when this names them; list_lineage_descriptions is the tool for them.
+    /// Flow kind filter (e.g. ing, exp, sp). Lineage descriptions (kind lin) and reports (kind rpt) are documents
+    /// that never run as a flow and are listed only when this names them; list_lineage_descriptions is the tool for
+    /// lineage descriptions.
     pub kind: Option<String>,
     /// Filter by active state.
     pub active: Option<bool>,

@@ -501,7 +501,7 @@ export const osduDeliveryModule: GuiModule = {
           { id: "sources", label: "Sources", entries: ["/datasources", "/integrations", "/discover", "/key-detection"] },
         ],
       },
-      { id: "explore", label: "Explore", icon: Compass, entries: ["/catalog", "/lineage", "/subscribers", "/schema-changes", "/search"] },
+      { id: "explore", label: "Explore", icon: Compass, entries: ["/catalog", "/reports", "/lineage", "/subscribers", "/schema-changes", "/search"] },
       {
         id: "admin",
         label: "Admin",

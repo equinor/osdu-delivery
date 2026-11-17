@@ -600,6 +600,8 @@ public static class ControlPlaneHost
             .MapScheduleReadEndpoints()
             .MapNodeEndpoints()
             .MapDatasourceReadEndpoints()
+            // The reports the repositories declare: their headings, parameters and statements, as documents.
+            .MapReportReadEndpoints()
             .MapRepoSourceReadEndpoints()
             .MapSummaryEndpoints()
             .MapInsightsEndpoints()
@@ -632,6 +634,8 @@ public static class ControlPlaneHost
             // A run form's looked-up parameter values read the flow's own data, as a run does.
             .MapRunInputOperateEndpoints()
             .MapDatasourceComputeEndpoints()
+            // Running one query of a report: the statement is the synced document's, the request gives only values.
+            .MapReportRunEndpoints()
             .MapQueryEndpoints()
             .MapQuestionExampleEndpoints()
             .MapScheduleWriteEndpoints()

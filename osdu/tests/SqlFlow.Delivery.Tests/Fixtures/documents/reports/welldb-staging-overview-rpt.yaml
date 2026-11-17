@@ -1,0 +1,64 @@
+# The staging area at a glance: what the well log ingestion table holds, by log source.
+#
+# A report is read, never run as a flow: its queries run when its page is opened, each as one read-only SELECT over the
+# connection it names. This one reads the table the well log chain loads (welldb-welllog-02-header-ing), through the
+# connection that chain's own flows read, and names it by schema in the database that connection opens. The GUI's
+# end-to-end suite syncs it with the fixture estate and opens it (osdu/gui/e2e/37-reports.spec.ts).
+flowType: rpt
+name: welldb-staging-overview-rpt
+title: Staging overview
+description: What the staging area holds of well logs, by log source.
+batch: welldb
+connection: ${env:OSDU_DATA_DB}
+
+parameters:
+  source:
+    label: Log source
+    description: Only the well logs of this log source.
+    choicesFrom: sources
+
+queries:
+  # The log sources there are, as the choices of the filter above the tiles. Not a tile of its own.
+  sources:
+    sql: SELECT DISTINCT log_source FROM silver.WellLog ORDER BY log_source
+    show: none
+
+  totals:
+    title: The staging area
+    sql: |
+      SELECT COUNT(*) AS WellLogs, COUNT(DISTINCT log_source) AS LogSources,
+             COUNT(DISTINCT wellbore_uwi) AS Wellbores, MAX(UpdatedDate_DW) AS LastLoad
+      FROM silver.WellLog
+      WHERE (@source IS NULL OR log_source = @source)
+    show: figure
+    columns:
+      WellLogs: { label: Well logs }
+      LogSources: { label: Log sources }
+      LastLoad: { label: Last load, format: datetime }
+
+  # Every log source, whatever the filter says: a click on a bar sets the filter to it.
+  by_source:
+    title: Well logs by log source
+    sql: |
+      SELECT log_source AS LogSource, COUNT(*) AS WellLogs
+      FROM silver.WellLog
+      GROUP BY log_source
+      ORDER BY WellLogs DESC, LogSource
+    show: { type: bar, by: LogSource, values: WellLogs, selects: source }
+    columns:
+      LogSource: { label: Log source }
+      WellLogs: { label: Well logs }
+
+  logs:
+    title: Well logs
+    description: The well logs staged, each with the file it was read from.
+    sql: |
+      SELECT TOP 200 log_id AS LogId, wellbore_uwi AS Wellbore, log_source AS LogSource, FileName_DW AS SourceFile
+      FROM silver.WellLog
+      WHERE (@source IS NULL OR log_source = @source)
+      ORDER BY log_id
+    show: table
+    columns:
+      LogId: { label: Log, format: code }
+      LogSource: { label: Log source }
+      SourceFile: { label: Source file, format: code }

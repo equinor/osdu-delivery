@@ -23,6 +23,8 @@
     "src/modules/branding.ts",
     "src/modules/homePrompts.ts",
     "src/modules/lineageDescriptionKind.ts",
+    "src/modules/reportKind.ts",
+    "src/features/reports/reportModel.ts",
     "src/features/catalog/databaseTree.ts",
     "src/features/external-triggers/workflow.ts",
     "src/features/catalog/nodeIds.ts",

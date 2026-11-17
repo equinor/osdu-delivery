@@ -156,6 +156,11 @@ public static class FlowLoadProfiles
                 $"describes a step the system '{d.Flow.System}' runs ({d.Flow.Reads.Count} object(s) read, {d.Flow.Writes.Count} written); SQLFlow reads nothing for it",
                 "nothing: a lineage description is metadata and is never executed",
                 target: null),
+            ReportFlowDocument d => Profile(
+                FlowReadModes.NotApplicable,
+                $"runs {d.Flow.Queries.Count} read-only quer{(d.Flow.Queries.Count == 1 ? "y" : "ies")} on connection '{d.Flow.Connection}' when a person opens the report, each bounded by its row limit and its timeout",
+                "nothing: a report only reads, and is never run as a flow",
+                target: null),
             RegisteredFlowDocument d => Profile(
                 FlowReadModes.External,
                 $"runs the '{d.Kind}' flow kind a host module registered; what it reads is defined by that module, not modelled by SQLFlow",

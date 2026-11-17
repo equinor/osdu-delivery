@@ -297,7 +297,7 @@ public static class InsightsEndpoints
         // A lineage description never runs, so one that took the name of a flow with a run history is not a flow that
         // went quiet.
         var silent = await db.Pipelines.AsNoTracking()
-            .WithoutLineageDescriptions()
+            .ThatAreFlows()
             .Where(p => p.Active && (repoId == null || p.RepoId == repoId))
             .Where(p => !db.Runs.Any(r => r.PipelineId == p.Id && r.WrittenUtc >= fromUtc))
             .Select(p => new

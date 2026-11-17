@@ -48,8 +48,8 @@ public sealed record ComputeTaskAccepted(Guid TaskId, string Status);
 
 /// <summary>A compute task as the task list shows it: everything but the (possibly large) result body.
 /// <see cref="Target"/> is the object an object-scoped task (introspect, detect a unique key, check for
-/// duplicates) ran against, as <c>[db.]schema.name</c>, so a task history names WHAT was inspected; null for
-/// list/search/test tasks.</summary>
+/// duplicates) ran against, as <c>[db.]schema.name</c>, or the report and the query a report's task read, as
+/// <c>report: query</c>, so a task history names WHAT was inspected; null for list/search/test tasks.</summary>
 public sealed record ComputeTaskSummaryDto(
     Guid TaskId, string Operation, string SourceRef, string? ProviderKind, string? Pool, string Status,
     string? RequestedBy, DateTime EnqueuedUtc, DateTime? StartUtc, DateTime? EndUtc, string? ClaimedByNode,
@@ -308,6 +308,15 @@ public static class DatasourceEndpoints
                 StatusCodes.Status400BadRequest, "Invalid compute task");
         }
 
+        // A report's query takes its statement from the report's document, never from a request body.
+        if (operation == ComputeOperations.ReportQuery)
+        {
+            return Problem(
+                $"The '{operation}' operation runs a query a report declares: POST /reports/{{reportId}}/queries/{{query}}/run "
+                + "with values for the report's parameters.",
+                StatusCodes.Status400BadRequest, "Invalid compute task");
+        }
+
         // The feature switch is checked BEFORE anything else about the request, so a deployment with the
         // surface off answers the same way for a well-formed ask and a malformed one: not enabled here.
         if (ComputeOperations.IsDataOps(operation) && !dataOps.Enabled)
@@ -459,7 +468,8 @@ public static class DatasourceEndpoints
     /// node is lost), so an ask always terminates in bounded time.
     /// </summary>
     private static async Task<Results<Ok<ComputeTaskDto>, ProblemHttpResult>> GetTaskAsync(
-        Guid taskId, CatalogDbContext db, TimeProvider clock, int? waitMs, CancellationToken ct)
+        Guid taskId, CatalogDbContext db, TimeProvider clock, ClaimsPrincipal user, HttpContext http, int? waitMs,
+        CancellationToken ct)
     {
         var wait = TimeSpan.FromMilliseconds(Math.Clamp(waitMs ?? 0, 0, MaxWaitMs));
         var deadline = clock.GetUtcNow() + wait;
@@ -471,6 +481,18 @@ public static class DatasourceEndpoints
             if (task is null)
             {
                 return Problem($"No compute task '{taskId}'.", StatusCodes.Status404NotFound, "Not found");
+            }
+
+            // A report's answer is rows a person asked for, read by a statement that is not held to the column
+            // allow-list. An assistant run cannot queue one, and may not read one a person queued either: what it
+            // reads from the data is what an approved AI context opens, through a prepared query.
+            if (task.Operation == ComputeOperations.ReportQuery
+                && (AssistantDelegation.IsDelegated(user) || AssistantScope.IsAssistant(http)))
+            {
+                return Problem(
+                    "The answer of a report's query is not available to an assistant run, which reads data through a "
+                    + "prepared query over what an approved AI context opens.",
+                    StatusCodes.Status403Forbidden, AssistantDelegationMiddleware.DeniedTitle);
             }
 
             if (RunStatuses.IsTerminal(task.Status) || clock.GetUtcNow() >= deadline)
@@ -561,12 +583,13 @@ public static class DatasourceEndpoints
             task.CancelRequestedUtc, task.Error, result, TargetFromArguments(task.Operation, task.ArgumentsJson));
     }
 
-    /// <summary>The <c>[db.]schema.name</c> an object-scoped task targets, parsed from its stored arguments
-    /// through the payload's own (validating) reader; null for non-object operations and for a row whose
-    /// arguments no longer validate (a legacy or hand-edited row must not break the listing).</summary>
+    /// <summary>What a task ran against, parsed from its stored arguments through the payload's own (validating)
+    /// reader: the <c>[db.]schema.name</c> of an object-scoped task, or <c>report: query</c> for a report's query;
+    /// null for every other operation and for a row whose arguments no longer validate (a legacy or hand-edited row
+    /// must not break the listing).</summary>
     private static string? TargetFromArguments(string operation, string argumentsJson)
     {
-        if (operation is not (ComputeOperations.IntrospectObject or ComputeOperations.DetectUniqueKey))
+        if (operation is not (ComputeOperations.IntrospectObject or ComputeOperations.DetectUniqueKey or ComputeOperations.ReportQuery))
         {
             return null;
         }
@@ -574,6 +597,13 @@ public static class DatasourceEndpoints
         try
         {
             var payload = ComputeTaskPayload.FromJson(argumentsJson);
+            if (operation == ComputeOperations.ReportQuery)
+            {
+                return string.IsNullOrWhiteSpace(payload.Report) || string.IsNullOrWhiteSpace(payload.ReportQuery)
+                    ? null
+                    : $"{payload.Report}: {payload.ReportQuery}";
+            }
+
             if (string.IsNullOrWhiteSpace(payload.Schema) || string.IsNullOrWhiteSpace(payload.ObjectName))
             {
                 return null;

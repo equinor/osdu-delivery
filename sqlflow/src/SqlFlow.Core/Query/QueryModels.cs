@@ -29,13 +29,24 @@ public sealed record QueryResult
 /// <summary>
 /// The ask to RUN an already-approved query. It carries the statement rather than a reference to one, because
 /// by the time this exists the approval has already happened: the control plane resolved a one-time token into
-/// the exact SQL a person saw and agreed to.
+/// the exact SQL a person saw and agreed to, or took the statement from a report a repository declares.
 /// </summary>
 public sealed record QueryRunRequest
 {
     public required string Sql { get; init; }
 
     public string? Database { get; init; }
+
+    /// <summary>The values the statement's <c>@name</c> parameters take, each sent as a typed parameter and never
+    /// written into the statement's text. Empty for a statement that binds none.</summary>
+    public IReadOnlyList<QueryParameter> Parameters { get; init; } = [];
+
+    /// <summary>
+    /// True when the statement is one a repository's own document declares (a report's query), which may read the
+    /// server's own catalog (<c>sys</c>, <c>INFORMATION_SCHEMA</c>) as its author may. False for a statement composed for
+    /// a question, which reads the estate's data only. Everything that could change anything is refused either way.
+    /// </summary>
+    public bool Declared { get; init; }
 
     /// <summary>The most rows returned. Beyond this the result is marked truncated and the read stops.</summary>
     public int MaxRows { get; init; } = DefaultMaxRows;
@@ -69,6 +80,27 @@ public sealed record QueryRunRequest
         if (TimeoutSeconds is < 1 or > MaxTimeoutSeconds)
         {
             throw new SqlFlowException($"timeoutSeconds must be between 1 and {MaxTimeoutSeconds}.");
+        }
+
+        if (Parameters.Count > QueryParameter.MaxParameters)
+        {
+            throw new SqlFlowException($"A query binds at most {QueryParameter.MaxParameters} parameters, not {Parameters.Count}.");
+        }
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var parameter in Parameters)
+        {
+            if (parameter is null)
+            {
+                throw new SqlFlowException("A query's parameters hold an empty entry.");
+            }
+
+            parameter.Validate();
+            if (!names.Add(parameter.Name))
+            {
+                // T-SQL compares variable names without regard to case, so two spellings are one parameter given twice.
+                throw new SqlFlowException($"Parameter '{parameter.Name}' is given twice.");
+            }
         }
 
         return this;

@@ -566,15 +566,16 @@ internal static class DescribedLineage
 }
 
 /// <summary>
-/// The pipelines that are flows. A lineage description (flowType: lin) is stored as a pipeline so its document has
-/// one home, but it is not a flow that runs: the listings and counts of pipelines leave it out unless it is asked
-/// for, so each of them holds what it held before descriptions existed.
+/// The pipelines that are flows. A lineage description (flowType: lin) and a report (flowType: rpt) are stored as
+/// pipelines so their documents have one home, but neither is a flow that runs: the listings and counts of pipelines
+/// leave them out unless one is asked for by its kind, so each of them holds the flows that run and nothing else.
 /// </summary>
 internal static class PipelineListings
 {
-    /// <summary>Every pipeline but the lineage descriptions.</summary>
-    public static IQueryable<CatalogPipeline> WithoutLineageDescriptions(this IQueryable<CatalogPipeline> pipelines)
-        => pipelines.Where(p => p.Kind != LineageDescriptionFlow.FlowType);
+    /// <summary>Every pipeline but the documents that are not flows (<see cref="SqlFlow.Yaml.YamlDocumentLoader.NeverRunKinds"/>):
+    /// the lineage descriptions and the reports.</summary>
+    public static IQueryable<CatalogPipeline> ThatAreFlows(this IQueryable<CatalogPipeline> pipelines)
+        => pipelines.Where(p => p.Kind != LineageDescriptionFlow.FlowType && p.Kind != SqlFlow.Core.Reports.ReportFlow.FlowType);
 }
 
 /// <summary>

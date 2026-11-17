@@ -50,7 +50,8 @@ referenceRefs:
 related:
   - wiki-schema-registration-flows
   - wiki-the-mcp-server-is-the-assistants-one-definition
-updated: 2026-11-16
+  - wiki-reports-are-documents-run-on-demand
+updated: 2026-11-17
 ---
 
 # A lineage description is a flow type that is never run, kept beside the lineage SQLFlow computes
@@ -135,8 +136,9 @@ lineage gave no wave. The human had asked for exactly the opposite, that waves l
 extension one can filter away.
 
 So the listings and counts of pipelines (the list, its batches and projects, the plan's waves, the graph's scopes, the
-dashboard's counts) hold the flows that run, through one rule (`PipelineListings.WithoutLineageDescriptions`), and a
-description is listed when it is asked for by its kind. The alternative, a table of its own for descriptions, would have
+dashboard's counts) hold the flows that run, through one rule (`PipelineListings.ThatAreFlows`, which a
+[report](reports-are-documents-run-on-demand.md) later joined), and a description is listed when it is asked for by
+its kind. The alternative, a table of its own for descriptions, would have
 needed a second sync path, a second document page and a second search surface for the same YAML file.
 
 The mode `disabled` was not enough to keep a description from being queued. A node-scoped run keeps its anchor whatever

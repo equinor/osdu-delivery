@@ -6,6 +6,7 @@ import {
   Cable,
   CalendarClock,
   CalendarRange,
+  ChartColumn,
   CirclePlay,
   Compass,
   GitCompare,
@@ -133,6 +134,8 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Catalog", to: "/catalog", icon: BookOpen, testId: "nav-catalog",
         description: "A tree of every table, file, dataset and flow the platform knows; select one for its columns, code, joins and consumers, or a flow's YAML and dependencies." },
+      { label: "Reports", to: "/reports", icon: ChartColumn, testId: "nav-reports",
+        description: "The reports the repositories declare: read-only queries over the data, run when you open one and shown as figures, charts and tables you can narrow with the report's own filters." },
       { label: "Schema changes", to: "/schema-changes", icon: GitCompare, testId: "nav-schema-changes",
         description: "Objects whose definition changed in the tracked databases over a chosen window, by database and schema; open one to compare its definition before and after." },
       { label: "Lineage", to: "/lineage", icon: Network, testId: "nav-lineage",
@@ -254,6 +257,7 @@ const detailTitles: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
   [/^\/runs\/([^/]+)/, (m) => `Run ${m[1].slice(0, 8)}`],
   [/^\/repos\/[^/]+/, () => "Repository"],
   [/^\/pipelines\/[^/]+/, () => "Pipeline"],
+  [/^\/reports\/[^/]+/, () => "Report"],
   [/^\/datasources\/browse/, () => "Browse data"],
   [/^\/lineage\/objects/, () => "Lineage objects"],
 ];

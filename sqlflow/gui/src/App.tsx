@@ -32,6 +32,8 @@ const DiscoverPage = lazyRoute("DiscoverPage", () => import("./features/discover
 const UniqueKeyDetectionPage = lazyRoute("UniqueKeyDetectionPage", () => import("./features/datasources/UniqueKeyDetectionPage"));
 const CatalogPage = lazyRoute("CatalogPage", () => import("./features/catalog/CatalogPage"));
 const SchemaChangesPage = lazyRoute("SchemaChangesPage", () => import("./features/catalog/SchemaChangesPage"));
+const ReportsPage = lazyRoute("ReportsPage", () => import("./features/reports/ReportsPage"));
+const ReportPage = lazyRoute("ReportPage", () => import("./features/reports/ReportPage"));
 const LineagePage = lazyRoute("LineagePage", () => import("./features/lineage/LineagePage"));
 const SubscribersPage = lazyRoute("SubscribersPage", () => import("./features/subscribers/SubscribersPage"));
 const LineageGraphPage = lazyRoute("LineageGraphPage", () => import("./features/lineage/LineageGraphPage"));
@@ -110,6 +112,8 @@ export function workbenchPages() {
       <Route path="/lineage" element={<LineageGraphPage />} />
       <Route path="/lineage/objects" element={<LineagePage />} />
       {/* The consumption side: who reads the warehouse, and through which queries. */}
+      <Route path="/reports" element={<ReportsPage />} />
+      <Route path="/reports/:reportId" element={<ReportPage />} />
       <Route path="/schema-changes" element={<SchemaChangesPage />} />
       <Route path="/subscribers" element={<SubscribersPage />} />
       {/* The graph used to live here; keep the old link working, carrying any repo/view query through. */}

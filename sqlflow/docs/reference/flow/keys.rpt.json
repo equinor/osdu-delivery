@@ -1,0 +1,647 @@
+{
+  "version": 1,
+  "product": "SQLFlow V3",
+  "flowType": "rpt",
+  "generatedFrom": "source code: src/SqlFlow.Yaml/YamlReportFlowLoader.cs, src/SqlFlow.Core/Reports/ReportFlow.cs and src/SqlFlow.Core/Query/QueryParameter.cs",
+  "naming": "A report is read by a strict reader over the YAML tree (YamlReportFlowLoader), not by a YamlDotNet deserializer: keys are case-sensitive and written exactly as listed here, an unknown key is a problem that keeps the document from loading, and every problem is reported with its line, all of them together. A key a running flow takes (schedule, mode, lifecycle, connections, server, source, target, load, onErrorResume) is refused with the reason: a report is a set of read-only queries a person runs from the report's page, and is never run as a flow. A parameter, a query and a column are named by the author: <parameter>, <query> and <column> stand for those names. A view is written under show as one mapping or as an entry of a list, so each view key is listed under both.",
+  "keyCount": 61,
+  "keys": [
+    {
+      "path": "name",
+      "type": "string",
+      "required": true,
+      "default": "none",
+      "description": "The report's name: its identity in the estate and the pipeline row that holds its document. It is the heading of the report's page when no title is given. Plain text on one line, at most 400 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required. Missing, blank, over 400 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "title",
+      "type": "string",
+      "required": false,
+      "default": "null (the name is shown)",
+      "description": "The heading a person reads for the report. Left out, the report's name is shown. One line, at most 200 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 200 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "description",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the report is for, in a sentence or two, shown with the report. It may span several lines. At most 1000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 1000 characters is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "batch",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "A grouping label, as on every flow. Reports are listed by it, and it has no other effect: a report is never run, alone or with a batch. One line, at most 250 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 250 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "connection",
+      "type": "string (connection reference)",
+      "required": true,
+      "default": "none",
+      "description": "The connection the report's queries run on; a query may name its own. It is written as one whole reference (${env:NAME} or ${keyvault:vault/secret}) or an @alias, never as a connection string: a query runs on a worker, which is handed the reference to resolve and nothing else. The report is listed among what uses the connection. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required: a report without it is a problem. A value that is not text, is blank or is over 512 characters is a problem. Anything that is not one whole reference or an @alias is a problem: a connection string, a reference with text around it, or an alias that holds a space, a ; or an =. The value is never echoed in the message, since a connection string may hold a credential."
+    },
+    {
+      "path": "database",
+      "type": "string",
+      "required": false,
+      "default": "null (the connection's own database)",
+      "description": "The database the report's queries run in; a query may name its own. Left out, they run in the connection's own database. At most 128 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 128 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "pool",
+      "type": "string",
+      "required": false,
+      "default": "null (any worker)",
+      "description": "The worker pool the report's queries are routed to, for an estate where only some workers reach the connection. Left out, any worker runs them. At most 128 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 128 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "timeoutSeconds",
+      "type": "int",
+      "required": false,
+      "default": "60",
+      "description": "How long a query of the report may run, in seconds, when the query does not say. A query that takes longer is stopped.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 1 to 600, written as digits; anything else is a problem."
+    },
+    {
+      "path": "maxRows",
+      "type": "int",
+      "required": false,
+      "default": "1000",
+      "description": "The most rows a query of the report answers, when the query does not say. A query that has more stops reading there, and its answer is marked as cut short.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 1 to 5000, written as digits; anything else is a problem."
+    },
+    {
+      "path": "parameters",
+      "type": "map<string,object>",
+      "required": false,
+      "default": "{}",
+      "description": "The values a person may set on the report's page, in the document's order. A statement refers to a parameter as @name, and changing a parameter's value runs again the queries that bind it. A value is sent to the database as a typed parameter and never written into a statement's text, so nothing a person gives can change what a statement is.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A mapping of parameter name to what the parameter is, with at most 20 parameters. Left empty, it declares none; a value that is neither empty nor a mapping is a problem."
+    },
+    {
+      "path": "parameters.<parameter>",
+      "type": "object",
+      "required": false,
+      "default": "a text value with no default and no fixed choices",
+      "description": "One parameter. Its name is the one a statement refers to, written @name there and without the @ here. Left empty, it is a text value with no default and no list of choices.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name is a letter or underscore followed by letters, digits or underscores, at most 64 characters. Names are compared without regard to case, as a statement compares them, so two that differ only by case are one name declared twice, which is a problem. A parameter no query binds is a problem: setting it would change nothing. A value that is neither empty nor a mapping is a problem."
+    },
+    {
+      "path": "parameters.<parameter>.label",
+      "type": "string",
+      "required": false,
+      "default": "null (the name is shown)",
+      "description": "What a person reads beside the parameter's control. Left out, the parameter's name is shown. One line, at most 100 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 100 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "parameters.<parameter>.description",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the parameter narrows, in a sentence, for the person setting it. At most 1000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 1000 characters is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "parameters.<parameter>.type",
+      "type": "enum(text|integer|number|date|datetime|flag)",
+      "required": false,
+      "default": "text",
+      "enumValues": [
+        "text",
+        "integer",
+        "number",
+        "date",
+        "datetime",
+        "flag"
+      ],
+      "description": "The value's type. It decides how a value is written and the type the statement is sent: text is sent as nvarchar (at most 4000 characters), integer as bigint, number as decimal, date as date, datetime as datetime2, and flag (yes or no) as bit.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Written exactly, in lower case; any other word is a problem."
+    },
+    {
+      "path": "parameters.<parameter>.default",
+      "type": "scalar",
+      "required": false,
+      "default": "null (the query binds NULL)",
+      "description": "The value a query binds when a person has set none. Without it the query binds NULL, which a statement tests with @name IS NULL to mean no narrowing. A person who clears the value on the page binds NULL whatever the default.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "One value in the form the parameter's type is written: text as it is (at most 4000 characters); integer as digits with an optional leading minus (30, -7); number with a period and no grouping (0.25, -1200.5); date as yyyy-MM-dd (2026-01-31); datetime as yyyy-MM-ddTHH:mm:ss with no zone, to the minute, the second or a fraction of a second, with a T or a space between the date and the time (2026-01-31T06:00:00); flag as true or false. A list or a mapping is a problem. A text value that carries a credential is a problem. When the parameter lists choices, the default must be one of them."
+    },
+    {
+      "path": "parameters.<parameter>.required",
+      "type": "bool",
+      "required": false,
+      "default": "false",
+      "description": "true keeps every query that binds the parameter from running until the parameter has a value. Left out or false, a parameter with no value binds NULL.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "true or false; anything else is a problem."
+    },
+    {
+      "path": "parameters.<parameter>.choices",
+      "type": "list<scalar|object>",
+      "required": false,
+      "default": "[]",
+      "description": "The values a person picks from, when the document lists them. Each entry is a value alone, or a mapping with value and label. A value that is not one of them is refused when a query is run. Left out, any value of the parameter's type may be given.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "At most 200 entries, each a value of the parameter's type, none repeated. A problem together with choicesFrom: the choices are written in the document or read from a query, not both. A problem on a flag, which is on or off."
+    },
+    {
+      "path": "parameters.<parameter>.choices[]",
+      "type": "scalar|object",
+      "required": false,
+      "default": "none",
+      "description": "One choice: a value alone, which is shown as it is, or a mapping with value and label.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A value is written in the form the parameter's type is written. An entry that is empty or a list is a problem."
+    },
+    {
+      "path": "parameters.<parameter>.choices[].value",
+      "type": "scalar",
+      "required": true,
+      "default": "none",
+      "description": "The value the parameter takes when the choice is picked, in the form the parameter's type is written.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required in the mapping form. A value that is not one of the parameter's type is a problem."
+    },
+    {
+      "path": "parameters.<parameter>.choices[].label",
+      "type": "string",
+      "required": false,
+      "default": "null (the value is shown)",
+      "description": "What a person reads for the choice. Left out, the value is shown. One line, at most 100 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 100 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "parameters.<parameter>.choicesFrom",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "The name of a query of this report whose rows are the parameter's choices: the first column of its answer is the value and the second, when there is one, the words shown for it. A query that only feeds choices is given show: none so it is not shown itself.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The query must be one the report declares (compared without regard to case); a name over 64 characters is a problem. Its statement may not bind this parameter itself: the choices of a parameter cannot depend on its own value. A problem together with choices, and on a flag. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "queries",
+      "type": "map<string,object>",
+      "required": true,
+      "default": "none",
+      "description": "The report's queries by name, in the order they are shown on its page. Each is one read-only statement and how its answer is shown. A query runs on a worker when a person opens the report or changes a parameter it binds, one at a time, and never as part of a flow.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required. A mapping of query name to the query, with at least one and at most 40; a missing or empty queries is a problem, and so is anything but a mapping. A report in which every query has show: none shows nothing, which is a problem."
+    },
+    {
+      "path": "queries.<query>",
+      "type": "object",
+      "required": false,
+      "default": "none",
+      "description": "One query. Its name is how a parameter's choicesFrom, a request and an address refer to it, and its heading on the page when no title is given.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name is a letter or underscore followed by letters, digits, underscores or hyphens, at most 64 characters. Names are compared without regard to case, so two that differ only by case are one name declared twice, which is a problem. The value is a mapping with sql; anything else is a problem."
+    },
+    {
+      "path": "queries.<query>.title",
+      "type": "string",
+      "required": false,
+      "default": "null (the name is shown)",
+      "description": "The heading a person reads for the query on the report's page. Left out, the query's name is shown. One line, at most 200 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 200 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.description",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What the answer says, in a sentence, shown with the query. It may span several lines. At most 1000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 1000 characters is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.section",
+      "type": "string",
+      "required": false,
+      "default": "null (the section of the query before it)",
+      "description": "The heading the query is shown under on the report's page. Consecutive queries that name one section share it. A query that names none goes under the section of the query before it, or under no section when none was named before it. One line, at most 200 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 200 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.connection",
+      "type": "string (connection reference)",
+      "required": false,
+      "default": "the report's connection",
+      "description": "The connection this query runs on, when it is not the report's: one whole reference (${env:NAME} or ${keyvault:vault/secret}) or an @alias, never a connection string. At most 512 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Left out, the query runs on the report's connection. A value that is not text, is blank or is over 512 characters is a problem. Anything that is not one whole reference or an @alias is a problem: a connection string, a reference with text around it, or an alias that holds a space, a ; or an =. The value is never echoed in the message, since a connection string may hold a credential."
+    },
+    {
+      "path": "queries.<query>.database",
+      "type": "string",
+      "required": false,
+      "default": "the report's database",
+      "description": "The database this query runs in, when it is not the report's. At most 128 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 128 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "queries.<query>.timeoutSeconds",
+      "type": "int",
+      "required": false,
+      "default": "the report's timeoutSeconds",
+      "description": "How long this query may run, in seconds, in place of the report's timeoutSeconds. A query that takes longer is stopped.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 1 to 600, written as digits; anything else is a problem."
+    },
+    {
+      "path": "queries.<query>.maxRows",
+      "type": "int",
+      "required": false,
+      "default": "the report's maxRows",
+      "description": "The most rows this query answers, in place of the report's maxRows. A query that has more stops reading there, and its answer is marked as cut short.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 1 to 5000, written as digits; anything else is a problem."
+    },
+    {
+      "path": "queries.<query>.sql",
+      "type": "string (T-SQL)",
+      "required": true,
+      "default": "none",
+      "description": "The statement the query runs: one read-only SELECT. The columns of its answer are what the views and the columns block name. It refers to a parameter of the report as @name; each value is sent as a typed parameter and never written into the statement's text.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required, written as text, at most 20000 characters. Every @name the statement refers to must be a parameter the report declares (compared without regard to case); an @name inside a string, a quoted or bracketed name or a comment is not a parameter, and @@name is a system function. A statement that appears to carry a credential (a keyword such as password= followed by a value) is a problem and is never echoed; a comparison with a column of such a name is written with spaces around the =. Whether the statement is one read-only SELECT is decided by the T-SQL parser, where the document is checked and again where the statement runs."
+    },
+    {
+      "path": "queries.<query>.show",
+      "type": "string|object|list<string|object>",
+      "required": false,
+      "default": "auto",
+      "enumValues": [
+        "auto",
+        "figure",
+        "bar",
+        "column",
+        "line",
+        "share",
+        "table",
+        "none"
+      ],
+      "description": "How the query's answer is shown on the report's page. Written as a view type alone (show: table), as one mapping with type and the keys that type takes, or as a list of either to show one answer several ways, such as a chart with its table. Left out, the answer's shape decides (auto). none shows nothing: the query only feeds a parameter's choices.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A list holds at most 6 views and may not be empty. none beside other views is a problem: a query is hidden or shown, not both. matrix cannot be written as a type alone, since it needs across: write it as a mapping with type, by and across. A view type is written exactly, in lower case."
+    },
+    {
+      "path": "queries.<query>.show[]",
+      "type": "string|object",
+      "required": false,
+      "default": "none",
+      "enumValues": [
+        "auto",
+        "figure",
+        "bar",
+        "column",
+        "line",
+        "share",
+        "table",
+        "none"
+      ],
+      "description": "One view of the answer: a view type alone, or a mapping with type and the keys that type takes. The views are shown in the order listed.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A view type is written exactly, in lower case. matrix is written as a mapping, since it needs across. none is taken only when it is the one entry. An entry that is empty or a list is a problem."
+    },
+    {
+      "path": "queries.<query>.show.type",
+      "type": "enum(auto|figure|bar|column|line|share|table|matrix|none)",
+      "required": true,
+      "default": "none",
+      "enumValues": [
+        "auto",
+        "figure",
+        "bar",
+        "column",
+        "line",
+        "share",
+        "table",
+        "matrix",
+        "none"
+      ],
+      "description": "How the answer is shown. auto chooses from the answer's shape: figures for one row of numbers, a line over dates, bars by one name, otherwise a table. figure shows one large figure for each value of the first row. bar draws horizontal bars, one for each row, in the order the query answers. column draws vertical columns, one for each row, for buckets that have an order. line draws a line over an ordered column, usually a date. share divides one bar into the parts of a whole. table lists the rows as they are. matrix is a grid of one value by two names, rows down and columns across. none shows nothing, for a query that only feeds a parameter's choices.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required in the mapping form. Written exactly, in lower case; any other word is a problem. Beside type, title, description and width, each type takes its own keys: figure takes values; bar takes by, values, series, stacked, top and selects; column takes by, values, series, stacked and selects; line takes by, values and series; share takes by, values, top and selects; table takes by, values and selects; matrix takes by, across, values and selects; auto takes none of them; none takes no other key at all. A key the view's type does not take is a problem that names the types the key goes with."
+    },
+    {
+      "path": "queries.<query>.show.title",
+      "type": "string",
+      "required": false,
+      "default": "the query's title",
+      "description": "The view's own heading on the report's page, when it is not the query's title. One line, at most 200 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 200 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.show.description",
+      "type": "string",
+      "required": false,
+      "default": "the query's description",
+      "description": "What the view shows, when it is not the query's description. It may span several lines. At most 1000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 1000 characters is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.show.width",
+      "type": "enum(quarter|third|half|two-thirds|full)",
+      "required": false,
+      "default": "the width the view's type has",
+      "enumValues": [
+        "quarter",
+        "third",
+        "half",
+        "two-thirds",
+        "full"
+      ],
+      "description": "How wide the view is on the report's page: a quarter, a third, half, two thirds or the whole of the page's width. Left out, the view takes the width its type has.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Written exactly, in lower case; any other word is a problem."
+    },
+    {
+      "path": "queries.<query>.show.by",
+      "type": "string",
+      "required": false,
+      "default": "the first column that fits",
+      "description": "The column that names each mark: a bar's or a share's category, a line's or a column chart's position, a matrix's rows. It is also the column whose value a click hands to the parameter named under selects. Left out, the first column that fits is taken.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name of one column of the query's answer, at most 128 characters, with no control character. Taken by bar, column, line, share, table and matrix; a problem on a figure, auto or none view. A view with selects must have it. The statement is not run when the document is read, so a name its answer does not have is not found then."
+    },
+    {
+      "path": "queries.<query>.show.values",
+      "type": "string|list<string>",
+      "required": false,
+      "default": "every column that fits",
+      "description": "The columns drawn as values (a figure each, a bar, a line), or the columns a table lists. Written as one column name or as a list of them. Left out, every column that fits is taken.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "At most 100 names, each at most 128 characters with no control character, none repeated (compared without regard to case). A share or a matrix shows one value, so more than one column there is a problem. With series, more than one column is a problem: a series splits one value. Taken by figure, bar, column, line, share, table and matrix; a problem on an auto or none view."
+    },
+    {
+      "path": "queries.<query>.show.series",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "The column whose values split one value into several series: stacked bars or columns, or one line for each.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name of one column, at most 128 characters, with no control character. It goes with one column under values; with several it is a problem. Taken by bar, column and line; a problem on any other view."
+    },
+    {
+      "path": "queries.<query>.show.across",
+      "type": "string",
+      "required": false,
+      "default": "none",
+      "description": "A matrix's columns: the column whose values are laid out across, with by naming the rows and values naming the value shown in each cell.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A matrix view without across is a problem. The name of one column, at most 128 characters, with no control character. A problem on any view that is not a matrix."
+    },
+    {
+      "path": "queries.<query>.show.stacked",
+      "type": "bool",
+      "required": false,
+      "default": "series are stacked, several values are set side by side",
+      "description": "Whether several values or series are stacked on one bar (true) or set side by side (false). Left out, series are stacked and several values are set side by side.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "true or false. Taken by bar and column; a problem on any other view."
+    },
+    {
+      "path": "queries.<query>.show.top",
+      "type": "int",
+      "required": false,
+      "default": "the number the view's type has",
+      "description": "How many categories a view shows at first: a bar view lists that many rows and keeps the rest behind Show all, and a share view draws that many parts and adds the rest together as one. Left out, the view takes its type's number.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 1 to 50, written as digits. Taken by bar and share; a problem on any other view."
+    },
+    {
+      "path": "queries.<query>.show.selects",
+      "type": "string",
+      "required": false,
+      "default": "null (the marks are not clickable)",
+      "description": "The parameter a click on a mark sets to the mark's by value, so a click on one bar narrows every query that binds that parameter. Left out, the marks are not clickable.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name of a parameter the report declares (compared without regard to case), at most 64 characters; a name the report does not declare is a problem. The view must name the column the value is read from under by. Taken by bar, column, share, table and matrix; a problem on any other view. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "queries.<query>.show[].type",
+      "type": "enum(auto|figure|bar|column|line|share|table|matrix|none)",
+      "required": true,
+      "default": "none",
+      "enumValues": [
+        "auto",
+        "figure",
+        "bar",
+        "column",
+        "line",
+        "share",
+        "table",
+        "matrix",
+        "none"
+      ],
+      "description": "How the answer is shown. auto chooses from the answer's shape: figures for one row of numbers, a line over dates, bars by one name, otherwise a table. figure shows one large figure for each value of the first row. bar draws horizontal bars, one for each row, in the order the query answers. column draws vertical columns, one for each row, for buckets that have an order. line draws a line over an ordered column, usually a date. share divides one bar into the parts of a whole. table lists the rows as they are. matrix is a grid of one value by two names, rows down and columns across. none shows nothing, for a query that only feeds a parameter's choices.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Required in the mapping form. Written exactly, in lower case; any other word is a problem. Beside type, title, description and width, each type takes its own keys: figure takes values; bar takes by, values, series, stacked, top and selects; column takes by, values, series, stacked and selects; line takes by, values and series; share takes by, values, top and selects; table takes by, values and selects; matrix takes by, across, values and selects; auto takes none of them; none takes no other key at all. A key the view's type does not take is a problem that names the types the key goes with."
+    },
+    {
+      "path": "queries.<query>.show[].title",
+      "type": "string",
+      "required": false,
+      "default": "the query's title",
+      "description": "The view's own heading on the report's page, when it is not the query's title. One line, at most 200 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 200 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.show[].description",
+      "type": "string",
+      "required": false,
+      "default": "the query's description",
+      "description": "What the view shows, when it is not the query's description. It may span several lines. At most 1000 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 1000 characters is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.show[].width",
+      "type": "enum(quarter|third|half|two-thirds|full)",
+      "required": false,
+      "default": "the width the view's type has",
+      "enumValues": [
+        "quarter",
+        "third",
+        "half",
+        "two-thirds",
+        "full"
+      ],
+      "description": "How wide the view is on the report's page: a quarter, a third, half, two thirds or the whole of the page's width. Left out, the view takes the width its type has.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Written exactly, in lower case; any other word is a problem."
+    },
+    {
+      "path": "queries.<query>.show[].by",
+      "type": "string",
+      "required": false,
+      "default": "the first column that fits",
+      "description": "The column that names each mark: a bar's or a share's category, a line's or a column chart's position, a matrix's rows. It is also the column whose value a click hands to the parameter named under selects. Left out, the first column that fits is taken.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name of one column of the query's answer, at most 128 characters, with no control character. Taken by bar, column, line, share, table and matrix; a problem on a figure, auto or none view. A view with selects must have it. The statement is not run when the document is read, so a name its answer does not have is not found then."
+    },
+    {
+      "path": "queries.<query>.show[].values",
+      "type": "string|list<string>",
+      "required": false,
+      "default": "every column that fits",
+      "description": "The columns drawn as values (a figure each, a bar, a line), or the columns a table lists. Written as one column name or as a list of them. Left out, every column that fits is taken.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "At most 100 names, each at most 128 characters with no control character, none repeated (compared without regard to case). A share or a matrix shows one value, so more than one column there is a problem. With series, more than one column is a problem: a series splits one value. Taken by figure, bar, column, line, share, table and matrix; a problem on an auto or none view."
+    },
+    {
+      "path": "queries.<query>.show[].series",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "The column whose values split one value into several series: stacked bars or columns, or one line for each.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name of one column, at most 128 characters, with no control character. It goes with one column under values; with several it is a problem. Taken by bar, column and line; a problem on any other view."
+    },
+    {
+      "path": "queries.<query>.show[].across",
+      "type": "string",
+      "required": false,
+      "default": "none",
+      "description": "A matrix's columns: the column whose values are laid out across, with by naming the rows and values naming the value shown in each cell.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A matrix view without across is a problem. The name of one column, at most 128 characters, with no control character. A problem on any view that is not a matrix."
+    },
+    {
+      "path": "queries.<query>.show[].stacked",
+      "type": "bool",
+      "required": false,
+      "default": "series are stacked, several values are set side by side",
+      "description": "Whether several values or series are stacked on one bar (true) or set side by side (false). Left out, series are stacked and several values are set side by side.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "true or false. Taken by bar and column; a problem on any other view."
+    },
+    {
+      "path": "queries.<query>.show[].top",
+      "type": "int",
+      "required": false,
+      "default": "the number the view's type has",
+      "description": "How many categories a view shows at first: a bar view lists that many rows and keeps the rest behind Show all, and a share view draws that many parts and adds the rest together as one. Left out, the view takes its type's number.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 1 to 50, written as digits. Taken by bar and share; a problem on any other view."
+    },
+    {
+      "path": "queries.<query>.show[].selects",
+      "type": "string",
+      "required": false,
+      "default": "null (the marks are not clickable)",
+      "description": "The parameter a click on a mark sets to the mark's by value, so a click on one bar narrows every query that binds that parameter. Left out, the marks are not clickable.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "The name of a parameter the report declares (compared without regard to case), at most 64 characters; a name the report does not declare is a problem. The view must name the column the value is read from under by. Taken by bar, column, share, table and matrix; a problem on any other view. A ${...} reference in the value is a problem: a report resolves its connection and nothing else, so the value is written plainly."
+    },
+    {
+      "path": "queries.<query>.columns",
+      "type": "map<string,string|object>",
+      "required": false,
+      "default": "{}",
+      "description": "How the columns of the query's answer are labelled and written, for the columns the document says anything about: a mapping of column name to a format, or to a mapping with label, format, decimals and unit. A column that is not named here is shown under its own name, in the format its type has.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A mapping of at most 100 columns; a value that is neither empty nor a mapping is a problem. A name over 128 characters, one that holds a control character, or one named twice (compared without regard to case) is a problem."
+    },
+    {
+      "path": "queries.<query>.columns.<column>",
+      "type": "string|object",
+      "required": false,
+      "default": "none",
+      "enumValues": [
+        "text",
+        "integer",
+        "number",
+        "percent",
+        "bytes",
+        "duration",
+        "date",
+        "datetime",
+        "flag",
+        "code"
+      ],
+      "description": "One column of the query's answer, named as the statement answers it. The value is a format alone (Size: bytes), or a mapping with label, format, decimals and unit.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A format is written exactly, in lower case. Nothing after the name is a problem, and so is a list. The statement is not run when the document is read, so a name its answer does not have is not found then."
+    },
+    {
+      "path": "queries.<query>.columns.<column>.label",
+      "type": "string",
+      "required": false,
+      "default": "null (the column's name is shown)",
+      "description": "What a person reads in place of the column's name, wherever the column is shown. One line, at most 100 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 100 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    },
+    {
+      "path": "queries.<query>.columns.<column>.format",
+      "type": "enum(text|integer|number|percent|bytes|duration|date|datetime|flag|code)",
+      "required": false,
+      "default": "the format the column's type has",
+      "enumValues": [
+        "text",
+        "integer",
+        "number",
+        "percent",
+        "bytes",
+        "duration",
+        "date",
+        "datetime",
+        "flag",
+        "code"
+      ],
+      "description": "How the column's values are written. text writes them as the query answers. integer is a whole number with digit grouping. number is a number with digit grouping and decimals. percent writes a fraction as a percentage (0.25 reads 25 %). bytes writes a byte count in the largest unit that fits (1536 reads 1.5 KB). duration writes a number of seconds as a duration (3725 reads 1 h 02 min). date is a date without its time. datetime is a date and time to the second. flag reads yes or no. code is text in a fixed-width face: a key, a code, a file name.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Written exactly, in lower case; any other word is a problem."
+    },
+    {
+      "path": "queries.<query>.columns.<column>.decimals",
+      "type": "int",
+      "required": false,
+      "default": "the format's own",
+      "description": "How many decimals the column's values show.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "A whole number from 0 to 6, written as digits. It goes with the formats number, percent, bytes and duration, or with no format; with any other format it is a problem."
+    },
+    {
+      "path": "queries.<query>.columns.<column>.unit",
+      "type": "string",
+      "required": false,
+      "default": "null",
+      "description": "What follows each value of the column: rows, files, m. One line, at most 16 characters.",
+      "definedIn": "src/SqlFlow.Yaml/YamlReportFlowLoader.cs",
+      "validation": "Over 16 characters, spanning several lines or holding a control character is a problem. A credential in the text is a problem; the value is never echoed in the message."
+    }
+  ]
+}

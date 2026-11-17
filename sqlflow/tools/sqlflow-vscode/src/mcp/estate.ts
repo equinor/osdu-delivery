@@ -1,4 +1,4 @@
-import { LINEAGE_DESCRIPTION } from '../documents/recognition';
+import { NEVER_RUN_KINDS, neverRunKind } from '../documents/recognition';
 import { McpServer } from './mcpServer';
 
 /** A page of results from the control plane's PagedResult<T> shape. */
@@ -179,9 +179,14 @@ export class Estate {
      * all, and an estate holds more flows than one page does.
      */
     async everyPipeline(): Promise<Pipeline[]> {
-        // The catalog lists the flows that run, and lists the lineage descriptions (documents that describe a step
-        // another system runs, and never run) when asked for by their kind. A working copy holds both.
-        return [...(await this.everyPipelineOf(undefined)), ...(await this.everyPipelineOf(LINEAGE_DESCRIPTION))];
+        // The catalog lists the flows that run, and lists the documents that are never run as a flow (a lineage
+        // description of a step another system runs, a report of read-only queries) when asked for by their kind. A
+        // working copy holds all of them.
+        let all = await this.everyPipelineOf(undefined);
+        for (const kind of NEVER_RUN_KINDS) {
+            all = all.concat(await this.everyPipelineOf(kind));
+        }
+        return all;
     }
 
     private async everyPipelineOf(kind: string | undefined): Promise<Pipeline[]> {
@@ -200,10 +205,10 @@ export class Estate {
 
     /**
      * The catalog's flow of a name, the one at `relativePath` when several repositories hold one. `flowType` is the
-     * document's own: a lineage description is listed by its kind, so it is asked for by it.
+     * document's own: a lineage description and a report are listed by their kind, so each is asked for by it.
      */
     async pipelineNamed(name: string, relativePath?: string, flowType?: string): Promise<Pipeline | undefined> {
-        const kind = flowType?.trim().toLowerCase() === LINEAGE_DESCRIPTION ? LINEAGE_DESCRIPTION : undefined;
+        const kind = neverRunKind(flowType);
         const named = (await this.pipelines({ name, ...(kind === undefined ? {} : { kind }) })).filter((pipeline) => pipeline.name === name);
         const normalised = relativePath?.replace(/\\/g, '/');
         return named.find((pipeline) => normalised !== undefined && pipeline.relativePath !== undefined

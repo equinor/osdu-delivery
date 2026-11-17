@@ -145,8 +145,9 @@ public sealed class ComputeTaskExecutor
             ComputeOperations.DetectUniqueKey or ComputeOperations.DuplicateKeys or ComputeOperations.CompareBaseline
                 => Timeout.InfiniteTimeSpan,
             // A business query carries its OWN timeout, chosen when it was approved, so the executor does not
-            // impose a second one that could cut a query the approver deliberately allowed time for.
-            ComputeOperations.RunQuery => Timeout.InfiniteTimeSpan,
+            // impose a second one that could cut a query the approver deliberately allowed time for. A report's
+            // query carries the one its document declares.
+            ComputeOperations.RunQuery or ComputeOperations.ReportQuery => Timeout.InfiniteTimeSpan,
             _ => BrowseTimeout,
         };
 
@@ -246,6 +247,7 @@ public sealed class ComputeTaskExecutor
                 return await CompareBaselineAsync(payload, reference, kind, ct).ConfigureAwait(false);
 
             case ComputeOperations.RunQuery:
+            case ComputeOperations.ReportQuery:
                 return await RunQueryAsync(payload, reference, kind, ct).ConfigureAwait(false);
 
             default:
@@ -391,8 +393,9 @@ public sealed class ComputeTaskExecutor
     }
 
     /// <summary>
-    /// Runs one APPROVED read-only business query. By the time a payload reaches here a person has seen the
-    /// exact statement and the control plane has redeemed a single-use plan token into it, so this does not
+    /// Runs one APPROVED read-only business query, or one query a report declares. By the time a payload reaches
+    /// here a person has seen the exact statement and the control plane has redeemed a single-use plan token into
+    /// it, or the control plane has taken the statement from a report's synced document, so this does not
     /// re-decide whether the query MAY run; it re-decides whether the statement is read-only, because the
     /// queue row is data from the database and the parser is the only thing that can prove that.
     /// </summary>
