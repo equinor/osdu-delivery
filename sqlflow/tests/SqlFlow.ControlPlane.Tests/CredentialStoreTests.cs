@@ -1,4 +1,5 @@
 using SqlFlow.Cli.Remote;
+using SqlFlow.Core;
 using Xunit;
 
 namespace SqlFlow.ControlPlane.Tests;
@@ -42,6 +43,52 @@ public sealed class CredentialStoreTests : IDisposable
         }
 
         throw new FileNotFoundException($"Could not find tools/sqlflow-mcp/tests/shared-credentials.json above '{AppContext.BaseDirectory}'.");
+    }
+
+    [Fact]
+    public void The_current_control_plane_the_MCP_server_reads_is_the_one_this_reads()
+    {
+        File.Copy(Path.Combine(Path.GetDirectoryName(SharedFormat())!, "shared-current-control-plane.json"), CredentialStore.CurrentFilePath);
+
+        Assert.Equal(new Uri("https://control.example.com"), CredentialStore.CurrentUrl());
+    }
+
+    [Fact]
+    public void The_current_control_plane_is_kept_beside_the_credentials_and_forgotten_on_signing_out_of_it()
+    {
+        Assert.Equal(Path.Combine(_directory, "current-control-plane.json"), CredentialStore.CurrentFilePath);
+        Assert.Null(CredentialStore.CurrentUrl());
+
+        CredentialStore.SetCurrent(new Uri("https://Estate.example.com/"));
+        Assert.Equal(new Uri("https://estate.example.com"), CredentialStore.CurrentUrl());
+
+        Assert.False(CredentialStore.ClearCurrent(new Uri("https://other.example.com")));
+        Assert.True(CredentialStore.ClearCurrent(new Uri("https://estate.example.com/")));
+        Assert.Null(CredentialStore.CurrentUrl());
+    }
+
+    [Fact]
+    public void With_two_control_planes_signed_in_to_a_command_reaches_the_current_one_unless_a_flag_names_another()
+    {
+        var shell = Environment.GetEnvironmentVariable("SQLFLOW_URL");
+        Environment.SetEnvironmentVariable("SQLFLOW_URL", null);
+        try
+        {
+            var credential = new StoredCredential("a-token", null, null, DateTime.UtcNow, null);
+            CredentialStore.Save(new Uri("https://dev.example.com"), credential);
+            CredentialStore.Save(new Uri("http://localhost:5000"), credential);
+
+            var refused = Assert.Throws<SqlFlowException>(() => RemoteVerbs.RequireUrl(["whoami"]));
+            Assert.Contains("sqlflow use", refused.Message, StringComparison.Ordinal);
+
+            CredentialStore.SetCurrent(new Uri("https://dev.example.com"));
+            Assert.Equal(new Uri("https://dev.example.com"), RemoteVerbs.RequireUrl(["whoami"]));
+            Assert.Equal(new Uri("http://localhost:5000"), RemoteVerbs.RequireUrl(["whoami", "--url", "http://localhost:5000"]));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SQLFLOW_URL", shell);
+        }
     }
 
     [Fact]

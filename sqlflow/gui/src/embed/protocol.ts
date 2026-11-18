@@ -5,7 +5,7 @@
 // anything a browser or Node alone has, so both compile it and the unit suites read it.
 
 /** The version of this contract. A host and a page of different versions do not talk: each is built with the other. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Who is signed in, as the host knows it. The credential itself never reaches the page. */
 export interface HostSession {
@@ -13,6 +13,15 @@ export interface HostSession {
   /** The person's role; null for a credential with no account behind it. */
   role: string | null;
   scopes: string[];
+}
+
+/**
+ * A browser sign-in waiting for the person: the code they approve, which their browser's page shows too, and that page's
+ * address, to open it again. The code is the one a person reads and compares; what the host polls with never leaves it.
+ */
+export interface HostSignIn {
+  code: string;
+  url: string;
 }
 
 /** What a page needs before it renders, given once it says it is ready and again whenever any of it changes. */
@@ -25,6 +34,8 @@ export interface HostStart {
   session: HostSession | null;
   /** Why there is no session, when the host knows: the control plane cannot be reached, say. */
   sessionProblem: string | null;
+  /** The browser sign-in waiting for the person's approval, while one is. */
+  signingIn: HostSignIn | null;
   /** The GUI's public address, when the host knows it: where "open in the browser" goes. */
   guiBaseUrl: string | null;
 }
@@ -115,6 +126,8 @@ export type HostMessage =
 export const HOST_ACTIONS = [
   "signIn",
   "signInWithToken",
+  /** Stop waiting for the browser sign-in the page shows. */
+  "cancelSignIn",
   "signOut",
   "setControlPlane",
   /** What the control plane runs has changed (a repository was synced): the host reads again what it keeps of it. */

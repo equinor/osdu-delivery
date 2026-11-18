@@ -181,6 +181,35 @@ impl SharedCredentials {
         &self.path
     }
 
+    /// The file naming the current control plane, beside this one: `current-control-plane.json`, `{"url": ...}`, as the
+    /// CLI's `CredentialStore` writes it (`tests/shared-current-control-plane.json` holds both to one format).
+    fn current_path(&self) -> PathBuf {
+        self.path.with_file_name("current-control-plane.json")
+    }
+
+    /// The current control plane: the one last signed in to or named with `sqlflow use`, by any client of the person's
+    /// sign-in. None when none is named, or what is named is not an absolute http(s) URL.
+    pub fn current_url(&self) -> Option<String> {
+        let text = std::fs::read_to_string(self.current_path()).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let url = value.get("url")?.as_str()?.trim().trim_end_matches('/');
+        let parsed = reqwest::Url::parse(url).ok()?;
+        matches!(parsed.scheme(), "http" | "https").then(|| url.to_string())
+    }
+
+    /// Names `url` the current control plane, for the person's command line and every other client of the sign-in.
+    pub fn set_current(&self, url: &str) -> std::io::Result<()> {
+        let path = self.current_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        // Written beside it and moved over it, as the credential file is, so no reader meets half of it.
+        let staged = path.with_extension("json.new");
+        let text = serde_json::to_string_pretty(&serde_json::json!({ "url": url.trim_end_matches('/') })).unwrap_or_default();
+        std::fs::write(&staged, text)?;
+        std::fs::rename(&staged, &path)
+    }
+
     /// When the file last changed, so a server reads it only when another client has written it.
     pub fn stamp(&self) -> Option<std::time::SystemTime> {
         std::fs::metadata(&self.path).and_then(|m| m.modified()).ok()
@@ -409,6 +438,27 @@ mod tests {
         let path = std::env::temp_dir().join(format!("sqlflow-mcp-{}-{name}.json", std::process::id()));
         let _ = std::fs::remove_file(&path);
         SharedCredentials::at(path)
+    }
+
+    #[test]
+    fn the_current_control_plane_is_read_as_the_cli_writes_it_and_written_as_it_reads_it() {
+        let shared = SharedCredentials::at(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/shared-credentials.json"));
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/shared-current-control-plane.json");
+        assert_eq!(shared.current_path(), fixture.with_file_name("current-control-plane.json"));
+
+        let folder = std::env::temp_dir().join(format!("sqlflow-mcp-current-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a scratch folder");
+        let scratch = SharedCredentials::at(folder.join("credentials.json"));
+        assert!(scratch.current_url().is_none(), "none is named until one is");
+        std::fs::copy(&fixture, folder.join("current-control-plane.json")).expect("the shared format");
+        assert_eq!(scratch.current_url().as_deref(), Some("https://control.example.com"));
+
+        scratch.set_current("https://estate.example.com/").expect("named");
+        assert_eq!(scratch.current_url().as_deref(), Some("https://estate.example.com"));
+        std::fs::write(folder.join("current-control-plane.json"), r#"{"url": "not a url"}"#).expect("written");
+        assert!(scratch.current_url().is_none(), "what is not an http(s) URL names nothing");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

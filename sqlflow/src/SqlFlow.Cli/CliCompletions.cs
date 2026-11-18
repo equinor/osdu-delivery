@@ -25,7 +25,7 @@ internal static class CliCompletions
         ("runs", ["list", "show", "trace", "cancel", "local"]),
         ("groups", ["show", "cancel", "rerun"]),
         ("user", ["reset-password"]),
-        ("health", []), ("login", []), ("logout", []), ("whoami", []), ("doctor", []),
+        ("health", []), ("login", []), ("logout", []), ("use", []), ("whoami", []), ("doctor", []),
         ("trigger", []), ("summary", []), ("nodes", []),
         ("schedules", ["list", "show", "create", "pause", "resume", "delete"]),
         ("repos", ["list", "show", "register", "discover", "sync", "auto-sync"]),

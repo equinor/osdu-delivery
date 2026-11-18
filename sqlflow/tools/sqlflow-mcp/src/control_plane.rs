@@ -216,6 +216,7 @@ impl ControlPlane {
         let base_url = std::env::var("SQLFLOW_CONTROL_PLANE_URL")
             .ok()
             .or(cfg.control_plane_url)
+            .or_else(|| shared.as_ref().and_then(SharedCredentials::current_url))
             .or_else(|| shared.as_ref().and_then(SharedCredentials::only_url))
             .unwrap_or_else(|| config::DEFAULT_URL.to_string());
         let from_environment = ambient_credentials && std::env::var("SQLFLOW_CONTROL_PLANE_TOKEN").is_ok();
@@ -288,11 +289,28 @@ impl ControlPlane {
     pub fn set_base_url(&self, url: &str) {
         *self.base_url.write().unwrap() = normalize_base(url);
         let mut cfg = self.identity.state.load_config();
+        let another = cfg.control_plane_url.as_deref().map(normalize_base) != Some(self.base_url());
         cfg.control_plane_url = Some(self.base_url());
         let _ = self.identity.state.save_config(&cfg);
         // This server's own write is nothing for it to follow.
         *self.config_seen.write().unwrap() = self.identity.state.config_stamp();
+        if another {
+            // Naming another control plane names it for the person's command line too, as `sqlflow use` does; naming the
+            // one it already has (an editor saying it again as it starts) leaves a `sqlflow use` of theirs alone.
+            self.name_current();
+        }
         self.retake_shared_credential();
+    }
+
+    /// Names this server's control plane the person's current one (`current-control-plane.json`), so a shell or script
+    /// reaches it with no `--url`: done when a person signs in here, or names another control plane, never when a session
+    /// renews. A server given its credential in the environment, or serving over HTTP, names nothing.
+    pub fn name_current(&self) {
+        if let Some(shared) = &self.shared {
+            if let Err(e) = shared.set_current(&self.base_url()) {
+                tracing::warn!("the current control plane could not be named in the shared folder: {e}");
+            }
+        }
     }
 
     /// Reads the shared sign-in again for the control plane now named: the one held for it, or none, so a token is
@@ -508,6 +526,7 @@ impl ControlPlane {
                     .map(|s| chrono::Utc::now() + chrono::Duration::seconds(s));
             }
             self.set_token(cache.clone());
+            self.name_current();
             *self.pending_device_code.write().unwrap() = None;
             return Ok(PollOutcome::Approved(cache));
         }
@@ -811,6 +830,22 @@ mod tests {
         cp.adopt_shared_credential();
         assert_eq!(cp.base_url(), "https://estate.example.com");
         assert_eq!(cp.current_token().map(|t| t.access_token).as_deref(), Some("estate-session"));
+    }
+
+    #[test]
+    fn naming_another_control_plane_names_it_for_the_command_line_and_naming_it_again_does_not() {
+        let (cp, shared, state) = sharing("current");
+        cp.set_base_url("https://estate.example.com/");
+        assert_eq!(shared.current_url().as_deref(), Some("https://estate.example.com"));
+
+        // The person names another with `sqlflow use`; the editor saying its own again as it starts leaves that alone.
+        shared.set_current("https://other.example.com").expect("named");
+        cp.set_base_url("https://estate.example.com");
+        assert_eq!(shared.current_url().as_deref(), Some("https://other.example.com"));
+
+        state.save_config(&config::McpConfig { control_plane_url: Some("https://estate.example.com".into()) }).expect("a config");
+        cp.set_base_url("https://third.example.com");
+        assert_eq!(shared.current_url().as_deref(), Some("https://third.example.com"));
     }
 
     #[test]

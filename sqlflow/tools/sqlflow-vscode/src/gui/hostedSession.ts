@@ -7,10 +7,11 @@ import { currentCredential } from './credentials';
 import { sessionProblemText } from './sessionText';
 
 /**
- * What the pages this extension shows run under: which control plane, and who is signed in to it. Both are the MCP
- * server's to say, as they are for every view and command here: it names the control plane it talks to (the setting, or
- * the one it was last given) and keeps the sign-in, in the file the command line shares. The pages read the estate's
- * own API with that sign-in, through the carrier, so a page shows what the same person sees in the GUI.
+ * What the pages this extension shows run under: which control plane, and who is signed in to it, or the browser sign-in
+ * waiting for them. The first two are the MCP server's to say, as they are for every view and command here: it names the
+ * control plane it talks to (the setting, or the one it was last given) and keeps the sign-in, in the file the command
+ * line shares. The pages read the estate's own API with that sign-in, through the carrier, so a page shows what the same
+ * person sees in the GUI.
  */
 export class HostedSession implements vscode.Disposable {
     private readonly mcp: McpServer;
@@ -28,6 +29,7 @@ export class HostedSession implements vscode.Disposable {
         this.product = product;
         this.subscriptions = [
             signIn.changed(() => this.onChange.fire()),
+            signIn.waitingChanged(() => this.onChange.fire()),
             // A server that stopped is one the settings restarted, or one that died: the next one may name another
             // control plane, so what this one said is not kept.
             mcp.stateChanged(() => {
@@ -69,7 +71,13 @@ export class HostedSession implements vscode.Disposable {
         try {
             apiBaseUrl = await this.controlPlaneUrl();
         } catch (error) {
-            return { ...base, apiBaseUrl: null, session: null, sessionProblem: error instanceof Error ? error.message : String(error) };
+            return {
+                ...base,
+                apiBaseUrl: null,
+                session: null,
+                sessionProblem: error instanceof Error ? error.message : String(error),
+                signingIn: null,
+            };
         }
         const identity = this.signIn.identity;
         return {
@@ -77,6 +85,7 @@ export class HostedSession implements vscode.Disposable {
             apiBaseUrl,
             session: identity === undefined ? null : { subject: identity.subject, role: identity.role, scopes: identity.scopes },
             sessionProblem: identity === undefined ? sessionProblemText(this.signIn.problem, apiBaseUrl) : null,
+            signingIn: identity === undefined ? (this.signIn.pending ?? null) : null,
         };
     }
 

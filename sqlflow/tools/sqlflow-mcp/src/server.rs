@@ -2085,6 +2085,7 @@ not a flow (a mapping, a schedule library): {path, type, required}. list_flow_ki
             (false, None) => "Access token stored.".to_string(),
         };
         self.cp.set_token(cache);
+        self.cp.name_current();
         reply
     }
 
@@ -3151,7 +3152,8 @@ governance decision, so this needs the 'admin' scope, and it decides nothing."
             return json_str(&json!({
                 "server": server,
                 "commandLine": format!(
-                    "Not found (looked for '{command}'). The editor's extension carries it and, once the person signs in,                      puts it on their PATH; else set SQLFLOW_CLI to the full path of the executable."
+                    "Not found (looked for '{command}'). The editor's extension carries it and, once the person signs in, \
+                     puts it on their PATH; else set SQLFLOW_CLI to the full path of the executable."
                 ),
             }));
         };
@@ -3181,7 +3183,10 @@ governance decision, so this needs the 'admin' scope, and it decides nothing."
                 "path": path,
                 "call": call,
                 "controlPlane": format!(
-                    "A verb that reaches a control plane goes to SQLFLOW_URL when the shell has it, else to the one control                      plane the shared sign-in holds. Add --url {control_plane} to reach this server's control plane whatever                      the shell holds."
+                    "A verb that reaches a control plane goes to --url, else SQLFLOW_URL (the shell's, or a repository's \
+                     .sqlflow/env), else the person's current control plane (`sqlflow use` names it; signing in names it \
+                     too), else the only one signed in to. Add --url {control_plane} to reach this server's control plane \
+                     whatever the shell holds."
                 ),
                 "signIn": "This server's own, per control plane: no login and no token in a command.",
                 "sandbox": sandbox,

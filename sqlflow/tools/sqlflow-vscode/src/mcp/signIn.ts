@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { credentialFile } from '../gui/credentials';
 import { McpServer } from './mcpServer';
-import { parseAuthStatus, parseSignIn, SignInNeeded, ToolFailed } from './toolAnswer';
+import { parseAuthStatus, parseSignIn, SignInNeeded, SignInRequest, ToolFailed } from './toolAnswer';
 
 /** Who is signed in: the person, and what the control plane lets them do. */
 export interface SignedIn {
@@ -31,9 +31,13 @@ export class SignIn implements vscode.Disposable {
     private readonly product: string;
     private readonly onChange = new vscode.EventEmitter<void>();
     readonly changed = this.onChange.event;
+    private readonly onWaiting = new vscode.EventEmitter<void>();
+    /** Fires when a browser sign-in starts waiting for the person, and when it stops, however it ended. */
+    readonly waitingChanged = this.onWaiting.event;
     private person: string | undefined;
     private held: SignedIn | undefined;
     private why: string | undefined;
+    private waiting: { request: SignInRequest; stop: vscode.CancellationTokenSource } | undefined;
     private readonly watch: fs.FSWatcher | undefined;
 
     constructor(mcp: McpServer, product: string) {
@@ -46,7 +50,9 @@ export class SignIn implements vscode.Disposable {
 
     dispose(): void {
         this.watch?.close();
+        this.waiting?.stop.cancel();
         this.onChange.dispose();
+        this.onWaiting.dispose();
     }
 
     /** The person signed in, as last checked. */
@@ -62,6 +68,16 @@ export class SignIn implements vscode.Disposable {
     /** Why nobody is signed in, when the last check said more than that nobody is: the control plane did not answer, say. */
     get problem(): string | undefined {
         return this.why;
+    }
+
+    /** The browser sign-in waiting for the person's approval, while one is. */
+    get pending(): SignInRequest | undefined {
+        return this.waiting?.request;
+    }
+
+    /** Stops waiting for the browser sign-in, if one waits: the person signs in again when they want to. */
+    cancel(): void {
+        this.waiting?.stop.cancel();
     }
 
     /** Asks the server who its credential is. Reachable or not, this never throws: no answer reads as signed out. */
@@ -90,9 +106,17 @@ export class SignIn implements vscode.Disposable {
         }
     }
 
-    /** Signs in through the browser. */
+    /**
+     * Signs in through the browser. While it waits for the person, every view that shows the sign-in shows its code, and
+     * asking again opens the same page again rather than starting a second sign-in with another code.
+     */
     async signIn(): Promise<boolean> {
-        let request;
+        if (this.waiting !== undefined) {
+            await vscode.env.openExternal(vscode.Uri.parse(this.waiting.request.url));
+            return false;
+        }
+
+        let request: SignInRequest;
         try {
             request = parseSignIn(await this.mcp.text('login'));
         } catch (err) {
@@ -100,23 +124,49 @@ export class SignIn implements vscode.Disposable {
             return false;
         }
 
-        await vscode.env.clipboard.writeText(request.code);
-        await vscode.env.openExternal(vscode.Uri.parse(request.url));
-        return vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title: `${this.product}: approve the sign-in in your browser. Code ${request.code} (copied)`,
-                cancellable: true,
-            },
-            (_progress, cancel) => this.waitForApproval(cancel)
-        );
+        const stop = new vscode.CancellationTokenSource();
+        this.waiting = { request, stop };
+        this.waitingNow();
+        try {
+            await vscode.env.clipboard.writeText(request.code);
+            await vscode.env.openExternal(vscode.Uri.parse(request.url));
+            return await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `${this.product}: approve the sign-in in your browser. Code ${request.code} (copied)`,
+                    cancellable: true,
+                },
+                async (_progress, cancel) => {
+                    // Cancelled from the notification or from a view that shows the code: either stops the one wait.
+                    const linked = cancel.onCancellationRequested(() => stop.cancel());
+                    try {
+                        return await this.waitForApproval(stop.token);
+                    } finally {
+                        linked.dispose();
+                    }
+                }
+            );
+        } finally {
+            this.waiting = undefined;
+            stop.dispose();
+            this.waitingNow();
+        }
+    }
+
+    /** Says that a sign-in started or stopped waiting: to the views, and to the command that cancels it. */
+    private waitingNow(): void {
+        void vscode.commands.executeCommand('setContext', 'sqlflow.signingIn', this.waiting !== undefined);
+        this.onWaiting.fire();
     }
 
     private async waitForApproval(cancel: vscode.CancellationToken): Promise<boolean> {
         const deadline = Date.now() + SIGN_IN_WAIT_MS;
         let wait = POLL_MS;
         while (Date.now() < deadline && !cancel.isCancellationRequested) {
-            await new Promise((resolve) => setTimeout(resolve, wait));
+            await pause(wait, cancel);
+            if (cancel.isCancellationRequested) {
+                break;
+            }
             let status;
             try {
                 status = parseAuthStatus(await this.mcp.text('check_auth_status'));
@@ -169,6 +219,19 @@ export class SignIn implements vscode.Disposable {
         this.set(undefined, undefined);
         void vscode.window.showInformationMessage(`${this.product}: signed out.`);
     }
+}
+
+/** Waits `ms`, or less when the wait is cancelled first, so a cancelled sign-in stops at once rather than at its next poll. */
+function pause(ms: number, cancel: vscode.CancellationToken): Promise<void> {
+    return new Promise((resolve) => {
+        const timer = setTimeout(done, ms);
+        const cancelled = cancel.onCancellationRequested(done);
+        function done(): void {
+            clearTimeout(timer);
+            cancelled.dispose();
+            resolve();
+        }
+    });
 }
 
 /** Watches a file by its folder, which outlives it. A folder that is not there yet means nobody has signed in on this

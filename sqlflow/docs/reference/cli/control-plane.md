@@ -58,13 +58,23 @@ sqlflow login --username tahir                                       # a local a
 sqlflow login --with-token                                           # paste an existing sqlf_ personal access token
 sqlflow login --username ci-bot --no-store                           # print the minted secret once (CI bootstrap)
 sqlflow logout                                                       # revoke the stored token and remove it
+sqlflow use https://sqlflow.example.com                              # the control plane a command reaches when nothing names one
+sqlflow use                                                          # which one a command reaches now, and why
 sqlflow whoami                                                       # subject, role, scopes, credential source
 ```
 
 `sqlflow login` opens the browser on the control plane's approval, which goes on to the GUI, so a person signs in as they do
 there, Microsoft Entra single sign-on included, and approves the code. It keeps the credential in `~/.sqlflow/credentials.json`,
 per control plane, which the MCP server reads and writes too: signing in to either signs in the other, a session is renewed by
-whichever client is running, and while the file holds one control plane a verb needs no `--url`.
+whichever client is running.
+
+A command reaches the control plane `--url` names, else `SQLFLOW_URL` (the shell's, or the one a repository's git-ignored
+`.sqlflow/env` sets), else the **current control plane**, else the only one the credential file holds. The current one is
+the control plane last signed in to, by this command line or by the MCP server (an editor signing in, or switching to
+another), or the one `sqlflow use` names; it is kept in `current-control-plane.json` beside the credential file, and
+signing out of it forgets it. A person signed in to several control planes reaches the current one from any shell or script
+with no `--url`, the way `kubectl config use-context` and `az account set` work, and a repository that names its own control
+plane keeps it.
 
 Password and device sign-ins mint a personal access token (`--token-name`, `--expires-days` default 90,
 `--no-expiry`, `--scopes "read operate"` to narrow) and store that, never the password and never the

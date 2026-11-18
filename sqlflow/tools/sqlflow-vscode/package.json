@@ -97,6 +97,11 @@
         "category": "SQLFlow"
       },
       {
+        "command": "sqlflow.cancelSignIn",
+        "title": "Cancel the Sign-In",
+        "category": "SQLFlow"
+      },
+      {
         "command": "sqlflow.signOut",
         "title": "Sign Out",
         "category": "SQLFlow"
@@ -265,12 +270,16 @@
         {
           "command": "sqlflow.showStatus",
           "when": "false"
+        },
+        {
+          "command": "sqlflow.cancelSignIn",
+          "when": "sqlflow.signingIn"
         }
       ],
       "view/title": [
         {
           "command": "sqlflow.openHome",
-          "when": "view == sqlflow.sideBar",
+          "when": "view == sqlflow.sideBar && sqlflow.signedIn",
           "group": "navigation@1"
         }
       ],

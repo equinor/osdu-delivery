@@ -40,6 +40,7 @@ export interface LinkHooks {
 const ACTION_COMMANDS: Readonly<Record<HostAction, string>> = {
     signIn: 'sqlflow.signIn',
     signInWithToken: 'sqlflow.signInWithToken',
+    cancelSignIn: 'sqlflow.cancelSignIn',
     signOut: 'sqlflow.signOut',
     setControlPlane: 'sqlflow.setControlPlaneUrl',
     refreshEstate: 'sqlflow.refreshCatalog',

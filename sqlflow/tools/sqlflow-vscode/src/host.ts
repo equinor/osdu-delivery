@@ -248,6 +248,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     register('sqlflow.signInWithToken', async () => {
         await signIn.signInWithToken();
     });
+    register('sqlflow.cancelSignIn', () => signIn.cancel());
     command('sqlflow.signOut', () => signIn.signOut());
 
     register('sqlflow.setControlPlaneUrl', async () => {

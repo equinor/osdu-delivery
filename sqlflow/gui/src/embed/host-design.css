@@ -64,6 +64,12 @@
   --tab-active: var(--vscode-tab-activeBackground, var(--host-ground));
   --editor: var(--host-ground);
 
+  /* The editor's own button, for the one action a surface of the editor's leads with (the side bar's sign-in), so it
+     reads as the editor's own welcome views do. A page's buttons stay the primary above. */
+  --host-button: var(--vscode-button-background, var(--primary));
+  --host-button-foreground: var(--vscode-button-foreground, var(--primary-foreground));
+  --host-button-hover: var(--vscode-button-hoverBackground, var(--host-button));
+
   --sidebar: var(--side-bar);
   --sidebar-foreground: var(--side-bar-foreground);
   --sidebar-primary: var(--primary);

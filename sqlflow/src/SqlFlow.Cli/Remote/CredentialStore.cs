@@ -11,6 +11,9 @@ namespace SqlFlow.Cli.Remote;
 internal sealed record StoredCredential(
     string Token, Guid? TokenId, string? Username, DateTime CreatedUtc, DateTime? ExpiresUtc, bool Renews = false, string? Scope = null);
 
+/// <summary>The current control plane, as <c>current-control-plane.json</c> holds it: <c>{"url": "https://host"}</c>.</summary>
+internal sealed record CurrentControlPlane(string Url);
+
 /// <summary>
 /// The credential file: <c>~/.sqlflow/credentials.json</c>, a map from normalized control-plane URL to the credential a
 /// person signed in with. It is shared: the MCP server reads and writes it too, so signing in with the CLI, an editor or
@@ -73,6 +76,74 @@ internal static class CredentialStore
         return credentials.Count == 1 && Uri.TryCreate(credentials.Keys.First(), UriKind.Absolute, out var url) ? url : null;
     }
 
+    /// <summary>The file naming the current control plane: <c>current-control-plane.json</c> beside the credential file, so
+    /// <c>SQLFLOW_CREDENTIALS_FILE</c> moves both. The MCP server reads and writes it too
+    /// (<c>tools/sqlflow-mcp/tests/shared-current-control-plane.json</c> holds both to one format).</summary>
+    internal static string CurrentFilePath => Path.Combine(Path.GetDirectoryName(FilePath)!, "current-control-plane.json");
+
+    /// <summary>The current control plane: the one last signed in to or named with <c>sqlflow use</c>, by this command line
+    /// or by the MCP server (an editor signing in, or naming another). Null when none is named.</summary>
+    public static Uri? CurrentUrl()
+    {
+        var path = CurrentFilePath;
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new SqlFlowException($"Could not read {path}: {ex.Message}");
+        }
+
+        CurrentControlPlane? current;
+        try
+        {
+            current = string.IsNullOrWhiteSpace(text) ? null : JsonSerializer.Deserialize<CurrentControlPlane>(text, FileJson);
+        }
+        catch (JsonException ex)
+        {
+            throw new SqlFlowException(
+                $"{path} is not valid JSON ({ex.Message}); name the control plane again with 'sqlflow use <https://host>', or delete the file.");
+        }
+
+        return current?.Url is { Length: > 0 } named
+               && Uri.TryCreate(named.Trim(), UriKind.Absolute, out var url)
+               && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)
+            ? url
+            : null;
+    }
+
+    /// <summary>Names <paramref name="url"/> the current control plane, for this command line and the MCP server alike.</summary>
+    public static void SetCurrent(Uri url)
+        => WriteFile(CurrentFilePath, JsonSerializer.Serialize(new CurrentControlPlane(url.GetLeftPart(UriPartial.Path).TrimEnd('/')), FileJson));
+
+    /// <summary>Forgets the current control plane when it is <paramref name="url"/>, so after signing out of it a command
+    /// reaches the only control plane still signed in to. True when it was the current one.</summary>
+    public static bool ClearCurrent(Uri url)
+    {
+        if (CurrentUrl() is not { } current || Normalize(current) != Normalize(url))
+        {
+            return false;
+        }
+
+        try
+        {
+            File.Delete(CurrentFilePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new SqlFlowException($"Could not remove {CurrentFilePath}: {ex.Message}");
+        }
+
+        return true;
+    }
+
     /// <summary>The stable per-URL key: scheme and host case-insensitive, default ports elided by
     /// <see cref="Uri"/> itself, trailing slash trimmed, so <c>https://Host/</c> and <c>https://host</c> are
     /// one entry.</summary>
@@ -117,8 +188,10 @@ internal static class CredentialStore
     }
 
     private static void WriteAll(Dictionary<string, StoredCredential> credentials)
+        => WriteFile(FilePath, JsonSerializer.Serialize(credentials, FileJson));
+
+    private static void WriteFile(string path, string text)
     {
-        var path = FilePath;
         // Written beside it and moved over it: another client reads this file at any moment, and must never meet half of it.
         var staged = path + ".new";
         try
@@ -135,18 +208,18 @@ internal static class CredentialStore
                     UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
                 });
                 using var writer = new StreamWriter(stream);
-                writer.Write(JsonSerializer.Serialize(credentials, FileJson));
+                writer.Write(text);
             }
             else
             {
-                File.WriteAllText(staged, JsonSerializer.Serialize(credentials, FileJson));
+                File.WriteAllText(staged, text);
             }
 
             File.Move(staged, path, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new SqlFlowException($"Could not write the credential file {path}: {ex.Message}");
+            throw new SqlFlowException($"Could not write {path}: {ex.Message}");
         }
     }
 }

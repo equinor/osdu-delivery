@@ -19,6 +19,7 @@
     "src/auth/entraSignIn.ts",
     "src/embed/hostTransport.ts",
     "src/embed/protocol.ts",
+    "src/embed/controlPlaneAddress.ts",
     "src/auth/loginStreamLanes.ts",
     "src/modules/branding.ts",
     "src/modules/homePrompts.ts",

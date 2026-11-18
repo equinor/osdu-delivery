@@ -3,6 +3,23 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
+## [Unreleased]
+
+### Signing in
+
+- Before you sign in, the side bar is the way in: the product and what it is for, the control plane you sign in to with
+  whether it answers, and **Sign in**. While your browser is open it shows the code to approve, with **Open the page
+  again** and **Cancel** (**Cancel the Sign-In**), and it turns into the menu once you approve.
+- The browser's page that approves the code carries the product's brand, as its login page does, with the account the
+  editor will act as and what it may do.
+- The side bar's search, account and home buttons appear once you are signed in, when they have something to open.
+
+### The command line
+
+- Signing in, or switching the control plane in your settings, makes it the command line's current control plane, so
+  `sqlflow` reaches it from any shell or script with no `--url`, however many control planes you are signed in to.
+  `sqlflow use <url>` switches it, and `sqlflow use` alone says which one a command reaches and why.
+
 ## [1.0.2]
 
 ### Your other tools

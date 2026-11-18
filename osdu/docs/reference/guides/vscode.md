@@ -98,10 +98,17 @@ panel of the editor's own.
 
 ## Signing in
 
-**OSDU Delivery: Sign In with the Browser** (or the status bar) opens your browser on the control plane. The control
-plane passes you to the GUI's approval page, where you sign in the way you always do, **Microsoft single sign-on**
-included, compare the code with the one the editor shows (it is on your clipboard), and approve. The editor is signed in
-a moment later.
+Until you sign in, the side bar is the way in: the product, the control plane you sign in to with whether it answers
+(**Change** names another), and **Sign in**. A control plane that does not answer says so there, before your browser opens
+on nothing.
+
+**Sign in** (or **OSDU Delivery: Sign In with the Browser**, or the status bar) opens your browser on the control plane.
+The control plane passes you to the GUI's approval page, which stands on the login page's brand field: you sign in the way
+you always do, **Microsoft single sign-on** included, see the account the client will act as and what it may do, compare
+the code with the one the side bar shows (it is on your clipboard too), and approve. Meanwhile the side bar shows that
+code, with **Open the page again** for a page you closed and **Cancel** (**OSDU Delivery: Cancel the Sign-In**); signing
+in again while one waits opens the same page rather than a second code. The editor is signed in a moment after you
+approve, and the side bar turns into the menu by itself.
 
 - It needs no app registration of its own: it is the GUI's sign-in, so the GUI's origin stays the one redirect URI
   Microsoft Entra needs ([deployment](deployment.md)).
@@ -144,8 +151,8 @@ for files nobody has open.
 
 ## The side bar and the pages
 
-The extension's side bar is the GUI's own navigation. Its header holds the search, which opens the search page; a
-**Sync** button; and who is signed in, and to which control plane. Under it is the GUI's menu, and every entry opens its
+The extension's side bar is the GUI's own navigation once you are signed in. Its header holds the search, which opens
+the search page; a **Sync** button; and who is signed in, and to which control plane. Under it is the GUI's menu, and every entry opens its
 page in a tab of the editor. The files of the folder you have open are in the editor's own Explorer, and a flow is run from
 its page or from the lens at the top of its file.
 
@@ -238,7 +245,8 @@ sqlflow trigger --repo welldb --flow welldb-well-03-delivery --follow
 ```
 
 `sqlflow login --device` prints the link instead of opening a browser, for a machine with none. Outside the editor a script
-needs no `--url` either while the credential file holds one control plane.
+needs no `--url` either: it reaches your current control plane, the one you last signed in to here or named with
+`sqlflow use` ([which control plane a command reaches](../../../../sqlflow/docs/reference/cli/control-plane.md#signing-in)).
 
 The MCP server's rules hold for the assistant here too: a verb that writes runs only when you asked for it. `preview` and
 `values` print row values, which then reach the assistant and its model provider, so it runs them only when you ask.
@@ -258,9 +266,10 @@ of your own and a script have them too, signed in as you:
   line there, never into the extension's folder, whose name changes with every version. An assistant whose shell is
   sandboxed needs read and execute on `~/.sqlflow/bin`, and read and write on `~/.sqlflow/credentials.json`, the sign-in
   it shares; `get_environment` names both.
-- **No control plane in your environment.** `SQLFLOW_URL` is set in the editor's own terminals only: set for your whole
-  account it would outrank every repository's `.sqlflow/env`. Elsewhere the command line reaches the one control plane
-  your sign-in holds, or the one `--url` names.
+- **Your control plane, with no environment variable.** Signing in here, or switching the control plane in your settings,
+  makes it your current control plane, which every shell and script reaches with no `--url`; `sqlflow use` switches it, and
+  `sqlflow use` alone says which one a command reaches and why. `SQLFLOW_URL` is set in the editor's own terminals only:
+  set for your whole account it would outrank every repository's `.sqlflow/env`.
 
 The extension says what it changed, with **Undo**. It does it again when the control plane in your settings changes, and
 an update refreshes `~/.sqlflow/bin` in place. A program already running, VS Code included, has the new PATH once it is

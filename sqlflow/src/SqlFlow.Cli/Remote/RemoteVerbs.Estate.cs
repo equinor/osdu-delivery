@@ -39,6 +39,7 @@ internal static partial class RemoteVerbs
             Console.WriteLine($"  scopes:     {string.Join(' ', identity.Scopes)}");
             Console.WriteLine($"  account:    {(identity.UserId is { } id ? id.ToString() : "(no catalog user)")}");
             Console.WriteLine($"  credential: {DescribeTokenSource(args, url)}");
+            Console.WriteLine($"  reached as: {DescribeUrlSource(args)}");
             return 0;
         }).ConfigureAwait(false);
     }

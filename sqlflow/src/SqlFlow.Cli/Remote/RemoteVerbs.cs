@@ -133,8 +133,10 @@ internal static partial class RemoteVerbs
 
             CredentialStore.Save(url, new StoredCredential(
                 created.Secret, created.Token.Id, subject, DateTime.UtcNow, created.Token.ExpiresUtc));
+            CredentialStore.SetCurrent(url);
             Console.WriteLine(
                 $"     token '{created.Token.Name}' ({string.Join(' ', created.Token.Scopes)}; {DescribeExpiry(created.Token.ExpiresUtc)}) stored in {CredentialStore.FilePath}.");
+            Console.WriteLine($"     {url} is the current control plane.");
             return 0;
         }).ConfigureAwait(false);
     }
@@ -175,8 +177,55 @@ internal static partial class RemoteVerbs
 
         CredentialStore.Remove(url);
         Console.WriteLine($"OK   credential for {url} removed from {CredentialStore.FilePath}.");
+        if (CredentialStore.ClearCurrent(url))
+        {
+            Console.WriteLine($"     {url} is no longer the current control plane.");
+        }
+
         return 0;
     }
+
+    /// <summary>
+    /// 'sqlflow use [&lt;url&gt;]': names the control plane a command reaches when neither <c>--url</c> nor <c>SQLFLOW_URL</c>
+    /// names one, for every shell and script of this person (<c>login</c> names the one it signs in to, and an editor the
+    /// one a person signs in to there). With no URL it says which control plane a command reaches now, and why.
+    /// </summary>
+    public static int Use(string[] positional, string[] args)
+    {
+        if (positional.Length < 2)
+        {
+            Console.WriteLine($"{RequireUrl(args).GetLeftPart(UriPartial.Path).TrimEnd('/')} ({DescribeUrlSource(args)})");
+            return 0;
+        }
+
+        var raw = positional[1].Trim();
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var url) || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new SqlFlowException($"the control plane URL '{raw}' is not an absolute http(s) URL (e.g. https://sqlflow.example.com).");
+        }
+
+        CredentialStore.SetCurrent(url);
+        var named = url.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        Console.WriteLine($"OK   {named} is the current control plane.");
+        if (CredentialStore.Load(url) is null)
+        {
+            Console.Error.WriteLine($"NOTE  not signed in to it yet: run 'sqlflow login --url {named}'.");
+        }
+
+        if (Environment.GetEnvironmentVariable("SQLFLOW_URL") is { Length: > 0 } shell)
+        {
+            Console.Error.WriteLine($"NOTE  SQLFLOW_URL ({shell}) names the control plane here, ahead of the current one: from the environment or a .sqlflow/env.");
+        }
+
+        return 0;
+    }
+
+    /// <summary>Why a command reaches the control plane it does, as <c>whoami</c> and <c>use</c> say it.</summary>
+    internal static string DescribeUrlSource(string[] args)
+        => Program.GetOption(args, "--url") is not null ? "named by --url"
+            : !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SQLFLOW_URL")) ? "named by SQLFLOW_URL, from the environment or a .sqlflow/env"
+            : CredentialStore.CurrentUrl() is not null ? $"the current control plane, in {CredentialStore.CurrentFilePath}"
+            : "the only control plane signed in to";
 
     // ---- trigger ------------------------------------------------------------------------------------------
 
@@ -764,7 +813,8 @@ internal static partial class RemoteVerbs
         }
 
         CredentialStore.Save(url, new StoredCredential(token, self?.Id, null, DateTime.UtcNow, self?.ExpiresUtc));
-        Console.WriteLine($"OK   token{(self is null ? string.Empty : $" '{self.Name}'")} stored for {url} in {CredentialStore.FilePath}.");
+        CredentialStore.SetCurrent(url);
+        Console.WriteLine($"OK   token{(self is null ? string.Empty : $" '{self.Name}'")} stored for {url} in {CredentialStore.FilePath}; it is the current control plane.");
         if (self is null)
         {
             Console.Error.WriteLine("NOTE  the token is valid but is not one of this account's own tokens (a bootstrap credential?); logout will only remove it locally.");
@@ -854,16 +904,18 @@ internal static partial class RemoteVerbs
 
     // ---- shared plumbing ----------------------------------------------------------------------------------
 
-    /// <summary>The control-plane URL from <c>--url</c> or <c>SQLFLOW_URL</c>, else the one the credential file holds when
-    /// it holds one; absolute http(s) only, so a mistyped host fails here with guidance instead of as a DNS error three
-    /// calls later.</summary>
+    /// <summary>The control-plane URL from <c>--url</c> or <c>SQLFLOW_URL</c>, else the current control plane (<c>sqlflow
+    /// use</c>, which a sign-in sets), else the one the credential file holds when it holds one; absolute http(s) only, so a
+    /// mistyped host fails here with guidance instead of as a DNS error three calls later. A repository's
+    /// <c>.sqlflow/env</c> sets <c>SQLFLOW_URL</c>, so it keeps ahead of the current control plane.</summary>
     internal static Uri RequireUrl(string[] args)
     {
         var raw = Program.GetOption(args, "--url") ?? Environment.GetEnvironmentVariable("SQLFLOW_URL");
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return CredentialStore.OnlyUrl() ?? throw new SqlFlowException(
-                "no control plane is configured: pass --url <https://host> or set SQLFLOW_URL (e.g. in the git-ignored .sqlflow/env file).");
+            return CredentialStore.CurrentUrl() ?? CredentialStore.OnlyUrl() ?? throw new SqlFlowException(
+                "no control plane is configured: name one with 'sqlflow use <https://host>' (signing in names it too), "
+                + "pass --url <https://host>, or set SQLFLOW_URL (e.g. in the git-ignored .sqlflow/env file).");
         }
 
         if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var url) || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))

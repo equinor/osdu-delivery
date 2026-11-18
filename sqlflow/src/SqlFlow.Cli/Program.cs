@@ -69,7 +69,7 @@ internal static class Program
         // A module verb reads its own positionals and reports its own usage.
         var moduleVerb = modules.Find(command);
         var needsFile = moduleVerb is null && command is not ("healthcheck" or "auth" or "db" or "worker" or "runs" or "user" or "detect-unique-key"
-            or "health" or "login" or "logout" or "trigger" or "groups"
+            or "health" or "login" or "logout" or "use" or "trigger" or "groups"
             or "whoami" or "doctor" or "summary" or "nodes" or "schedules" or "repos" or "pipelines"
             or "datasources" or "search" or "completions" or "powerbi" or "ai-context");
         // The usage asked for (--help, -h, help) is an answer and exits 0; shown because a command is missing what it needs,
@@ -577,6 +577,9 @@ internal static class Program
 
                 case "logout":
                     return await RemoteVerbs.LogoutAsync(args).ConfigureAwait(false);
+
+                case "use":
+                    return RemoteVerbs.Use(positional, args);
 
                 case "trigger":
                     return await RemoteVerbs.TriggerAsync(args).ConfigureAwait(false);
@@ -2573,7 +2576,8 @@ internal static class Program
             """
 
             Control plane (remote): the same API the GUI uses, so anything verified in the browser can be
-            verified from a terminal or a test script. The target resolves from --url or SQLFLOW_URL; the
+            verified from a terminal or a test script. The target resolves from --url, SQLFLOW_URL, the current
+            control plane ('use', which 'login' sets), then the only control plane signed in to; the
             credential from --token, then SQLFLOW_TOKEN (both suppliable via the git-ignored .sqlflow/env),
             then the per-URL store 'login' writes (~/.sqlflow/credentials.json, relocatable with
             SQLFLOW_CREDENTIALS_FILE). Human output on stdout, notes on stderr; --json switches
@@ -2589,6 +2593,9 @@ internal static class Program
                                                  the browser device grant (for SSO/Entra accounts); --with-token stores
                                                  a pasted PAT. --no-store prints the minted secret once instead (CI).
               sqlflow logout                     Revoke the stored token server-side and remove it locally.
+              sqlflow use      [<url>]           Name the control plane a command reaches when --url and SQLFLOW_URL name
+                                                 none, for every shell and script ('login' names the one it signs in to);
+                                                 with no URL, say which one a command reaches now and why.
               sqlflow trigger  --repo <name|id> --flow <f> [--scope flow|node]
                                [--pool <p>] [--commit <sha>] [--full] [--from <date>] [--to <date>]
                                [--file-pattern <glob>] [--source-filter <predicate>] [--assertions-only]
