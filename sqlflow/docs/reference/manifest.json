@@ -853,13 +853,16 @@
         "concept-maintenance",
         "concept-external-triggers",
         "concept-repository-auto-sync",
-        "concept-reports"
+        "concept-reports",
+        "concept-environments"
       ],
       "sourceRefs": [
         "src/SqlFlow.ControlPlane/Background/RunReferences.cs",
         "src/SqlFlow.ControlPlane/Background/BootstrapSteps.cs",
         "src/SqlFlow.ControlPlane/Background/BootstrapProvisioningService.cs",
         "src/SqlFlow.ControlPlane/Api/BootstrapEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/EnvironmentEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Configuration/EnvironmentsOptions.cs",
         "src/SqlFlow.ControlPlane/Program.cs",
         "src/SqlFlow.ControlPlane/Configuration/ControlPlaneOptions.cs",
         "src/SqlFlow.ControlPlane/Infrastructure/CatalogConnectionProvider.cs",
@@ -1074,6 +1077,43 @@
         "deploy/docker/worker-entrypoint.sh",
         "deploy/compose/docker-compose.yml",
         "src/SqlFlow.SourceControl/GitHub/GitHubAppEnvironment.cs"
+      ]
+    },
+    {
+      "id": "concept-environments",
+      "corpus": "reference",
+      "path": "concepts/environments.md",
+      "title": "Environments: the estate's separate deployments, named and opened from the title bar",
+      "type": "concept",
+      "summary": "How a deployment names its environment and lists the estate's others (ControlPlane:Environments), and the title bar menu that opens them.",
+      "keywords": [
+        "environments",
+        "environment switcher",
+        "switch environment",
+        "dev test prod",
+        "several environments",
+        "separate deployments",
+        "instance",
+        "ControlPlane:Environments",
+        "ControlPlane:Environments:Current",
+        "ControlPlane:Environments:Links",
+        "ControlPlane__Environments__Links__0__Url",
+        "GET /environments",
+        "title bar"
+      ],
+      "related": [
+        "concept-control-plane",
+        "concept-repository-auto-sync",
+        "guide-deployment"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.ControlPlane/Configuration/EnvironmentsOptions.cs",
+        "src/SqlFlow.ControlPlane/Configuration/ControlPlaneOptions.cs",
+        "src/SqlFlow.ControlPlane/Api/EnvironmentEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Hosting/ControlPlaneHost.cs",
+        "gui/src/layout/workbench/EnvironmentSwitcher.tsx",
+        "gui/src/layout/workbench/environmentMenu.ts",
+        "gui/src/layout/workbench/TitleBar.tsx"
       ]
     },
     {

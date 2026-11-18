@@ -26,6 +26,9 @@ namespace SqlFlow.Delivery.Ledger;
 /// <item>a moment (ISO 8601, a cache version's label, a time of day) becomes <c>&lt;time&gt;</c>;</item>
 /// <item>a UUID (a delivery key, a correlation id) becomes <c>&lt;id&gt;</c>, and an OSDU record id <c>&lt;osdu id&gt;</c>;</item>
 /// <item>a run of sixteen or more hexadecimal characters (a hash) becomes <c>&lt;hash&gt;</c>;</item>
+/// <item>a property name in brackets and single quotes right after a step of a path (<c>tags['dra.securityClassification']</c>,
+/// osdu/docs/reference/flow/mapping-property-names.md) is kept as it is: it names the property the mapping fills, not a value
+/// the record read, so two properties are two problems and the pattern says which;</item>
 /// <item>a value in single, back or typographic quotes becomes <c>'&lt;value&gt;'</c> in its own quotes, and an escaped double
 /// quoted value inside a quoted answer <c>\"&lt;value&gt;\"</c>; a double quoted string is kept, because that is how a service's
 /// answer spells its reason and its message;</item>
@@ -250,7 +253,7 @@ public static partial class ProblemSignature
             return "<id>";
         }
 
-        if (groups["kind"].Success)
+        if (groups["kind"].Success || groups["name"].Success)
         {
             return match.Value;
         }
@@ -351,6 +354,7 @@ public static partial class ProblemSignature
         |(?<uuid>\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b|\b[0-9A-Fa-f]{32}\b)
         |(?<osdu>\b[A-Za-z0-9_.-]+:[A-Za-z0-9_.]+(?:-[A-Za-z0-9_.]+)*--[A-Za-z0-9_.]+:[^\s'"`,;()\[\]{}<>]*)
         |(?<hash>\b(?=[0-9]*[A-Fa-f])[0-9A-Fa-f]{16,}\b)
+        |(?<name>(?<=[\p{L}\p{N}_\]]\[)'[^'\r\n]{1,1000}'(?=\]))
         |(?<single>(?<![\p{L}\p{N}])'[^'\r\n]{1,1000}'(?![\p{L}\p{N}]))
         |(?<back>`[^`\r\n]{1,1000}`)
         |(?<curly>“[^”\r\n]{1,1000}”)

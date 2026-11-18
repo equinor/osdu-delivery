@@ -22,7 +22,10 @@ keywords:
   - per-partition ledger
   - per-partition cache
   - per-partition configuration
+  - partitions or environments
+  - separate deployments
 related:
+  - concept-environments
   - delivery-cli-partition
   - delivery-cli-config
   - delivery-flow-delivery
@@ -85,6 +88,18 @@ for `test`, sends `data-partition-id: test`, mints ids that start with `test:`, 
 own, and resolves the `test` values of the central configuration first. A deployment names its partitions, and the values
 their runs resolve, in the control plane's configuration ([configured partitions](#configured-partitions)). This page
 explains how a flow says which partitions it works in, how a run picks one, and what each partition keeps apart.
+
+## Partitions or environments
+
+A partition keeps a run's data apart: its header, its ids, its cache, its ledger and its configuration values. It does
+not keep apart what the deployment shares: who may sign in and act (the scopes cover every partition), the commit of the
+flows and mappings the deployment synced, the source data and the flows that land it, the nodes that run every
+partition's work, and the notifications. A read across flows that names no partition, from the API or an assistant's
+tool, reads every partition, and a run that names none runs in the default. So an estate that keeps its production
+apart from development and testing runs dev, test and prod as deployments of their own, each with the partitions it
+delivers to, and the title bar's **Environment** menu moves a person between them
+([Environments](../../../../sqlflow/docs/reference/concepts/environments.md); the reasons are in
+[decision 0061](../../wiki/decisions/0061-environments-are-deployments.md)).
 
 ## Three ways a flow names its partitions
 

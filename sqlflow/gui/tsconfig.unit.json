@@ -42,6 +42,7 @@
     "src/features/lineage/graphUrl.ts",
     "src/features/maintenance/storageText.ts",
     "src/features/nodes/scalingMode.ts",
+    "src/layout/workbench/environmentMenu.ts",
     "src/features/pipelines/folderTree.ts",
     "src/features/pipelines/pipelineTabs.ts",
     "src/features/pipelines/scheduleWaves.ts",

@@ -87,6 +87,19 @@ spec:
                 secretKeyRef: { name: osdu-delivery-secrets, key: entra-client-id, optional: true }
             - name: ControlPlane__AzureAd__DefaultRole
               value: viewer
+            # When this deployment is one environment of several (dev, test, prod), the GUI's title bar names it and
+            # opens the others: name this one and list every one with the address of its GUI, the same list in each
+            # environment (sqlflow/docs/reference/concepts/environments.md).
+            # - name: ControlPlane__Environments__Current
+            #   value: test
+            # - name: ControlPlane__Environments__Links__0__Name
+            #   value: dev
+            # - name: ControlPlane__Environments__Links__0__Url
+            #   value: https://delivery-dev.example.com
+            # - name: ControlPlane__Environments__Links__1__Name
+            #   value: test
+            # - name: ControlPlane__Environments__Links__1__Url
+            #   value: https://delivery-test.example.com
             # The private ranges (CIDR, comma separated) a flow's reads may reach, as on the worker pods.
             - name: SQLFLOW_DELIVERY_PRIVATE_NETWORKS
               value: ""

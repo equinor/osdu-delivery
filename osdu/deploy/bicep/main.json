@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "12107920774494681101"
+      "templateHash": "18265657592105581606"
     }
   },
   "definitions": {
@@ -404,6 +404,59 @@
         "description": "The storage account the flows read their source files from: created here or adopted."
       }
     },
+    "environmentLink": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "metadata": {
+            "description": "Its name, as the title bar shows it: dev, test, prod."
+          }
+        },
+        "url": {
+          "type": "string",
+          "metadata": {
+            "description": "The http or https address of its GUI."
+          }
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "What it is for, in one line."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "metadata": {
+        "description": "One environment of the estate, which the GUI's title bar names and opens."
+      }
+    },
+    "environmentsOptions": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "type": "string",
+          "metadata": {
+            "description": "This deployment's environment: one of the names links lists, when it lists any."
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/environmentLink"
+          },
+          "nullable": true,
+          "metadata": {
+            "description": "Every environment of the estate, this one among them, in the order the title bar's menu shows them."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "metadata": {
+        "description": "The environments of the estate this deployment is one of, which the GUI's title bar names and opens."
+      }
+    },
     "osduPartitionReport": {
       "type": "object",
       "properties": {
@@ -472,6 +525,36 @@
           },
           "metadata": {
             "description": "Whether name names a repository: letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters."
+          }
+        },
+        "isEstateEnvironmentName": {
+          "parameters": [
+            {
+              "type": "string",
+              "name": "name"
+            }
+          ],
+          "output": {
+            "type": "bool",
+            "value": "[and(and(and(greaterOrEquals(length(parameters('name')), 1), lessOrEquals(length(parameters('name')), 64)), contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', take(parameters('name'), 1))), empty(filter(range(0, length(parameters('name'))), lambda('i', not(contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-', substring(parameters('name'), lambdaVariables('i'), 1)))))))]"
+          },
+          "metadata": {
+            "description": "Whether name names an environment of the estate: letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 64 characters."
+          }
+        },
+        "isGuiAddress": {
+          "parameters": [
+            {
+              "type": "string",
+              "name": "url"
+            }
+          ],
+          "output": {
+            "type": "bool",
+            "value": "[and(and(and(and(and(lessOrEquals(length(parameters('url')), 2000), or(and(and(equals(take(parameters('url'), 8), 'https://'), greater(length(parameters('url')), 8)), not(equals(take(skip(parameters('url'), 8), 1), '/'))), and(and(equals(take(parameters('url'), 7), 'http://'), greater(length(parameters('url')), 7)), not(equals(take(skip(parameters('url'), 7), 1), '/'))))), not(contains(parameters('url'), '?'))), not(contains(parameters('url'), '#'))), not(contains(parameters('url'), '@'))), not(contains(parameters('url'), ' ')))]"
+          },
+          "metadata": {
+            "description": "Whether url is the http or https address of a GUI: a host after the scheme, at most 2000 characters, and no user, password, query, fragment or space."
           }
         },
         "isContainerName": {
@@ -861,6 +944,13 @@
         "description": "The external triggers the control plane trusts, by name (ControlPlane:Bootstrap:ExternalTriggers, sqlflow/docs/reference/concepts/external-triggers.md): each syncs one of repositories and may fire the schedules it names, for a GitHub Actions workflow after a merge ({ repository, schedules, gitHub: { repository: owner/name, workflow, ref, environment, repositoryId } }), which proves who it is with the token GitHub mints for its job so nothing secret is stored, or for a system holding a key ({ repository, schedules, keySecretName: the vault secret a person puts the key in }). The control plane writes them at start and disables one this configuration no longer names; a workflow asks GitHub's token for the audience the controlPlaneBaseUrl output names. Triggers an administrator creates on the External triggers page stay beside them."
       }
     },
+    "environments": {
+      "$ref": "#/definitions/environmentsOptions",
+      "nullable": true,
+      "metadata": {
+        "description": "The environments of the estate this deployment is one of (dev, test and prod, each a deployment of its own), which the GUI's title bar names and opens (ControlPlane:Environments, sqlflow/docs/reference/concepts/environments.md): { current: this deployment's environment, links: [ { name, url: the address of its GUI, description } ] in the order the menu shows them }. Every environment's parameters can carry the same links, differing only in current. Left out, the title bar names no environment."
+      }
+    },
     "landingStorage": {
       "$ref": "#/definitions/landingStorageOptions",
       "nullable": true,
@@ -1089,6 +1179,13 @@
     "externalTriggersOfNoRepository": "[map(filter(items(parameters('externalTriggers')), lambda('t', not(contains(parameters('repositories'), lambdaVariables('t').value.repository)))), lambda('t', lambdaVariables('t').key))]",
     "externalTriggersNotOneOrTheOther": "[map(filter(items(parameters('externalTriggers')), lambda('t', equals(equals(tryGet(lambdaVariables('t').value, 'gitHub'), null()), empty(coalesce(tryGet(lambdaVariables('t').value, 'keySecretName'), ''))))), lambda('t', lambdaVariables('t').key))]",
     "externalTriggersChecked": "[if(not(empty(variables('externalTriggersMisnamed'))), fail(format('An external trigger is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters. Not so: {0}.', join(variables('externalTriggersMisnamed'), ', '))), if(not(empty(variables('externalTriggersOfNoRepository'))), fail(format('An external trigger syncs one of repositories, named by its key. Not so: {0}.', join(variables('externalTriggersOfNoRepository'), ', '))), if(not(empty(variables('externalTriggersNotOneOrTheOther'))), fail(format('An external trigger names exactly one of gitHub (the workflow it trusts) and keySecretName (the vault secret holding its key). Not so: {0}.', join(variables('externalTriggersNotOneOrTheOther'), ', '))), parameters('externalTriggers'))))]",
+    "environmentLinks": "[coalesce(tryGet(parameters('environments'), 'links'), createArray())]",
+    "environmentNames": "[map(variables('environmentLinks'), lambda('l', lambdaVariables('l').name))]",
+    "environmentsMisnamed": "[filter(concat(if(equals(parameters('environments'), null()), createArray(), createArray(parameters('environments').current)), variables('environmentNames')), lambda('name', not(__bicep.isEstateEnvironmentName(lambdaVariables('name')))))]",
+    "environmentsListedTwice": "[map(filter(range(0, length(variables('environmentNames'))), lambda('i', contains(map(take(variables('environmentNames'), lambdaVariables('i')), lambda('n', toLower(lambdaVariables('n')))), toLower(variables('environmentNames')[lambdaVariables('i')])))), lambda('i', variables('environmentNames')[lambdaVariables('i')]))]",
+    "environmentsUnreachable": "[map(filter(variables('environmentLinks'), lambda('l', not(__bicep.isGuiAddress(lambdaVariables('l').url)))), lambda('l', lambdaVariables('l').name))]",
+    "environmentsOverDescribed": "[map(filter(variables('environmentLinks'), lambda('l', or(or(greater(length(coalesce(tryGet(lambdaVariables('l'), 'description'), '')), 400), contains(coalesce(tryGet(lambdaVariables('l'), 'description'), ''), '\n')), contains(coalesce(tryGet(lambdaVariables('l'), 'description'), ''), '\r')))), lambda('l', lambdaVariables('l').name))]",
+    "environmentsChecked": "[if(equals(parameters('environments'), null()), null(), if(not(empty(variables('environmentsMisnamed'))), fail(format('An environment is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 64 characters. Not so: {0}.', join(variables('environmentsMisnamed'), ', '))), if(greater(length(variables('environmentLinks')), 20), fail('environments.links lists at most 20 environments.'), if(not(empty(variables('environmentsListedTwice'))), fail(format('environments.links lists each environment once, ignoring case. Listed again: {0}.', join(variables('environmentsListedTwice'), ', '))), if(and(not(empty(variables('environmentLinks'))), not(contains(map(variables('environmentNames'), lambda('n', toLower(lambdaVariables('n')))), toLower(parameters('environments').current)))), fail(format('environments.current names this deployment''s environment, one of those environments.links lists ({0}).', join(variables('environmentNames'), ', '))), if(not(empty(variables('environmentsUnreachable'))), fail(format('An environment''s url is the http or https address of its GUI, at most 2000 characters, with no user name, password, query or fragment. Not so: {0}.', join(variables('environmentsUnreachable'), ', '))), if(not(empty(variables('environmentsOverDescribed'))), fail(format('An environment''s description is one line of at most 400 characters. Not so: {0}.', join(variables('environmentsOverDescribed'), ', '))), parameters('environments'))))))))]",
     "landingStorageChecked": "[if(equals(parameters('landingStorage'), null()), null(), if(not(__bicep.isContainerName(coalesce(tryGet(parameters('landingStorage'), 'container'), 'landing'))), fail('landingStorage.container is a container name: 3 to 63 lowercase letters, digits and hyphens.'), if(not(__bicep.isEnvironmentName(coalesce(tryGet(parameters('landingStorage'), 'referenceName'), 'LANDING_URL'))), fail('landingStorage.referenceName is named as a flow spells it in ${env:NAME}: a letter or underscore, then letters, digits and underscores, at most 64 characters.'), if(and(not(empty(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''))), if(equals(length(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/')), 9), not(__bicep.isStorageAccountPath(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/'))), true())), fail('landingStorage.existingAccountId is a storage account''s resource id: /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.Storage/storageAccounts/<name>.'), parameters('landingStorage')))))]",
     "sqlAdminLoginChecked": "[if(and(equals(parameters('sqlAuthentication'), 'password'), empty(parameters('sqlAdminPassword'))), fail('sqlAdminPassword is required with sqlAuthentication password; set it, or use the default Entra authentication, where each app signs in as its own managed identity.'), parameters('sqlAdminLogin'))]",
     "catalogConnectionSecretName": "osdu-delivery-catalog-db",
@@ -1154,6 +1251,7 @@
     "githubAppReference": "[if(equals(variables('githubAppChecked'), null()), '', format('${{githubapp:app={0};key=keyvault:{1}/{2}{3}}}', coalesce(tryGet(variables('githubAppChecked'), 'appId'), ''), parameters('keyVaultName'), coalesce(tryGet(variables('githubAppChecked'), 'privateKeySecretName'), ''), if(empty(variables('githubAppApiUrl')), '', format(';api={0}', variables('githubAppApiRoot')))))]",
     "repositoryCredentials": "[toObject(items(variables('repositoriesChecked')), lambda('r', lambdaVariables('r').key), lambda('r', if(not(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), ''))), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), '')), if(and(and(not(empty(variables('githubAppReference'))), coalesce(tryGet(lambdaVariables('r').value, 'useGitHubApp'), true())), or(equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), variables('githubAppWebHost')), equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), format('www.{0}', variables('githubAppWebHost'))))), variables('githubAppReference'), ''))))]",
     "repositorySettings": "[reduce(map(items(variables('repositoriesChecked')), lambda('r', union(createObject(format('ControlPlane__Bootstrap__Repositories__{0}__RemoteUrl', lambdaVariables('r').key), lambdaVariables('r').value.remoteUrl, format('ControlPlane__Bootstrap__Repositories__{0}__Branch', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'branch'), 'main'), format('ControlPlane__Bootstrap__Repositories__{0}__SyncIntervalSeconds', lambdaVariables('r').key), string(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300))), if(equals(tryGet(lambdaVariables('r').value, 'autoSync'), null()), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__AutoSync', lambdaVariables('r').key), if(coalesce(tryGet(lambdaVariables('r').value, 'autoSync'), true()), 'true', 'false'))), if(empty(variables('repositoryCredentials')[lambdaVariables('r').key]), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialReference', lambdaVariables('r').key), variables('repositoryCredentials')[lambdaVariables('r').key])), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialUsername', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__Repositories__{0}__ExcludedFlowPaths__{1}', lambdaVariables('r').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray())[lambdaVariables('i')]))))), createObject(), lambda('settings', 'repository', union(lambdaVariables('settings'), lambdaVariables('repository'))))]",
+    "environmentSettings": "[if(equals(variables('environmentsChecked'), null()), createObject(), reduce(map(range(0, length(variables('environmentLinks'))), lambda('i', union(createObject(format('ControlPlane__Environments__Links__{0}__Name', lambdaVariables('i')), variables('environmentLinks')[lambdaVariables('i')].name, format('ControlPlane__Environments__Links__{0}__Url', lambdaVariables('i')), variables('environmentLinks')[lambdaVariables('i')].url), if(empty(coalesce(tryGet(variables('environmentLinks')[lambdaVariables('i')], 'description'), '')), createObject(), createObject(format('ControlPlane__Environments__Links__{0}__Description', lambdaVariables('i')), coalesce(tryGet(variables('environmentLinks')[lambdaVariables('i')], 'description'), '')))))), createObject('ControlPlane__Environments__Current', variables('environmentsChecked').current), lambda('settings', 'link', union(lambdaVariables('settings'), lambdaVariables('link')))))]",
     "effectiveAzureAdAllowedTenantIds": "[if(parameters('provisionEntraApp'), concat(createArray(subscription().tenantId), parameters('azureAdAdditionalAllowedTenantIds')), parameters('azureAdAllowedTenantIds'))]"
   },
   "resources": {
@@ -1823,7 +1921,7 @@
             "value": "[parameters('privateNetworks')]"
           },
           "settings": {
-            "value": "[union(variables('osduPartitionSettings'), variables('propertySettings'), variables('repositorySettings'), reduce(map(items(variables('externalTriggersChecked')), lambda('t', union(createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__RepoSource', lambdaVariables('t').key), lambdaVariables('t').value.repository, format('ControlPlane__Bootstrap__ExternalTriggers__{0}__AllSchedules', lambdaVariables('t').key), string(coalesce(tryGet(lambdaVariables('t').value, 'allSchedules'), false()))), if(empty(coalesce(tryGet(lambdaVariables('t').value, 'description'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__Description', lambdaVariables('t').key), coalesce(tryGet(lambdaVariables('t').value, 'description'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('t').value, 'schedules'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__ExternalTriggers__{0}__Schedules__{1}', lambdaVariables('t').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('t').value, 'schedules'), createArray())[lambdaVariables('i')])), if(equals(tryGet(lambdaVariables('t').value, 'gitHub'), null()), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__KeyReference', lambdaVariables('t').key), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('t').value, 'keySecretName'), ''))), union(createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Repository', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repository'), ''), format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Ref', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'ref'), format('refs/heads/{0}', coalesce(tryGet(parameters('repositories')[lambdaVariables('t').value.repository], 'branch'), 'main')))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repositoryId'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__RepositoryId', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repositoryId'), ''))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'workflow'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Workflow', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'workflow'), ''))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'environment'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Environment', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'environment'), '')))))))), createObject('ControlPlane__ExternalTriggers__GitHub__Audience', format('https://{0}.{1}', parameters('controlPlaneName'), reference('managedEnvironment').defaultDomain)), lambda('settings', 'trigger', union(lambdaVariables('settings'), lambdaVariables('trigger')))), createObject('ControlPlane__Bootstrap__NodeTokenReference', __bicep.vaultReference(parameters('keyVaultName'), variables('nodeTokenSecretName'))))]"
+            "value": "[union(variables('osduPartitionSettings'), variables('propertySettings'), variables('repositorySettings'), reduce(map(items(variables('externalTriggersChecked')), lambda('t', union(createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__RepoSource', lambdaVariables('t').key), lambdaVariables('t').value.repository, format('ControlPlane__Bootstrap__ExternalTriggers__{0}__AllSchedules', lambdaVariables('t').key), string(coalesce(tryGet(lambdaVariables('t').value, 'allSchedules'), false()))), if(empty(coalesce(tryGet(lambdaVariables('t').value, 'description'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__Description', lambdaVariables('t').key), coalesce(tryGet(lambdaVariables('t').value, 'description'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('t').value, 'schedules'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__ExternalTriggers__{0}__Schedules__{1}', lambdaVariables('t').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('t').value, 'schedules'), createArray())[lambdaVariables('i')])), if(equals(tryGet(lambdaVariables('t').value, 'gitHub'), null()), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__KeyReference', lambdaVariables('t').key), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('t').value, 'keySecretName'), ''))), union(createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Repository', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repository'), ''), format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Ref', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'ref'), format('refs/heads/{0}', coalesce(tryGet(parameters('repositories')[lambdaVariables('t').value.repository], 'branch'), 'main')))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repositoryId'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__RepositoryId', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repositoryId'), ''))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'workflow'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Workflow', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'workflow'), ''))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'environment'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Environment', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'environment'), '')))))))), createObject('ControlPlane__ExternalTriggers__GitHub__Audience', format('https://{0}.{1}', parameters('controlPlaneName'), reference('managedEnvironment').defaultDomain)), lambda('settings', 'trigger', union(lambdaVariables('settings'), lambdaVariables('trigger')))), variables('environmentSettings'), createObject('ControlPlane__Bootstrap__NodeTokenReference', __bicep.vaultReference(parameters('keyVaultName'), variables('nodeTokenSecretName'))))]"
           },
           "tags": {
             "value": "[parameters('tags')]"

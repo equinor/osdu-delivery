@@ -77,7 +77,8 @@ related:
   - delivery-wiki-0036-enrich-in-the-mapping
   - delivery-wiki-0037-request-correlation
   - delivery-wiki-0051-lookups-match-several-fields-on-one-line
-updated: 2026-11-09
+  - delivery-wiki-0061-environments-are-deployments
+updated: 2026-11-18
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -186,6 +187,7 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | A flow that delivered to one partition starts naming partitions | `partitions: [{ name: dev, keepLedger: true }, test]`: `dev` keeps the old ledger, so nothing is sent again | [partitions](../../reference/concepts/partitions.md) |
 | The legal tag or groups differ per partition | Leave them to the kind's defaults (`${env:OSDU_LEGAL_TAG}`, `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}`) and give each partition its values in the control plane's configuration (`Osdu:Partitions:<partition>:Properties:<NAME>`) | [partitions](../../reference/concepts/partitions.md#configured-partitions), [config](../../reference/cli/config.md), [environment variables](../../reference/concepts/environment-variables.md) |
 | Values must come from one place, not every node's environment | `sqlflow config set <NAME> --value ... [--partition ...]`: the control plane supplies them to every delivery, retrieval, cache, assertion, dimension, inventory, removal and download run it queues | [config](../../reference/cli/config.md), [control plane](../../reference/concepts/control-plane.md) |
+| Production kept apart from development and testing (people, agents, untested mappings) | Not partitions of one deployment: dev, test and prod as deployments of their own, each naming itself and listing the others (`ControlPlane:Environments`), switched from the title bar's **Environment** menu | [partitions or environments](../../reference/concepts/partitions.md#partitions-or-environments), [decision 0061](../decisions/0061-environments-are-deployments.md) |
 
 ## Change, redelivery and repair
 

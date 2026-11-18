@@ -247,12 +247,18 @@ Fixed viewport frame, no page scroll; only the editor area and panel scroll inte
 
 - **Title bar** (`h-9`, `bg-title-bar`, drawn in `title-bar-foreground`, 3.3): the design's mark (testid
   `app-bar-mark`, 3.7) + product name left, everything else right: the trace indicator while the trace tray holds a
-  trace (testid `trace-indicator`, below), the controls modules add, the command palette button (testid
-  `command-palette-button`, a `Ctrl K` chip), the theme toggle (testid `theme-toggle`), or the design and mode menu when
-  a module adds designs (testids `appearance-menu-button`, `appearance-menu`, `appearance-design-<id>`,
+  trace (testid `trace-indicator`, below), the environment (below), the controls modules add, the command palette
+  button (testid `command-palette-button`, a `Ctrl K` chip), the theme toggle (testid `theme-toggle`), or the design and
+  mode menu when a module adds designs (testids `appearance-menu-button`, `appearance-menu`, `appearance-design-<id>`,
   `appearance-mode-light`, `appearance-mode-dark`), and the account menu (testids `account-menu-button`,
   `account-subject`, `account-tokens`, `account-notifications`, `account-logout`). Nothing floats in the middle: the bar
   carries chrome only, never a content control. On mobile a hamburger opens the nav sheet.
+- **Environment**: the environment this deployment is, when its configuration names one
+  (`ControlPlane:Environments`, docs/reference/concepts/environments.md), as a chip like a module's (testids
+  `environment-switcher`, `environment-current`): a server icon, "Environment" (dropped on mobile) and the name in mono.
+  With other environments listed it opens a menu of every one in order, the current one checked and each other one a
+  link to its GUI with its description and address (testid `environment-option-<name>`); with none other it names this
+  one without a menu, and with none configured it is absent. It comes after the trace indicator, so it never moves it.
 - **Trace indicator**: the operation traces the trace tray holds (`useTraceTray()`). It comes first on the right, so
   its coming and going moves no other control. While a trace runs, an arc in the one blue turns around a terminal
   icon, lengthening and shortening as it goes, the icon breathes and two rings spread from it; a trace that ends while

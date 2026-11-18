@@ -82,7 +82,9 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
   bar closed and the menu folded the first time the workbench opens ([the menu](menu.md)), each entry of its own pages
   saying what the page is for, which a page's
   [Explain](../../../../sqlflow/docs/reference/guides/chat-assistant.md#explain) gives the assistant;
-- a **Partition** picker in the title bar, which every OSDU page reads in;
+- a **Partition** picker in the title bar, which every OSDU page reads in, beside SQLFlow's **Environment** menu, which
+  names the deployment (dev, test, prod) and opens the others when the deployment lists them
+  ([environments](../../../../sqlflow/docs/reference/concepts/environments.md));
 - tabs and header actions on the pipeline and run pages of the eight kinds it adds (delivery, retrieval, cache, assertion,
   dimension, inventory, removal, download), and their fields in the trigger dialog;
 - **records** and **runs** categories in the workbench's search: a run id, or a correlation id copied from a platform's log,

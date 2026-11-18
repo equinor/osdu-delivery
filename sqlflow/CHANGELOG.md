@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   baseline comparison; queries no longer need it. The chat capability `dataOpsRunQuery` is `runQuery`.
 
 ### Added
+- The title bar names the environment a deployment is and opens the estate's others. An estate that runs dev, test and
+  prod as separate deployments gives each control plane the list (`ControlPlane:Environments:Links`, each a name, the
+  address of its GUI and a description) and the one it is (`ControlPlane:Environments:Current`); the menu opens another
+  environment's GUI, which signs the person in itself. `GET /environments` answers the list. The setting never stops a
+  control plane: a mistake in it is left out of the title bar and logged at start, and the GUI shows nothing for an
+  answer it cannot read ([Environments](docs/reference/concepts/environments.md)).
 - Every run says what started it: a schedule on its own, a schedule after its parents (with the parent fire it followed),
   a person or client, an external trigger, or the command line. The runs board has a Started by column and filter
   (`/runs?startedBy=`), a run's and a group's page say it under the title, a chained run's page lists the chain of fires

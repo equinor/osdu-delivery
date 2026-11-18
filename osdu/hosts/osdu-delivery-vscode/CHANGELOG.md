@@ -3,7 +3,7 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
-## [Unreleased]
+## [1.0.3]
 
 ### Signing in
 

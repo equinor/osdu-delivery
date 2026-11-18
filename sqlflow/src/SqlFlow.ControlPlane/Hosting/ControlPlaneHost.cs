@@ -99,6 +99,11 @@ public static class ControlPlaneHost
             .ValidateOnStart();
         builder.Services.AddSingleton(TimeProvider.System);
 
+        // The environments the title bar names and opens, read once. They only label and link, so a mistake in them is
+        // left out and logged once the host is built, never a reason not to start.
+        var environments = options.Environments.Read();
+        builder.Services.AddSingleton(environments);
+
         // Settings that no longer exist fail loudly rather than being silently ignored: a deployment still carrying the
         // orphan reaper's knobs or the worker's catalog poll interval would otherwise believe it had configured something.
         foreach (var (retired, replacement) in new[]
@@ -514,6 +519,11 @@ public static class ControlPlaneHost
 
         var app = builder.Build();
 
+        foreach (var problem in environments.Problems)
+        {
+            app.Logger.LogWarning("The title bar's environments: {Problem}", problem);
+        }
+
         // ---- Pipeline ------------------------------------------------------------------------------------------------
         // Forwarded headers run FIRST: everything downstream (the rate limiter's per-IP partition, the login throttle,
         // diagnostics) must see the real client address, not the ingress's. Only the configured proxies are trusted, so
@@ -616,6 +626,8 @@ public static class ControlPlaneHost
         v1.MapGroup(string.Empty).RequireAuthorization(ControlPlanePolicies.Read)
             .MapMeEndpoints()
             .MapBootstrapEndpoints()
+            // The estate's environments, which the title bar names and opens: addresses a person signed in may follow.
+            .MapEnvironmentEndpoints()
             .MapNotificationEndpoints()
             .MapMaintenanceReadEndpoints()
             // The GUI chat assistant: per-user conversations, streamed answers, each run under its own delegated token.

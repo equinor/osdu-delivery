@@ -15,14 +15,16 @@ import { useAuth } from "../../auth/AuthContext";
 import { branding } from "../../modules/branding";
 import { moduleTitleBarItems } from "../../modules/registry";
 import { AppearanceControl, TitleBarMark } from "./AppearanceControl";
+import { EnvironmentSwitcher } from "./EnvironmentSwitcher";
 import { SideBarSearch, SideBarSections } from "./SideBar";
 import { TraceIndicator } from "./TraceIndicator";
 import { useMenuNavigate } from "./useMenuNavigate";
 
 /**
  * The workbench title bar (DESIGN.md section 6): brand on the left, command palette, the design and mode control and
- * account menu on the right, with the controls registered modules add just before them, and before those the trace
- * indicator while an operation's trace is held, so its coming and going moves no other control. Global search lives at
+ * account menu on the right, with the controls registered modules add just before them, the environment this deployment
+ * is before those (when the configuration names one), and before that the trace indicator while an operation's trace is
+ * held, so its coming and going moves no other control. Global search lives at
  * the top of the navigation, not here. On mobile, a hamburger opens the navigation sheet, which carries the same search.
  */
 export function TitleBar({ onOpenPalette }: { onOpenPalette: () => void }) {
@@ -73,6 +75,8 @@ export function TitleBar({ onOpenPalette }: { onOpenPalette: () => void }) {
       <div className="flex-1" />
 
       <TraceIndicator />
+
+      <EnvironmentSwitcher />
 
       {moduleTitleBarItems().map((control) => <control.component key={control.id} />)}
 

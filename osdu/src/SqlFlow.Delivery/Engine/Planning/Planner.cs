@@ -631,6 +631,7 @@ public sealed class Planner
         var roles = PayloadParts.Roles(flow);
         var renderer = resolved.Renderer;
         var context = resolved.Context.Canonical();
+        var rules = resolved.Context.RulesHash();
         var gatedSets = header.GatedCacheSets;
         var ordered = flow.Source.LastModified is not null;
         var fileWatermark = (payload is not null || parts is not null) && flow.Change.PayloadDetect == ChangeDetection.LastModified;
@@ -767,13 +768,18 @@ public sealed class Planner
             // A record held, failed, deleted or reverted earlier stays where it is until an operator releases it or the source
             // moves past the version it was left at (osdu/docs/reference/concepts/record-lifecycle.md, Record states). One
             // the ledger asked to plan again while it is blocked (a redelivery, a sync that found its row moved, a cache change
-            // it was built from) is planned.
-            if (state is { Blocked: true, PlanRequestedUtc: null } && ChangeDetector.StaysBlocked(state, source, ordered))
+            // it was built from) is planned, and so is one held at its render under other rules than these: its error is what
+            // the mapping it was rendered under gave, so it is rendered again under the mapping the flow pins now.
+            if (state is { Blocked: true, PlanRequestedUtc: null } && ChangeDetector.StaysBlocked(state, source, ordered)
+                && !ChangeDetector.HeldUnderOtherRules(state, rules))
             {
                 entries.Add(basis with
                 {
                     Action = PlannedAction.Blocked,
-                    Reason = $"{state.Status.ToString().ToLowerInvariant()} since {state.UpdatedUtc:u}: {state.LastError ?? "no reason recorded"}; release the record or change the source to plan it again",
+                    Reason = $"{state.Status.ToString().ToLowerInvariant()} since {state.UpdatedUtc:u}: {state.LastError ?? "no reason recorded"}; "
+                        + (ChangeDetector.HeldAtRender(state)
+                            ? "release the record, change the source, or change the mapping, template or parameters it renders with to plan it again"
+                            : "release the record or change the source to plan it again"),
                 });
                 continue;
             }

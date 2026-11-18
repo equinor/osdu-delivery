@@ -656,6 +656,14 @@ public sealed record RecordState
     /// </summary>
     public string? HeldSteps { get; init; }
 
+    /// <summary>
+    /// The rules the record's last hold at its render was rendered under (<see cref="Snapshots.RenderContext.RulesHash"/>): a
+    /// plan under other rules renders the record again while it is held keeping no document. Null for a record never held at
+    /// its render, and for one held before the ledger kept it (osdu/docs/reference/concepts/record-lifecycle.md, A record held
+    /// at its render).
+    /// </summary>
+    public string? HeldRulesHash { get; init; }
+
     /// <summary>When the ledger asked for the record to be planned again (a redeliver, a release, a cache rollout, a parent or a child that landed); null once a plan took it.</summary>
     public DateTime? PlanRequestedUtc { get; init; }
 
@@ -2205,8 +2213,9 @@ public interface ILedger
     Task MarkSkippedAsync(Guid flowId, IReadOnlyList<SkippedRecord> records, Guid submissionId, CancellationToken ct = default);
 
     /// <summary>
-    /// Marks one flow's records held without queueing work (render-time holds), writing the key tuple and the origin they
-    /// were held at. A held record claims no OSDU id, and it is given no id another flow's record has claimed. A record
+    /// Marks one flow's records held without queueing work (render-time holds), writing the key tuple, the origin they
+    /// were held at and the rules they were rendered under (<see cref="RecordState.HeldRulesHash"/>). A held record claims no
+    /// OSDU id, and it is given no id another flow's record has claimed. A record
     /// with a <see cref="RecordState.Basis"/> that changed since the plan read it is asked to be planned again instead of
     /// held; one asked to be planned again after that read is held unblocked, keeping the request for the next run. Every
     /// record must carry <paramref name="flowId"/>. Returns the records it held.

@@ -61,6 +61,18 @@ ai_foundry_name       = "<globally unique AI Foundry account name for prod>"
 ai_foundry_model_name = "gpt-5.1"
 ai_context_enabled    = false
 
+# The estate's environments, which the GUI's title bar names and opens: this one (current) and every one with the
+# address of its GUI, in the order the menu lists them. Each environment's file carries the same links, differing only in
+# current; left out, the title bar names no environment.
+# environments = {
+#   current = "prod"
+#   links = [
+#     { name = "dev", url = "<https address of the dev GUI>", description = "Development" },
+#     { name = "test", url = "<https address of the test GUI>", description = "Acceptance testing" },
+#     { name = "prod", url = "<https address of the prod GUI>", description = "Production" },
+#   ]
+# }
+
 # The OSDU partitions this environment delivers to never come from this file: their endpoints, client ids and access
 # groups belong to the platform they deliver to. They are TF_VAR_osdu_partitions, a line of the git-ignored
 # .sqlflow/deploy/prod.env on a workstation and the GitHub environment's secret TF_VAR_OSDU_PARTITIONS in the Deploy

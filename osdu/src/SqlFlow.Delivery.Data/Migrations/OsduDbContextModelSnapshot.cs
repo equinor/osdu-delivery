@@ -3744,6 +3744,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("HeldCacheSetId")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("HeldRulesHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("HeldSteps")
                         .HasMaxLength(600)
                         .HasColumnType("nvarchar(600)");

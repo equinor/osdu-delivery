@@ -74,6 +74,14 @@ services:
       ControlPlane__Cors__AllowedOrigins__0: http://localhost:8081
       # Compute belongs to the worker service; this replica is API + scheduler + sync only.
       ControlPlane__Worker__Enabled: "false"
+      # When this stack is one environment of several (dev, test, prod), the GUI's title bar names it and opens the
+      # others: name this one and list every one with the address of its GUI, the same list in each environment
+      # (sqlflow/docs/reference/concepts/environments.md).
+      # ControlPlane__Environments__Current: dev
+      # ControlPlane__Environments__Links__0__Name: dev
+      # ControlPlane__Environments__Links__0__Url: http://localhost:8081
+      # ControlPlane__Environments__Links__1__Name: test
+      # ControlPlane__Environments__Links__1__Url: https://delivery-test.example.com
       # The OSDU partition this stack delivers to, named by its data-partition-id: registered when the control plane
       # starts, and its values are what the runs bound to it resolve their flows' ${env:...} references with. To
       # deliver to another partition, rename dev here and in the flows that name it. The client secret is a reference,

@@ -40,6 +40,26 @@ export interface AuthProviders {
   entra: EntraProviderInfo;
 }
 
+// ---- Environments -------------------------------------------------------------------------------------------------
+
+/** One environment of the estate: its name, what it is for, the address of its GUI, and whether this control plane is it. */
+export interface EstateEnvironment {
+  name: string;
+  description: string | null;
+  url: string;
+  current: boolean;
+}
+
+/**
+ * GET /api/v1/environments: the environments the estate runs as separate deployments (ControlPlane:Environments), which
+ * the title bar names and opens. `current` is null when none is configured; `environments` lists every one in the
+ * configured order, and is empty when only the current one is named.
+ */
+export interface EstateEnvironments {
+  current: string | null;
+  environments: EstateEnvironment[];
+}
+
 // ---- Dashboard ----------------------------------------------------------------------------------------------------
 
 export interface RunCounts {

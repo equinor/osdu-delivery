@@ -56,6 +56,11 @@ public sealed class ControlPlaneOptions
     /// Bound from <c>ControlPlane:ExternalTriggers</c>.</summary>
     public ExternalTriggerOptions ExternalTriggers { get; set; } = new();
 
+    /// <summary>The environments the estate runs as separate deployments, which the title bar switches between. Bound from
+    /// <c>ControlPlane:Environments</c>; none by default. Not checked by <see cref="Validate"/>: a mistake in it is left out
+    /// of the title bar and logged (<see cref="EnvironmentsOptions.Read"/>), never a reason not to start.</summary>
+    public EnvironmentsOptions Environments { get; set; } = new();
+
     /// <summary>Validates the options, throwing a clear startup error for any missing or unsafe required value.
     /// Called during host build so a misconfigured deployment never starts serving.</summary>
     public void Validate()

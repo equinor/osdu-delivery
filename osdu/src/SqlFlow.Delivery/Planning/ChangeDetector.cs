@@ -259,6 +259,32 @@ public static class ChangeDetector
     }
 
     /// <summary>
+    /// Whether a blocked record is held at its render: held keeping no document, so its error is what its row and the rules
+    /// it was rendered under gave, and no release has a document to send. A record held by the check before sending or by a
+    /// try keeps its document; a record held because OSDU already holds a record at its id waits for an adoption, and is
+    /// told by its id or, held before the hold kept the id, by its error (<see cref="OccupiedHolds"/>).
+    /// </summary>
+    public static bool HeldAtRender(RecordState blocked)
+    {
+        ArgumentNullException.ThrowIfNull(blocked);
+        return blocked is { Status: RecordStatus.Held, PendingDocumentRef: null, OccupiedTargetId: null }
+            && blocked.LastError?.StartsWith(OccupiedHolds.Prefix, StringComparison.Ordinal) != true;
+    }
+
+    /// <summary>
+    /// Whether a blocked record was held at its render under other rules than the ones a plan renders with now
+    /// (<paramref name="rulesHash"/>, <see cref="Snapshots.RenderContext.RulesHash"/>): its mapping, template or parameters
+    /// moved since, so its error may be one those rules no longer give, and the plan renders it again rather than leaving it
+    /// blocked (osdu/docs/reference/concepts/record-lifecycle.md, A record held at its render). A hold that recorded no rules,
+    /// made before the ledger kept them, was made under rules no one knows, and is rendered again too.
+    /// </summary>
+    public static bool HeldUnderOtherRules(RecordState blocked, string rulesHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rulesHash);
+        return HeldAtRender(blocked) && !string.Equals(blocked.HeldRulesHash, rulesHash, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The last check before anything is sent (osdu/docs/reference/concepts/change-detection.md, Work already queued,
     /// and the final check): the claimed record's queued document and payload against what OSDU holds at the moment the
     /// worker has the record. Work is planned against the state the intake read, and a delivery of the same content can

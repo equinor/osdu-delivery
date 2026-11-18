@@ -980,6 +980,10 @@ public sealed partial class OsduLedger : ILedger
                 // releases the record. What the document OSDU holds was built from stays the record's cache set.
                 entity.HeldCacheSetId = record.CacheSetId;
 
+                // The rules the hold was rendered under, so a plan under other rules (a mapping, template or parameter that
+                // changed) renders the record again rather than leaving the error these rules gave.
+                entity.HeldRulesHash = record.HeldRulesHash;
+
                 // The parent the held render read, or found missing, so the parent landing plans the record again; and the
                 // children it looked for, so a child landing finds it once its hold is lifted.
                 entity.ParentId = record.ParentId;
@@ -4470,6 +4474,7 @@ public sealed partial class OsduLedger : ILedger
         PendingParentVersion = r.PendingParentVersion,
         ChildLinkKey = r.ChildLinkKey,
         HeldSteps = r.HeldSteps,
+        HeldRulesHash = r.HeldRulesHash,
         PlanRequestedUtc = r.PlanRequestedUtc,
         CreatedUtc = r.CreatedUtc,
         UpdatedUtc = r.UpdatedUtc,

@@ -349,8 +349,11 @@ them forward (and back) from there, so a later apply never takes an app back to 
 optional `acl_owner`, `acl_viewer`, `legal_tag` and `properties`, and one `default = true` when there are several),
 as `terraform.tfvars.example` shows. Each client secret is put in the vault by hand as `osdu-<id>-client-secret` (or
 the secret `client_secret_name` names); the control plane's settings carry the `${keyvault:...}` reference, as with
-the Bicep. `landing_storage`, `repositories`, `external_triggers` and `properties` are the Bicep's `landingStorage`,
-`repositories`, `externalTriggers` and `properties`.
+the Bicep. `landing_storage`, `repositories`, `external_triggers`, `properties` and `environments` are the Bicep's
+`landingStorage`, `repositories`, `externalTriggers`, `properties` and `environments`. `environments` names the
+environment a deployment is and lists every one with the address of its GUI, the same list in each environment's file,
+so the GUI's title bar says which one a person is in and opens the others
+([Environments](../../sqlflow/docs/reference/concepts/environments.md)).
 
 Each environment (dev, test, prod) is two committed files in `terraform/environments/`, and is planned and applied
 with its script, which runs `terraform init` against its state, `plan` with its variables and the commit's

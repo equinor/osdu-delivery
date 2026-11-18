@@ -85,7 +85,7 @@ On a `$cache`, `$search` or lookup the modifiers run first, on the value the loo
 platform gives is never modified.
 
 A **held** record is not sent. The ledger records why, and the record waits until its row or the mapping changes, or
-someone releases it ([record lifecycle](../concepts/record-lifecycle.md)).
+someone releases it ([a record held at its render](../concepts/record-lifecycle.md#a-record-held-at-its-render)).
 
 ## Find the tool for the job
 

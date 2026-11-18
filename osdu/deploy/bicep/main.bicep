@@ -237,6 +237,29 @@ type landingStorageOptions = {
   referenceName: string?
 }
 
+@sealed()
+@description('One environment of the estate, which the GUI\'s title bar names and opens.')
+type environmentLink = {
+  @description('Its name, as the title bar shows it: dev, test, prod.')
+  name: string
+
+  @description('The http or https address of its GUI.')
+  url: string
+
+  @description('What it is for, in one line.')
+  description: string?
+}
+
+@sealed()
+@description('The environments of the estate this deployment is one of, which the GUI\'s title bar names and opens.')
+type environmentsOptions = {
+  @description('This deployment\'s environment: one of the names links lists, when it lists any.')
+  current: string
+
+  @description('Every environment of the estate, this one among them, in the order the title bar\'s menu shows them.')
+  links: environmentLink[]?
+}
+
 @description('What the deployment reports of a partition.')
 type osduPartitionReport = {
   @description('Whether it is the partition a run that names none runs in.')
@@ -262,6 +285,14 @@ func isPartitionId(id string) bool =>
 @description('Whether name names a repository: letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters.')
 func isRepositoryName(name string) bool =>
   length(name) >= 1 && length(name) <= 100 && contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', take(name, 1)) && empty(filter(range(0, length(name)), i => !contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-', substring(name, i, 1))))
+
+@description('Whether name names an environment of the estate: letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 64 characters.')
+func isEstateEnvironmentName(name string) bool =>
+  length(name) >= 1 && length(name) <= 64 && contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', take(name, 1)) && empty(filter(range(0, length(name)), i => !contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-', substring(name, i, 1))))
+
+@description('Whether url is the http or https address of a GUI: a host after the scheme, at most 2000 characters, and no user, password, query, fragment or space.')
+func isGuiAddress(url string) bool =>
+  length(url) <= 2000 && ((take(url, 8) == 'https://' && length(url) > 8 && take(skip(url, 8), 1) != '/') || (take(url, 7) == 'http://' && length(url) > 7 && take(skip(url, 7), 1) != '/')) && !contains(url, '?') && !contains(url, '#') && !contains(url, '@') && !contains(url, ' ')
 
 @description('Whether name is a blob container name: 3 to 63 lowercase letters, digits and hyphens, starting and ending with a letter or digit.')
 func isContainerName(name string) bool =>
@@ -406,6 +437,9 @@ param githubApp gitHubAppOptions?
 
 @description('The external triggers the control plane trusts, by name (ControlPlane:Bootstrap:ExternalTriggers, sqlflow/docs/reference/concepts/external-triggers.md): each syncs one of repositories and may fire the schedules it names, for a GitHub Actions workflow after a merge ({ repository, schedules, gitHub: { repository: owner/name, workflow, ref, environment, repositoryId } }), which proves who it is with the token GitHub mints for its job so nothing secret is stored, or for a system holding a key ({ repository, schedules, keySecretName: the vault secret a person puts the key in }). The control plane writes them at start and disables one this configuration no longer names; a workflow asks GitHub\'s token for the audience the controlPlaneBaseUrl output names. Triggers an administrator creates on the External triggers page stay beside them.')
 param externalTriggers { *: externalTrigger } = {}
+
+@description('The environments of the estate this deployment is one of (dev, test and prod, each a deployment of its own), which the GUI\'s title bar names and opens (ControlPlane:Environments, sqlflow/docs/reference/concepts/environments.md): { current: this deployment\'s environment, links: [ { name, url: the address of its GUI, description } ] in the order the menu shows them }. Every environment\'s parameters can carry the same links, differing only in current. Left out, the title bar names no environment.')
+param environments environmentsOptions?
 
 @description('The storage account the estate\'s flows read their source files from: created here ({ accountName }, derived from the resource group when left out) or adopted ({ existingAccountId }), with a container (landing). The worker\'s identity may read and write it and the control plane\'s read it, and every run is given its location as referenceName (LANDING_URL: abfss://<container>@<account>.dfs.<storage suffix>), which a flow names in its source location (\${env:LANDING_URL}/<folder>). Left out, the estate has none.')
 param landingStorage landingStorageOptions?
@@ -581,6 +615,28 @@ var externalTriggersChecked = !empty(externalTriggersMisnamed)
       : !empty(externalTriggersNotOneOrTheOther)
           ? fail('An external trigger names exactly one of gitHub (the workflow it trusts) and keySecretName (the vault secret holding its key). Not so: ${join(externalTriggersNotOneOrTheOther, ', ')}.')
           : externalTriggers
+
+var environmentLinks = environments.?links ?? []
+var environmentNames = map(environmentLinks, l => l.name)
+var environmentsMisnamed = filter(concat(environments == null ? [] : [environments!.current], environmentNames), name => !isEstateEnvironmentName(name))
+var environmentsListedTwice = map(filter(range(0, length(environmentNames)), i => contains(map(take(environmentNames, i), n => toLower(n)), toLower(environmentNames[i]))), i => environmentNames[i])
+var environmentsUnreachable = map(filter(environmentLinks, l => !isGuiAddress(l.url)), l => l.name)
+var environmentsOverDescribed = map(filter(environmentLinks, l => length(l.?description ?? '') > 400 || contains(l.?description ?? '', '\n') || contains(l.?description ?? '', '\r')), l => l.name)
+var environmentsChecked = environments == null
+  ? null
+  : !empty(environmentsMisnamed)
+      ? fail('An environment is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 64 characters. Not so: ${join(environmentsMisnamed, ', ')}.')
+      : length(environmentLinks) > 20
+          ? fail('environments.links lists at most 20 environments.')
+          : !empty(environmentsListedTwice)
+              ? fail('environments.links lists each environment once, ignoring case. Listed again: ${join(environmentsListedTwice, ', ')}.')
+              : !empty(environmentLinks) && !contains(map(environmentNames, n => toLower(n)), toLower(environments!.current))
+                  ? fail('environments.current names this deployment\'s environment, one of those environments.links lists (${join(environmentNames, ', ')}).')
+                  : !empty(environmentsUnreachable)
+                      ? fail('An environment\'s url is the http or https address of its GUI, at most 2000 characters, with no user name, password, query or fragment. Not so: ${join(environmentsUnreachable, ', ')}.')
+                      : !empty(environmentsOverDescribed)
+                          ? fail('An environment\'s description is one line of at most 400 characters. Not so: ${join(environmentsOverDescribed, ', ')}.')
+                          : environments
 
 var landingStorageChecked = landingStorage == null
   ? null
@@ -1234,11 +1290,22 @@ var externalTriggerSettings = reduce(map(items(externalTriggersChecked), t => un
       )
 )), { ControlPlane__ExternalTriggers__GitHub__Audience: controlPlaneUrl }, (settings, trigger) => union(settings, trigger))
 
+// The estate's environments, which the title bar names and opens: this deployment's, and every one in order with the
+// address of its GUI.
+var environmentSettings = environmentsChecked == null ? {} : reduce(map(range(0, length(environmentLinks)), i => union(
+  {
+    'ControlPlane__Environments__Links__${i}__Name': environmentLinks[i].name
+    'ControlPlane__Environments__Links__${i}__Url': environmentLinks[i].url
+  },
+  empty(environmentLinks[i].?description ?? '') ? {} : { 'ControlPlane__Environments__Links__${i}__Description': environmentLinks[i].?description ?? '' }
+)), { ControlPlane__Environments__Current: environmentsChecked!.current }, (settings, link) => union(settings, link))
+
 var controlPlaneSettings = union(
   osduPartitionSettings,
   propertySettings,
   repositorySettings,
   externalTriggerSettings,
+  environmentSettings,
   // The node credential the workers present, which the control plane makes the admin's one node-scope token at start.
   {
     ControlPlane__Bootstrap__NodeTokenReference: vaultReference(keyVaultName, nodeTokenSecretName)

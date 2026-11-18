@@ -2988,9 +2988,12 @@
         "partition=*",
         "per-partition ledger",
         "per-partition cache",
-        "per-partition configuration"
+        "per-partition configuration",
+        "partitions or environments",
+        "separate deployments"
       ],
       "related": [
+        "concept-environments",
         "delivery-cli-partition",
         "delivery-cli-config",
         "delivery-flow-delivery",
@@ -3187,6 +3190,8 @@
         "record status",
         "record states",
         "held record",
+        "held at render",
+        "held under an earlier mapping",
         "failed record",
         "retry",
         "backoff",
@@ -7341,10 +7346,13 @@
         "repositories",
         "ready to use",
         "external scheduler",
-        "azure data factory"
+        "azure data factory",
+        "environments",
+        "switch environment"
       ],
       "related": [
         "guide-deployment",
+        "concept-environments",
         "cli-worker",
         "delivery-concept-control-plane",
         "delivery-concept-environment-variables",
@@ -12496,6 +12504,43 @@
       ]
     },
     {
+      "id": "delivery-wiki-0061-environments-are-deployments",
+      "corpus": "wiki",
+      "path": "decisions/0061-environments-are-deployments.md",
+      "title": "Decision 0061: dev, test and prod are deployments of their own, and the title bar links them",
+      "type": "decision",
+      "summary": "Why environments are separate deployments rather than partitions of one, and why the title bar's environment menu is a plain link to each.",
+      "keywords": [
+        "environments",
+        "dev test prod",
+        "partitions are not environments",
+        "separate deployments",
+        "instance switcher",
+        "environment menu",
+        "title bar",
+        "data isolation",
+        "ControlPlane:Environments"
+      ],
+      "related": [
+        "delivery-wiki-0020-explorer-partition-connection",
+        "delivery-wiki-0026-one-database-connection"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/WorkbenchPartition.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/tools/operate.rs",
+        "osdu/gui/src/features/delivery/useLinkedPartition.ts",
+        "sqlflow/src/SqlFlow.ControlPlane/Hosting/ControlPlaneHost.cs",
+        "sqlflow/src/SqlFlow.Catalog/CatalogEntities.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Configuration/EnvironmentsOptions.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Api/EnvironmentEndpoints.cs",
+        "sqlflow/gui/src/layout/workbench/EnvironmentSwitcher.tsx",
+        "osdu/deploy/terraform/variables.tf",
+        "osdu/deploy/bicep/main.bicep",
+        "osdu/deploy/radix/radixconfig.yaml"
+      ]
+    },
+    {
       "id": "delivery-wiki-linked-canonical-and-custom-records",
       "corpus": "wiki",
       "path": "patterns/linked-canonical-and-custom-records.md",
@@ -12565,7 +12610,8 @@
         "delivery-wiki-0028-renamed-pipelines-move-their-ledger",
         "delivery-wiki-0036-enrich-in-the-mapping",
         "delivery-wiki-0037-request-correlation",
-        "delivery-wiki-0051-lookups-match-several-fields-on-one-line"
+        "delivery-wiki-0051-lookups-match-several-fields-on-one-line",
+        "delivery-wiki-0061-environments-are-deployments"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",

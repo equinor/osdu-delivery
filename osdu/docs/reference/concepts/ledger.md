@@ -147,8 +147,10 @@ same row always lands on the same record.
 It holds what OSDU holds of the record (its id, version and hashes), where that version came from (the ingestion
 row's file, row number and update time, and its arrival), the work waiting to be sent (`Pending*`: its hashes, render
 context, source version and origin, payload location, the OSDU ids it refers to, and where its rendered document sits in
-a work batch file; the document itself is never stored in the database), its custody state and why it is blocked, the
-last check of its document, and the lease delivering it now. Every column, key and index:
+a work batch file; the document itself is never stored in the database), its custody state and why it is blocked (for
+a record held at its render, the rules it was rendered under, so a change of them renders it again:
+[a record held at its render](record-lifecycle.md#a-record-held-at-its-render)), the last check of its document, and the
+lease delivering it now. Every column, key and index:
 [`osdu.Record`](../tables/record.md).
 
 ### `osdu.Attempt`: every try, and every decision that changed the record

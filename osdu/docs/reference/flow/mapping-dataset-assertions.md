@@ -119,7 +119,7 @@ What each line reads, and what it makes of a record:
 | `per` | `record` | `record`: judged as each record renders, on its own rows. `run`: judged once a run, by the database, on every row of the record table in the run's scope ([below](#rules-over-the-runs-rows)). |
 | `values` | `all` | For a `column` rule over a child dataset's rows: `all`, every row has to meet the condition; `any`, one row has to. |
 | `where` | none | 1 to 10 conditions, each a `column` and one operator, with `ignoreCase` and `tolerance` ([below](#which-rows-a-rule-reads)). |
-| `onFail` | `hold` | `hold`: the record is not sent; its document is kept until the rows or the mapping change, or a release sends it. `report`: it is sent, and the failure recorded. |
+| `onFail` | `hold` | `hold`: the record is not sent; its document is kept until the rows change, a redelivery plans it again, or a release sends it, whatever the mapping does meanwhile. `report`: it is sent, and the failure recorded. |
 | `name` | a label read off the rule | 1 to 200 characters: what messages, the ledger and the reports call it. Each rule has a name of its own. |
 | `description` | none | Free text. |
 

@@ -546,6 +546,9 @@ changed rows, and each record's own document hash decides what is sent: a record
 sent again ([change detection](../concepts/change-detection.md)). An assertion added or changed moves the fingerprint
 too, and is judged on the records whose document then changes; a record whose document is the one OSDU holds is not sent
 or judged again ([mapping assertions](mapping-assertions.md#a-document-that-does-not-change-is-not-judged-again)). A
+record held at its render under the earlier rules (a value the mapping required was empty, a lookup found nothing) is
+rendered again by that run, and sent, or held again with the error the new rules give; a record held keeping its document
+(an assertion's hold) keeps it ([a record held at its render](../concepts/record-lifecycle.md#a-record-held-at-its-render)). A
 `plan` run shows what a mapping change would send before anything is sent ([running an OSDU flow](../cli/run.md)). Give a mapping a new version when its records should be
 traceable to the change; the ledger records the mapping version and the cache version that rendered every document
 ([ledger](../concepts/ledger.md)).

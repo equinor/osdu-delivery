@@ -27,8 +27,11 @@ keywords:
   - ready to use
   - external scheduler
   - azure data factory
+  - environments
+  - switch environment
 related:
   - guide-deployment
+  - concept-environments
   - cli-worker
   - delivery-concept-control-plane
   - delivery-concept-environment-variables
@@ -340,6 +343,32 @@ uncommitted changes in what a deploy builds or applies, stops the script before 
 out of the repository leaves the committed files as their placeholders: on a workstation `OSDU_ENVIRONMENT_DIR` names
 the directory holding its two files, and the Deploy workflow writes them there from its GitHub environment's
 `OSDU_ENVIRONMENT_TFVARS` and `OSDU_ENVIRONMENT_BACKEND` variables.
+
+**Switching between them in the GUI.** Each environment's `environments` variable names the environment it is and lists
+every one with the address of its GUI, in the order the title bar's menu shows them; the three files carry the same list
+and differ only in `current`. The title bar then says which environment a person is in, and its menu opens another
+environment's GUI, which signs them in itself ([Environments](../../../../sqlflow/docs/reference/concepts/environments.md)):
+
+```hcl
+# environments/test.tfvars
+environments = {
+  current = "test"
+  links = [
+    { name = "dev", url = "https://delivery-dev.example.com", description = "Development" },
+    { name = "test", url = "https://delivery-test.example.com", description = "Acceptance testing" },
+    { name = "prod", url = "https://delivery.example.com", description = "Production" },
+  ]
+}
+```
+
+The Bicep template takes the same as its `environments` parameter, the Radix configuration carries its three environments
+as a comment to uncomment, and any other deployment sets `ControlPlane__Environments__Current` and
+`ControlPlane__Environments__Links__<n>__Name`, `__Url` and `__Description` on the control plane. Left out, nothing
+changes; a mistake in it is left out of the title bar and logged when the control plane starts, never a reason for it not
+to start, and Terraform refuses one at plan, before anything changes
+([a mistake in the setting](../../../../sqlflow/docs/reference/concepts/environments.md#a-mistake-in-the-setting)).
+Partitions are not environments: dev, test and prod are deployments of their own, each with its own sign-in, catalog,
+nodes and synced commit ([partitions or environments](../concepts/partitions.md#partitions-or-environments)).
 
 **From GitHub.** The Deploy workflow (`.github/workflows/deploy.yml`) runs the same script. It runs only where the
 repository variable `DEPLOY_METHOD` is `terraform`: a push to `main` deploys to `dev` once CI has passed, and `test`

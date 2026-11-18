@@ -33,6 +33,29 @@ public class ProblemSignatureTests
     }
 
     [Fact]
+    public void A_property_name_in_brackets_names_the_property_and_is_kept()
+    {
+        const string lra = "tags['lra.securityClassification']: dataset.Lra_securityClassification is empty, and the entry is required";
+        const string dra = "tags['dra.securityClassification']: dataset.Lra_securityClassification is empty, and the entry is required";
+
+        // The name a mapping fills is the problem's, not the record's: renamed, it is another problem, and the pattern says which.
+        Assert.Equal(lra, ProblemSignature.Pattern(lra));
+        Assert.NotEqual(ProblemSignature.Of(lra), ProblemSignature.Of(dra));
+        Assert.Empty(ProblemSignature.Values(lra));
+        Assert.Equal(ProblemShape.Set, ProblemSignature.ShapeOf([lra, lra]));
+
+        // After an array's place, inside an item, and beside a value the record read, which is still the record's.
+        Assert.Equal(
+            "data.Curves[<n>]['curve.Type'] '<value>' matches nothing",
+            ProblemSignature.Pattern("data.Curves[3]['curve.Type'] 'GR-1' matches nothing"));
+        Assert.Equal(["GR-1"], ProblemSignature.Values("data.Curves[3]['curve.Type'] 'GR-1' matches nothing"));
+
+        // Brackets that follow no step of a path, or a quote the bracket does not close, quote a value as before.
+        Assert.Equal("one of ['<value>'] is required", ProblemSignature.Pattern("one of ['a'] is required"));
+        Assert.Equal("tags['<value>' is not closed", ProblemSignature.Pattern("tags['lra.dataID' is not closed"));
+    }
+
+    [Fact]
     public void An_apostrophe_inside_a_word_opens_no_value()
     {
         const string error = "the record's row was deleted, and the flow's mapping reads it";

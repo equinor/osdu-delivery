@@ -1217,6 +1217,33 @@ public class ChangeDetectorTests
     }
 
     [Fact]
+    public void A_record_held_at_its_render_is_rendered_again_under_other_rules_and_a_record_keeping_its_document_is_not()
+    {
+        var atRender = Delivered() with { Status = RecordStatus.Held, Blocked = true, PendingDocumentRef = null, LastError = "tags['lra.securityClassification']: dataset.Lra_securityClassification is empty, and the entry is required", HeldRulesHash = "v1" };
+
+        // Held under the rules the plan renders with: it stays blocked. Under other rules, or rules no one recorded (a hold made
+        // before the ledger kept them), it is rendered again.
+        Assert.True(ChangeDetector.HeldAtRender(atRender));
+        Assert.False(ChangeDetector.HeldUnderOtherRules(atRender, "v1"));
+        Assert.True(ChangeDetector.HeldUnderOtherRules(atRender, "v2"));
+        Assert.True(ChangeDetector.HeldUnderOtherRules(atRender with { HeldRulesHash = null }, "v1"));
+
+        // Held keeping its document (an assertion of its mapping, a refused try): a release sends that document, and a change of
+        // rules leaves it as it is.
+        var kept = atRender with { PendingDocumentRef = "1:0:120", LastError = "assertion: the record fails what its mapping WellLog@1.4.0 asserts" };
+        Assert.False(ChangeDetector.HeldAtRender(kept));
+        Assert.False(ChangeDetector.HeldUnderOtherRules(kept, "v2"));
+
+        // Held for an id OSDU holds: it waits for an adoption, by the id it kept or, held before the hold kept it, by its error.
+        Assert.False(ChangeDetector.HeldUnderOtherRules(atRender with { OccupiedTargetId = "dev:work-product-component--WellLog:1" }, "v2"));
+        Assert.False(ChangeDetector.HeldUnderOtherRules(atRender with { LastError = OccupiedHolds.Prefix + "dev:work-product-component--WellLog:1" }, "v2"));
+
+        // Not held: a failed or reverted record keeps what put it there.
+        Assert.False(ChangeDetector.HeldUnderOtherRules(atRender with { Status = RecordStatus.Failed }, "v2"));
+        Assert.False(ChangeDetector.HeldUnderOtherRules(atRender with { Status = RecordStatus.Reverted }, "v2"));
+    }
+
+    [Fact]
     public void A_waiting_record_holds_queued_work_that_a_plan_compares_against_and_never_goes_back_from()
     {
         var change = new FlowChange();

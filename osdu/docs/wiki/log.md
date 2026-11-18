@@ -846,3 +846,21 @@ the command line as changed for it.
 
 Amended decision 0039 (signing in reaches the person's other tools; `get_environment` in place of `get_cli`); updated
 `delivery-guide-vscode` and `delivery-guide-mcp`.
+
+## [2026-11-18] ingest | Environments are deployments of their own, decision 0061
+
+Source: the owner's question whether partitions keep test and prod safely apart inside one deployment ("Is partition
+implemented 100%? Can we safly introduce test to the same enviorment?", with agents searching named as the worry), a
+reading of where the code scopes a request, a run and a credential by partition, and their choice of three deployments
+switched from the title bar ("a simple url pointing").
+
+Added decision 0061; updated `delivery-concept-partitions` (partitions or environments), `delivery-guide-deployment`
+and `delivery-concept-gui`; SQLFlow's `concept-environments` documents the setting and the menu.
+
+## [2026-11-18] ingest | A mistake in the environments never stops a deployment, decision 0061 amended
+
+Source: the owner's request, with environments deployed, that the setting be fail-safe ("we have deployed and i dont
+want to break"), and the control plane, the GUI and the templates as changed for it.
+
+Amended decision 0061 (a mistake is left out and logged, never refused at start; Radix carries the list as a comment);
+updated `delivery-guide-deployment`; SQLFlow's `concept-environments` documents what each mistake leaves out.

@@ -23,11 +23,14 @@ related:
   - concept-external-triggers
   - concept-repository-auto-sync
   - concept-reports
+  - concept-environments
 sourceRefs:
   - src/SqlFlow.ControlPlane/Background/RunReferences.cs
   - src/SqlFlow.ControlPlane/Background/BootstrapSteps.cs
   - src/SqlFlow.ControlPlane/Background/BootstrapProvisioningService.cs
   - src/SqlFlow.ControlPlane/Api/BootstrapEndpoints.cs
+  - src/SqlFlow.ControlPlane/Api/EnvironmentEndpoints.cs
+  - src/SqlFlow.ControlPlane/Configuration/EnvironmentsOptions.cs
   - src/SqlFlow.ControlPlane/Program.cs
   - src/SqlFlow.ControlPlane/Configuration/ControlPlaneOptions.cs
   - src/SqlFlow.ControlPlane/Infrastructure/CatalogConnectionProvider.cs
@@ -142,6 +145,7 @@ Read surface (policy `read`):
 | `GET /summary` | Estate summary |
 | `GET /dataops/capabilities` | Whether the data-operations surface is enabled here, the operations available, and the linked servers a baseline comparison may name (concept-data-operations) |
 | `GET /maintenance/storage`, `GET /maintenance/areas/{areaId}/cleanups` | What the catalog's database holds, area by area, with each area's verdict, size, limit and cleanups, and one area's cleanup log ([Maintenance](maintenance.md)); closed to an assistant run's delegated token |
+| `GET /environments` | The estate's environments, which the title bar names and opens: the one this control plane is, and every one in the configured order with the address of its GUI ([Environments](environments.md#the-api)); closed to an assistant run's delegated token |
 | `GET /trigger-requests`, `GET /trigger-requests/{id}`, `/events`, `/summary`, `/runs/{runId}/trace` | Trigger requests: the list, one request with its runs read live, its trace after a cursor, its Markdown summary, and a run's trace as text; an external trigger's credential reaches only its own ([External triggers](external-triggers.md#following-a-request)) |
 
 Operate surface (policy `operate`):
@@ -245,6 +249,7 @@ All settings bind from the `ControlPlane` configuration section (environment var
 | `Dispatch:MaxExecutionAttempts` | `3` | Hand-outs a run may consume before an interrupted attempt is failed |
 | `Dispatch:OwnershipTtlSeconds` / `Dispatch:OwnershipRenewSeconds` | `30` / `10` | The dispatch ownership lease; the TTL is at least twice the renew interval |
 | `Proxy:Enabled` | `false` | See proxy section above; `ForwardLimit` default `1` |
+| `Environments:Current`, `Environments:Links:<n>:Name` / `Url` / `Description` | unset | The environment this control plane is, and every environment of the estate with the address of its GUI, which the title bar names and opens; `Current` is one of the list's names when it lists any. Not checked with the rest: a mistake in it is left out of the title bar and logged, never a reason not to start ([Environments](environments.md#a-mistake-in-the-setting)) |
 | `AiContext:Enabled` | `false` | AI context: a question's query (prepare/run), saved answers, and running a trusted saved answer straight away, all behind this one switch; refused with a 403 or 501 naming it while it is off. Its tuning (`ExpandSynonyms`, `SavedAnswers:*`, `AutoRun:*`, `ReportExtraction:*`) is in concept-semantic-layer |
 | `DataOps:Enabled` | `false` | The engineer's data checks: the duplicate-key check and the old-versus-new baseline comparison. Both are read-only, and refused with a 403 naming this setting while it is off. Queries are AI context's, and the four warehouse-health DMV probes are a separate, older feature; neither is gated by it (concept-data-operations) |
 | `DataOps:Comparison:LinkedServers` | `[]` | The linked servers a baseline comparison may name. A linked-server name becomes an identifier in generated SQL and a route into another estate, so it is configuration, never something a request chooses; an unlisted name is refused |

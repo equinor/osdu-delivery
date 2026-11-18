@@ -7,6 +7,8 @@ keywords:
   - record status
   - record states
   - held record
+  - held at render
+  - held under an earlier mapping
   - failed record
   - retry
   - backoff
@@ -89,7 +91,7 @@ records into issues, and what releasing a record does. For removals and reversal
 | `pending` | A rendered document (and payload) is queued for the record, due now or at `NextAttemptUtc`. | No | A worker claims it: `delivering`. |
 | `delivering` | A worker holds it under a lease and is sending it. | No | The try settles it when the lease applies; a lease that ran out is recovered. |
 | `delivered` | OSDU holds what the ledger says: `TargetId`, `TargetVersion` and the hashes. | No | A plan finds a change: `pending`. |
-| `held` | The record was refused: a data problem, a status no retry can fix, the check before sending, or a render problem. | Yes | Its source row changes, or an operator releases it. |
+| `held` | The record was refused: a data problem, a status no retry can fix, the check before sending, or a render problem. | Yes | Its source row changes, or an operator releases it. Held at its render, also the mapping, template or parameters it renders with change ([below](#a-record-held-at-its-render)). |
 | `failed` | Retryable failures used up the retry budget. | Yes | As `held`. |
 | `waiting` | Its document refers to a record another record of the ledger holds and has not delivered. | No | That record lands: `pending`. Nothing is charged. |
 | `deleted` | Removed from OSDU by an operator, by a reversal of the run that created it, or by a removal flow because its source no longer holds the key. | Not after a removal; yes after a reversal | The flow's next run reads its row by key and delivers it again, since the removal asked for it (removal), or a release (reversal). A record a removal flow took out is kept out instead: only a row newer than its removal, the key back in the source, or **Deliver again** brings it back ([Removal flow](../flow/removal.md#delivering-a-record-again)). |
@@ -100,7 +102,9 @@ reversal, and kept by the ledger, until the restriction is lifted ([Restricting 
 
 A **blocked** record is skipped by every later plan as `blocked`, with the reason
 `<status> since <time>: <last error>; release the record or change the source to plan it again`, until either its source
-row moves on from the version it was left at or an operator releases it. The row moves on when the ingestion table
+row moves on from the version it was left at or an operator releases it; a record held at its render also moves when the
+rules it renders with change, and its reason says `release the record, change the source, or change the mapping, template
+or parameters it renders with to plan it again` ([below](#a-record-held-at-its-render)). The row moves on when the ingestion table
 rewrites it (its fingerprint changes) or, when the flow orders rows by `source.lastModified`, when its moment moves past
 the one the record was left at. Under that order a row rewritten at the same moment moves the record too, since a
 correction need not touch the column (a business date names the day the data describes, not the day it was fixed), while
@@ -138,6 +142,30 @@ lost.
  delivered --removal flow (source no longer holds the key)--> deleted --newer row, key back, or Deliver again--> pending
  delivered --reversal or previous--> reverted --release--> delivered
 ```
+
+### A record held at its render
+
+A record held at its render keeps no document: a value its mapping requires is empty, no alternative of a `$coalesce`
+gives one, a lookup or a reference finds nothing, a key or a payload cannot be read. Its error is what its row and the
+rules it was rendered under gave, and it names the mapping's own properties
+(`tags['lra.securityClassification']: dataset.Lra_securityClassification is empty, and the entry is required`). The
+ledger keeps beside it the rules it was rendered under (`HeldRulesHash`: the mapping, its fingerprint, the template, the
+parameters, the enrichments and the pinned system properties, the cache version left out).
+
+When the rules move (a mapping edited in place or given a new version, another template, a parameter), the next run reads
+every row of its scope again ([when a mapping changes](../flow/mapping.md#when-a-mapping-changes)), and a record held at its
+render under other rules is rendered again rather than passed over as blocked: it is sent when it now renders, settled as
+`delivered` when it renders what OSDU holds, or held again with the error the rules give now, under the issue that error
+names. A record held under the rules the run renders with stays blocked, and a run whose rules did not move reads only
+what changed, so a record no rule and no row moved is never rendered again.
+
+A record held keeping its document is not rendered again when only the rules change: one held by the check before sending
+(an assertion of its mapping, a template it does not fit, a reference storage does not hold) or by a try, since a release
+sends that document as it is; one held because OSDU already holds a record at its id, which waits for an adoption
+([below](#adopting-a-record-osdu-already-holds)); and one whose access is restricted. A record held before module version
+1.75.0 carries no rules, so the next run that reads its row (the scope's next mapping change, or a `replan`, which reads
+every row of the scope) renders it again; an ordinary run reads only what changed and does not meet it. Releasing its issue
+renders it again too.
 
 ## How a record reaches pending
 
@@ -321,8 +349,9 @@ is held by the check before sending with its document kept, under an error that 
 property, the assertion and the value. The records one assertion holds share one issue whatever values they hold, since
 the error quotes the values. A release sends the kept document as it is: its verdict is marked accepted and still lists
 what the assertions found. The acceptance ends when the document is delivered: the same document queued again later is
-judged again. The record stays held while only the mapping changes; correcting the row plans it again, and
-so does a redelivery, under the mapping the flow pins then.
+judged again. Since it keeps its document, the record stays held while only the mapping changes, unlike a record held at
+its render ([above](#a-record-held-at-its-render)); correcting the row plans it again, and so does a redelivery, under the
+mapping the flow pins then.
 
 **A record held because its parent is not in OSDU** (a record of a custom template reading sections of its canonical
 parent with `$parent`) is held at its render, keeping no document, and its parent's id is on the record. It needs no
@@ -434,6 +463,7 @@ The pattern is made in one place from the redacted error, so the same error is t
 | A UUID or 32 hexadecimal characters | `<id>` |
 | An OSDU record id | `<osdu id>` |
 | A run of 16 or more hexadecimal characters | `<hash>` |
+| A property name in brackets and single quotes after a step of a path (`tags['dra.securityClassification']`) | kept: it names the property the mapping fills ([property names](../flow/mapping-property-names.md)) |
 | A value in single, back or typographic quotes | `'<value>'` in its own quotes |
 | A number standing alone | `<n>`; a digit inside a word (`v2`) stays |
 
@@ -463,6 +493,12 @@ A reason the items of a `$forEach` array share is said once, with how many items
 it reaches ([mapping values](../flow/mapping-values.md#foreach-repeated-arrays-from-a-child-dataset)). A record held while such a
 reason was said once an item (1.0.1 and before) keeps that error and its issue until it is planned again: released, it
 falls into the one issue if it is held again.
+
+A property name in brackets is the property's, so records held for two properties are two issues, and records held for
+one property under two mappings that name it differently are two issues too, each pattern naming its property. A record
+blocked before module version 1.75.0 under an error naming such a property keeps the issue it was sorted into, the name
+read as a value (`tags['<value>']`), until it is blocked again: a record held at its render is, by the next run that reads
+its row ([above](#a-record-held-at-its-render)).
 
 **Releasing an issue** (`POST /flows/{pipelineId}/issues/{issue}/release`, `sqlflow records release --issue`) walks the
 issue's records a page of 1,000 at a time and releases each page in its own statement; a record a run blocks with the same

@@ -118,6 +118,18 @@ spec:
         ControlPlane__Assistant__Provider: AzureFoundry
         # Questions starting with ! run read-only queries over the approved AI contexts, on the workers.
         ControlPlane__AiContext__Enabled: "true"
+        # The estate's environments, which the GUI's title bar names and opens: every one in the menu's order with the
+        # address of its GUI, each environment naming itself in its own variables (ControlPlane__Environments__Current;
+        # sqlflow/docs/reference/concepts/environments.md). Uncomment these and each environment's Current to show them.
+        # ControlPlane__Environments__Links__0__Name: dev
+        # ControlPlane__Environments__Links__0__Url: https://gui-osdu-delivery-dev.<radix cluster domain>
+        # ControlPlane__Environments__Links__0__Description: Development
+        # ControlPlane__Environments__Links__1__Name: test
+        # ControlPlane__Environments__Links__1__Url: https://gui-osdu-delivery-test.<radix cluster domain>
+        # ControlPlane__Environments__Links__1__Description: Acceptance testing
+        # ControlPlane__Environments__Links__2__Name: prod
+        # ControlPlane__Environments__Links__2__Url: https://gui-osdu-delivery-prod.<radix cluster domain>
+        # ControlPlane__Environments__Links__2__Description: Production
         # The private ranges a flow may reach (an OSDU, a storage account or a proxy behind a private endpoint), as
         # CIDRs; empty reaches public addresses only. The same on the worker.
         SQLFLOW_DELIVERY_PRIVATE_NETWORKS: ""
@@ -129,6 +141,7 @@ spec:
             azure:
               clientId: <dev control plane identity client id>
           variables:
+            # ControlPlane__Environments__Current: dev
             ControlPlane__Cors__AllowedOrigins__0: https://gui-osdu-delivery-dev.<radix cluster domain>
             ControlPlane__AzureAd__ClientId: <dev sign-in app registration client id>
             ControlPlane__Bootstrap__AdminPasswordReference: ${keyvault:<dev key vault>/admin-password}
@@ -192,6 +205,7 @@ spec:
             azure:
               clientId: <test control plane identity client id>
           variables:
+            # ControlPlane__Environments__Current: test
             ControlPlane__Cors__AllowedOrigins__0: https://gui-osdu-delivery-test.<radix cluster domain>
             ControlPlane__AzureAd__ClientId: <test sign-in app registration client id>
             ControlPlane__Bootstrap__AdminPasswordReference: ${keyvault:<test key vault>/admin-password}
@@ -230,6 +244,7 @@ spec:
             azure:
               clientId: <prod control plane identity client id>
           variables:
+            # ControlPlane__Environments__Current: prod
             ControlPlane__Cors__AllowedOrigins__0: https://gui-osdu-delivery-prod.<radix cluster domain>
             ControlPlane__AzureAd__ClientId: <prod sign-in app registration client id>
             ControlPlane__Bootstrap__AdminPasswordReference: ${keyvault:<prod key vault>/admin-password}

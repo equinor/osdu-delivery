@@ -475,6 +475,8 @@ public sealed class SubmissionIntake
         var adopting = new HashSet<DeliveryKey>();
         var skipped = new List<SkippedRecord>(Planner.RenderBatch);
         var context = header.Mapping.Context.Canonical();
+        // The rules every hold of this run is rendered under, so a later plan under other rules renders the record again.
+        var rules = header.Mapping.Context.RulesHash();
         long refused = 0;
         long conflicted = 0;
         var held = new List<RecordState>();
@@ -532,7 +534,7 @@ public sealed class SubmissionIntake
                         var heldSet = entry.Render is { CacheUsages.Count: > 0 } heldRender && header.Mapping.Context.CacheScope is { } heldScope
                             ? await _ledger.EnsureCacheSetAsync(heldScope, heldRender.CacheUsages, ct).ConfigureAwait(false)
                             : (long?)null;
-                        held.Add(HeldState(flow, submission, entry, header.Mapping) with { CacheSetId = heldSet });
+                        held.Add(HeldState(flow, submission, entry, header.Mapping) with { CacheSetId = heldSet, HeldRulesHash = rules });
                         if (held.Count >= Planner.RenderBatch)
                         {
                             await FlushHeldAsync(flow, submission, held, ct).ConfigureAwait(false);

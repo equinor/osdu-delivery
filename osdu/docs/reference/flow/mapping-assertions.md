@@ -161,7 +161,7 @@ as a modifier's settings do not:
 | --- | --- | --- |
 | one condition | required | Exactly one of `equals`, `notEquals`, `in`, `notIn`, `atLeast`, `atMost`, `greaterThan`, `lessThan`, `between`, `matches`, `notMatches`, `startsWith`, `endsWith`, `contains`, `notContains`, `exists`, `empty`, `type`, `length`, with `ignoreCase` and `tolerance` beside it, written and compared exactly as an assertion flow's field condition ([conditions](assertion.md#conditions)). `resolves` is refused ([below](#why-resolves-is-not-a-condition-of-a-mapping)). |
 | `stage` | `record` | Which value is judged. `record`: the value the record carries, after the modifiers and the conversion to the property's type, which is what OSDU holds. `incoming`: the value the row gives the node before its modifiers, the column or what `$expr` computes. |
-| `onFail` | `hold` | What a record that breaks it does. `hold`: it is not sent; its document is kept until the row or the mapping changes, or a release sends it. `report`: it is sent, and the failure recorded. `omit`: the value that fails is left out, and the failure recorded. |
+| `onFail` | `hold` | What a record that breaks it does. `hold`: it is not sent; its document is kept until the row changes, a redelivery plans it again, or a release sends it, whatever the mapping does meanwhile. `report`: it is sent, and the failure recorded. `omit`: the value that fails is left out, and the failure recorded. |
 | `values` | `all` | For a property holding several values (the items of a repeated array, a list of values): `all`, every value has to meet it; `any`, one has to. Record stage only. |
 | `where` | none | 1 to 10 conditions selecting when the assertion is judged, every one of which has to hold. On the record stage each names a `field` of the record; on the incoming stage each names a `column` of the row the node reads, or `$dataset.<column>` for the record table's row. Each takes one operator, `ignoreCase` and `tolerance`. |
 | `name` | a label read off the condition | 1 to 200 characters: what messages, the ledger and the reports call it. Each assertion of a node has a name of its own. |
@@ -328,7 +328,10 @@ A verdict longer than 16,000 characters lists fewer failures (10, then 3) and sa
 A release accepts the held document as it is: the next try sends it, and its verdict is marked accepted while still
 listing what the assertions found ([releasing a record](../concepts/record-lifecycle.md#releasing-a-record)). A held
 record whose mapping then changes keeps the document and the findings it was held for, and a release sends that
-document; a redelivery plans it again under the new mapping. Correcting the row plans it again on the next run.
+document; a redelivery plans it again under the new mapping. Correcting the row plans it again on the next run. A record
+held at its render for another reason (a value its mapping requires is empty) keeps no document, and a mapping change
+renders it again, judging the new mapping's assertions on it then
+([a record held at its render](../concepts/record-lifecycle.md#a-record-held-at-its-render)).
 
 ### What the ledger keeps
 
@@ -440,12 +443,13 @@ saving it as one leaves out those it held.
 | A value nothing holds (null, blank text, a property left out) | Judged only by `exists` and `empty`. |
 | A `$when` that does not hold | The property is not written; an incoming assertion is not judged, and a record-stage one finds no value, which only `exists` and `empty` judge. |
 | A `where` field the record does not carry | Selects nothing, so the assertion is not judged there, unless the condition is `exists: false` or `empty: true`. |
-| A render that holds the record for another reason | Held at render as before, and nothing is queued; a preview and Check values still show what the assertions found. |
+| A render that holds the record for another reason | Held at render as before, and nothing is queued; a preview and Check values still show what the assertions found. A later change of the mapping renders it again ([a record held at its render](../concepts/record-lifecycle.md#a-record-held-at-its-render)). |
 | `omit` on a property the schema requires | Refused: `omit` needs `$required: false`, which the preflight refuses on a required property. |
 | `omit` leaving an object or an item empty | The object or item is left out; a list the mapping defines stays, empty. |
 | Several assertions on one value | Each judged on its own and each failure recorded; any `hold` holds the record. |
 | A queued document from before mappings could assert | Carries no findings; judged by its schema alone. |
-| A held record whose mapping then changes | Keeps the document and the findings it was held for; a release sends it as it is; a redelivery plans it again under the new mapping. |
+| A record an assertion held whose mapping then changes | Keeps the document and the findings it was held for; a release sends it as it is; a redelivery plans it again under the new mapping. |
+| A record held at its render whose mapping then changes | The next run reads its row again and renders it under the new mapping: sent, or held again with the error the new mapping gives, under the issue that error names. |
 | The same document as the one delivered | Not sent and not judged again; judge what OSDU holds with the explorer or an assertion flow. |
 | A thousand curves failing one assertion | 50 listed, all counted; the hold names the first three. |
 | A pattern that backtracks | One second per value; a timeout fails the assertion and never hangs a render. |

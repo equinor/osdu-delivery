@@ -678,11 +678,25 @@ locals {
     )]...
   )
 
+  # The estate's environments, which the title bar names and opens: this deployment's, and every one in order with the
+  # address of its GUI.
+  environment_settings = var.environments == null ? tomap({}) : merge(
+    { "ControlPlane__Environments__Current" = var.environments.current },
+    [for i, l in var.environments.links : merge(
+      {
+        "ControlPlane__Environments__Links__${i}__Name" = l.name
+        "ControlPlane__Environments__Links__${i}__Url"  = l.url
+      },
+      l.description == null ? tomap({}) : tomap({ "ControlPlane__Environments__Links__${i}__Description" = l.description }),
+    )]...
+  )
+
   control_plane_settings = merge(
     local.partition_settings,
     local.property_settings,
     local.repository_settings,
     local.external_trigger_settings,
+    local.environment_settings,
     # The node credential the workers present, which the control plane makes the admin's one node-scope token at start.
     { "ControlPlane__Bootstrap__NodeTokenReference" = local.vault_reference[local.node_token_secret_name] },
   )

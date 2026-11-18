@@ -7,7 +7,7 @@ import type {
   AccessToken, AllSearchResult, Attention, AuthProviders,
   ChatAskRequest, ChatCapabilities, ChatConversation, ChatConversationsPurged, ChatMessage, ChatTranscription,
   ColumnHit, ComputeTask, ComputeTaskAccepted, ComputeTaskRequest,
-  DataStream, DataStreams, DispatchSnapshot,
+  DataStream, DataStreams, DispatchSnapshot, EstateEnvironments,
   ComputeTaskSummary, CreateAccessTokenRequest, CreateNotificationSubscriptionRequest, CreateScheduleRequest, CreatedAccessToken,
   CheckRepoAccessRequest, CreateUserRequest, Dashboard, Datasource, DefinitionHit, DiscoveredFlow,
   GitCredentialsStatus, GitHubAppCheck,
@@ -58,6 +58,12 @@ export const authApi = {
   /** Bind a pending device sign-in to this session: the client that shows the code signs in as this person. */
   approveDevice: (userCode: string) => post<void>("/api/v1/auth/device/approve", { userCode }),
   denyDevice: (userCode: string) => post<void>("/api/v1/auth/device/deny", { userCode }),
+};
+
+// ---- Environments (the estate's separate deployments, which the title bar names and opens) -------------------------
+
+export const environmentApi = {
+  get: () => get<EstateEnvironments>("/api/v1/environments"),
 };
 
 // ---- Dashboard ------------------------------------------------------------------------------------------------------

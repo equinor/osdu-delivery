@@ -383,6 +383,44 @@ variable "external_triggers" {
   }
 }
 
+variable "environments" {
+  description = "The environments of the estate this deployment is one of (dev, test and prod, each a deployment of its own), which the GUI's title bar names and opens (ControlPlane:Environments, sqlflow/docs/reference/concepts/environments.md): current names this deployment's, and links lists every environment, this one among them, in the order the title bar's menu shows them, each with the address of its GUI and an optional one-line description. Every environment's variables can carry the same links, differing only in current. Null (the default) names no environment, and the title bar shows none."
+  type = object({
+    current = string
+    links = optional(list(object({
+      name        = string
+      url         = string
+      description = optional(string)
+    })), [])
+  })
+  default = null
+
+  validation {
+    condition     = var.environments == null ? true : alltrue([for name in concat([var.environments.current], [for l in var.environments.links : l.name]) : can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$", name))])
+    error_message = "An environment is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 64 characters."
+  }
+
+  validation {
+    condition     = var.environments == null ? true : length(distinct([for l in var.environments.links : lower(l.name)])) == length(var.environments.links) && length(var.environments.links) <= 20
+    error_message = "environments.links lists each environment once (ignoring case), and at most 20."
+  }
+
+  validation {
+    condition     = var.environments == null ? true : length(var.environments.links) == 0 || contains([for l in var.environments.links : lower(l.name)], lower(var.environments.current))
+    error_message = "environments.current names this deployment's environment, one of those environments.links lists."
+  }
+
+  validation {
+    condition     = var.environments == null ? true : alltrue([for l in var.environments.links : length(l.url) <= 2000 && can(regex("^https?://[^\\s/?#@]+(/[^\\s?#]*)?$", l.url))])
+    error_message = "An environment's url is the http or https address of its GUI, at most 2000 characters, with no user name, password, query or fragment."
+  }
+
+  validation {
+    condition     = var.environments == null ? true : alltrue([for l in var.environments.links : l.description == null ? true : length(l.description) <= 400 && !can(regex("[\\r\\n]", l.description))])
+    error_message = "An environment's description is one line of at most 400 characters."
+  }
+}
+
 variable "landing_storage" {
   description = "The storage account the estate's flows read their source files from: created here (account_name, derived from the resource group when left out) or adopted (existing_account_id), with a container. The worker's identity may read and write it and the control plane's read it, and every run is given its location as reference_name (LANDING_URL: abfss://<container>@<account>.dfs.core.windows.net), which a flow names in its source location ($${env:LANDING_URL}/<folder>). Null gives the estate none."
   type = object({

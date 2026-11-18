@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Switch between dev, test and prod from the title bar.** Each deployment's configuration names the environment it is
+  and lists every one with the address of its GUI (Terraform's `environments`, Bicep's `environments`, a comment to
+  uncomment in the Radix configuration, or `ControlPlane__Environments__*` anywhere else). The title bar then says which
+  environment you are in, and its **Environment** menu opens another one's GUI, where it signs you in
+  ([Environments](sqlflow/docs/reference/concepts/environments.md)). The setting never stops a deployment: left out,
+  nothing changes, and a mistake in it is left out of the title bar and logged when the control plane starts
+  ([a mistake in the setting](sqlflow/docs/reference/concepts/environments.md#a-mistake-in-the-setting)). Partitions of
+  one deployment are not a substitute: they keep a run's data apart, not people, agents or an untested mapping
+  ([partitions or environments](osdu/docs/reference/concepts/partitions.md#partitions-or-environments)).
 - **The command line has a current control plane.** `sqlflow login` makes the control plane it signs in to the current
   one, so does signing in through the VS Code extension or switching its control plane, and `sqlflow use <url>` names it;
   any shell or script then reaches it with no `--url`, with several control planes signed in to. `--url`, `SQLFLOW_URL` and
@@ -747,6 +756,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **An issue names the property its records are held for.** A property name in brackets (`tags['dra.securityClassification']`)
+  is kept in an issue's pattern rather than read as a value (`tags['<value>']`), so records held for two properties are two
+  issues, each naming its own. A record blocked before this version keeps the issue it was sorted into until it is blocked
+  again ([issues](osdu/docs/reference/concepts/record-lifecycle.md#issues)).
 - **Signing in looks like the product.** In the VS Code extension, the side bar before you sign in shows the product
   and its pitch, the control plane you sign in to with whether it answers, and **Sign in**; while your browser is open it
   shows the code to approve, with **Open the page again** and **Cancel**. The GUI's page that approves the code stands on
@@ -1258,6 +1271,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A record held at its render follows the mapping.** A record held because its render failed (a value the mapping
+  requires is empty, no `$coalesce` alternative gives one, a lookup finds nothing) is rendered again by the next run after
+  its flow's mapping, template or parameters change: sent when it now renders, or held again with the error the new rules
+  give. It used to keep the error of the mapping it was held under, so a renamed property left issues naming the old name.
+  A record held keeping its document (an assertion's hold) stays as it was. Records held before this version are rendered
+  again by the next run that reads their rows, such as a `replan`
+  ([a record held at its render](osdu/docs/reference/concepts/record-lifecycle.md#a-record-held-at-its-render)).
 - **`get_environment` reads as one text.** Two of its answers carried a run of spaces mid-sentence, where their source's
   lines were joined.
 - **Asking `sqlflow` for its usage succeeds.** `sqlflow --help`, `sqlflow -h` and `sqlflow help` print the usage and exit 0,

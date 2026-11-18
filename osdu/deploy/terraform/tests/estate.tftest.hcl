@@ -1174,3 +1174,109 @@ run "an_image_named_by_neither_its_variable_nor_a_tag_is_refused" {
 
   expect_failures = [terraform_data.images]
 }
+
+run "an_estate_names_no_environment_by_default" {
+  command = plan
+
+  assert {
+    condition     = length([for name in keys(local.control_plane_settings) : name if startswith(name, "ControlPlane__Environments__")]) == 0
+    error_message = "Without environments, the control plane is told of none and the title bar shows none."
+  }
+}
+
+run "the_estates_environments_are_named_to_the_control_plane_in_order" {
+  command = plan
+
+  variables {
+    environments = {
+      current = "test"
+      links = [
+        { name = "dev", url = "https://delivery-dev.example.com", description = "Development" },
+        { name = "test", url = "https://delivery-test.example.com/" },
+        { name = "prod", url = "https://delivery.example.com/osdu", description = "Production" },
+      ]
+    }
+  }
+
+  assert {
+    condition = (
+      { for name, value in local.control_plane_settings : name => value if startswith(name, "ControlPlane__Environments__") } == {
+        "ControlPlane__Environments__Current"               = "test"
+        "ControlPlane__Environments__Links__0__Name"        = "dev"
+        "ControlPlane__Environments__Links__0__Url"         = "https://delivery-dev.example.com"
+        "ControlPlane__Environments__Links__0__Description" = "Development"
+        "ControlPlane__Environments__Links__1__Name"        = "test"
+        "ControlPlane__Environments__Links__1__Url"         = "https://delivery-test.example.com/"
+        "ControlPlane__Environments__Links__2__Name"        = "prod"
+        "ControlPlane__Environments__Links__2__Url"         = "https://delivery.example.com/osdu"
+        "ControlPlane__Environments__Links__2__Description" = "Production"
+      }
+    )
+    error_message = "The control plane is told which environment it is and every environment in order, a description only where one is given."
+  }
+}
+
+run "an_environment_named_alone_is_named_to_the_control_plane" {
+  command = plan
+
+  variables {
+    environments = { current = "prod" }
+  }
+
+  assert {
+    condition     = { for name, value in local.control_plane_settings : name => value if startswith(name, "ControlPlane__Environments__") } == { "ControlPlane__Environments__Current" = "prod" }
+    error_message = "A deployment that names only its own environment tells the control plane that alone."
+  }
+}
+
+run "an_environment_the_links_do_not_list_is_refused" {
+  command = plan
+
+  variables {
+    environments = {
+      current = "stage"
+      links   = [{ name = "dev", url = "https://delivery-dev.example.com" }, { name = "prod", url = "https://delivery.example.com" }]
+    }
+  }
+
+  expect_failures = [var.environments]
+}
+
+run "an_environment_listed_twice_is_refused" {
+  command = plan
+
+  variables {
+    environments = {
+      current = "dev"
+      links   = [{ name = "dev", url = "https://delivery-dev.example.com" }, { name = "DEV", url = "https://delivery-dev-2.example.com" }]
+    }
+  }
+
+  expect_failures = [var.environments]
+}
+
+run "an_environment_address_carrying_a_credential_is_refused" {
+  command = plan
+
+  variables {
+    environments = {
+      current = "dev"
+      links   = [{ name = "dev", url = "https://operator:secret@delivery-dev.example.com" }]
+    }
+  }
+
+  expect_failures = [var.environments]
+}
+
+run "an_environment_address_with_a_query_or_another_scheme_is_refused" {
+  command = plan
+
+  variables {
+    environments = {
+      current = "dev"
+      links   = [{ name = "dev", url = "https://delivery-dev.example.com/?partition=dev" }, { name = "prod", url = "ftp://delivery.example.com" }]
+    }
+  }
+
+  expect_failures = [var.environments]
+}

@@ -245,6 +245,17 @@ public sealed class DeliveryRecord
     public long? HeldCacheSetId { get; set; }
 
     /// <summary>
+    /// The rules the record's last hold at its render was rendered under: the hash of its render context without the cache
+    /// version (the mapping, its fingerprint, the template, the parameters, the enrichments and the pinned system
+    /// properties). A plan that reads the record's row under other rules renders the record again while it is held keeping
+    /// no document, so its error is the one the rules it renders with now give
+    /// (osdu/docs/reference/concepts/record-lifecycle.md, A record held at its render). Null for a record never held at its
+    /// render, and for one held before the ledger kept it, whose rules are not known; a record no longer held at its render
+    /// is not read by it.
+    /// </summary>
+    public string? HeldRulesHash { get; set; }
+
+    /// <summary>
     /// The record's parent (osdu/docs/reference/flow/mapping-parent.md): the OSDU id, without a version, of the record of the
     /// kind its template is linked to whose sections its render reads; null for a record whose mapping reads no parent. Set
     /// when work is queued or the record is held, so a parent that lands asks the records that read it to be planned again.
@@ -4391,6 +4402,7 @@ public static class DeliveryModel
             e.Property(r => r.SourceFileName).HasMaxLength(MaxSourceFileNameLength);
             e.Property(r => r.MetadataHash).HasMaxLength(64);
             e.Property(r => r.PayloadHash).HasMaxLength(64);
+            e.Property(r => r.HeldRulesHash).HasMaxLength(64);
             e.Property(r => r.TargetId).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.ClaimedTargetId)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.WaitingFor)).HasMaxLength(MaxTargetIdLength);
