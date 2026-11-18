@@ -104,8 +104,9 @@ The access OSDU holds a record under is apart from its status. A record **restri
 registered restriction's groups because values its mapping marks `$restrictWhenMissing` were missing, and keeps whatever
 status its deliveries give it: `delivered` once OSDU holds it, `pending` while newer work waits. Nothing holds it off: every
 run plans it, a release and a redelivery reach it, and the delivery that finds every marked value gives it its own access
-back ([restricted until complete](../flow/mapping-restricted-access.md)). The Records tab's status filter lists it below the
-statuses, and the record carries an **Access** badge beside its status.
+back ([restricted until complete](../flow/mapping-restricted-access.md)). The Records tab's **Access** filter lists it, the
+record carries an **Access** badge beside its status, and a flow's **Restricted** count counts it with the records
+restricted by an operator, each once: every one of them is also counted under its status.
 
 A **blocked** record is skipped by every later plan as `blocked`, with the reason
 `<status> since <time>: <last error>; release the record or change the source to plan it again`, until either its source

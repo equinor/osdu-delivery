@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CloudUpload, History, TextSearch } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -21,6 +21,8 @@ import { useActivePartition } from "./activePartition";
 import { useLinkedPartition } from "./useLinkedPartition";
 import { AccessBadges, RecordStatusBadge } from "./DeliveryBadges";
 import { ExportRecordsButton } from "./ExportRecordsButton";
+import { AccessFilterSelect } from "./AccessFilterSelect";
+import { ACCESS_PARAMS, accessAddress, accessFilterOf, accessQuery, type AccessFilter } from "./recordAccess";
 import { ledgerFlowOptions } from "./ledgerFlowOptions";
 import { CompactTime, OsduTarget, RecordIdentity } from "./RecordCells";
 
@@ -45,12 +47,6 @@ function isRecordStatus(value: string | null): value is DeliveryRecordStatus {
 const statusColumn: Column<DeliveryRecordHit> = {
   id: "status", header: "Status", render: (row) => <RecordStatusBadge status={row.status as DeliveryRecordStatus} />,
 };
-
-/**
- * The status filter's entry for the records OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md),
- * named in the address as `incomplete=true`: the access OSDU holds them under, whatever their status.
- */
-const INCOMPLETE = "restricted-until-complete";
 
 /** Who may read the record in OSDU when it is not its mapping's ACL, beside its custody state; empty for its own access. */
 const accessColumn: Column<DeliveryRecordHit> = {
@@ -174,13 +170,13 @@ export default function DeliveryRecordsPage() {
   useLinkedPartition();
   const [searchParams, setSearchParams] = useSearchParams();
   const term = searchParams.get("q")?.trim() ?? "";
-  const incomplete = searchParams.get("incomplete") === "true";
-  const status = incomplete ? INCOMPLETE : isRecordStatus(searchParams.get("status")) ? searchParams.get("status")! : ALL;
+  const status = isRecordStatus(searchParams.get("status")) ? searchParams.get("status")! : ALL;
+  // The access OSDU holds the records under, beside their status, as the Access column stands beside the Status column.
+  const access = accessFilterOf((name) => searchParams.get(name));
   // The flow tab's switches, named in the address as the lookup's API names them.
   const anywhere = searchParams.get("mode") === "contains";
   const drifted = searchParams.get("drifted") === "true";
   const stepHeld = searchParams.get("stepHeld") === "true";
-  const restricted = searchParams.get("restricted") === "true";
   const [typed, setTyped] = useState(term);
 
   // The address as last asked. It is drawn a render after each change, so every change builds on this rather than on the
@@ -235,10 +231,12 @@ export default function DeliveryRecordsPage() {
     [flows.data, flows.isSuccess, flow, active],
   );
 
-  // Restricted until complete is the access OSDU holds a record under, not a status: it is named apart in the address.
-  const selectStatus = (next: string) => {
-    setParam("incomplete", next === INCOMPLETE ? "true" : null);
-    setParam("status", next === ALL || next === INCOMPLETE ? null : next);
+  const selectStatus = (next: string) => setParam("status", next === ALL ? null : next);
+  const selectAccess = (next: AccessFilter) => {
+    const address = accessAddress(next);
+    for (const name of ACCESS_PARAMS) {
+      setParam(name, address[name]);
+    }
   };
   const selectFlow = (next: string) => setParam("flow", next === "" ? null : next);
 
@@ -246,15 +244,14 @@ export default function DeliveryRecordsPage() {
   const lookup = useMemo(() => ({
     search: searching ? term : undefined,
     mode: searching && anywhere ? "contains" as const : undefined,
-    status: status === ALL || status === INCOMPLETE ? undefined : (status as DeliveryRecordStatus),
+    status: status === ALL ? undefined : (status as DeliveryRecordStatus),
     drifted: drifted || undefined,
     stepHeld: stepHeld || undefined,
-    restricted: restricted || undefined,
-    incomplete: incomplete || undefined,
+    ...accessQuery(access),
     flowId: flow === "" ? undefined : flow,
     partition: active ?? undefined,
-  }), [searching, term, anywhere, status, drifted, stepHeld, restricted, incomplete, flow, active]);
-  const narrowed = status !== ALL || flow !== "" || drifted || stepHeld || restricted;
+  }), [searching, term, anywhere, status, access, drifted, stepHeld, flow, active]);
+  const narrowed = status !== ALL || access !== "any" || flow !== "" || drifted || stepHeld;
   // How many records the lookup reached, as its last page counted them; capped when more match than it reaches.
   const [reached, setReached] = useState<{ total: number; capped: boolean } | null>(null);
   const onPageLoaded = useCallback((_rows: DeliveryRecordHit[], total: number, capped: boolean) => {
@@ -299,10 +296,9 @@ export default function DeliveryRecordsPage() {
           <SelectContent>
             <SelectItem value={ALL}>All statuses</SelectItem>
             {DELIVERY_RECORD_STATUSES.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
-            <SelectSeparator />
-            <SelectItem value={INCOMPLETE} data-testid="delivery-lookup-status-incomplete">restricted until complete</SelectItem>
           </SelectContent>
         </Select>
+        <AccessFilterSelect value={access} onChange={selectAccess} figure={null} testId="delivery-lookup-access" />
         <FilterCombobox
           options={flowOptions}
           value={flow}
@@ -324,13 +320,6 @@ export default function DeliveryRecordsPage() {
         </Label>
         <Label
           className="flex items-center gap-2 text-[13px] font-normal"
-          title="Records whose access in OSDU is restricted under a registered access restriction: readable only by its groups, and delivered by no run until the restriction is lifted"
-        >
-          <Switch checked={restricted} onCheckedChange={(on) => setParam("restricted", on ? "true" : null)} data-testid="delivery-lookup-restricted" />
-          Restricted
-        </Label>
-        <Label
-          className="flex items-center gap-2 text-[13px] font-normal"
           title="Match the term anywhere in the source key, the label, the OSDU id or the ingestion file, not only at the start of a value. It reads every record the other filters leave, so with more than 100,000 of them it asks for a flow or a status first."
         >
           <Switch checked={anywhere} onCheckedChange={(on) => setParam("mode", on ? "contains" : null)} data-testid="delivery-lookup-contains" />
@@ -347,7 +336,7 @@ export default function DeliveryRecordsPage() {
         </p>
       )}
       <PagedTable
-        queryKey={["delivery", "lookup", term, anywhere, status, drifted, stepHeld, restricted, incomplete, flow, active]}
+        queryKey={["delivery", "lookup", term, anywhere, status, access, drifted, stepHeld, flow, active]}
         fetchPage={(page, pageSize) => deliveryApi.lookupRecords({ ...lookup, page, pageSize })}
         onPageLoaded={onPageLoaded}
         columns={columns}

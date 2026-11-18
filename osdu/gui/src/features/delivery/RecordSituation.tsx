@@ -133,7 +133,7 @@ function RestrictionLine({ restriction, onLift }: { restriction: DeliveryRecordR
         )
         : (
           <span>
-            {`Access restricted under ${name} since `}
+            {`Restricted by an operator under ${name} since `}
             <RelativeTime value={restriction.restrictedUtc} />
             {groups !== null
               ? `: readable in OSDU only by ${groups}${beside === 0 ? "" : `, with the ${beside === 1 ? "record" : `${beside.toLocaleString()} records`} its enrichments add beside it`}. `
@@ -471,11 +471,11 @@ export function RecordSituation({
         break;
       }
 
-      // Removed while its access is restricted: nothing delivers it again until the restriction is lifted.
+      // Removed while an operator's restriction holds it: nothing delivers it again until the restriction is lifted.
       if (restriction != null) {
         lines.push(
           <Line key="deleted" tone="muted" icon={Trash2} testId="record-deleted">
-            Removed from OSDU while its access is restricted: no run delivers it again until the restriction is lifted.
+            Removed from OSDU while restricted by an operator: no run delivers it again until the restriction is lifted.
           </Line>,
         );
         break;

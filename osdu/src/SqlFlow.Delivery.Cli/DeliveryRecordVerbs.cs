@@ -681,7 +681,7 @@ internal static class DeliveryRecordVerbs
     /// the restriction its mapping put it under until complete (osdu/docs/reference/flow/mapping-restricted-access.md).
     /// </summary>
     private static string Access(RecordState record)
-        => (record.Restricted ? " (access restricted by an operator)" : string.Empty)
+        => (record.Restricted ? " (restricted by an operator)" : string.Empty)
             + (record.RestrictedUntilComplete ? " (restricted until complete)" : string.Empty);
 
     /// <summary>Where an issue lies, in the words the terminal and the JSON use.</summary>
@@ -742,7 +742,8 @@ internal static class DeliveryRecordVerbs
 
     /// <summary>
     /// The listing filter <c>records list</c> and <c>records export</c> read: --search, --contains, --status, --issue, and the
-    /// access ones, --restricted, --incomplete and --missing (osdu/docs/reference/flow/mapping-restricted-access.md).
+    /// access ones: --access-restricted (either kind, each once), --restricted (by an operator), --incomplete (until complete)
+    /// and --missing (osdu/docs/reference/flow/mapping-restricted-access.md).
     /// </summary>
     private static RecordQuery Filter(CliVerbContext context)
     {
@@ -756,6 +757,7 @@ internal static class DeliveryRecordVerbs
             Restricted = context.Arguments.HasFlag("--restricted"),
             Incomplete = context.Arguments.HasFlag("--incomplete") || missing is not null,
             Missing = missing,
+            AccessRestricted = context.Arguments.HasFlag("--access-restricted"),
         };
     }
 

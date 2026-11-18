@@ -70,8 +70,12 @@ function filterText(filter: Record<string, unknown>): string {
     parts.push("a step held");
   }
 
+  if (filter.accessRestricted === true) {
+    parts.push("restricted");
+  }
+
   if (filter.restricted === true) {
-    parts.push("access restricted");
+    parts.push("restricted by an operator");
   }
 
   if (typeof filter.missing === "string" && filter.missing !== "") {

@@ -148,7 +148,7 @@ public static class RecordExport
             sheet.AddRow(columns.Cells(hit.Record, hit, hit.FlowName));
         }
 
-        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld, lookup.Narrowing.Restricted, lookup.Narrowing.Incomplete, lookup.Narrowing.Missing);
+        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld, lookup.Narrowing.Restricted, lookup.Narrowing.Incomplete, lookup.Narrowing.Missing, lookup.Narrowing.AccessRestricted);
         List<(string, XlsxCell)> about =
         [
             ("Lookup", XlsxCell.Text(lookup.Search is not { } search
@@ -190,7 +190,7 @@ public static class RecordExport
             parts.Add(query.Mode == SearchMode.Contains ? $"'{search}' anywhere" : $"'{search}' at the start");
         }
 
-        parts.AddRange(Narrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing));
+        parts.AddRange(Narrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing, query.AccessRestricted));
         if (query.Problem is { } problem)
         {
             parts.Add($"issue {ProblemSignature.Format(problem)}");
@@ -220,7 +220,7 @@ public static class RecordExport
     }
 
     /// <summary>The drift, held-step and access filters in words, as a flow's listing and the lookup across flows both say them.</summary>
-    private static List<string> Narrowing(bool drifted, bool stepHeld, bool restricted, bool incomplete, long? missing)
+    private static List<string> Narrowing(bool drifted, bool stepHeld, bool restricted, bool incomplete, long? missing, bool accessRestricted)
     {
         var parts = new List<string>();
         if (drifted)
@@ -233,9 +233,14 @@ public static class RecordExport
             parts.Add("an enrichment set aside on its hold");
         }
 
+        if (accessRestricted)
+        {
+            parts.Add("access restricted in OSDU, by an operator or until complete");
+        }
+
         if (restricted)
         {
-            parts.Add("access restricted in OSDU");
+            parts.Add("access restricted in OSDU by an operator");
         }
 
         if (missing is { } group)

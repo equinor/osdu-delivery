@@ -80,12 +80,14 @@ export function DeliveryHomeSection() {
               </p>
             </div>
             <DeliveryBar totals={totals} />
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+            <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
               <Count label="Delivered" value={totals.delivered} tone="success" testId="home-delivery-delivered" />
               <Count label="Pending" value={totals.pending} tone="info" testId="home-delivery-pending" />
               <Count label="Held" value={totals.held} tone="warning" testId="home-delivery-held" />
               <Count label="Failed" value={totals.failed} tone="destructive" testId="home-delivery-failed" />
               <Count label="Drifted" value={totals.drifted} tone="warning" testId="home-delivery-drifted" />
+              {/* Restricted either way, each once: counted under their status too, as on each flow's card. */}
+              <Count label="Restricted" value={totals.accessRestricted} testId="home-delivery-restricted" />
               <Count label="Last 24h" value={totals.deliveredLast24h} testId="home-delivery-24h" />
             </div>
           </>

@@ -26,6 +26,9 @@ pub struct FindRecordsInput {
     pub partition: Option<String>,
     /// true keeps only records OSDU holds restricted until complete, whose hits say what each goes without (incompleteMissing).
     pub incomplete: Option<bool>,
+    /// true keeps only records whose access in OSDU is restricted either way, until complete or by an operator, each once.
+    #[serde(rename = "accessRestricted")]
+    pub access_restricted: Option<bool>,
     pub page: Option<i64>,
     /// Default 25, max 200.
     #[serde(rename = "pageSize")]
@@ -66,8 +69,17 @@ totalCapped=true means more match than were counted: narrow with status, flowId 
         };
         let (search, status, partition) = (text(i.search), text(i.status), text(i.partition));
         let incomplete = i.incomplete.filter(|on| *on).map(|_| "true".to_string());
-        // The Records page asked the same: the lookup, the state, the flow and the partition, as its address takes them.
-        let asked: Vec<String> = [("q", &search), ("status", &status), ("incomplete", &incomplete), ("flow", &flow_id), ("partition", &partition)]
+        let access_restricted = i.access_restricted.filter(|on| *on).map(|_| "true".to_string());
+        // The Records page asked the same: the lookup, the state, the access, the flow and the partition, as its address
+        // takes them.
+        let asked: Vec<String> = [
+            ("q", &search),
+            ("status", &status),
+            ("accessRestricted", &access_restricted),
+            ("incomplete", &incomplete),
+            ("flow", &flow_id),
+            ("partition", &partition),
+        ]
             .into_iter()
             .filter_map(|(name, value)| value.as_deref().map(|value| format!("{name}={}", encode(value))))
             .collect();
@@ -77,6 +89,7 @@ totalCapped=true means more match than were counted: narrow with status, flowId 
             .text("search", search)
             .text("status", status)
             .text("incomplete", incomplete)
+            .text("accessRestricted", access_restricted)
             .text("flowId", flow_id)
             .text("partition", partition)
             .page(i.page, i.page_size);

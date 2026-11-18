@@ -3,6 +3,7 @@ import type { PipelineSummary } from "@/api/types";
 import { fetchAllPipelines } from "@/features/pipelines/fetchAllPipelines";
 import { deliveryApi, type DeliveryFlowStats } from "../../api/delivery";
 import { useActivePartition } from "./activePartition";
+import { restrictedFigure } from "./recordAccess";
 import { useFollowDeliveryRuns } from "./followRuns";
 
 /** What the delivery flows that deliver to the workbench's partition hold there, added up. */
@@ -14,6 +15,11 @@ export interface DeliveryTotals {
   held: number;
   failed: number;
   drifted: number;
+  /**
+   * Records whose access in OSDU is restricted either way, until complete or by an operator, each once: the Restricted count.
+   * Each is counted under its status too, so it is no part of the total.
+   */
+  accessRestricted: number;
   /** Records the ledger has taken out of OSDU. */
   deleted: number;
   deliveredLast24h: number;
@@ -34,7 +40,7 @@ export function deliversTo(stats: DeliveryFlowStats | undefined): string[] | nul
 }
 
 const NONE: DeliveryTotals = {
-  total: 0, delivered: 0, pending: 0, held: 0, failed: 0, drifted: 0, deleted: 0, deliveredLast24h: 0, lastDeliveredUtc: null,
+  total: 0, delivered: 0, pending: 0, held: 0, failed: 0, drifted: 0, accessRestricted: 0, deleted: 0, deliveredLast24h: 0, lastDeliveredUtc: null,
 };
 
 /**
@@ -89,6 +95,7 @@ export function useDeliveryTotals() {
       held: acc.held + s.held,
       failed: acc.failed + s.failed,
       drifted: acc.drifted + s.drifted,
+      accessRestricted: acc.accessRestricted + restrictedFigure(s).total,
       deleted: acc.deleted + s.deleted,
       deliveredLast24h: acc.deliveredLast24h + s.deliveredLast24h,
       lastDeliveredUtc: s.lastDeliveredUtc !== null && (acc.lastDeliveredUtc === null || s.lastDeliveredUtc > acc.lastDeliveredUtc)

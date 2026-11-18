@@ -90,15 +90,18 @@ public sealed class DeliveryCliModule : ICliModule
             "records",
             [
                 "sqlflow records list <flow.yaml> [--interface <name>] [--partition <id>] [--search <term>] [--contains]",
-                "                     [--status <status>] [--issue <id>] [--restricted] [--incomplete] [--missing <group>] [--max <n>]",
+                "                     [--status <status>] [--issue <id>] [--access-restricted] [--restricted] [--incomplete]",
+                "                     [--missing <group>] [--max <n>]",
                 "                                   An interface's records from the ledger: the key, the status, the OSDU id,",
                 "                                   the access OSDU holds it under and the last error of each (needs --db).",
-                "                                   --restricted keeps those an operator restricted, --incomplete those",
+                "                                   --access-restricted keeps those restricted either way, each once;",
+                "                                   --restricted those restricted by an operator, --incomplete those",
                 "                                   restricted until complete, --missing those restricted for one set of",
                 "                                   missing values. A flow that names its partitions keeps a ledger per",
                 "                                   partition: --partition names the one to read",
                 "sqlflow records export <flow.yaml> --out <file.xlsx> [--interface <name>] [--partition <id>] [--search <term>]",
-                "                       [--contains] [--status <status>] [--issue <id>] [--restricted] [--incomplete] [--missing <group>]",
+                "                       [--contains] [--status <status>] [--issue <id>] [--access-restricted] [--restricted] [--incomplete]",
+                "                       [--missing <group>]",
                 "                                   The records the filter matches as an Excel workbook, the file the",
                 "                                   Records tab's Export gives: a row each with its status, issue, problem,",
                 "                                   access and missing values, source file and row, key and OSDU id; at most",
@@ -161,7 +164,7 @@ public sealed class DeliveryCliModule : ICliModule
             DeliveryRecordVerbs.RecordsAsync)
         {
             Subcommands = ["list", "export", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "enrichments", "undos", "removed", "lift-removal"],
-            Flags = ["--contains", "--preview", "--restricted", "--incomplete"],
+            Flags = ["--contains", "--preview", "--access-restricted", "--restricted", "--incomplete"],
             ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--missing", "--confirm", "--run", "--submission", "--outcome", "--state", "--after", "--out"],
         },
         new CliVerb(

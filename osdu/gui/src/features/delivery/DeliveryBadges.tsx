@@ -77,8 +77,9 @@ export function BlockedBadge() {
 }
 
 /**
- * A record whose access in OSDU is restricted under a registered access restriction: a neutral chip with its glyph, since a
- * restriction is something an operator chose, not a problem. `asked` marks one whose answer from OSDU is not known yet.
+ * A record an operator restricted in OSDU under a registered access restriction: a neutral chip with its glyph, since a
+ * restriction is something an operator chose, not a problem. It names the kind, as the other kind's chip does ("restricted
+ * until complete"), because "restricted" alone means either. `asked` marks one whose answer from OSDU is not known yet.
  */
 export function RestrictedBadge({ asked = false }: { asked?: boolean }) {
   return (
@@ -86,11 +87,11 @@ export function RestrictedBadge({ asked = false }: { asked?: boolean }) {
       variant="outline"
       title={asked
         ? "Restricting its access was asked and OSDU's answer is not known: no run delivers it, and asking again or lifting the restriction settles it"
-        : "Its access in OSDU is restricted: readable only by the restriction's groups, and delivered by no run until the restriction is lifted"}
+        : "Restricted by an operator: readable in OSDU only by the restriction's groups, and delivered by no run until the restriction is lifted"}
       data-testid="record-restricted"
     >
       <Lock className="size-3 text-muted-foreground" aria-hidden />
-      {asked ? "restriction asked" : "restricted"}
+      {asked ? "restriction asked" : "restricted by an operator"}
     </Badge>
   );
 }

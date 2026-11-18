@@ -17,7 +17,7 @@ export function Count({ label, value, tone, testId }: { label: string; value: nu
   const color = value === 0 ? "text-muted-foreground" : tone === undefined ? "" : TONES[tone];
   return (
     <div className="min-w-0" data-testid={testId}>
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground" title={label}>{label}</div>
       <div className={`font-mono text-lg tabular-nums ${color}`}>{value.toLocaleString()}</div>
     </div>
   );

@@ -52,7 +52,8 @@ public sealed record DeliveryFlowStatsDto(
     long Deleted, long Drifted, long DeliveredLast24h, DateTime? LastDeliveredUtc, DateTime? LastVerifiedUtc, long Submissions,
     DeliverySubmissionDto? LastSubmission, string? Interface = null, int Interfaces = 1, long Waiting = 0, string? Partition = null,
     IReadOnlyList<string>? Partitions = null, string? HeaderPartition = null, IReadOnlyList<string>? RedeliverParts = null, long Reverted = 0,
-    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0, long Restricted = 0, long RestrictedUntilComplete = 0);
+    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0, long Restricted = 0, long RestrictedUntilComplete = 0,
+    long AccessRestricted = 0);
 
 /// <summary>
 /// One interface of a delivery flow (osdu/docs/reference/flow/interfaces.md): its ledger identity, how it is delivered
@@ -488,10 +489,12 @@ public sealed record DeliveryTargetDto(
 /// issue keeps blocked: the sixteen characters the flow's issues listing gives it. <c>Incomplete</c> keeps the records OSDU
 /// holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md), and <c>Missing</c> those of them
 /// restricted for one set of missing values: the sixteen characters a record's <c>incompleteGroup</c> gives it.
+/// <c>AccessRestricted</c> keeps the records whose access in OSDU is restricted either way, by an operator or until complete:
+/// the records a flow's Restricted figure counts.
 /// </summary>
 public sealed record DeliveryRecordFilterDto(
     string? Status, string? Search, string? Mode, Guid? SubmissionId, Guid? RunId, bool Drifted = false, Guid? DeliveredBy = null, string? Issue = null,
-    bool StepHeld = false, bool Restricted = false, bool Incomplete = false, string? Missing = null);
+    bool StepHeld = false, bool Restricted = false, bool Incomplete = false, string? Missing = null, bool AccessRestricted = false);
 
 /// <summary>
 /// A removal of one or many records. <c>scope</c> is record, previous, history or everything, or restrict or unrestrict their
@@ -993,11 +996,12 @@ public static class DeliveryEndpoints
             stats.Sum(s => s.Stats.Adoptable),
             stats.Sum(s => s.Stats.StepsHeld),
             stats.Sum(s => s.Stats.Restricted),
-            stats.Sum(s => s.Stats.RestrictedUntilComplete));
+            stats.Sum(s => s.Stats.RestrictedUntilComplete),
+            stats.Sum(s => s.Stats.AccessRestricted));
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryRecordDto>>, ProblemHttpResult>> ListRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, int? page, int? pageSize,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, int? page, int? pageSize,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, CancellationToken ct)
     {
         var (flow, unresolved) = await ResolveKeptAsync(db, documents, partitions, ledger, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -1006,7 +1010,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true));
         if (query is null)
         {
             return invalid!;
@@ -1091,6 +1095,7 @@ public static class DeliveryEndpoints
             Restricted = filter.Restricted,
             Incomplete = filter.Incomplete || missing is not null,
             Missing = missing,
+            AccessRestricted = filter.AccessRestricted,
         }, null);
     }
 
@@ -1107,19 +1112,19 @@ public static class DeliveryEndpoints
     /// rest of the lookup leaves, and is refused as too broad when they are more than the scan limit.
     /// </summary>
     private static async Task<Results<Ok<PagedResult<DeliveryRecordHitDto>>, ProblemHttpResult>> LookupRecordsAsync(
-        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, [FromQuery] string? partition, int? page, int? pageSize,
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, [FromQuery] string? partition, int? page, int? pageSize,
         CatalogDbContext db, OsduDbContext osdu, ILedger ledger, HttpRequest request, CancellationToken ct)
     {
         // The partition the page reads: the one the request names, else the workbench's.
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true, Incomplete: incomplete == true, Missing: missing));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true, Incomplete: incomplete == true, Missing: missing, AccessRestricted: accessRestricted == true));
         if (query is null)
         {
             return invalid!;
         }
 
-        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing);
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing, query.AccessRestricted);
         var (p, size) = PageRequest.Normalize(page, pageSize);
         var wanted = (long)p * size;
         var take = (int)Math.Min(wanted, RecordListing.LookupCandidateLimit);
@@ -1155,7 +1160,7 @@ public static class DeliveryEndpoints
     /// starts, so a refusal or a failure is answered as a problem, never as half a file.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
         IPartitionRegistry partitions, ILedger ledger, TimeProvider clock, HttpResponse response, CancellationToken ct)
     {
@@ -1165,7 +1170,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true));
         if (query is null)
         {
             return invalid!;
@@ -1191,18 +1196,18 @@ public static class DeliveryEndpoints
     /// records than the scan limit is refused as too broad, before any of the file is written.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordLookupAsync(
-        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, [FromQuery] string? partition, CatalogDbContext db,
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, [FromQuery] string? partition, CatalogDbContext db,
         OsduDbContext osdu, ILedger ledger, TimeProvider clock, HttpRequest request, HttpResponse response, CancellationToken ct)
     {
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true, Incomplete: incomplete == true, Missing: missing));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true, Incomplete: incomplete == true, Missing: missing, AccessRestricted: accessRestricted == true));
         if (query is null)
         {
             return invalid!;
         }
 
-        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing);
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing, query.AccessRestricted);
         const int reach = RecordListing.LookupCandidateLimit;
         IReadOnlyList<RecordState> found;
         var more = false;

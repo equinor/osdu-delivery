@@ -84,6 +84,11 @@ export interface DeliveryFlowStats {
    * delivery finds them all (osdu/docs/reference/flow/mapping-restricted-access.md). Absent from an older control plane.
    */
   restrictedUntilComplete?: number;
+  /**
+   * Records whose access in OSDU is restricted either way, until complete or by an operator, each record once: the flow's
+   * Restricted figure. Each is counted under its status too, so it is never part of the total. Absent from an older control plane.
+   */
+  accessRestricted?: number;
   deliveredLast24h: number;
   lastDeliveredUtc: string | null;
   lastVerifiedUtc: string | null;
@@ -1221,12 +1226,14 @@ export interface DeliveryRecordListQuery extends PageQuery {
   issue?: string;
   /** Only records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
-  /** Only records whose access in OSDU is restricted, or asked to be. */
+  /** Only records an operator restricted in OSDU, or asked to: restricted by an operator. */
   restricted?: boolean;
   /** Only records OSDU holds restricted until complete. */
   incomplete?: boolean;
   /** Only records restricted until complete for one set of missing values, by its group. */
   missing?: string;
+  /** Only records whose access in OSDU is restricted either way, until complete or by an operator. */
+  accessRestricted?: boolean;
 }
 
 /**
@@ -1315,12 +1322,14 @@ export interface DeliveryRecordLookupQuery extends PageQuery {
   drifted?: boolean;
   /** Only the records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
-  /** Only the records whose access in OSDU is restricted, or asked to be. */
+  /** Only the records an operator restricted in OSDU, or asked to: restricted by an operator. */
   restricted?: boolean;
   /** Only the records OSDU holds restricted until complete. */
   incomplete?: boolean;
   /** Only the records restricted until complete for one set of missing values, by its group. */
   missing?: string;
+  /** Only the records whose access in OSDU is restricted either way, until complete or by an operator. */
+  accessRestricted?: boolean;
   /** The ledger identity of one flow (a {@link DeliveryRecordFlow}'s `flowId`); left out, every flow. */
   flowId?: string;
   /** The partition whose ledgers are read; left out, the workbench's, which every call carries. */
@@ -2202,12 +2211,14 @@ export interface DeliveryRecordFilter {
   issue?: string;
   /** The records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
-  /** The records whose access in OSDU is restricted, or asked to be. */
+  /** The records an operator restricted in OSDU, or asked to: restricted by an operator. */
   restricted?: boolean;
   /** The records OSDU holds restricted until complete. */
   incomplete?: boolean;
   /** The records restricted until complete for one set of missing values, by its group. */
   missing?: string;
+  /** The records whose access in OSDU is restricted either way, until complete or by an operator: what the Restricted figure counts. */
+  accessRestricted?: boolean;
 }
 
 /**

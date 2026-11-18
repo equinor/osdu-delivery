@@ -758,7 +758,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the ACL of the registered access restriction the mapping names in `restrictedAccess`, rather than holding it, and
   the delivery that finds every such value gives it its own access back. The ledger keeps the access OSDU holds each
   record under and what it goes without, shown in an **Access** column on the Records tab and the Records page, on the
-  record's page and in the export, and listed with `--incomplete` and `--missing <group>` or `incomplete=true` and
+  record's page and in the export. A flow's card counts the records restricted either way, until complete or by an
+  operator, in a **Restricted** count after its status counts (as do Home and the Delivery page's summary), and the Records
+  tab and the Records page narrow to either kind or both with an **Access** filter beside the status filter, or with
+  `--access-restricted`, `--incomplete` and `--missing <group>`, or `accessRestricted=true`, `incomplete=true` and
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed

@@ -11,10 +11,13 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   `$restrictWhenMissing` beside `$required`: a record whose marked value is missing goes out under the registered access
   restriction `restrictedAccess` names, and gets its own access back once the value arrives
   ([restricted until complete](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/flow/mapping-restricted-access.md)).
-- A flow's Records tab and the Records page show an **Access** column, and their status filter lists the records
-  restricted until complete, each saying on hover what it goes without; a record's page names the restriction and
-  links to every record missing the same values. The mapping builder's switch marks a node, and **Check values**
-  counts its rows as restricted.
+- A flow's card counts its **Restricted** records after its status counts, restricted until complete or by an
+  operator, each once, with each kind on hover, and Home counts them beside Drifted.
+- A flow's Records tab and the Records page show an **Access** column, and an **Access** filter beside the status filter
+  lists the records restricted either way, restricted until complete, or restricted by an operator; each record
+  restricted until complete says on hover what it goes without, and its page names the restriction and links to every
+  record missing the same values. The mapping builder's switch marks a node, and **Check values** counts its rows as
+  restricted.
 
 ## [1.0.3]
 

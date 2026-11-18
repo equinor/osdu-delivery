@@ -197,13 +197,13 @@ The delivered attempt says what the try did to the record's access, under `acces
 
 | Where | What |
 | --- | --- |
-| A flow's Records tab | The status filter's **restricted until complete** entry, with its count; the **Access** column next to Status, each badge listing what the record goes without on hover; a link's `missing=<group>` narrows to one group of missing values. |
+| A flow's Records tab | The **Access** filter beside the status filter: **restricted** either way, **restricted until complete** and **restricted by an operator**, each with its count; the **Access** column next to Status, each badge listing what the record goes without on hover; a link's `missing=<group>` narrows to one group of missing values. |
 | A record's page | A line naming the restriction, since when, and the first missing value, every value on hover, with **Every record missing the same**. |
-| The Records page | The same status entry and Access column across every flow. |
-| The Delivery page | A flow card's `N restricted until complete`, which opens the Records tab on them. |
+| The Records page | The same Access filter and column across every flow. |
+| The Delivery page | A flow card's **Restricted** count, after the status counts: every record restricted either way, each once, with each kind on hover; it opens the Records tab on them. The page's summary names them (`N restricted`), and Home counts them beside Drifted. Each is counted under its status too, so none is added to a total. |
 | Export | The Records workbook's **Access**, **Missing values** and **Missing group** columns. |
-| CLI | `sqlflow records list --incomplete`, `--missing <group>`; `records show` lists each missing value ([records](../cli/records.md)). |
-| API | `incomplete=true`, `missing=<group>` on the records listing, lookup and export; `incompleteRestrictionId`, `incompleteSinceUtc`, `incompleteMissing`, `incompleteGroup` on a record, `restrictedUntilComplete` on its detail and a flow's counts ([API](../concepts/api.md)). |
+| CLI | `sqlflow records list --incomplete`, `--missing <group>`, `--access-restricted` (either kind); `records show` lists each missing value ([records](../cli/records.md)). |
+| API | `incomplete=true`, `missing=<group>`, `accessRestricted=true` on the records listing, lookup and export; `accessRestricted` in a flow's counts; `incompleteRestrictionId`, `incompleteSinceUtc`, `incompleteMissing`, `incompleteGroup` on a record, `restrictedUntilComplete` on its detail and a flow's counts ([API](../concepts/api.md)). |
 | Before a run | `sqlflow values` and **Check values** report a row a marked node gives no value as `restricted`, counted apart, without failing the check ([values](../cli/values.md)). |
 
 ## With the other ways a record's access changes

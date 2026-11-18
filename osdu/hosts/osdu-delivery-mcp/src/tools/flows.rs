@@ -52,13 +52,17 @@ pub struct FlowRecordsInput {
     pub run_id: Option<String>,
     /// true keeps only records a verify found drifted.
     pub drifted: Option<bool>,
-    /// true keeps only records whose access an operator restricted in OSDU.
+    /// true keeps only records restricted by an operator: an operator restricted their access in OSDU.
     pub restricted: Option<bool>,
     /// true keeps only records OSDU holds restricted until complete: delivered under the mapping's restrictedAccess while
     /// values it marks $restrictWhenMissing are missing. Each row's incompleteMissing says what.
     pub incomplete: Option<bool>,
     /// Only the records restricted until complete for one set of missing values: a row's incompleteGroup.
     pub missing: Option<String>,
+    /// true keeps only records whose access in OSDU is restricted either way, until complete or by an operator, each
+    /// once: what the flow's Restricted count (stats accessRestricted) counts.
+    #[serde(rename = "accessRestricted")]
+    pub access_restricted: Option<bool>,
     pub page: Option<i64>,
     /// Default 25, max 200.
     #[serde(rename = "pageSize")]
@@ -191,7 +195,8 @@ are left out. Follow with delivery_flow_records for the records behind a count."
 
     #[tool(
         description = "A delivery flow at a glance. `stats`: records per custody state (pending, delivering, delivered, \
-held, failed, deleted, waiting), drifted, restricted and restrictedUntilComplete, delivered in the last 24 hours, last \
+held, failed, deleted, waiting), drifted, accessRestricted (restricted either way, each once, counted under its status \
+too) with restricted (by an operator) and restrictedUntilComplete, delivered in the last 24 hours, last \
 delivery, last verify, last submission. `interfaces`: per interface its mapping, OSDU kind, route, record table, key columns, run parameters, the \
 order a run takes them in and what each waits for. `target`: the OSDU endpoint and data partition it declares. Use it \
 for 'how is this flow doing', 'where does it deliver', 'what does a run of it need'. pipelineId comes from \
@@ -239,7 +244,8 @@ list_pipelines(kind=\"delivery\"). Follow with delivery_flow_records(status=\"fa
 delivered them, by run, by drift, by restricted access, or by a search term. Each row has the record's OSDU id and \
 version, attempt count, next attempt time, last error, and source file and row. Use it for 'which records failed and \
 why' (status=failed, read lastError), 'what is held', 'what did last night's run deliver' (deliveredBy or runId), 'what \
-drifted', 'what is restricted until complete and what is missing' (incomplete=true, read incompleteMissing). \
+drifted', 'what is restricted' (accessRestricted=true for either kind, restricted=true for those restricted by an \
+operator), 'what is restricted until complete and what is missing' (incomplete=true, read incompleteMissing). \
 totalCapped=true means more match than were counted: narrow the filter. When the flow is unknown use \
 delivery_find_records; for one record's full history use delivery_record."
     )]
@@ -267,6 +273,15 @@ delivery_find_records; for one record's full history use delivery_record."
                 narrowed.push((name, value.as_str()));
             }
         }
+        // The page's Access filter takes the access asked about, the broadest when more than one is.
+        let access_restricted = i.access_restricted.filter(|on| *on);
+        let restricted = i.restricted.filter(|on| *on);
+        if access_restricted.is_some() {
+            narrowed.push(("accessRestricted", "true"));
+        }
+        if restricted.is_some() {
+            narrowed.push(("restricted", "true"));
+        }
         if incomplete.is_some() && missing.is_none() {
             narrowed.push(("incomplete", "true"));
         }
@@ -281,9 +296,10 @@ delivery_find_records; for one record's full history use delivery_record."
             .text("deliveredBy", delivered_by.clone())
             .text("runId", run.clone())
             .value("drifted", i.drifted.filter(|d| *d))
-            .value("restricted", i.restricted.filter(|r| *r))
+            .value("restricted", restricted)
             .value("incomplete", incomplete)
             .text("missing", missing)
+            .value("accessRestricted", access_restricted)
             .text("interface", interface)
             .text("partition", partition)
             .page(i.page, i.page_size);

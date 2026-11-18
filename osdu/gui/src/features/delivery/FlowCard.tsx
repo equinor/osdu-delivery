@@ -19,6 +19,7 @@ import { deliversTo } from "./deliveryTotals";
 import {
   deliveredPercent, flowVerdict, percentOf, ringArcs, statusShares, type StatusKey, type StatusShare, type Verdict, type VerdictTarget,
 } from "./flowHealth";
+import { restrictedExplanation, restrictedFigure, type RestrictedFigure } from "./recordAccess";
 import { STATUS_LOOK, TONE_INK } from "./statusLook";
 
 /** The glyph each verdict leads with, in its tone. */
@@ -34,7 +35,7 @@ const VERDICT_GLYPH: Record<Verdict["kind"], LucideIcon> = {
   delivered: CheckCircle2,
 };
 
-/** The counts every card shows, in one place on each, so a column of cards reads down. */
+/** The status counts every card shows, in one place on each, so a column of cards reads down; the Restricted count follows them. */
 const FIGURES: { key: StatusKey; label: string; alarm: boolean }[] = [
   { key: "delivered", label: "Delivered", alarm: false },
   { key: "pending", label: "Pending", alarm: false },
@@ -196,7 +197,7 @@ function Figure({ share, label, alarm, href, testId }: { share: StatusShare; lab
   const value = (
     <span
       className={cn(
-        "block font-mono text-[15px] font-medium leading-6 tabular-nums",
+        "block font-mono text-[15px] font-medium leading-6 tabular-nums @max-md/flow:text-[13px]",
         !some ? "text-muted-foreground/70" : alarm ? look.ink : "text-foreground",
       )}
       data-testid={`${testId}-value`}
@@ -215,19 +216,66 @@ function Figure({ share, label, alarm, href, testId }: { share: StatusShare; lab
       {some ? (
         <Link
           to={href}
-          className="group min-w-0 rounded-md px-1.5 py-1 outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/60"
+          className="group min-w-0 rounded-md px-1.5 py-1 outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/60 @max-md/flow:px-1"
           data-testid={testId}
         >
           {caption}
           {value}
         </Link>
       ) : (
-        <span className="min-w-0 px-1.5 py-1" data-testid={testId}>
+        <span className="min-w-0 px-1.5 py-1 @max-md/flow:px-1" data-testid={testId}>
           {caption}
           {value}
         </span>
       )}
     </RichTooltip>
+  );
+}
+
+/**
+ * The card's Restricted count: the records whose access in OSDU is restricted either way, until complete or by an operator,
+ * each once. Each of them is counted under its status as well, so a rule sets it apart from the four status counts and a
+ * lock stands where they have the ring's dot: it is no share of the ring and no part of the total. Some open the Records tab
+ * on them; the two kinds are on hover. A narrow card (under 28rem) sets every count a size smaller and leaves the lock out,
+ * the rule still setting it apart, so five counts of up to seven digits keep to one row without cutting a word.
+ */
+function RestrictedCount({ figure, href, testId }: { figure: RestrictedFigure; href: string; testId: string }) {
+  const some = figure.total > 0;
+  const value = (
+    <span
+      className={cn("block font-mono text-[15px] font-medium leading-6 tabular-nums @max-md/flow:text-[13px]", some ? "text-foreground" : "text-muted-foreground/70")}
+      data-testid={`${testId}-value`}
+    >
+      {figure.total.toLocaleString()}
+    </span>
+  );
+  const caption = (
+    <span className="flex items-center gap-1.5 text-[12px] leading-4 text-muted-foreground">
+      <Lock className="size-3 shrink-0 @max-md/flow:hidden" aria-hidden />
+      <span className="truncate">Restricted</span>
+    </span>
+  );
+  const explanation = restrictedExplanation(figure);
+  return (
+    <div className="min-w-0 border-l border-border/70 pl-1 @max-md/flow:pl-0">
+      <RichTooltip title="Restricted" body={some ? `${explanation} Click to list them.` : explanation} side="bottom">
+        {some ? (
+          <Link
+            to={href}
+            className="block min-w-0 rounded-md px-1.5 py-1 outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/60 @max-md/flow:px-1"
+            data-testid={testId}
+          >
+            {caption}
+            {value}
+          </Link>
+        ) : (
+          <span className="block min-w-0 px-1.5 py-1 @max-md/flow:px-1" data-testid={testId}>
+            {caption}
+            {value}
+          </span>
+        )}
+      </RichTooltip>
+    </div>
   );
 }
 
@@ -272,9 +320,9 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
 /**
  * One delivery flow on the Delivery page, read top to bottom as a reader asks of it: which flow, is it all right (the
  * ring and the verdict, the one thing that most needs someone, with where to act on it), how many records stand where
- * (four counts in the same place on every card, each opening its records), what else to know of some of them (drift,
- * restricted access, access restricted until complete, a held step), and when it last delivered, was verified and took a submission. Everything that
- * explains rather than counts is on hover. The card opens the flow's Delivery tab; its links open what they name.
+ * (four status counts in the same place on every card, then how many are restricted, each opening its records), what else
+ * to know of some of them (drift, a held step), and when it last delivered, was verified and took a submission. Everything
+ * that explains rather than counts is on hover. The card opens the flow's Delivery tab; its links open what they name.
  *
  * In the workbench's partition: a flow that delivers there is counted there; a flow that delivers only to other partitions
  * says where, and shows no counts, since none of its records are the workbench partition's.
@@ -377,7 +425,7 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
         <Skeleton className="h-11 w-full" />
       ) : !elsewhere && (
         <>
-          <div className="-mx-1.5 grid grid-cols-4 gap-x-1" data-testid={`${testId}-figures`}>
+          <div className="-mx-1.5 grid grid-cols-5 gap-x-1" data-testid={`${testId}-figures`}>
             {FIGURES.map((figure) => {
               const share = shares.find((s) => s.key === figure.key)!;
               return (
@@ -391,6 +439,11 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
                 />
               );
             })}
+            <RestrictedCount
+              figure={restrictedFigure(stats)}
+              href={flowHref(pipeline.id, counted, "records", { accessRestricted: "true" })}
+              testId={`${testId}-restricted`}
+            />
           </div>
           <Flags pipeline={pipeline} stats={stats} verdict={verdict} counted={counted} testId={testId} />
         </>
@@ -416,7 +469,7 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
   );
 }
 
-/** What some of a flow's records carry that its counts leave out; nothing at all when none do. */
+/** What some of a flow's records carry that its counts leave out (drift, a held step, an inactive flow); nothing at all when none do. */
 function Flags({ pipeline, stats, verdict, counted, testId }: {
   pipeline: PipelineSummary;
   stats: DeliveryFlowStats;
@@ -424,11 +477,9 @@ function Flags({ pipeline, stats, verdict, counted, testId }: {
   counted: string | null;
   testId: string;
 }) {
-  const restricted = stats.restricted ?? 0;
-  const incomplete = stats.restrictedUntilComplete ?? 0;
   const stepsHeld = stats.stepsHeld ?? 0;
   const drifted = verdict?.kind === "drifted" ? 0 : stats.drifted;
-  if (pipeline.active && restricted === 0 && incomplete === 0 && stepsHeld === 0 && drifted === 0) {
+  if (pipeline.active && stepsHeld === 0 && drifted === 0) {
     return null;
   }
 
@@ -454,28 +505,6 @@ function Flags({ pipeline, stats, verdict, counted, testId }: {
           testId={`${testId}-drifted`}
         >
           {`${drifted.toLocaleString()} drifted`}
-        </Flag>
-      )}
-      {restricted > 0 && (
-        <Flag
-          icon={Lock}
-          ink="text-muted-foreground"
-          explanation="Records whose access in OSDU is restricted under a registered access restriction: no run delivers them until the restriction is lifted. Click to list them."
-          href={flowHref(pipeline.id, counted, "records", { restricted: "true" })}
-          testId={`${testId}-restricted`}
-        >
-          {`${restricted.toLocaleString()} restricted`}
-        </Flag>
-      )}
-      {incomplete > 0 && (
-        <Flag
-          icon={Lock}
-          ink="text-warning"
-          explanation="Records OSDU holds restricted until complete: delivered under the mapping's restricted access because values it marks $restrictWhenMissing are missing. Each gets its own access back once a delivery finds them all. Click to list them and see what each goes without."
-          href={flowHref(pipeline.id, counted, "records", { incomplete: "true" })}
-          testId={`${testId}-restricted-until-complete`}
-        >
-          {`${incomplete.toLocaleString()} restricted until complete`}
         </Flag>
       )}
       {stepsHeld > 0 && (

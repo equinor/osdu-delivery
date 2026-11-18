@@ -66,9 +66,14 @@ to bottom:
   copy button, and it links to where that is done;
 - **Delivered**, **Pending**, **Held** and **Failed**, in the same place on every card; a count of some opens those records
   in the flow's Records tab, and its hover says what the status means;
-- notes on some of the records when there are any: drifted (when the verdict is something else), restricted access
-  ([restricting access](access-restriction.md)), restricted until complete ([missing values](../flow/mapping-restricted-access.md)),
-  a held enrichment step ([enrich holds](../flow/enrich-holds.md)), and an inactive flow, each opening its records;
+- **Restricted**, after a rule and with a lock where the status counts have the ring's dot: the records whose access in
+  OSDU is restricted either way, restricted until complete ([missing values](../flow/mapping-restricted-access.md)) or
+  restricted by an operator ([restricting access](access-restriction.md)), each record once. Each is counted under its
+  status too, so it is no share of the ring and no part of the total; its hover gives each kind, and a count of some opens
+  the Records tab on them (`?accessRestricted=true`). On a narrow card every count is a size smaller and the lock is left
+  out, so the five keep to one row;
+- notes on some of the records when there are any: drifted (when the verdict is something else), a held enrichment step
+  ([enrich holds](../flow/enrich-holds.md)), and an inactive flow, each opening its records;
 - the last delivery (with how many in the last 24 hours), the last verify and the last submission, which opens the
   submission's page and has its counts on hover; and the partition the counts are of, for a flow that delivers to several.
 
@@ -108,13 +113,17 @@ or the ingestion file. **Match anywhere** finds the term inside the source key, 
 file instead (`-0002` finds `LOG-0002/1`); it reads every record the other filters leave, so with more than 100,000 of
 them it asks for a flow or a status first ([finding records](ledger.md#finding-records)). Each hit says which value
 matched. The filters a flow's Records tab has narrow both the listing and a lookup: a status picker (`pending`,
-`waiting`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted`, and below them **restricted until complete**,
-`incomplete=true` in the address, [the records OSDU holds under their mapping's restricted access](../flow/mapping-restricted-access.md)), **Drifted only** (the records whose last
-verify found OSDU holding something else, or nothing, and the removed records OSDU still holds), **Step held** ([an enrichment set aside on its
-hold](../flow/enrich-holds.md)) and **Restricted** ([access restricted in OSDU](access-restriction.md)), with a flow picker beside them. A row shows the status, its access (**Access**: restricted, or restricted until complete with what it goes without on hover), the record (label, source key,
+`waiting`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted`), an **Access** picker beside it (**Any
+access**, **restricted** either way, **restricted until complete** ([the records OSDU holds under their mapping's restricted
+access](../flow/mapping-restricted-access.md)) and **restricted by an operator** ([restricting access](access-restriction.md))),
+**Drifted only** (the records whose last verify found OSDU holding something else, or nothing, and the removed records OSDU
+still holds) and **Step held** ([an enrichment set aside on its hold](../flow/enrich-holds.md)), with a flow picker beside
+them. A row shows the status, its access (**Access**: restricted by an operator, or restricted until complete with what it
+goes without on hover), the record (label, source key,
 ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type, a link to the
 record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`), flow (`flow`, the ledger's flow
-id), **Match anywhere** (`mode=contains`), **Drifted only** (`drifted=true`), **Step held** (`stepHeld=true`) and **Restricted** (`restricted=true`) are in
+id), the access (`accessRestricted=true`, `incomplete=true` or `restricted=true`), **Match anywhere** (`mode=contains`),
+**Drifted only** (`drifted=true`) and **Step held** (`stepHeld=true`) are in
 the address, so a lookup is a link; a link that names a partition (`partition`) makes it the title bar's, so the lookup
 is read in the partition it is about. **Export**, in the header, downloads every record the lookup reaches (at most
 1,000) as an Excel workbook, each with its flow, interface and partition and the values the term matched; its About

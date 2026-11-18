@@ -309,10 +309,13 @@ answers every one of them that matches (newest first), and reports a larger matc
 
 The lookup takes the filters a flow's listing has, read over every flow of the partition: `status`, `flowId` (one
 ledger), `drifted=true` (the records whose last verify found drift or a missing record), `stepHeld=true` (the records
-an enrichment was set aside on, [held steps](../flow/enrich-holds.md)), `restricted=true` (the records an operator
-restricted, [restricting access](access-restriction.md)) and `incomplete=true` with `missing=<group>` (the records OSDU holds
-[restricted until complete](../flow/mapping-restricted-access.md), and of them those missing one set of values). Without a term they narrow the records listed
-newest first; with one, the candidates. `mode=contains` matches a term that is not a UUID anywhere in the source key, the
+an enrichment was set aside on, [held steps](../flow/enrich-holds.md)), `restricted=true` (the records restricted by an
+operator, [restricting access](access-restriction.md)), `incomplete=true` with `missing=<group>` (the records OSDU holds
+[restricted until complete](../flow/mapping-restricted-access.md), and of them those missing one set of values) and
+`accessRestricted=true` (restricted either way, each once). Without a term they narrow the records listed newest first;
+with one, the candidates. Each filter with a filtered index of its own (a step held, an operator's restriction, restricted
+until complete) takes the records whose keys its index holds rather than testing every record of the range, so the
+newest-first listing, like a flow's, reads only those records however many the flow holds. `mode=contains` matches a term that is not a UUID anywhere in the source key, the
 label, the OSDU id or the ingestion file (the one the version OSDU holds came from, or the queued version's), as a flow's
 listing does. It has no index: it runs only when the rest of the lookup leaves at most 100,000 records, and is refused
 otherwise (400) with

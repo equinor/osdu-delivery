@@ -1277,6 +1277,13 @@ public sealed record FlowStats
     /// </summary>
     public long RestrictedUntilComplete { get; init; }
 
+    /// <summary>
+    /// Records whose access in OSDU is restricted either way, by an operator or until complete, each record once however many
+    /// apply: the flow's Restricted figure. Every one of them is counted under its status too, so this is never added to
+    /// <see cref="Total"/>.
+    /// </summary>
+    public long AccessRestricted { get; init; }
+
     public long DeliveredLast24h { get; init; }
 
     public DateTime? LastDeliveredUtc { get; init; }
@@ -1533,7 +1540,12 @@ public enum SearchMode
 /// <param name="Restricted">Only the records whose access in OSDU is restricted, or asked to be.</param>
 /// <param name="Incomplete">Only the records OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md).</param>
 /// <param name="Missing">Only the records restricted until complete for one set of missing values (<see cref="RecordState.IncompleteHash"/>).</param>
-public readonly record struct LookupNarrowing(bool Drifted = false, bool StepHeld = false, bool Restricted = false, bool Incomplete = false, long? Missing = null);
+/// <param name="AccessRestricted">
+/// Only the records whose access in OSDU is restricted either way: by an operator (<paramref name="Restricted"/>) or until
+/// complete (<paramref name="Incomplete"/>), each record once.
+/// </param>
+public readonly record struct LookupNarrowing(
+    bool Drifted = false, bool StepHeld = false, bool Restricted = false, bool Incomplete = false, long? Missing = null, bool AccessRestricted = false);
 
 /// <summary>
 /// What a release reaches: the records named by key, the records one problem keeps blocked, or every blocked record of
@@ -1701,6 +1713,13 @@ public sealed record RecordQuery
     /// <see cref="RecordState.IncompleteHash"/> is this one, as <see cref="Problem"/> narrows to one issue. Read from the same index.
     /// </summary>
     public long? Missing { get; init; }
+
+    /// <summary>
+    /// Only records whose access in OSDU is restricted either way: by an operator (<see cref="Restricted"/>) or until complete
+    /// (<see cref="Incomplete"/>), each record once, read from the two indexes that hold them. What a flow's
+    /// <see cref="FlowStats.AccessRestricted"/> counts.
+    /// </summary>
+    public bool AccessRestricted { get; init; }
 
     /// <summary>Only the blocked records one problem keeps blocked (<see cref="ProblemSignature"/>), read from the problem index.</summary>
     public long? Problem { get; init; }

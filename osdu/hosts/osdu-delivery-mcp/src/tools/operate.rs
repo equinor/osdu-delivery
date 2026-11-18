@@ -59,12 +59,15 @@ pub struct RecordFilter {
     #[serde(rename = "runId")]
     pub run_id: Option<String>,
     pub drifted: Option<bool>,
-    /// true keeps only records whose access an operator restricted in OSDU.
+    /// true keeps only records restricted by an operator: an operator restricted their access in OSDU.
     pub restricted: Option<bool>,
     /// true keeps only records OSDU holds restricted until complete.
     pub incomplete: Option<bool>,
     /// Only the records restricted until complete for one set of missing values: a record's incompleteGroup.
     pub missing: Option<String>,
+    /// true keeps only records whose access in OSDU is restricted either way, until complete or by an operator, each once.
+    #[serde(rename = "accessRestricted")]
+    pub access_restricted: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -365,6 +368,7 @@ fn filter_body(filter: RecordFilter) -> Result<Value, String> {
         "restricted": filter.restricted.unwrap_or(false),
         "incomplete": filter.incomplete.unwrap_or(false),
         "missing": text(filter.missing),
+        "accessRestricted": filter.access_restricted.unwrap_or(false),
     }))
 }
 
@@ -434,6 +438,7 @@ mod tests {
             restricted: None,
             incomplete: None,
             missing: None,
+            access_restricted: None,
         }
     }
 
@@ -443,10 +448,16 @@ mod tests {
         assert_eq!(body["incomplete"], json!(true));
         assert_eq!(body["missing"], json!("0f1e2d3c4b5a6978"));
         assert_eq!(body["restricted"], json!(false));
+        assert_eq!(body["accessRestricted"], json!(false));
+
+        // Either kind together is a filter of its own, as the flow's Restricted count counts them.
+        let either = filter_body(RecordFilter { access_restricted: Some(true), ..filter("delivered") }).unwrap();
+        assert_eq!((either["accessRestricted"].clone(), either["restricted"].clone(), either["incomplete"].clone()), (json!(true), json!(false), json!(false)));
 
         // Nothing asked narrows nothing: the control plane reads absent and false alike.
         let plain = filter_body(filter("held")).unwrap();
         assert_eq!(plain["incomplete"], json!(false));
+        assert_eq!(plain["accessRestricted"], json!(false));
         assert_eq!(plain["missing"], Value::Null);
     }
 

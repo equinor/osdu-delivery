@@ -60,6 +60,12 @@ other triggers" would have failed.
   own (`IncompleteRestrictionId`, `IncompleteSinceUtc`, `IncompleteMissing`, `IncompleteHash`), shown as an **Access**
   column next to the status. The status of a record restricted until complete stays delivered, so every path above
   treats it as it did.
+- **Counted apart, and never added.** "Restricted" alone means either kind, each record once, and each kind is always
+  named with its qualifier: restricted until complete, restricted by an operator. A flow's card shows Restricted after its
+  four status counts, set off by a rule and a lock instead of the ring's dot, Home counts it beside Drifted, and the
+  Records tab and the Records page narrow by an **Access** filter beside the status filter, as the Access column stands
+  beside the Status column. Every one of those records is counted under its status as well, so Restricted is never a share
+  of the ring nor part of a total.
 - **The mark sits on the node, beside `$required`.** `$restrictWhenMissing: true` is the human's "required attribute, but
   okay for restricted". It restricts exactly where `$required: false` would leave the property out (an empty value, a
   cache or search that finds nothing, no `$coalesce` alternative), and everything that holds a record whatever

@@ -247,7 +247,7 @@ public sealed class DeliveryRecordLookupApiTests
             var incomplete = await LookupAsync(client, token, $"incomplete=true&{scope}");
             Assert.Equal(2, incomplete.GetProperty("total").GetInt64());
             var hits = incomplete.GetProperty("items").EnumerateArray().ToDictionary(h => h.GetProperty("deliveryKey").GetGuid());
-            Assert.Equal([unclassified.Value, unowned.Value], hits.Keys.Order());
+            Assert.Equal(new[] { unclassified.Value, unowned.Value }.Order(), hits.Keys.Order());
             Assert.True(hits[unowned.Value].GetProperty("restrictedUntilComplete").GetBoolean());
             Assert.Equal([Classification, Owner], hits[unowned.Value].GetProperty("incompleteMissing").EnumerateArray().Select(m => m.GetString()));
             Assert.Equal(3, (await LookupAsync(client, token, $"incomplete=false&{scope}")).GetProperty("total").GetInt64());

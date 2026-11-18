@@ -23,6 +23,8 @@ export interface FlowCounts {
   restricted?: number;
   /** Records OSDU holds restricted until complete while values their mapping marks `$restrictWhenMissing` are missing. */
   restrictedUntilComplete?: number;
+  /** Records whose access in OSDU is restricted either way, each once: the card's Restricted count. */
+  accessRestricted?: number;
   stepsHeld?: number;
   lastSubmission: { submissionId: string; status: string; error: string | null } | null;
 }
@@ -340,11 +342,14 @@ export interface OverviewTotals {
   held: number;
   failed: number;
   drifted: number;
+  /** Records whose access in OSDU is restricted either way, each once; counted under their status too. */
+  accessRestricted?: number;
 }
 
 /**
  * The page's line of totals: how many flows deliver here, how much of what they hold is delivered, and only the counts
- * that ask for someone (failed, held, drifted, pending), so a partition where everything is delivered reads as one fact.
+ * that ask for someone (failed, held, drifted, restricted, pending), so a partition where everything is delivered and
+ * nothing restricted reads as one fact. Restricted records are counted under their status too, so they are named, never added.
  */
 export function overviewSubtitle(flows: number, active: string | null, totals: OverviewTotals, needing: number): string {
   const where = active === null ? "" : ` in ${active}`;
@@ -361,6 +366,7 @@ export function overviewSubtitle(flows: number, active: string | null, totals: O
     totals.failed > 0 ? `${totals.failed.toLocaleString()} failed` : null,
     totals.held > 0 ? `${totals.held.toLocaleString()} held` : null,
     totals.drifted > 0 ? `${totals.drifted.toLocaleString()} drifted` : null,
+    (totals.accessRestricted ?? 0) > 0 ? `${(totals.accessRestricted ?? 0).toLocaleString()} restricted` : null,
     totals.pending > 0 ? `${totals.pending.toLocaleString()} pending` : null,
   ].filter((part): part is string => part !== null);
   const attention = needing > 0 ? ` ${needing.toLocaleString()} flow${needing === 1 ? " needs" : "s need"} attention, listed first.` : "";

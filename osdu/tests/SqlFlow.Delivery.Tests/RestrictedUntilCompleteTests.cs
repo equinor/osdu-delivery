@@ -1,7 +1,9 @@
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Engine;
+using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
@@ -218,6 +220,92 @@ public sealed class RestrictedUntilCompleteTests : IDisposable
             Assert.Empty(_platform.Records);
             Assert.Empty(await ledger.ListRecordsAsync(runtime.Flow.Id, null, 10));
         }
+    }
+
+    [Fact]
+    public async Task Restricted_counts_and_lists_each_record_restricted_either_way_once_through_the_indexes_that_hold_them()
+    {
+        var ledger = _db.Ledger(_clock);
+        var flowId = FlowId.Of("restricted-either-way-" + Guid.NewGuid().ToString("N")[..8]);
+        await ledger.RegisterAsync(flowId);
+        var own = new DeliveryKey(Guid.NewGuid());
+        var incomplete = new DeliveryKey(Guid.NewGuid());
+        var byOperator = new DeliveryKey(Guid.NewGuid());
+        var both = new DeliveryKey(Guid.NewGuid());
+        var heldIncomplete = new DeliveryKey(Guid.NewGuid());
+        var stepHeld = new DeliveryKey(Guid.NewGuid());
+        DeliveryKey[] all = [own, incomplete, byOperator, both, heldIncomplete, stepHeld];
+        await ledger.UpsertPendingAsync(flowId, all.Select((key, i) => new RecordState
+        {
+            DeliveryKey = key,
+            FlowId = flowId,
+            SourceKey = $"restricted-{i}",
+            Label = $"restricted-{i}",
+            MappingName = "WellLog",
+            Status = RecordStatus.Pending,
+            TargetId = $"dev:work-product-component--WellLog:restricted-{i}",
+            SourceKeyJson = $$"""["restricted-{{i}}"]""",
+            PendingDocumentRef = "1:0:10",
+            PendingMetadata = true,
+        }).ToList());
+
+        // What a delivery that sent them restricted, an operator's restriction and a step held leave on the records.
+        const string Classification = "osdu.tags['dra.securityClassification']: dataset.class is empty";
+        var group = ProblemSignature.Of(Classification);
+        await using (var db = _db.CreateDbContext())
+        {
+            foreach (var key in new[] { incomplete, both, heldIncomplete })
+            {
+                await db.DeliveryRecords.Where(r => r.FlowId == flowId && r.DeliveryKey == key.Value).ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.IncompleteRestrictionId, 7)
+                    .SetProperty(r => r.IncompleteSinceUtc, Now)
+                    .SetProperty(r => r.IncompleteMissing, Classification)
+                    .SetProperty(r => r.IncompleteHash, group));
+            }
+
+            foreach (var key in new[] { byOperator, both })
+            {
+                await db.DeliveryRecords.Where(r => r.FlowId == flowId && r.DeliveryKey == key.Value).ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.RestrictionId, 8)
+                    .SetProperty(r => r.RestrictedUtc, Now));
+            }
+
+            await db.DeliveryRecords.Where(r => r.FlowId == flowId && r.DeliveryKey == heldIncomplete.Value).ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "held"));
+            await db.DeliveryRecords.Where(r => r.FlowId == flowId && r.DeliveryKey == stepHeld.Value).ExecuteUpdateAsync(s => s.SetProperty(r => r.HeldSteps, "grade"));
+        }
+
+        static DeliveryKey[] Sorted(IEnumerable<DeliveryKey> keys) => keys.OrderBy(k => k.Value).ToArray();
+        async Task<DeliveryKey[]> ListedAsync(RecordQuery query) => Sorted((await ledger.ListAsync(flowId, query)).Select(r => r.DeliveryKey));
+
+        // Restricted counts every record restricted either way once; each kind is counted as well.
+        var stats = await ledger.StatsAsync(flowId, Now);
+        Assert.Equal((4L, 2L, 3L, 1L), (stats.AccessRestricted, stats.Restricted, stats.RestrictedUntilComplete, stats.StepsHeld));
+
+        // The flow's listing, its count and the keys a removal reaches take the same records.
+        Assert.Equal(Sorted([incomplete, byOperator, both, heldIncomplete]), await ListedAsync(new RecordQuery { AccessRestricted = true }));
+        Assert.Equal(Sorted([byOperator, both]), await ListedAsync(new RecordQuery { Restricted = true }));
+        Assert.Equal(Sorted([incomplete, both, heldIncomplete]), await ListedAsync(new RecordQuery { Incomplete = true }));
+        Assert.Equal(Sorted([incomplete, both, heldIncomplete]), await ListedAsync(new RecordQuery { Missing = group }));
+        Assert.Empty(await ListedAsync(new RecordQuery { Missing = group + 1 }));
+        Assert.Equal([stepHeld], await ListedAsync(new RecordQuery { StepHeld = true }));
+        Assert.Equal([heldIncomplete], await ListedAsync(new RecordQuery { AccessRestricted = true, Status = RecordStatus.Held }));
+        Assert.Equal([both], await ListedAsync(new RecordQuery { Restricted = true, Incomplete = true }));
+        Assert.Equal(4, (await ledger.CountAsync(flowId, new RecordQuery { AccessRestricted = true }, 100)).Count);
+        Assert.Equal(Sorted([incomplete, byOperator, both, heldIncomplete]), Sorted(await ledger.ListKeysAsync(flowId, new RecordQuery { AccessRestricted = true }, 100)));
+
+        // The newest records across flows, read through the indexes, and a search across flows, over its candidates, narrow alike.
+        async Task<DeliveryKey[]> RecentAsync(LookupNarrowing narrowing)
+            => Sorted((await ledger.ListRecentAsync(50, flowId: flowId, narrowTo: narrowing)).Select(r => r.DeliveryKey));
+        Assert.Equal(Sorted([incomplete, byOperator, both, heldIncomplete]), await RecentAsync(new LookupNarrowing(AccessRestricted: true)));
+        Assert.Equal(Sorted([byOperator, both]), await RecentAsync(new LookupNarrowing(Restricted: true)));
+        Assert.Equal(Sorted([incomplete, both, heldIncomplete]), await RecentAsync(new LookupNarrowing(Incomplete: true)));
+        Assert.Equal([stepHeld], await RecentAsync(new LookupNarrowing(StepHeld: true)));
+        Assert.Equal([heldIncomplete], Sorted((await ledger.ListRecentAsync(50, RecordStatus.Held, flowId, narrowTo: new LookupNarrowing(AccessRestricted: true))).Select(r => r.DeliveryKey)));
+        Assert.Equal(4, (await ledger.CountRecentAsync(100, flowId: flowId, narrowTo: new LookupNarrowing(AccessRestricted: true))).Count);
+        Assert.Equal(6, (await ledger.ListRecentAsync(50, flowId: flowId)).Count);
+        Assert.Equal(
+            Sorted([incomplete, byOperator, both, heldIncomplete]),
+            Sorted((await ledger.LookupAsync("restricted", 50, flowId: flowId, narrowTo: new LookupNarrowing(AccessRestricted: true))).Select(r => r.DeliveryKey)));
     }
 
     /// <summary>The access block and the detail of the latest delivered try of the first sample log.</summary>

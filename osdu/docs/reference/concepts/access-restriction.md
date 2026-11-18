@@ -260,13 +260,14 @@ anything, so a membership changed since is refused there in the same words.
   **Access restrictions**; one the flow could not lift again is offered disabled, and the picked one says whether the flow can),
   and **Lift the restriction** when the selection holds a restricted record. Neither offers **Delete from the ledger**, and
   both say why when the flow's route cannot restrict.
-- A restricted record's page carries a **restricted** badge and a line naming the restriction, its groups and since when (or
+- A restricted record's page carries a **restricted by an operator** badge and a line naming the restriction, its groups and since when (or
   that it is asked and not confirmed) and the records beside it restricted with it, with **Lift the restriction**; the ACL
   it gives back, and the ids of the records beside it, are on hover. **Release** and
   **Redeliver** say why they do nothing for it. Its timeline shows the `restrict` and `lift-restriction` attempts with the
   ACL set and replaced.
-- A flow's Records tab and the Records page narrow to **Restricted** records, the grid marks each one, and a flow's card
-  counts them. A remove run's page says how many records it restricted or lifted, and under which restriction.
+- A flow's Records tab and the Records page narrow to them with the **Access** filter's **restricted by an operator**
+  (`restricted=true`), the grid marks each one, and a flow's card counts them in its **Restricted** count, with the records
+  restricted until complete, each record once. A remove run's page says how many records it restricted or lifted, and under which restriction.
 - **Access restrictions** (Admin in the menu) keeps the registry ([The registry](#the-registry)).
 
 ## What it does not do

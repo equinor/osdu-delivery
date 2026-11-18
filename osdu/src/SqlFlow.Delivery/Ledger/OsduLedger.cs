@@ -1672,8 +1672,20 @@ public sealed partial class OsduLedger : ILedger
     /// backwards, and the listing costs what it shows rather than what the ledger holds. A narrowing keeps the records it
     /// names among them.
     /// </summary>
+    /// <summary>
+    /// The records of one partition the newest-first listing across flows reads, before its order: a whole range, so its
+    /// narrowing takes the records through the indexes that hold them (<see cref="NarrowedByKeys"/>).
+    /// </summary>
     private static IQueryable<DeliveryRecord> RecentFilter(OsduDbContext db, RecordStatus? status, Guid? flowId, short partition, LookupNarrowing narrowing)
-        => Within(db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition), status, flowId, narrowing);
+    {
+        var scope = db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition);
+        if (flowId is { } flow)
+        {
+            scope = scope.Where(r => r.FlowId == flow);
+        }
+
+        return NarrowedByKeys(Within(scope, status, flowId: null, default), scope, narrowing);
+    }
 
     /// <summary>
     /// The records among <paramref name="rows"/> of one ledger identity and one custody state, each when asked, and of
@@ -1730,7 +1742,61 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => r.IncompleteRestrictionId != null && r.IncompleteHash == missing);
         }
 
+        if (narrowing.AccessRestricted)
+        {
+            rows = rows.Where(r => r.RestrictionId != null || r.IncompleteRestrictionId != null);
+        }
+
         return rows;
+    }
+
+    /// <summary>
+    /// <paramref name="rows"/> narrowed as <see cref="Narrowed"/> narrows them, for a read over a whole range of the ledger
+    /// (a flow's listing, the newest records across flows) rather than a bounded set of candidates. A filter with a filtered
+    /// index of its own (a step held, an operator's restriction, restricted until complete and its missing values) holds a
+    /// few records of a range that may hold millions; written beside the listing's order, the server reads the whole range
+    /// for it instead of the index (measured on a copy of the table, a flow of 300,000 records: 36,540 pages against 166).
+    /// So each takes the records whose keys its index holds, read from <paramref name="scope"/> through the index's own
+    /// filter, and the records restricted either way are the keys of both indexes.
+    /// </summary>
+    private static IQueryable<DeliveryRecord> NarrowedByKeys(IQueryable<DeliveryRecord> rows, IQueryable<DeliveryRecord> scope, LookupNarrowing narrowing)
+    {
+        rows = Narrowed(rows, new LookupNarrowing(Drifted: narrowing.Drifted));
+        if (narrowing.StepHeld)
+        {
+            rows = HeldIn(rows, scope.Where(r => r.HeldSteps != null));
+        }
+
+        if (narrowing.Restricted)
+        {
+            rows = HeldIn(rows, scope.Where(r => r.RestrictionId != null));
+        }
+
+        if (narrowing.Incomplete)
+        {
+            rows = HeldIn(rows, scope.Where(r => r.IncompleteRestrictionId != null));
+        }
+
+        if (narrowing.Missing is { } missing)
+        {
+            rows = HeldIn(rows, scope.Where(r => r.IncompleteRestrictionId != null && r.IncompleteHash == missing));
+        }
+
+        if (narrowing.AccessRestricted)
+        {
+            rows = HeldIn(rows, scope.Where(r => r.RestrictionId != null), scope.Where(r => r.IncompleteRestrictionId != null));
+        }
+
+        return rows;
+    }
+
+    /// <summary>The records among <paramref name="rows"/> whose key one of <paramref name="holders"/> holds, by the whole key.</summary>
+    private static IQueryable<DeliveryRecord> HeldIn(IQueryable<DeliveryRecord> rows, params IQueryable<DeliveryRecord>[] holders)
+    {
+        var keys = holders
+            .Select(holder => holder.Select(r => new RecordIdentityRow { PartitionId = r.PartitionId, FlowId = r.FlowId, DeliveryKey = r.DeliveryKey }))
+            .Aggregate((a, b) => a.Concat(b));
+        return rows.Where(r => keys.Any(k => k.PartitionId == r.PartitionId && k.FlowId == r.FlowId && k.DeliveryKey == r.DeliveryKey));
     }
 
     /// <summary>
@@ -1908,7 +1974,8 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => sent.Contains(r.DeliveryKey));
         }
 
-        rows = Narrowed(rows, new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing));
+        var scope = db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition && r.FlowId == flowId);
+        rows = NarrowedByKeys(rows, scope, new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing, query.AccessRestricted));
         if (query.Problem is { } problem)
         {
             // The problem index holds the blocked records alone; naming its filter lets the server read it.
@@ -1926,7 +1993,8 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>Whether the listing has a filter besides its search.</summary>
     private static bool Narrows(RecordQuery query)
         => query.Status is not null || query.SubmissionId is not null || query.DeliveredBySubmissionId is not null || query.RunId is not null
-            || query.Drifted || query.StepHeld || query.Restricted || query.Incomplete || query.Missing is not null || query.EverDelivered is not null;
+            || query.Drifted || query.StepHeld || query.Restricted || query.Incomplete || query.Missing is not null || query.AccessRestricted
+            || query.EverDelivered is not null;
 
     /// <summary>The listing's search term when it is a prefix search: not empty, not a delivery key, not a contains search.</summary>
     private static string? PrefixTerm(RecordQuery query)
@@ -1997,7 +2065,7 @@ public sealed partial class OsduLedger : ILedger
     private static async Task<FlowStats> StatsAsync(OsduDbContext db, short partition, Guid flowId, DateTime nowUtc, CancellationToken ct)
     {
         var since = nowUtc.AddHours(-24);
-        var (byStatus, drifted, last24, stepsHeld, restricted, incomplete) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
+        var (byStatus, drifted, last24, stepsHeld, restricted, incomplete, both) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
         var (blocked, stranded) = await SqlServerLedgerBulk.ParkedCountsAsync(db, partition, flowId, ct).ConfigureAwait(false);
 
         // The held records an adoption may be asked of, read from the held records alone through the status index: the test is
@@ -2030,6 +2098,7 @@ public sealed partial class OsduLedger : ILedger
             StepsHeld = stepsHeld,
             Restricted = restricted,
             RestrictedUntilComplete = incomplete,
+            AccessRestricted = restricted + incomplete - both,
             DeliveredLast24h = last24,
             LastDeliveredUtc = lastDelivered,
             LastVerifiedUtc = lastVerified,
@@ -2043,7 +2112,7 @@ public sealed partial class OsduLedger : ILedger
     /// kept the counts in a few rows per flow and was written inside the transaction of every record write, so every
     /// node delivering a flow met every other one on those rows.
     /// </summary>
-    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld, long Restricted, long Incomplete)> CountFromRecordsAsync(
+    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld, long Restricted, long Incomplete, long Both)> CountFromRecordsAsync(
         OsduDbContext db, short partition, Guid flowId, DateTime since, CancellationToken ct)
     {
         var byStatus = await db.DeliveryRecords
@@ -2069,7 +2138,15 @@ public sealed partial class OsduLedger : ILedger
         var incomplete = await db.DeliveryRecords
             .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.IncompleteRestrictionId != null, ct)
             .ConfigureAwait(false);
-        return (byStatus, drifted, deliveredSince, stepsHeld, restricted, incomplete);
+
+        // The records restricted both ways, read from the operator's restrictions' index, so a record restricted either way
+        // counts once in the flow's Restricted figure.
+        var both = restricted == 0 || incomplete == 0
+            ? 0
+            : await db.DeliveryRecords
+                .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.RestrictionId != null && r.IncompleteRestrictionId != null, ct)
+                .ConfigureAwait(false);
+        return (byStatus, drifted, deliveredSince, stepsHeld, restricted, incomplete, both);
     }
 
     public async Task<IReadOnlyList<AttemptRecord>> ListAttemptsAsync(Guid flowId, DeliveryKey key, int max, CancellationToken ct = default)

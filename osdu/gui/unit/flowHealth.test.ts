@@ -192,4 +192,16 @@ describe("overviewSubtitle", () => {
   it("says when the flows hold no records", () => {
     assert.equal(overviewSubtitle(2, "dev", { ...totals, total: 0, delivered: 0, held: 0 }, 0), "2 delivery flows in dev, holding no records yet.");
   });
+
+  it("names the restricted records beside the delivered ones they are counted in, never adding them", () => {
+    assert.equal(
+      overviewSubtitle(1, null, { ...totals, delivered: 12901, held: 0, accessRestricted: 42 }, 0),
+      `1 delivery flow: all ${n(12901)} records delivered; 42 restricted.`,
+    );
+    assert.equal(
+      overviewSubtitle(10, "dev", { ...totals, drifted: 3, accessRestricted: 1200 }, 0),
+      `10 delivery flows in dev: 79% of ${n(12901)} records delivered; ${n(2670)} held, 3 drifted, ${n(1200)} restricted.`,
+    );
+    assert.equal(overviewSubtitle(1, null, { ...totals, delivered: 12901, held: 0, accessRestricted: 0 }, 0), `1 delivery flow: all ${n(12901)} records delivered.`);
+  });
 });
