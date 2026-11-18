@@ -181,6 +181,7 @@ public sealed partial class FlowRuntime
             ?? throw new DeliveryException("A part of a split delivery names the submission its slices were cut from (payload submissionId); this run names none.");
         var batches = BatchesOf(share);
         await EnsureLegalTagsAsync(ct).ConfigureAwait(false);
+        await EnsureRestrictedAccessAsync(ct).ConfigureAwait(false);
         var prepared = await Intake.PrepareAsync(Flow, Mapping, Parameters, Request, force, ct).ConfigureAwait(false);
         if (prepared.Done is { } done)
         {

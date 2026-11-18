@@ -737,6 +737,24 @@ export default function MappingBuilderPage() {
                   Display text for the ledger and the GUI, with {"{column}"} tokens naming columns of the dataset's own row. It never enters the record.
                 </p>
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mapping-builder-restricted-access">Restricted access</Label>
+                <Input
+                  id="mapping-builder-restricted-access"
+                  className="h-8 font-mono"
+                  placeholder="{$param.restriction}"
+                  value={draft.restrictedAccess ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDraft((current) => (current === null ? current : { ...current, restrictedAccess: value.trim() === "" ? null : value }));
+                  }}
+                  data-testid="mapping-builder-restricted-access"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The access restriction, registered under Access restrictions for the partition the flow delivers to, that a record goes out under while a
+                  value an entry restricts the record for is missing. Name it, or read it from a parameter; leave it empty when no entry restricts the record.
+                </p>
+              </div>
             </Card>
           )}
 

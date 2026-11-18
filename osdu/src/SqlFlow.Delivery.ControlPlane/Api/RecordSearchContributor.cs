@@ -10,13 +10,15 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 /// One delivery record a search found: where it belongs (the flow's pipeline and, for a source, the interface, and for a
 /// flow that names its partitions, the partition), how it is identified, its custody state, and the ingestion file and row
 /// its newest version came from (the queued version's while work waits, the delivered one's otherwise), which is how an
-/// operator who holds a file recognises a record.
+/// operator who holds a file recognises a record. <c>Restricted</c> says an operator restricted its access in OSDU, and
+/// <c>RestrictedUntilComplete</c> that OSDU holds it restricted until complete, with what it goes without
+/// (<c>IncompleteMissing</c>, osdu/docs/reference/flow/mapping-restricted-access.md).
 /// </summary>
 public sealed record DeliveryRecordHitDto(
     Guid DeliveryKey, Guid FlowId, string? FlowName, Guid? PipelineId, string SourceKey, string? Label, string? TargetId,
     string Status, DateTime? LastDeliveredUtc, DateTime UpdatedUtc, string? Interface = null,
     IReadOnlyList<DeliveryRecordMatchDto>? Matched = null, string? SourceFileName = null, long? SourceRowNumber = null,
-    string? Partition = null);
+    string? Partition = null, bool Restricted = false, bool RestrictedUntilComplete = false, IReadOnlyList<string>? IncompleteMissing = null);
 
 /// <summary>
 /// One value of a record that the term matched, and what that value is (an identity the mapping declares, a key value,
@@ -155,7 +157,10 @@ internal static class DeliveryRecordHits
             matched is { Count: > 0 } ? matched : null,
             origin.FileName,
             origin.RowNumber,
-            record.Partition ?? (found is { Partition.Length: > 0 } ? found.Partition : null));
+            record.Partition ?? (found is { Partition.Length: > 0 } ? found.Partition : null),
+            record.Restricted,
+            record.RestrictedUntilComplete,
+            DeliveryEndpoints.MissingLines(record.IncompleteMissing));
     }
 
     /// <summary>

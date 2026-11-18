@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using SqlFlow.Core;
 using SqlFlow.Delivery.Expressions;
 using SqlFlow.Delivery.Templates;
 
@@ -109,6 +110,42 @@ public sealed record MappingDefinition
     /// nodes write them as. Empty for a mapping that finds every record where it reads it.
     /// </summary>
     public IReadOnlyDictionary<string, MappingLookup> Lookups { get; init; } = new Dictionary<string, MappingLookup>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The mapping's <c>restrictedAccess</c> (osdu/docs/reference/flow/mapping-restricted-access.md), as written: the name of the
+    /// access restriction, registered for the partition the flow delivers to, whose groups a record's ACL becomes while a value a
+    /// node marks <c>$restrictWhenMissing</c> is missing. Its text reads a parameter as <c>{$param.&lt;name&gt;}</c>, as a
+    /// literal does. Null for a mapping no node of which restricts; a mapping that loads names one exactly when a node does.
+    /// </summary>
+    public string? RestrictedAccess { get; init; }
+
+    /// <summary>The nodes that restrict the record when their value is missing (<c>$restrictWhenMissing</c>), in document order.</summary>
+    public IEnumerable<MappingEntry> RestrictingNodes() => Entries.SelectMany(e => e.ValueNodes).Where(n => n.RestrictWhenMissing);
+
+    /// <summary>
+    /// The name of the access restriction <see cref="RestrictedAccess"/> gives with <paramref name="parameter"/>'s values, or null
+    /// for a mapping that names none. A parameter the text reads and no value is given for is refused rather than left as a
+    /// token, since no restriction is registered under one.
+    /// </summary>
+    public string? RestrictionName(Func<string, string?> parameter)
+    {
+        ArgumentNullException.ThrowIfNull(parameter);
+        if (RestrictedAccess is null)
+        {
+            return null;
+        }
+
+        if (MappingEntry.ParameterNames(RestrictedAccess).FirstOrDefault(name => string.IsNullOrWhiteSpace(parameter(name))) is { } missing)
+        {
+            throw new FlowValidationException(
+                $"{Reference}: restrictedAccess reads parameter '{missing}', and the flow supplies no value for it under render.parameters, so no access restriction is named for the records it restricts.");
+        }
+
+        var name = MappingEntry.ExpandParameters(RestrictedAccess, parameter).Trim();
+        return name.Length > 0
+            ? name
+            : throw new FlowValidationException($"{Reference}: restrictedAccess names no access restriction once its parameters are filled in.");
+    }
 
     /// <summary>The entries, in the order the document lists them.</summary>
     public required IReadOnlyList<MappingEntry> Entries { get; init; }
@@ -813,6 +850,16 @@ public sealed partial record MappingEntry
 
     /// <summary>What an empty value does: true holds the record, false leaves the variable out.</summary>
     public bool Required { get; init; } = true;
+
+    /// <summary>
+    /// The node's <c>$restrictWhenMissing: true</c> (osdu/docs/reference/flow/mapping-restricted-access.md): a value the node
+    /// should give and does not leaves the variable out, as <c>$required: false</c> does, and the record goes out under the
+    /// access restriction its mapping names (<see cref="MappingDefinition.RestrictedAccess"/>) instead of being held, until a
+    /// render finds every such value. Only a missing value does so: a value the node cannot read, or several that answer to
+    /// it, holds the record as it would without it. Set only beside <see cref="Required"/>, which stays true; never on an
+    /// alternative of a <c>$coalesce</c>, whose node decides for all of them.
+    /// </summary>
+    public bool RestrictWhenMissing { get; init; }
 
     /// <summary>For a cache source: a last matching attempt with punctuation and spacing folded away, for names.</summary>
     public bool IgnoreSeparators { get; init; }

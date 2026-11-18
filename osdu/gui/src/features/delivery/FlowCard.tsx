@@ -273,7 +273,7 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
  * One delivery flow on the Delivery page, read top to bottom as a reader asks of it: which flow, is it all right (the
  * ring and the verdict, the one thing that most needs someone, with where to act on it), how many records stand where
  * (four counts in the same place on every card, each opening its records), what else to know of some of them (drift,
- * restricted access, a held step), and when it last delivered, was verified and took a submission. Everything that
+ * restricted access, access restricted until complete, a held step), and when it last delivered, was verified and took a submission. Everything that
  * explains rather than counts is on hover. The card opens the flow's Delivery tab; its links open what they name.
  *
  * In the workbench's partition: a flow that delivers there is counted there; a flow that delivers only to other partitions
@@ -425,9 +425,10 @@ function Flags({ pipeline, stats, verdict, counted, testId }: {
   testId: string;
 }) {
   const restricted = stats.restricted ?? 0;
+  const incomplete = stats.restrictedUntilComplete ?? 0;
   const stepsHeld = stats.stepsHeld ?? 0;
   const drifted = verdict?.kind === "drifted" ? 0 : stats.drifted;
-  if (pipeline.active && restricted === 0 && stepsHeld === 0 && drifted === 0) {
+  if (pipeline.active && restricted === 0 && incomplete === 0 && stepsHeld === 0 && drifted === 0) {
     return null;
   }
 
@@ -464,6 +465,17 @@ function Flags({ pipeline, stats, verdict, counted, testId }: {
           testId={`${testId}-restricted`}
         >
           {`${restricted.toLocaleString()} restricted`}
+        </Flag>
+      )}
+      {incomplete > 0 && (
+        <Flag
+          icon={Lock}
+          ink="text-warning"
+          explanation="Records OSDU holds restricted until complete: delivered under the mapping's restricted access because values it marks $restrictWhenMissing are missing. Each gets its own access back once a delivery finds them all. Click to list them and see what each goes without."
+          href={flowHref(pipeline.id, counted, "records", { incomplete: "true" })}
+          testId={`${testId}-restricted-until-complete`}
+        >
+          {`${incomplete.toLocaleString()} restricted until complete`}
         </Flag>
       )}
       {stepsHeld > 0 && (

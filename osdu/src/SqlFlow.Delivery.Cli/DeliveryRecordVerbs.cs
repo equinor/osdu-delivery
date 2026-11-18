@@ -107,7 +107,7 @@ internal static class DeliveryRecordVerbs
                 $"  {record.DeliveryKey.Value:N}  {record.Status,-10}  {record.SourceKey}"));
             context.Out.WriteLine(string.Create(
                 CultureInfo.InvariantCulture,
-                $"      {record.TargetId ?? "(no OSDU id)"}{Version(record)}{Waiting(record)}{Standing(record)}"));
+                $"      {record.TargetId ?? "(no OSDU id)"}{Version(record)}{Waiting(record)}{Standing(record)}{Access(record)}"));
             if (record.LastError is { Length: > 0 } error)
             {
                 context.Out.WriteLine("      " + One(error));
@@ -217,6 +217,29 @@ internal static class DeliveryRecordVerbs
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  key        {record.DeliveryKey.Value:N}"));
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  status     {record.Status}{Standing(record)}{Waiting(record)}"));
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  osdu id    {record.TargetId ?? "(none)"}{Version(record)}"));
+        if (record.RestrictionId is { } restriction)
+        {
+            context.Out.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"  access     restricted by an operator under access restriction {restriction}{(record.RestrictedUtc is { } at ? $" since {at:u}" : " (asked, not confirmed)")}"));
+        }
+
+        if (record.IncompleteRestrictionId is { } incomplete)
+        {
+            context.Out.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"  access     restricted until complete under access restriction {incomplete}{(record.IncompleteSinceUtc is { } since ? $" since {since:u}" : string.Empty)}; it gets its own access back once these values arrive:"));
+            foreach (var value in record.IncompleteMissing?.Split('\n', StringSplitOptions.RemoveEmptyEntries) ?? [])
+            {
+                context.Out.WriteLine("    missing  " + One(value));
+            }
+
+            if (record.IncompleteHash is { } group)
+            {
+                context.Out.WriteLine("    group    " + ProblemSignature.Format(group) + " (records list --missing " + ProblemSignature.Format(group) + " lists every record missing the same)");
+            }
+        }
+
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  mapping    {record.MappingName}"));
         if (record.SourceFileName is { Length: > 0 } file)
         {
@@ -643,7 +666,23 @@ internal static class DeliveryRecordVerbs
         ["validationOutcome"] = record.ValidationOutcome,
         ["validatedUtc"] = record.ValidatedUtc,
         ["assertionFailures"] = record.AssertionFailures,
+        ["restrictionId"] = record.RestrictionId,
+        ["restrictedUtc"] = record.RestrictedUtc,
+        ["incompleteRestrictionId"] = record.IncompleteRestrictionId,
+        ["incompleteSinceUtc"] = record.IncompleteSinceUtc,
+        ["incompleteMissing"] = record.IncompleteMissing is { Length: > 0 } missing
+            ? new JsonArray(missing.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(m => (JsonNode)JsonValue.Create(m)!).ToArray())
+            : null,
+        ["incompleteGroup"] = record.IncompleteHash is { } group ? ProblemSignature.Format(group) : null,
     };
+
+    /// <summary>
+    /// The access OSDU holds a record under when it is not its mapping's, for a record's line: an operator's restriction, then
+    /// the restriction its mapping put it under until complete (osdu/docs/reference/flow/mapping-restricted-access.md).
+    /// </summary>
+    private static string Access(RecordState record)
+        => (record.Restricted ? " (access restricted by an operator)" : string.Empty)
+            + (record.RestrictedUntilComplete ? " (restricted until complete)" : string.Empty);
 
     /// <summary>Where an issue lies, in the words the terminal and the JSON use.</summary>
     private static string Shape(ProblemShape shape) => shape == ProblemShape.Rows ? "row errors" : "set error";
@@ -701,14 +740,37 @@ internal static class DeliveryRecordVerbs
         return single.Length <= 240 ? single : single[..237] + "...";
     }
 
-    /// <summary>The listing filter <c>records list</c> and <c>records export</c> read: --search, --contains, --status and --issue.</summary>
-    private static RecordQuery Filter(CliVerbContext context) => new()
+    /// <summary>
+    /// The listing filter <c>records list</c> and <c>records export</c> read: --search, --contains, --status, --issue, and the
+    /// access ones, --restricted, --incomplete and --missing (osdu/docs/reference/flow/mapping-restricted-access.md).
+    /// </summary>
+    private static RecordQuery Filter(CliVerbContext context)
     {
-        Search = context.Arguments.GetOption("--search"),
-        Mode = context.Arguments.HasFlag("--contains") ? SearchMode.Contains : SearchMode.Prefix,
-        Status = Status(context.Arguments.GetOption("--status")),
-        Problem = Issue(context.Arguments.GetOption("--issue")),
-    };
+        var missing = Missing(context.Arguments.GetOption("--missing"));
+        return new RecordQuery
+        {
+            Search = context.Arguments.GetOption("--search"),
+            Mode = context.Arguments.HasFlag("--contains") ? SearchMode.Contains : SearchMode.Prefix,
+            Status = Status(context.Arguments.GetOption("--status")),
+            Problem = Issue(context.Arguments.GetOption("--issue")),
+            Restricted = context.Arguments.HasFlag("--restricted"),
+            Incomplete = context.Arguments.HasFlag("--incomplete") || missing is not null,
+            Missing = missing,
+        };
+    }
+
+    private static long? Missing(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return ProblemSignature.TryParse(value.Trim().ToLowerInvariant(), out var group)
+            ? group
+            : throw new FlowValidationException(
+                $"--missing '{value}' is not a set of missing values; it is the {ProblemSignature.TextLength} characters 'records show' prints as a record's missing group.");
+    }
 
     private static RecordStatus? Status(string? value)
     {

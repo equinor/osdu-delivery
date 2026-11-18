@@ -296,6 +296,10 @@ other packages adopt the same contract.
   what a partition keeps apart (a run's data) and what it does not (people, agents, the synced commit, sources, nodes
   and their secrets), why environments are separate deployments, and why the title bar's environment menu is a plain
   link to each GUI configured on the control plane.
+- [0062: restricted until complete is the access a record is sent under, not a status of its own](decisions/0062-restricted-until-complete-is-access-not-status.md):
+  why a record missing a value that decides who may read it is delivered under a registered restriction's ACL rather
+  than held or given a new status, why the mark sits on the node beside `$required`, and why the ledger takes the access
+  only from a try that sent the document.
 - [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
   why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
   Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an

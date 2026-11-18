@@ -490,6 +490,16 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
                 <span className="flex flex-wrap items-center gap-1">
                   {node.type !== null && node.type !== undefined && <Badge variant="outline" className="font-mono text-[10.5px] font-normal">{node.type}</Badge>}
                   {!node.required && <Badge variant="outline" className="text-[10.5px] font-normal">optional</Badge>}
+                  {node.restrictWhenMissing === true && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10.5px] font-normal"
+                      title="$restrictWhenMissing: when the value is missing, the record goes out under the mapping's restricted access, without it, instead of being held, and gets its own access back once a delivery finds it."
+                      data-testid="overview-restricts-when-missing"
+                    >
+                      restricts when missing
+                    </Badge>
+                  )}
                   {node.flow?.unverified === true && <Badge variant="outline" className="text-[10.5px] font-normal">unverified</Badge>}
                 </span>
               )}

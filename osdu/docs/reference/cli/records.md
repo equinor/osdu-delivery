@@ -76,8 +76,10 @@ command shares (`--db`, `--json`, `-v`, the `.sqlflow/env` file) are described i
 ## Synopsis
 
 ```bash
-sqlflow records list      <flow.yaml> [--search <term>] [--contains] [--status <status>] [--issue <id>] [--max <n>]
+sqlflow records list      <flow.yaml> [--search <term>] [--contains] [--status <status>] [--issue <id>]
+                          [--restricted] [--incomplete] [--missing <group>] [--max <n>]
 sqlflow records export    <flow.yaml> --out <file.xlsx> [--search <term>] [--contains] [--status <status>] [--issue <id>]
+                          [--restricted] [--incomplete] [--missing <group>]
 sqlflow records show      <flow.yaml> --key <delivery key | source key> [--attempts <n>]
 sqlflow records issues    <flow.yaml> [--issue <id>] [--max <n>]
 sqlflow records release   <flow.yaml> [--key <delivery key>]... | [--issue <id>]
@@ -119,6 +121,9 @@ The interface's records, the most recently changed first, 50 unless `--max` says
 | `--contains` | Match `--search` anywhere in the source key, the label, the OSDU id or the ingestion file instead. It has no index, so it is refused when the rest of the filter leaves more than 100,000 records: `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.` |
 | `--status <status>` | One status, any case: `pending`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted` or `waiting` ([Record lifecycle](../concepts/record-lifecycle.md)). Anything else fails naming them. |
 | `--issue <id>` | Only the records one issue keeps blocked: the 16 characters `records issues` prints for it. |
+| `--restricted` | Only the records whose access an operator restricted in OSDU ([Restricting access](../concepts/access-restriction.md)). |
+| `--incomplete` | Only the records OSDU holds restricted until complete: delivered under their mapping's restricted access while values it marks `$restrictWhenMissing` are missing ([restricted until complete](../flow/mapping-restricted-access.md)). |
+| `--missing <group>` | Only the records restricted until complete for one set of missing values: the 16 characters `records show` prints as a record's `group`. A value that is not one is refused (`--missing '<value>' is not a set of missing values; ...`). |
 | `--max <n>` | Records listed; a number above 1,000 is taken as 1,000, and one that is not a whole number above zero is refused (`--max '<value>' is not a whole number of records above zero.`). |
 
 ```text
@@ -140,15 +145,20 @@ stages nothing.`
 `--json`: `flow`, `flowId` and `records`, each with `deliveryKey`, `sourceKey`, `label`, `status`, `blocked`,
 `planRequestedUtc` (when it was asked to be planned again; left out otherwise), `targetId`,
 `targetVersion`, `waitingFor`, `mapping`, `attemptCount`, `lastDeliveredUtc`, `lastVerifiedUtc`,
-`lastVerifyOutcome`, `lastError`, `sourceFileName`, `sourceRowNumber`, `issue`, and what the last check before sending
+`lastVerifyOutcome`, `lastError`, `sourceFileName`, `sourceRowNumber`, `issue`, what the last check before sending
 found: `validationOutcome`, `validatedUtc` and `assertionFailures` (how many judgements of the mapping's assertions
-failed; left out when the mapping states none).
+failed; left out when the mapping states none), and the access OSDU holds it under: `restrictionId` and `restrictedUtc`
+(an operator's restriction), `incompleteRestrictionId`, `incompleteSinceUtc`, `incompleteMissing` (a value to an item) and
+`incompleteGroup` (restricted until complete). A record's line in the text form ends with `(access restricted by an
+operator)` or `(restricted until complete)` when it is.
 
 ## records export
 
 The interface's records a filter matches, every one rather than a page, as the Excel workbook the GUI's **Export** gives: a
 working list of what to fix where the records come from. It takes the filter `records list` takes (`--search`,
-`--contains`, `--status`, `--issue`) and writes at most 25,000 records, the listing's count limit. A filter matching more is
+`--contains`, `--status`, `--issue`, `--restricted`, `--incomplete`, `--missing`) and writes at most 25,000 records, the
+listing's count limit. Its **Access**, **Missing values** and **Missing group** columns say who may read each record in OSDU
+when it is not its mapping's ACL, and what one restricted until complete goes without. A filter matching more is
 refused, and nothing is written: `The filter matches more than 25000 records as far as the listing counts, and an export
 writes at most 25000 at once. Narrow it (a status, an issue, a submission, a run or a search) and export each part.` The
 file is written beside its name and moved into place, so a failure never leaves half a workbook under it.
@@ -189,6 +199,9 @@ welldb-wellbore-03-delivery: welldb:WB-0002
   key        <delivery key>
   status     Failed (blocked)
   osdu id    <OSDU id>
+  access     restricted until complete under access restriction <id> since <time>; it gets its own access back once these values arrive:
+    missing  <what the document OSDU holds goes without, one line each>
+    group    <group> (records list --missing <group> lists every record missing the same)
   mapping    Wellbore@1.0.0
   from       <file the row was landed from> row <n>
   delivered  <time>

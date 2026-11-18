@@ -16,6 +16,7 @@ internal sealed class RenderTrail
     private List<ChildUsage>? _children;
     private Dictionary<(string Target, int Alternative), CoalesceChoice>? _chosen;
     private List<RenderMiss>? _misses;
+    private List<string>? _missing;
 
     /// <summary>
     /// Where what the mapping's assertions find of this record is collected (osdu/docs/reference/flow/mapping-assertions.md),
@@ -74,6 +75,32 @@ internal sealed class RenderTrail
     /// left its variable out: what an inspection says a variable came to nothing for. Empty unless <see cref="NotesMisses"/>.
     /// </summary>
     public IReadOnlyList<RenderMiss> Misses => _misses ?? (IReadOnlyList<RenderMiss>)[];
+
+    /// <summary>
+    /// The values the record goes without that nodes marked <c>$restrictWhenMissing</c> should give
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md), each said once as a hold would say it without its required clause
+    /// (<c>osdu.tags['dra.securityClassification']: dataset.Lra_securityClassification is empty</c>), in the order the render met
+    /// them: the record goes out under its mapping's restricted access while any is missing. Empty for a record that has them all.
+    /// </summary>
+    public IReadOnlyList<string> Missing => _missing ?? (IReadOnlyList<string>)[];
+
+    /// <summary>
+    /// How many times a node marked <c>$restrictWhenMissing</c> gave no value, however many said the same reason: what tells an
+    /// inspection that the entry it just evaluated restricted the record, item by item.
+    /// </summary>
+    public int Restrictions { get; private set; }
+
+    /// <summary>Notes a value a node marked <c>$restrictWhenMissing</c> should give and does not; the same reason is said once.</summary>
+    public void Restrict(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        Restrictions++;
+        _missing ??= [];
+        if (!_missing.Contains(reason, StringComparer.Ordinal))
+        {
+            _missing.Add(reason);
+        }
+    }
 
     /// <summary>Notes that a node looked for something and did not find it, when the render notes misses.</summary>
     public void Miss(RenderMiss miss)

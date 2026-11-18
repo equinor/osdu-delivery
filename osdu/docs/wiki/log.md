@@ -864,3 +864,12 @@ want to break"), and the control plane, the GUI and the templates as changed for
 
 Amended decision 0061 (a mistake is left out and logged, never refused at start; Radix carries the list as a comment);
 updated `delivery-guide-deployment`; SQLFlow's `concept-environments` documents what each mistake leaves out.
+
+## [2026-11-18] ingest | Restricted until complete is an access axis, not a status, decision 0062
+
+Source: the owner's request for a restricted mode a missing required value puts a record in, which it leaves by itself
+once the value arrives, without the ledger losing its other triggers ("required attribute, but okay for restricted"), and
+the renderer, the worker, the ledger and the registry as changed for it.
+
+Added decision 0062 and a pattern catalog row; `delivery-flow-mapping-restricted-access` documents the keys, the ledger's
+columns and where what is missing is shown.

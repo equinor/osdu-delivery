@@ -822,8 +822,12 @@ public sealed class DeliveryWorker
             // plan decided a delivery does with them.
             EnrichWork stepWork;
             IReadOnlyList<WorkStepPart> stepParts;
+            DocumentAccess access;
             try
             {
+                // The access the document goes out under, as the plan rendered it; a line that says it unreadably holds the
+                // record rather than sending it as if it were open.
+                access = DocumentAccess.Decode(item.Restricted);
                 stepWork = EnrichParts.Decode(item.Enrich);
                 stepParts = stepWork.Parts
                     .Select(p => new WorkStepPart(p, p.RegistersFiles ? new StoragePayloadSource(_payloads, PayloadLocation.Parse(p.Location)) : null))
@@ -849,6 +853,7 @@ public sealed class DeliveryWorker
                 TargetId = state.TargetId,
                 Document = document,
                 Assertions = AssertionFindings.FromText(item.Assertions),
+                Access = access,
                 DeliverMetadata = sendMetadata,
                 DeliverPayload = sendPayload,
                 Payload = single,
@@ -1331,9 +1336,13 @@ public sealed class DeliveryWorker
             };
             var targetState = JsonMerge.Merge(record.TargetStateJson, JsonMerge.FromValues(outcome.Returned));
 
-            // The version this delivery replaced, as the claim knew it: what a reversal of it puts back.
-            var replaced = AttemptResult.WithReplaced(resultJson, work.ExistingVersion);
-            return Settle(record, batch, started, RecordStatus.Delivered, AttemptOutcome.Delivered, phase, outcome.TargetVersion, outcome.Detail, null, replaced, targetState, promote: true);
+            // The version this delivery replaced, as the claim knew it: what a reversal of it puts back. A try that wrote the
+            // record's document tells the ledger the access it went out under, which is the access OSDU holds the record under
+            // now (osdu/docs/reference/flow/mapping-restricted-access.md); one that wrote no document leaves it as it was.
+            var sent = outcome.MetadataDelivered ? work.Access : null;
+            var replaced = AttemptResult.WithAccess(AttemptResult.WithReplaced(resultJson, work.ExistingVersion), sent, record.IncompleteRestrictionId);
+            var detail = AccessDetail(record, sent) is { } access ? (outcome.Detail is { Length: > 0 } said ? $"{said}; {access}" : access) : outcome.Detail;
+            return Settle(record, batch, started, RecordStatus.Delivered, AttemptOutcome.Delivered, phase, outcome.TargetVersion, detail, null, replaced, targetState, promote: true, access: sent);
         }
 
         var failure = outcome.Failure!;
@@ -1369,6 +1378,31 @@ public sealed class DeliveryWorker
         }
     }
 
+    /// <summary>
+    /// What a delivery that wrote the record's document did to its access, for its attempt and its event: restricted until
+    /// complete, and why, or given its own access back. Null when it wrote a document with its own access over one OSDU held so
+    /// already, or wrote no document.
+    /// </summary>
+    internal static string? AccessDetail(RecordState record, DocumentAccess? sent)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (sent is null)
+        {
+            return null;
+        }
+
+        if (!sent.Restricted)
+        {
+            return record.IncompleteRestrictionId is { } was
+                ? string.Create(CultureInfo.InvariantCulture, $"given its own access back: every value its mapping restricts it for is there (it was restricted until complete under access restriction {was})")
+                : null;
+        }
+
+        var still = record.IncompleteRestrictionId == sent.RestrictionId ? "still restricted" : "restricted";
+        var more = sent.Missing.Count > 1 ? string.Create(CultureInfo.InvariantCulture, $" (and {sent.Missing.Count - 1} more value(s) missing)") : string.Empty;
+        return $"{still} until complete under access restriction '{sent.Restriction}': {sent.Missing[0]}{more}";
+    }
+
     private bool IsTerminal(int status)
     {
         if (_flow.Reliability.SkipStatusCodes.Contains(status))
@@ -1397,7 +1431,8 @@ public sealed class DeliveryWorker
         bool promote = false,
         bool keepSteps = false,
         DateTime? nextAttempt = null,
-        bool nothingSent = false)
+        bool nothingSent = false,
+        DocumentAccess? access = null)
     {
         var completed = _time.GetUtcNow().UtcDateTime;
         var redacted = error is null ? null : HeaderRedaction.RedactMessage(error);
@@ -1413,6 +1448,7 @@ public sealed class DeliveryWorker
             Status = status,
             Promote = promote,
             NothingSent = nothingSent,
+            Access = access,
             Claimed = ClaimedWork.Of(record),
             ClaimedAttemptCount = record.AttemptCount,
             TargetVersion = version,

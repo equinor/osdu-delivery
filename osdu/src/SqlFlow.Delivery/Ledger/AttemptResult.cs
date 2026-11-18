@@ -33,6 +33,35 @@ public static class AttemptResult
     }
 
     /// <summary>
+    /// <paramref name="resultJson"/> with what a delivered try that sent the record's document did to its access
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md), under <c>access</c>: <c>restricted</c> true with the access
+    /// restriction (<c>restrictionId</c>, <c>restriction</c>) and what the document goes without (<c>missing</c>), or false for a
+    /// record given its own access back; and <c>was</c>, the restriction OSDU held it under before (null when it held it with its
+    /// own access). A try that sent a document with its own access, of a record OSDU held so already, has nothing to say, and its
+    /// result is left as it is; so is one that sent no document (<paramref name="sent"/> null).
+    /// </summary>
+    public static string? WithAccess(string? resultJson, DocumentAccess? sent, int? was)
+    {
+        if (sent is null || (!sent.Restricted && was is null))
+        {
+            return resultJson;
+        }
+
+        var result = ObjectOrEmpty(resultJson);
+        var access = new JsonObject { ["restricted"] = sent.Restricted };
+        if (sent.Restricted)
+        {
+            access["restrictionId"] = sent.RestrictionId;
+            access["restriction"] = sent.Restriction;
+            access["missing"] = new JsonArray(sent.Missing.Select(m => (JsonNode?)JsonValue.Create(m)).ToArray());
+        }
+
+        access["was"] = was;
+        result["access"] = access;
+        return result.ToJsonString();
+    }
+
+    /// <summary>
     /// <paramref name="resultJson"/> with <paramref name="detail"/> added. A result that held nothing yet is started with
     /// an empty steps array, so every reader finds the same shape.
     /// </summary>

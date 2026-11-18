@@ -177,10 +177,15 @@ public sealed class PreviousVersionRestore
         }).ConfigureAwait(false);
 
         var work = current.Where(c => previous[c.Index] is not null).ToList();
+
+        // A record OSDU holds restricted until complete is written back under the restriction's groups, so a step back never opens it.
+        var restrictions = await VersionWriteBack.RestrictionsOfAsync(_ledger, work.Select(c => records[c.Index]), ct).ConfigureAwait(false);
         var written = await VersionWriteBack.RunAsync(
             _protocol,
-            work.Select(c => new WriteBack(
-                records[c.Index].DeliveryKey, records[c.Index].TargetId!, previous[c.Index]!.Value, c.Latest, JsonMerge.ToValues(records[c.Index].TargetStateJson))).ToList(),
+            work.Select(c => VersionWriteBack.Guarded(
+                new WriteBack(records[c.Index].DeliveryKey, records[c.Index].TargetId!, previous[c.Index]!.Value, c.Latest, JsonMerge.ToValues(records[c.Index].TargetStateJson)),
+                records[c.Index],
+                restrictions)).ToList(),
             Concurrency,
             ct).ConfigureAwait(false);
 

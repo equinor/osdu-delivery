@@ -57,6 +57,10 @@ public sealed class RecordExportTests
                 LastVerifyOutcome = VerifyOutcome.Match,
                 SourceFileName = "composite_welllog_20261023103331.csv",
                 SourceRowNumber = 1546,
+                IncompleteRestrictionId = 3,
+                IncompleteSinceUtc = Delivered,
+                IncompleteMissing = "osdu.tags['dra.securityClassification']: dataset.class is empty\nosdu.data.Owner: dataset.owner is empty",
+                IncompleteHash = 0x0a1b2c3d4e5f6071,
             };
         var unlabelled = Record(null, ["NO 34/10-32 A", "32 A"], "C") with { Status = RecordStatus.Pending };
         var ledger = RecordExportLedger.Of(Kept,[held, delivered, unlabelled]);
@@ -67,7 +71,8 @@ public sealed class RecordExportTests
         Assert.Equal([RecordExport.RecordsSheet, RecordExport.AboutSheet], read.SheetNames);
         Assert.Equal(
             [
-                "Record", "Source key", "well", "wellbore", "Status", "Blocked", "Issue", "Problem", "Source file", "Source row", "Identities",
+                "Record", "Source key", "well", "wellbore", "Status", "Blocked", "Issue", "Problem", "Access", "Missing values", "Missing group",
+                "Source file", "Source row", "Identities",
                 "Attempts", "Next attempt (UTC)", "Waiting for", "Document waiting", "Delivered (UTC)", "Verified (UTC)", "Verify", "OSDU id",
                 "OSDU version", "Mapping", "Updated (UTC)", "Delivery key",
             ],
@@ -86,6 +91,9 @@ public sealed class RecordExportTests
         Assert.Equal(("composite_welllog_20261023103331.csv", 2235d), (blocked["Source file"].GetText(), blocked["Source row"].GetNumber()));
         Assert.Equal(("NO 34/10-A-48; 22004", 1d, "yes"), (blocked["Identities"].GetText(), blocked["Attempts"].GetNumber(), blocked["Document waiting"].GetText()));
         Assert.True(blocked["OSDU id"].IsBlank);
+        Assert.True(blocked["Access"].IsBlank);
+        Assert.True(blocked["Missing values"].IsBlank);
+        Assert.True(blocked["Missing group"].IsBlank);
         Assert.Equal(held.DeliveryKey.Value.ToString("D"), blocked["Delivery key"].GetText());
 
         // Where a delivered record landed: its OSDU version, sixteen digits, is text a spreadsheet keeps whole.
@@ -95,6 +103,11 @@ public sealed class RecordExportTests
         Assert.Equal(Delivered, DateTime.SpecifyKind(landed["Delivered (UTC)"].GetDateTime(), DateTimeKind.Utc));
         Assert.Equal(("match", "WellLog"), (landed["Verify"].GetText(), landed["Mapping"].GetText()));
         Assert.Equal(("composite_welllog_20261023103331.csv", 1546d), (landed["Source file"].GetText(), landed["Source row"].GetNumber()));
+
+        // A record OSDU holds restricted until complete says so, with what it goes without and the group it shares.
+        Assert.Equal("restricted until complete", landed["Access"].GetText());
+        Assert.Equal("osdu.tags['dra.securityClassification']: dataset.class is empty; osdu.data.Owner: dataset.owner is empty", landed["Missing values"].GetText());
+        Assert.Equal("0a1b2c3d4e5f6071", landed["Missing group"].GetText());
 
         var about = read.About();
         Assert.Equal(Flow.Name, about["Flow"].GetText());

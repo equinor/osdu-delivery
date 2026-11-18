@@ -78,6 +78,7 @@ related:
   - delivery-wiki-0037-request-correlation
   - delivery-wiki-0051-lookups-match-several-fields-on-one-line
   - delivery-wiki-0061-environments-are-deployments
+  - delivery-wiki-0062-restricted-until-complete-is-access-not-status
 updated: 2026-11-18
 ---
 
@@ -143,6 +144,7 @@ it is.
 | A record must list files or records of another kind its rows name (a dataset per LAS file) | An enrichment whose mapping fills that kind adds one per row, under an id kept for good, and the record links it with `$link: <name>` | [records an enrichment adds](../../reference/flow/enrich-records.md), [0036](../decisions/0036-enrich-in-the-mapping.md) |
 | A property only applies to some rows | `$when: <condition>` on the node | [mapping values](../../reference/flow/mapping-values.md), [expressions](../../reference/flow/mapping-expressions.md) |
 | An empty value should leave the property out rather than hold the record | `$required: false` | [mapping values](../../reference/flow/mapping-values.md) |
+| A record missing a value that decides who may read it (a classification) should still reach OSDU, readable only by a few until the value arrives | `$restrictWhenMissing: true` on the node and `restrictedAccess: <registered restriction>` in the mapping's header; the delivery that finds the value gives the record its own access back | [restricted until complete](../../reference/flow/mapping-restricted-access.md), [decision 0062](../decisions/0062-restricted-until-complete-is-access-not-status.md) |
 | A value needs computing (concatenation, arithmetic, a choice) | `$expr` | [expressions](../../reference/flow/mapping-expressions.md) |
 | A reference id is built from a value | The `ref` modifier (`{$param.dataPartition}:<group>--<Entity>:{$value}:`, the entity type the template's property points to), or `id` with a template of your own | [modifiers](../../reference/flow/mapping-modifiers.md) |
 | The record's OSDU id must be the source's own code, not a hash | `dataset.idFrom: key` | [mapping](../../reference/flow/mapping.md) |

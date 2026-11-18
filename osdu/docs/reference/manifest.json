@@ -6567,6 +6567,66 @@
       ]
     },
     {
+      "id": "delivery-flow-mapping-restricted-access",
+      "corpus": "reference",
+      "path": "flow/mapping-restricted-access.md",
+      "title": "Restricted until complete ($restrictWhenMissing, restrictedAccess): a record missing a value goes out under a registered restriction's ACL, and gets its own access back once the value arrives",
+      "type": "flow-reference",
+      "summary": "$restrictWhenMissing sends a record missing a value under the restriction restrictedAccess names, not held; it gets its own access back once the value arrives.",
+      "keywords": [
+        "restrictWhenMissing",
+        "$restrictWhenMissing",
+        "restrictedAccess",
+        "restricted until complete",
+        "restricted mode",
+        "restrict when missing",
+        "missing classification",
+        "security classification missing",
+        "deliver restricted",
+        "incomplete record",
+        "IncompleteRestrictionId",
+        "IncompleteMissing",
+        "missing values",
+        "unclassified records"
+      ],
+      "yamlPath": "record.<property>.$restrictWhenMissing, restrictedAccess (documentType: mapping)",
+      "related": [
+        "delivery-flow-mapping-values",
+        "delivery-flow-mapping",
+        "delivery-concept-access-restriction",
+        "delivery-concept-record-lifecycle",
+        "delivery-table-record",
+        "delivery-table-record-event",
+        "delivery-table-access-restriction",
+        "delivery-flow-enrich-records",
+        "delivery-cli-values",
+        "delivery-cli-records"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EnrichParts.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Reversals/VersionWriteBack.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DocumentAccess.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
+        "osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx",
+        "osdu/gui/src/features/delivery/RecordSituation.tsx",
+        "osdu/docs/census/keys.mapping.json"
+      ]
+    },
+    {
       "id": "delivery-flow-mapping-transformations",
       "corpus": "reference",
       "path": "flow/mapping-transformations.md",
@@ -6599,6 +6659,7 @@
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-assertions",
+        "delivery-flow-mapping-restricted-access",
         "delivery-guide-writing-a-mapping",
         "flow-transform",
         "flow-ing"
@@ -7970,6 +8031,7 @@
         "sync timeline",
         "reverse a run",
         "waiting records",
+        "restricted until complete",
         "troubleshooting",
         "issues tab",
         "stopped submission",
@@ -7982,6 +8044,7 @@
         "delivery-concept-record-lifecycle",
         "delivery-concept-removal-and-reversal",
         "delivery-concept-access-restriction",
+        "delivery-flow-mapping-restricted-access",
         "delivery-concept-ledger",
         "delivery-concept-submissions",
         "delivery-cli-records",
@@ -8448,6 +8511,7 @@
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-assertions",
+        "delivery-flow-mapping-restricted-access",
         "delivery-cli-check",
         "delivery-cli-values",
         "delivery-cli-preview",
@@ -12541,6 +12605,36 @@
       ]
     },
     {
+      "id": "delivery-wiki-0062-restricted-until-complete-is-access-not-status",
+      "corpus": "wiki",
+      "path": "decisions/0062-restricted-until-complete-is-access-not-status.md",
+      "title": "Decision 0062: restricted until complete is the access a record is sent under, not a status of its own",
+      "type": "decision",
+      "summary": "Why a record missing a value that decides who reads it is delivered under a registered restriction's ACL, not held or given a status.",
+      "keywords": [
+        "restricted until complete",
+        "restrictWhenMissing",
+        "restrictedAccess",
+        "restricted status",
+        "record status",
+        "access axis",
+        "missing classification",
+        "incomplete record"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DocumentAccess.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Reversals/VersionWriteBack.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
+      ]
+    },
+    {
       "id": "delivery-wiki-linked-canonical-and-custom-records",
       "corpus": "wiki",
       "path": "patterns/linked-canonical-and-custom-records.md",
@@ -12611,7 +12705,8 @@
         "delivery-wiki-0036-enrich-in-the-mapping",
         "delivery-wiki-0037-request-correlation",
         "delivery-wiki-0051-lookups-match-several-fields-on-one-line",
-        "delivery-wiki-0061-environments-are-deployments"
+        "delivery-wiki-0061-environments-are-deployments",
+        "delivery-wiki-0062-restricted-until-complete-is-access-not-status"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",

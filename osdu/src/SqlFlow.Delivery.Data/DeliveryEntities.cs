@@ -304,6 +304,36 @@ public sealed class DeliveryRecord
     /// </summary>
     public string? RestrictedFromAcl { get; set; }
 
+    /// <summary>
+    /// The registered access restriction (<see cref="DeliveryAccessRestriction"/>) whose groups OSDU holds the record under,
+    /// restricted until complete, because values its mapping marks <c>$restrictWhenMissing</c> were missing from the document
+    /// OSDU holds (osdu/docs/reference/flow/mapping-restricted-access.md); null while OSDU holds it with the access its mapping
+    /// gives. Written when a try that sent the document lands, from the access the document went out under, and only then:
+    /// what OSDU holds changes only when a document is sent. Unlike <see cref="RestrictionId"/> it holds nothing off: every run
+    /// plans the record as any other, and the delivery of a document with every such value gives it its own access back.
+    /// </summary>
+    public int? IncompleteRestrictionId { get; set; }
+
+    /// <summary>
+    /// When OSDU first held the record restricted until complete, kept through the deliveries that kept it so; null while OSDU
+    /// holds it with the access its mapping gives.
+    /// </summary>
+    public DateTime? IncompleteSinceUtc { get; set; }
+
+    /// <summary>
+    /// What the document OSDU holds goes without, each value on a line of its own as a hold would say it
+    /// (<c>osdu.tags['dra.securityClassification']: dataset.Lra_securityClassification is empty</c>); null while the record is
+    /// not restricted until complete. At most <see cref="DeliveryModel.MaxIncompleteMissingLength"/> characters, values past it
+    /// counted on a last line.
+    /// </summary>
+    public string? IncompleteMissing { get; set; }
+
+    /// <summary>
+    /// The issue signature of <see cref="IncompleteMissing"/>, made as <see cref="ProblemHash"/> is made of an error: records
+    /// restricted for the same values share it, whatever row each read. Null while the record is not restricted until complete.
+    /// </summary>
+    public long? IncompleteHash { get; set; }
+
     public string? PendingRenderContext { get; set; }
 
     public string? PendingSourceFingerprint { get; set; }
@@ -632,6 +662,23 @@ public sealed class DeliveryRecordEvent
 
     /// <summary>The step progress the record keeps for its next try; null clears it.</summary>
     public string? PendingStepJson { get; set; }
+
+    /// <summary>
+    /// A completion of a try that sent the record's document (osdu/docs/reference/flow/mapping-restricted-access.md): the access
+    /// the document went out under, in <see cref="IncompleteRestrictionId"/>, <see cref="IncompleteMissing"/> and
+    /// <see cref="IncompleteHash"/>, is the access OSDU holds the record under now. False for any other event, which leaves the
+    /// record's access as it was.
+    /// </summary>
+    public bool AccessSent { get; set; }
+
+    /// <summary>With <see cref="AccessSent"/>: the access restriction the sent document went out under, or null for its own access.</summary>
+    public int? IncompleteRestrictionId { get; set; }
+
+    /// <summary>With <see cref="AccessSent"/>: what the sent document goes without, as the record keeps it; null for its own access.</summary>
+    public string? IncompleteMissing { get; set; }
+
+    /// <summary>With <see cref="AccessSent"/>: the issue signature of <see cref="IncompleteMissing"/>; null for its own access.</summary>
+    public long? IncompleteHash { get; set; }
 
     // The pending work the try carried, as it stood when the record was claimed: a step belongs to it, and a completion
     // promotes it when newer work was queued behind the try. A null document reference means the try carried none.
@@ -4239,6 +4286,19 @@ public static class DeliveryModel
     /// </summary>
     public const int MaxHeldStepsLength = 600;
 
+    /// <summary>
+    /// The most characters of what a record restricted until complete goes without that the ledger keeps
+    /// (<see cref="DeliveryRecord.IncompleteMissing"/>): the values a hold would name, one to a line, those past it counted on a
+    /// last line, as an error column keeps an error.
+    /// </summary>
+    public const int MaxIncompleteMissingLength = 2000;
+
+    /// <summary>
+    /// The index of a flow's records restricted until complete, by what they go without: the Records tab's filter, the flow's
+    /// count, and the records one set of missing values restricts, the few such records and no others.
+    /// </summary>
+    public const string IncompleteIndex = "IX_Record_PartitionId_FlowId_Incomplete";
+
     /// <summary>The longest lease token, and the longest worker name a lease records as its owner.</summary>
     public const int MaxLeaseTokenLength = 200;
 
@@ -4413,6 +4473,7 @@ public static class DeliveryModel
             // Unbounded: an ACL lists every group a mapping's lookups find (a log's field and country groups among them), and
             // the records beside the record add theirs, so no length fits every record a restriction must give back.
             e.Property(r => r.RestrictedFromAcl);
+            e.Property(r => r.IncompleteMissing).HasMaxLength(MaxIncompleteMissingLength);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
             e.Property(r => r.LeaseOwner).HasMaxLength(200);
@@ -4452,6 +4513,15 @@ public static class DeliveryModel
             // restricted stay out of it. No foreign key backs it: adding one would read every row of the ledger under a schema
             // lock as the migration ran, and the removal of a restriction is refused in the same transaction that counts it.
             e.HasIndex(r => r.RestrictionId).HasFilter("[RestrictionId] IS NOT NULL");
+            // The records of a flow restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md), by what
+            // they go without: the Records tab's filter, the flow's count and the groups of missing values, the few such records
+            // and no others, however many the ledger holds.
+            e.HasIndex(r => new { r.PartitionId, r.FlowId, r.IncompleteHash }, IncompleteIndex)
+                .IncludeProperties(r => r.IncompleteRestrictionId)
+                .HasFilter("[IncompleteRestrictionId] IS NOT NULL");
+            // A registered restriction's records restricted until complete, counted with those an operator restricted for its
+            // page and refusing its removal while any is left: OSDU holds them under its groups.
+            e.HasIndex(r => r.IncompleteRestrictionId).HasFilter("[IncompleteRestrictionId] IS NOT NULL");
             // One OSDU record, one flow: the database refuses a second flow's claim on an id, whatever races the intakes
             // run. An id names its partition, so this stays unique across every partition.
             e.HasIndex(r => r.ClaimedTargetId).IsUnique().HasFilter("[ClaimedTargetId] IS NOT NULL");
@@ -4617,6 +4687,7 @@ public static class DeliveryModel
             e.Property(v => v.ClaimSourceFileName).HasMaxLength(MaxSourceFileNameLength);
             e.Property(v => v.ClaimMetadataHash).HasMaxLength(64);
             e.Property(v => v.ClaimPayloadHash).HasMaxLength(64);
+            e.Property(v => v.IncompleteMissing).HasMaxLength(MaxIncompleteMissingLength);
             // What a lease applies: its events, record by record, the latest last.
             e.HasIndex(v => new { v.LeaseToken, v.FlowId, v.DeliveryKey, v.EventId });
             // A flow's recovery: its events old enough that only a lease that is gone can have left them.

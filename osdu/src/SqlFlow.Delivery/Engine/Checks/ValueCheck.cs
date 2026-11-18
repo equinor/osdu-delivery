@@ -177,6 +177,12 @@ public sealed record ValueCheckRows
     public long WithEmpty { get; init; }
 
     /// <summary>
+    /// Rows a variable checked restricts: a node marked <c>$restrictWhenMissing</c> gives it no value, so the record goes out
+    /// under its mapping's restricted access, without it (osdu/docs/reference/flow/mapping-restricted-access.md).
+    /// </summary>
+    public long WithRestricted { get; init; }
+
+    /// <summary>
     /// Rows whose record fails an assertion of the mapping on a variable checked (osdu/docs/reference/flow/mapping-assertions.md),
     /// whatever the failure does.
     /// </summary>
@@ -201,6 +207,9 @@ public sealed record ValueCheckCounts
 
     public long Empty { get; init; }
 
+    /// <summary>Given no value by a node marked <c>$restrictWhenMissing</c>: the record goes out restricted, without it.</summary>
+    public long Restricted { get; init; }
+
     public long NotApplicable { get; init; }
 
     public long Held { get; init; }
@@ -211,7 +220,7 @@ public sealed record ValueCheckCounts
     /// </summary>
     public long Asserted { get; init; }
 
-    public long Total => Valid + Invalid + Empty + NotApplicable + Held;
+    public long Total => Valid + Invalid + Empty + Restricted + NotApplicable + Held;
 }
 
 /// <summary>One variable checked: how its rows came out, the values it was written with, and what went wrong where.</summary>

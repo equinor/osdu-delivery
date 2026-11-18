@@ -302,6 +302,8 @@ public sealed class MappingRenderer
         JudgeRows(record, searched.Assertions);
         Assemble(document, new RowValues(this, record, holds, usages, searched), holds);
         var asserted = Assert(document, searched.Assertions);
+        var missing = searched.Missing.ToList();
+        var restriction = Restrict(document, missing, holds);
 
         var normalized = (JsonObject)CanonicalJson.Normalize(document)!;
         string canonical;
@@ -336,7 +338,35 @@ public sealed class MappingRenderer
             Unanswered = searched.Unanswered,
             Choices = searched.Chosen,
             Assertions = asserted,
+            Missing = missing,
+            Restriction = restriction,
         };
+    }
+
+    /// <summary>
+    /// Puts a record whose <c>$restrictWhenMissing</c> nodes left a value out under its mapping's restricted access
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md): its <c>acl</c> becomes the restriction's groups, whole, so none
+    /// of the groups its mapping gives (the flow's, a field's, a country's) reads it while the value is missing. The rest of the
+    /// record, its legal block among it, is the mapping's. A render given no restriction to put the record under holds it
+    /// instead: the access it would go out under is not known, and a record is never sent open for want of it. Null for a
+    /// record that has every such value.
+    /// </summary>
+    private RenderRestriction? Restrict(JsonObject document, IReadOnlyList<string> missing, List<string> holds)
+    {
+        if (missing.Count == 0)
+        {
+            return null;
+        }
+
+        if (_context.RestrictedAccess is not { } restriction)
+        {
+            holds.Add(
+                $"{missing[0]}, and the record goes out under restricted access ('{_mapping.RestrictedAccess}') while it is missing, which this render was given no groups for, so it is held rather than sent with the access its mapping gives");
+            return null;
+        }
+
+        document["acl"] = restriction.Acl();
+        return restriction;
     }
 
     /// <summary>
@@ -760,6 +790,7 @@ public sealed class MappingRenderer
             var held = holds.Count;
             var asked = values.Asked.Count;
             var missed = values.Misses.Count;
+            var restricted = values.Restrictions;
             var value = values.Value(entry, item: null, ordinal: null, out var applied);
             if (value is not null)
             {
@@ -770,7 +801,7 @@ public sealed class MappingRenderer
                 empty.Add(entry.Target.Segments.Select(s => s.Name).ToList());
             }
 
-            trail?.Add(Outcome(entry, null, null, value, applied, holds, held, values, asked, missed));
+            trail?.Add(Outcome(entry, null, null, value, applied, holds, held, values, asked, missed, restricted));
         }
 
         foreach (var (repeater, items) in _repeaters)
@@ -837,6 +868,7 @@ public sealed class MappingRenderer
                     var held = holds.Count;
                     var asked = values.Asked.Count;
                     var missed = values.Misses.Count;
+                    var restricted = values.Restrictions;
                     var value = values.Value(entry, row, ordinal, out var applied);
                     if (value is not null)
                     {
@@ -847,7 +879,7 @@ public sealed class MappingRenderer
                         emptyInItem.Add(entry);
                     }
 
-                    trail?.Add(Outcome(entry, ordinal, row, value, applied, holds, held, values, asked, missed));
+                    trail?.Add(Outcome(entry, ordinal, row, value, applied, holds, held, values, asked, missed, restricted));
                     itemHolds?.Note(entry, holds, held);
                 }
 
@@ -949,7 +981,8 @@ public sealed class MappingRenderer
     /// looked for and did not find goes with an outcome that holds or leaves the variable out.
     /// </summary>
     private static EntryOutcome Outcome(
-        MappingEntry entry, int? item, SourceRow? row, JsonNode? value, bool applied, List<string> holds, int held, IRecordValues values, int asked, int missed)
+        MappingEntry entry, int? item, SourceRow? row, JsonNode? value, bool applied, List<string> holds, int held, IRecordValues values, int asked, int missed,
+        int restricted)
     {
         var target = entry.Target.Text;
         IReadOnlyList<RenderMiss> misses = values.Misses.Count > missed ? values.Misses.Skip(missed).ToList() : [];
@@ -973,6 +1006,13 @@ public sealed class MappingRenderer
         if (!applied)
         {
             return new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.NotApplicable, Reasons = [$"$when {entry.AppliesWhen} does not hold"] };
+        }
+
+        // A node marked $restrictWhenMissing that gave no value restricted the record for it: what it went without is the
+        // record's access, not a value it may go without, and the check says so apart.
+        if (value is null && values.Restrictions > restricted)
+        {
+            return new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.Restricted, Reasons = [values.WhyEmpty(entry, row)], Misses = misses };
         }
 
         return value is null
@@ -1080,6 +1120,9 @@ public sealed class MappingRenderer
         /// <summary>What the values met so far looked for and did not find, in the order the render met them.</summary>
         IReadOnlyList<RenderMiss> Misses { get; }
 
+        /// <summary>How many times a node marked <c>$restrictWhenMissing</c> met so far gave no value (<see cref="RenderTrail.Restrictions"/>).</summary>
+        int Restrictions { get; }
+
         /// <summary>
         /// Whether what the entries add to the holds is what holds the record, so a reason several items share is said once
         /// (<see cref="ItemHolds"/>); a shape's are notes on each entry, said as they are.
@@ -1109,6 +1152,8 @@ public sealed class MappingRenderer
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => EntryValues.WhyEmpty(entry, record.Row, item, renderer, searched.Base);
 
         public IReadOnlyList<RenderMiss> Misses => searched.Misses;
+
+        public int Restrictions => searched.Restrictions;
 
         public bool HoldsTheRecord => true;
     }
@@ -1140,6 +1185,8 @@ public sealed class MappingRenderer
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => "a shape reads no row";
 
         public IReadOnlyList<RenderMiss> Misses => [];
+
+        public int Restrictions => 0;
 
         public bool HoldsTheRecord => false;
     }
@@ -1278,6 +1325,20 @@ public sealed record RenderResult
     /// what the ledger records tells it again.
     /// </summary>
     public IReadOnlyList<CoalesceChoice> Choices { get; init; } = [];
+
+    /// <summary>
+    /// The values the record goes without that nodes of its mapping marked <c>$restrictWhenMissing</c> should give
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md), each said once as a hold would say it without its required
+    /// clause, in the order the render met them. Empty for a record that has them all. Not part of the document beyond the
+    /// ACL it put there (<see cref="Restriction"/>): rendering the record again from what the ledger records tells it again.
+    /// </summary>
+    public IReadOnlyList<string> Missing { get; init; } = [];
+
+    /// <summary>
+    /// The access restriction whose groups are the document's ACL because <see cref="Missing"/> names a value, or null for a
+    /// record whose ACL is the one its mapping gives.
+    /// </summary>
+    public RenderRestriction? Restriction { get; init; }
 
     public bool IsHeld => Holds.Count > 0 || Key is null;
 

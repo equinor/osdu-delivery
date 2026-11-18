@@ -1076,6 +1076,13 @@ internal sealed class MappingYaml
     public Dictionary<string, object?>? Lookups { get; set; }
 
     /// <summary>
+    /// The access restriction a record goes out under while a value a node marks <c>$restrictWhenMissing</c> is missing
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md): its name as the partition registers it, written as text that
+    /// may read a parameter (<c>{$param.restriction}</c>).
+    /// </summary>
+    public string? RestrictedAccess { get; set; }
+
+    /// <summary>
     /// The record the mapping renders, laid out as the record is: <c>acl</c>, <c>legal</c>, <c>tags</c>, <c>data</c> and
     /// the properties below them, each a literal, a value node or a <c>forEach</c> array
     /// (osdu/docs/reference/flow/mapping.md). Read as the author wrote it and parsed node by node, since its keys are

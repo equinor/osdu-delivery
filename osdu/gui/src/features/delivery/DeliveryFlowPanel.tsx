@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,7 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
 import { downloadFileName } from "@/lib/download";
-import { BlockedBadge, RecordStatusBadge, RestrictedBadge, SubmissionStatusBadge, VerifyOutcomeBadge } from "./DeliveryBadges";
+import { AccessBadges, BlockedBadge, RecordStatusBadge, SubmissionStatusBadge, VerifyOutcomeBadge } from "./DeliveryBadges";
 import { removalQueuedText } from "./removalQueued";
 import { ExportRecordsButton } from "./ExportRecordsButton";
 import { FlowStatusBar } from "./FlowStatusBar";
@@ -50,11 +50,18 @@ import { shortId } from "./idTail";
 
 const ALL = "all";
 
+/**
+ * The status filter's entry for the records OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md):
+ * not a custody state but the access OSDU holds them under, listed with the statuses because that is where a reader looks for
+ * it. Choosing it narrows to those records whatever their status.
+ */
+const INCOMPLETE = "restricted-until-complete";
+
 /** The flow id a card that adds several ledgers up carries: no one ledger, so no record of it can be linked to. */
 const EMPTY_ID = "00000000-0000-0000-0000-000000000000";
 
 /** The URL filters that name records of one ledger, which the view of another interface or partition drops. */
-const SCOPED_TO_LEDGER = ["submission", "delivered", "run", "issue"] as const;
+const SCOPED_TO_LEDGER = ["submission", "delivered", "run", "issue", "missing"] as const;
 
 /** The file and row a record's newest version came from: the queued version's while work waits, as the lookup names it. */
 function originOf(row: DeliveryRecord): RecordOrigin {
@@ -65,6 +72,20 @@ function originOf(row: DeliveryRecord): RecordOrigin {
 
 const recordColumns: Column<DeliveryRecord>[] = [
   { id: "status", header: "Status", render: (row) => <RecordStatusBadge status={row.status} /> },
+  // Who may read the record in OSDU when it is not its mapping's ACL, beside its custody state: restricted by an operator,
+  // or restricted until complete while values its mapping marks $restrictWhenMissing are missing. Empty for its own access.
+  {
+    id: "access",
+    header: "Access",
+    render: (row) => (
+      <AccessBadges
+        restricted={row.restrictionId != null}
+        asked={row.restrictedUtc == null}
+        restrictedUntilComplete={row.incompleteRestrictionId != null}
+        missing={row.incompleteMissing}
+      />
+    ),
+  },
   // The record whole, with the file it came from and its last error under it; everything beside it is compact, so the
   // grid fits its panel, and OSDU comes last. The OSDU version is on the record's OSDU tab: in a row it is sixteen
   // digits that repeat the delivery time.
@@ -87,7 +108,6 @@ const recordColumns: Column<DeliveryRecord>[] = [
     header: "",
     render: (row) => (
       <span className="inline-flex gap-1">
-        {row.restrictionId != null && <RestrictedBadge asked={row.restrictedUtc == null} />}
         {row.blocked && <BlockedBadge />}
         {row.hasPendingDocument && <Badge variant="outline">pending</Badge>}
       </span>
@@ -109,6 +129,8 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const runFilter = searchParams.get("run");
   // The Issues tab links here to the records one issue keeps blocked.
   const issueFilter = searchParams.get("issue");
+  // A record restricted until complete links here to every record missing the same values.
+  const missingFilter = searchParams.get("missing");
   // The chips point at records of the ledger that was showing; another interface's or partition's records are not those.
   const {
     rows, names, many, interfaceName, partitions, partition, headerPartition, outside, unplaced, active, scope, ready, selectInterface,
@@ -117,6 +139,10 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   // A link can open the Records tab narrowed as the Delivery page's counts are (`?status=held`, `?drifted=true`): the
   // filters start there and are the tab's own from then on.
   const [status, setStatus] = useState<string>(() => {
+    if (searchParams.get("incomplete") === "true") {
+      return INCOMPLETE;
+    }
+
     const asked = searchParams.get("status");
     return asked !== null && (DELIVERY_RECORD_STATUSES as readonly string[]).includes(asked) ? asked : ALL;
   });
@@ -144,15 +170,17 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const filter = useMemo<DeliveryRecordFilter>(() => ({
     search: search.trim() === "" ? undefined : search.trim(),
     mode: contains ? "contains" : undefined,
-    status: status === ALL ? undefined : (status as DeliveryRecordStatus),
+    status: status === ALL || status === INCOMPLETE ? undefined : (status as DeliveryRecordStatus),
     drifted: drifted || undefined,
     stepHeld: stepHeld || undefined,
     restricted: restricted || undefined,
+    incomplete: status === INCOMPLETE || undefined,
+    missing: missingFilter ?? undefined,
     submissionId: submissionFilter ?? undefined,
     deliveredBy: deliveredFilter ?? undefined,
     runId: runFilter ?? undefined,
     issue: issueFilter ?? undefined,
-  }), [search, contains, status, drifted, stepHeld, restricted, submissionFilter, deliveredFilter, runFilter, issueFilter]);
+  }), [search, contains, status, drifted, stepHeld, restricted, missingFilter, submissionFilter, deliveredFilter, runFilter, issueFilter]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -438,12 +466,17 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
           <FilterBar>
             <SearchInput value={search} onChange={setSearch} placeholder="Delivery key, label, source key, OSDU id or file" label="Search records" testId="delivery-records-search" className="sm:w-96" />
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger size="sm" className="h-8 w-40" data-testid="delivery-records-status">
+              <SelectTrigger size="sm" className="h-8 w-52" data-testid="delivery-records-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>All statuses</SelectItem>
                 {DELIVERY_RECORD_STATUSES.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+                <SelectSeparator />
+                {/* The access OSDU holds a record under, whatever its status: listed here, where a reader looks for it. */}
+                <SelectItem value={INCOMPLETE} data-testid="delivery-records-status-incomplete">
+                  restricted until complete{(s?.restrictedUntilComplete ?? 0) > 0 ? ` (${(s?.restrictedUntilComplete ?? 0).toLocaleString()})` : ""}
+                </SelectItem>
               </SelectContent>
             </Select>
             <Label className="flex items-center gap-2 text-[13px] font-normal">
@@ -492,6 +525,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                 kept blocked by issue {shortId(issueFilter)}: clear
               </Button>
             )}
+            {missingFilter && (
+              <Button variant="outline" size="sm" className="h-8" onClick={() => setSearchParams((current) => { const next = new URLSearchParams(current); next.delete("missing"); return next; })} data-testid="delivery-records-clear-missing">
+                restricted until complete for missing values {shortId(missingFilter)}: clear
+              </Button>
+            )}
             {/* Every record the filter matches, not the page in view: the list to work through where the records come from. */}
             <ExportRecordsButton
               fetchWorkbook={() => deliveryApi.exportRecords(pipelineId, { interface: interfaceName ?? undefined, partition: partition ?? undefined, ...filter })}
@@ -501,14 +539,14 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                 : matchedCapped
                   ? `More than ${matched.toLocaleString()} records match, and an export writes at most ${matched.toLocaleString()} at once. Narrow the filter and export each part.`
                   : matched === 0 ? "No records match the filter, so there is nothing to export." : null}
-              title={`Download the ${matched.toLocaleString()} record${matched === 1 ? "" : "s"} the filter matches as an Excel workbook: a row each with its status, issue, problem, source file and row, key and OSDU id`}
+              title={`Download the ${matched.toLocaleString()} record${matched === 1 ? "" : "s"} the filter matches as an Excel workbook: a row each with its status, issue, problem, access and missing values, source file and row, key and OSDU id`}
               testId="delivery-records-export"
             />
           </FilterBar>
           {/* A flow that works in partitions has no records until the partition in view is known. */}
           {!ready ? <Skeleton className="h-40 w-full rounded-lg" /> : (
           <PagedTable
-            queryKey={["delivery", "records", pipelineId, interfaceName, partition, search, status, drifted, stepHeld, restricted, contains, submissionFilter, deliveredFilter, runFilter, issueFilter]}
+            queryKey={["delivery", "records", pipelineId, interfaceName, partition, search, status, drifted, stepHeld, restricted, missingFilter, contains, submissionFilter, deliveredFilter, runFilter, issueFilter]}
             fetchPage={(page, pageSize) => deliveryApi.records(pipelineId, {
               page, pageSize, interface: interfaceName ?? undefined, partition: partition ?? undefined, ...filter,
             })}

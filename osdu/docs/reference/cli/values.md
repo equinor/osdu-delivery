@@ -109,6 +109,7 @@ modifier. For each property checked, each row (and each item of a repeated array
 | --- | --- | --- |
 | `held` | No value could be produced where one is needed, so the record is not delivered: the render's own hold reason. | yes |
 | `invalid` | A value is written that breaks a rule of the template; the record is still sent. | yes |
+| `restricted` | An entry marked `$restrictWhenMissing` gives no value, so the record goes out restricted until complete, under its mapping's `restrictedAccess` ([restricted until complete](../flow/mapping-restricted-access.md)). The reason says why it gave none. | no |
 | `empty` | An optional entry gives no value, and the record goes without the property. The reason says why it gave none. | no |
 | `notApplicable` | The mapping means no value for the row: the entry's `$when` does not hold, or an item entry meets a row with no child row. | no |
 | `valid` | Written with a value the template accepts. | no |
@@ -122,9 +123,9 @@ inside a value written whole: `type`, `format` (RFC 3339 `date-time`, `date` and
 an `x-osdu-relationship` lets a reference point to). A problem inside a value written whole is reported at the property
 it is at (`osdu.data.NameAliases[].AliasNameTypeID`).
 
-For each property, a row counts once, by the worst it came to: held, then invalid, then empty, then valid. As a record,
-a row counts among the rows with a held property, with an invalid value, and leaving a property out, for each that
-applies (one row can be in more than one), and as clean when it is in none.
+For each property, a row counts once, by the worst it came to: held, then invalid, then restricted, then empty, then
+valid. As a record, a row counts among the rows with a held property, with an invalid value, restricted until complete
+and leaving a property out, for each that applies (one row can be in more than one), and as clean when it is in none.
 
 **The mapping's assertions** ([mapping assertions](../flow/mapping-assertions.md)) are judged on every row as a delivery
 judges them, and counted apart from the template's rules, since a value can meet the template and break a rule of the
@@ -147,11 +148,11 @@ The first line starts with `OK` when no row is held, invalid, held by an asserti
 ```text
 !!  welldb-wellbore-03-delivery: Wellbore@1.0.0 on osdu:wks:master-data--Wellbore:1.3.0
     rows        10,000 checked of 10,000 read (the scope holds about <n>)
-    outcome     <n> clean, <n> held, <n> with an invalid value, <n> leaving a variable out
+    outcome     <n> clean, <n> held, <n> with an invalid value, <n> leaving a variable out[, <n> restricted until complete]
     asserted    <n> failing an assertion of the mapping, <n> of them to be held before they are sent
     keyless     <n> rows have an empty key part, so their records cannot be tracked
     passed over <n>: the ingestion table marks the row deleted, and a deleted row is never delivered
-    osdu.data.FacilityName: <n> held, <n> invalid, <n> empty, <n> valid, <n> not applicable[; <n> failing an assertion]
+    osdu.data.FacilityName: <n> held, <n> invalid, <n> empty, <n> valid, <n> not applicable[; <n> restricted until complete][; <n> failing an assertion]
       <outcome>  <count>[ at <path inside>]  <what is wrong>
                effect  <what it does to the records>
                where   <where it was looked for, and what the source holds against what the mapping made of it>
@@ -168,11 +169,11 @@ The first line starts with `OK` when no row is held, invalid, held by an asserti
 | Line | Says |
 | --- | --- |
 | `rows` | Rows checked of rows read, and `the whole scope` or how many the scope holds. |
-| `outcome` | The rows as records: clean, held, with an invalid value, leaving a property out. |
+| `outcome` | The rows as records: clean, held, with an invalid value, leaving a property out, and restricted until complete when a row is. |
 | `asserted` | Only when a row fails an assertion of the mapping: those rows, and how many of them an assertion would hold. |
 | `keyless`, `passed over` | Rows with an empty key part; rows a delivery never renders, by reason. |
 | `<property>:` | Only for a property some row fails: its rows by outcome, and the rows failing an assertion. |
-| finding lines | Each reason, with its outcome (`held`, `invalid`, `empty` or `asserted`), count and where inside the property it is, led by what is wrong in plain words ([why an attribute fails](../concepts/value-proof.md)); what it does to the records; where it was looked for, when that adds something; the render's own reason; the five most frequent values behind it, and what the source columns behind it hold; what to do, the likeliest first; the first three example records with their file, row and item. |
+| finding lines | Each reason, with its outcome (`held`, `invalid`, `restricted`, `empty` or `asserted`), count and where inside the property it is, led by what is wrong in plain words ([why an attribute fails](../concepts/value-proof.md)); what it does to the records; where it was looked for, when that adds something; the render's own reason; the five most frequent values behind it, and what the source columns behind it hold; what to do, the likeliest first; the first three example records with their file, row and item. |
 | `... more occurrences under reasons not listed` | Occurrences of findings past the 50 a property lists. |
 
 ### --json and --out
@@ -180,10 +181,12 @@ The first line starts with `OK` when no row is held, invalid, held by an asserti
 The JSON is the check, camelCase, properties without a value left out: `flow`, `interface`, `flowId`, `inputs`
 (`mapping`, `kind`, `templateVersion`, `cachePartition`, `cacheVersion`), `asked` (`targets`, `maxRows`, `samples`,
 `skipSamples`, `values`), `rows` (`scopeRecords`, `read`, `checked`, `complete`, `passedOver`, `passedOverWhy`,
-`keyless`, `keylessSamples`, `clean`, `withHeld`, `withInvalid`, `withEmpty`, `withFailedAssertion`, `heldByAssertion`),
+`keyless`, `keylessSamples`, `clean`, `withHeld`, `withInvalid`, `withEmpty`, `withRestricted`, `withFailedAssertion`,
+`heldByAssertion`),
 `variables`, `issues`, `notes`, `startedUtc` and `checkedUtc`. Each variable has `target`, `entry`, `columns` (the source
 columns the entry filling it reads, as the mapping names them: `dataset.curves.curve_unit`), `required`,
-`repeater`, `rows` and `items` (each `valid`, `invalid`, `empty`, `notApplicable`, `held`, `asserted`, `total`;
+`repeater`, `rows` and `items` (each `valid`, `invalid`, `empty`, `restricted`, `notApplicable`, `held`, `asserted`,
+`total`;
 `asserted` counts each row, or each item of a repeated array, a value failed an assertion in, once however many failed,
 and `total` leaves it out, since those rows and items count under another outcome too; a failure of a repeated array's
 values together, `values: any`, counts its row and no item), `values`, `distinctValues`, `moreValues`, `findings` and

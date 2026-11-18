@@ -59,6 +59,12 @@ pub struct RecordFilter {
     #[serde(rename = "runId")]
     pub run_id: Option<String>,
     pub drifted: Option<bool>,
+    /// true keeps only records whose access an operator restricted in OSDU.
+    pub restricted: Option<bool>,
+    /// true keeps only records OSDU holds restricted until complete.
+    pub incomplete: Option<bool>,
+    /// Only the records restricted until complete for one set of missing values: a record's incompleteGroup.
+    pub missing: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -356,6 +362,9 @@ fn filter_body(filter: RecordFilter) -> Result<Value, String> {
         "deliveredBy": optional_guid("filter.deliveredBy", filter.delivered_by.as_deref(), hint)?,
         "runId": optional_guid("filter.runId", filter.run_id.as_deref(), hint)?,
         "drifted": filter.drifted.unwrap_or(false),
+        "restricted": filter.restricted.unwrap_or(false),
+        "incomplete": filter.incomplete.unwrap_or(false),
+        "missing": text(filter.missing),
     }))
 }
 
@@ -422,7 +431,23 @@ mod tests {
             delivered_by: None,
             run_id: None,
             drifted: None,
+            restricted: None,
+            incomplete: None,
+            missing: None,
         }
+    }
+
+    #[test]
+    fn the_filter_names_the_access_it_narrows_to() {
+        let body = filter_body(RecordFilter { incomplete: Some(true), missing: Some("0f1e2d3c4b5a6978".to_string()), ..filter("delivered") }).unwrap();
+        assert_eq!(body["incomplete"], json!(true));
+        assert_eq!(body["missing"], json!("0f1e2d3c4b5a6978"));
+        assert_eq!(body["restricted"], json!(false));
+
+        // Nothing asked narrows nothing: the control plane reads absent and false alike.
+        let plain = filter_body(filter("held")).unwrap();
+        assert_eq!(plain["incomplete"], json!(false));
+        assert_eq!(plain["missing"], Value::Null);
     }
 
     #[test]

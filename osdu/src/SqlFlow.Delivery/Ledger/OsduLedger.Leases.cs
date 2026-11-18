@@ -947,6 +947,10 @@ public sealed partial class OsduLedger
     private static DeliveryRecordEvent ToEvent(short partition, Guid flowId, string token, RecordCompletion completion)
     {
         var claim = completion.Claimed;
+
+        // The access a delivered try that sent the record's document reports is the access OSDU holds the record under now
+        // (osdu/docs/reference/flow/mapping-restricted-access.md); any other completion leaves the record's as it was.
+        var access = completion is { Promote: true, NothingSent: false, Access: { } sent } ? sent : null;
         return new DeliveryRecordEvent
         {
             PartitionId = partition,
@@ -973,6 +977,10 @@ public sealed partial class OsduLedger
             TargetVersion = completion.TargetVersion,
             TargetStateJson = completion.TargetStateJson,
             PendingStepJson = completion.PendingStepJson,
+            AccessSent = access is not null,
+            IncompleteRestrictionId = access?.RestrictionId,
+            IncompleteMissing = access?.MissingText(),
+            IncompleteHash = access?.MissingHash(),
             ClaimSubmissionId = claim?.SubmissionId,
             ClaimDocumentRef = claim?.DocumentRef,
             ClaimRenderContext = claim?.RenderContext,

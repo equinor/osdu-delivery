@@ -3,6 +3,19 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
+## [1.0.4]
+
+### Restricted until complete
+
+- A mapping completes and explains `restrictedAccess` in its header, and a property's hover describes
+  `$restrictWhenMissing` beside `$required`: a record whose marked value is missing goes out under the registered access
+  restriction `restrictedAccess` names, and gets its own access back once the value arrives
+  ([restricted until complete](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/flow/mapping-restricted-access.md)).
+- A flow's Records tab and the Records page show an **Access** column, and their status filter lists the records
+  restricted until complete, each saying on hover what it goes without; a record's page names the restriction and
+  links to every record missing the same values. The mapping builder's switch marks a node, and **Check values**
+  counts its rows as restricted.
+
 ## [1.0.3]
 
 ### Signing in

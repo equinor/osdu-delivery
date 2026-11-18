@@ -9,8 +9,15 @@ using SqlFlow.Delivery.Protocols;
 
 namespace SqlFlow.Delivery.Catalog;
 
-/// <summary>A registered access restriction and how many records carry it now.</summary>
-public sealed record RegisteredAccessRestriction(AccessRestrictionState Restriction, long Records);
+/// <summary>
+/// A registered access restriction and how many records OSDU holds under its groups now: those an operator restricted under it
+/// (<paramref name="Records"/>), and those their mapping restricted until complete under it while values it marks
+/// <c>$restrictWhenMissing</c> are missing (<paramref name="RestrictedUntilComplete"/>, osdu/docs/reference/flow/mapping-restricted-access.md).
+/// </summary>
+/// <param name="Restriction">The restriction as the registry holds it.</param>
+/// <param name="Records">The records an operator restricted under it.</param>
+/// <param name="RestrictedUntilComplete">The records OSDU holds restricted until complete under it.</param>
+public sealed record RegisteredAccessRestriction(AccessRestrictionState Restriction, long Records, long RestrictedUntilComplete = 0);
 
 /// <summary>An access restriction cannot be removed while records carry it: lifting them first gives each its access back.</summary>
 public sealed class AccessRestrictionInUseException(string message) : DeliveryException(message);
@@ -44,7 +51,17 @@ public static partial class AccessRestrictionRegistry
                 .GroupBy(r => r.RestrictionId!.Value)
                 .Select(g => new { Id = g.Key, Count = g.LongCount() })
                 .ToDictionaryAsync(c => c.Id, c => c.Count, ct).ConfigureAwait(false);
-        return [.. rows.Select(r => new RegisteredAccessRestriction(AccessRestrictionState.Of(r), counts.GetValueOrDefault(r.RestrictionId)))];
+
+        // The records restricted until complete under each, read from the index that holds them alone.
+        var incomplete = ids.Count == 0
+            ? new Dictionary<int, long>()
+            : await db.DeliveryRecords.AsNoTracking()
+                .Where(r => r.IncompleteRestrictionId != null && ids.Contains(r.IncompleteRestrictionId))
+                .GroupBy(r => r.IncompleteRestrictionId!.Value)
+                .Select(g => new { Id = g.Key, Count = g.LongCount() })
+                .ToDictionaryAsync(c => c.Id, c => c.Count, ct).ConfigureAwait(false);
+        return [.. rows.Select(r => new RegisteredAccessRestriction(
+            AccessRestrictionState.Of(r), counts.GetValueOrDefault(r.RestrictionId), incomplete.GetValueOrDefault(r.RestrictionId)))];
     }
 
     /// <summary>One restriction, with its records; null when none has the id.</summary>
@@ -58,7 +75,8 @@ public static partial class AccessRestrictionRegistry
         }
 
         var records = await db.DeliveryRecords.AsNoTracking().LongCountAsync(r => r.RestrictionId == restrictionId, ct).ConfigureAwait(false);
-        return new RegisteredAccessRestriction(AccessRestrictionState.Of(row), records);
+        var incomplete = await db.DeliveryRecords.AsNoTracking().LongCountAsync(r => r.IncompleteRestrictionId == restrictionId, ct).ConfigureAwait(false);
+        return new RegisteredAccessRestriction(AccessRestrictionState.Of(row), records, incomplete);
     }
 
     /// <summary>
@@ -176,6 +194,16 @@ public static partial class AccessRestrictionRegistry
                 throw new AccessRestrictionInUseException(string.Create(
                     CultureInfo.InvariantCulture,
                     $"{records} record(s) carry access restriction '{row.Name}' of partition '{row.Partition}', so it was not removed: lift their restrictions first (their flows' Records tabs, Restricted, then Remove, Lift the restriction)."));
+            }
+
+            // OSDU holds a record restricted until complete under the restriction's groups, so the restriction stays registered
+            // while one does: a run whose mapping names it restricts and opens records by it, and a step back writes it again.
+            var incomplete = await db.DeliveryRecords.AsNoTracking().LongCountAsync(r => r.IncompleteRestrictionId == restrictionId, ct).ConfigureAwait(false);
+            if (incomplete > 0)
+            {
+                throw new AccessRestrictionInUseException(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"OSDU holds {incomplete} record(s) restricted until complete under access restriction '{row.Name}' of partition '{row.Partition}', so it was not removed: each gets its own access back once a delivery finds every value its mapping marks $restrictWhenMissing (their flows' Records tabs, Restricted until complete, say what each goes without), or goes out under another restriction once its mapping's restrictedAccess names one and its flow runs."));
             }
 
             db.DeliveryAccessRestrictions.Remove(row);

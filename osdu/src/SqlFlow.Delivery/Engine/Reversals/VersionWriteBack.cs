@@ -4,6 +4,7 @@ using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Protocols;
+using RenderRestriction = SqlFlow.Delivery.Snapshots.RenderRestriction;
 
 namespace SqlFlow.Delivery.Engine.Reversals;
 
@@ -11,7 +12,19 @@ namespace SqlFlow.Delivery.Engine.Reversals;
 /// One record to write back as OSDU held it at an earlier version: the version to put back, the latest version OSDU holds
 /// (whose keys another system owns are carried over), and the target state the ledger keeps for the record.
 /// </summary>
-public sealed record WriteBack(DeliveryKey Key, string TargetId, long Version, long? Latest, IReadOnlyDictionary<string, string>? TargetState);
+/// <param name="Key">The record's delivery key.</param>
+/// <param name="TargetId">Its OSDU id.</param>
+/// <param name="Version">The version to put back.</param>
+/// <param name="Latest">The latest version OSDU holds.</param>
+/// <param name="TargetState">The target state the ledger keeps for the record.</param>
+/// <param name="Acl">
+/// The ACL the version is written back with in place of the one it is read with: the groups of the access restriction a record
+/// OSDU holds restricted until complete is under (osdu/docs/reference/flow/mapping-restricted-access.md), so a write-back never
+/// gives such a record an access a delivery would not. Null writes the version back as it is read.
+/// </param>
+/// <param name="Refusal">Why the record is not written back at all, said as its failure; null to write it.</param>
+public sealed record WriteBack(
+    DeliveryKey Key, string TargetId, long Version, long? Latest, IReadOnlyDictionary<string, string>? TargetState, JsonObject? Acl = null, string? Refusal = null);
 
 /// <summary>How writing one record back ended.</summary>
 public enum WriteBackOutcome
@@ -94,6 +107,12 @@ public static class VersionWriteBack
         await Parallel.ForEachAsync(Enumerable.Range(0, work.Count), new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, concurrency), CancellationToken = ct }, async (index, token) =>
         {
             var w = work[index];
+            if (w.Refusal is { } refusal)
+            {
+                results[index] = new WriteBackResult(w, WriteBackOutcome.WriteFailed, null, null, refusal);
+                return;
+            }
+
             try
             {
                 var version = await protocol.ReadVersionAsync(w.TargetId, w.Version, token).ConfigureAwait(false);
@@ -103,6 +122,12 @@ public static class VersionWriteBack
                 }
                 else
                 {
+                    // A record restricted until complete keeps the restriction's groups whatever ACL the version is read with.
+                    if (w.Acl is { } acl)
+                    {
+                        version["acl"] = acl.DeepClone();
+                    }
+
                     stored[index] = version;
                 }
             }
@@ -145,6 +170,42 @@ public static class VersionWriteBack
         }
 
         return results.Select(r => r!).ToList();
+    }
+
+    /// <summary>
+    /// <paramref name="writeBack"/> made safe for <paramref name="record"/>'s access (osdu/docs/reference/flow/mapping-restricted-access.md):
+    /// a record OSDU holds restricted until complete is written back with the groups of the restriction it is under, found in
+    /// <paramref name="restrictions"/>, so stepping it back or reversing a run never opens it; a record with its own access is
+    /// written back as its version is read. A record whose restriction is not among them (no longer registered) is refused,
+    /// with why, rather than written back with an ACL no one decided.
+    /// </summary>
+    public static WriteBack Guarded(WriteBack writeBack, RecordState record, IReadOnlyDictionary<int, AccessRestrictionState> restrictions)
+    {
+        ArgumentNullException.ThrowIfNull(writeBack);
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(restrictions);
+        if (record.IncompleteRestrictionId is not { } id)
+        {
+            return writeBack;
+        }
+
+        return restrictions.TryGetValue(id, out var restriction)
+            ? writeBack with { Acl = new RenderRestriction(restriction.RestrictionId, restriction.Name, restriction.Acl.Viewers, restriction.Acl.Owners).Acl() }
+            : writeBack with
+            {
+                Refusal = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"OSDU holds the record restricted until complete under access restriction {id}, which is no longer registered, so it is not written back: the version would go out with an access no one decided"),
+            };
+    }
+
+    /// <summary>The access restrictions <paramref name="records"/> are restricted until complete under, by id, read once.</summary>
+    public static async Task<IReadOnlyDictionary<int, AccessRestrictionState>> RestrictionsOfAsync(ILedger ledger, IEnumerable<RecordState> records, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(records);
+        var ids = records.Where(r => r.IncompleteRestrictionId is not null).Select(r => r.IncompleteRestrictionId!.Value).Distinct().ToList();
+        return ids.Count == 0 ? new Dictionary<int, AccessRestrictionState>() : await ledger.AccessRestrictionsAsync(ids, ct).ConfigureAwait(false);
     }
 
     /// <summary>The target state a record written back holds: what it held, with what the write returned, at the new version.</summary>

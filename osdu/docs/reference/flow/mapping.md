@@ -241,6 +241,7 @@ written twice in one map (`Encountered duplicate key Name`).
 | `parameters` | map | yes (`dataPartition`, except in an enrichment mapping) | The values the flow supplies, each `required`, `default` and `description`. See [parameters](#parameters). |
 | `searches` | map | no | The record sets `$search` nodes look in on the platform: a `kind`, the template (`schema.kind`, and `schema.version` when it means one exactly) that says how it is indexed, read from the template folders on the mapping's path, and a `description`. One search per kind, each read by a node. See [mapping lookups](mapping-lookups.md). |
 | `lookups` | map | no | Records found once in the partition's cache and read by name with `$lookup`: `$cache`, `$findBy`, `$modifiers`, `$ignoreSeparators`, `$description`. Each is read by a node. See [mapping lookups](mapping-lookups.md). |
+| `restrictedAccess` | string | when a node is marked `$restrictWhenMissing` | The access restriction, registered for the partition the flow delivers to, that a record goes out under while a value a node marks `$restrictWhenMissing` is missing; its text reads parameters as `{$param.<name>}`. Named exactly when a node is marked. See [restricted until complete](mapping-restricted-access.md). |
 | `record` | map | yes | The record the mapping renders, laid out as the record is. See [The record tree](#the-record-tree). |
 
 A mapping written when mappings carried example rows is refused with what to delete:

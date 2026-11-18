@@ -148,7 +148,7 @@ public static class RecordExport
             sheet.AddRow(columns.Cells(hit.Record, hit, hit.FlowName));
         }
 
-        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld, lookup.Narrowing.Restricted);
+        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld, lookup.Narrowing.Restricted, lookup.Narrowing.Incomplete, lookup.Narrowing.Missing);
         List<(string, XlsxCell)> about =
         [
             ("Lookup", XlsxCell.Text(lookup.Search is not { } search
@@ -190,7 +190,7 @@ public static class RecordExport
             parts.Add(query.Mode == SearchMode.Contains ? $"'{search}' anywhere" : $"'{search}' at the start");
         }
 
-        parts.AddRange(Narrowing(query.Drifted, query.StepHeld, query.Restricted));
+        parts.AddRange(Narrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing));
         if (query.Problem is { } problem)
         {
             parts.Add($"issue {ProblemSignature.Format(problem)}");
@@ -219,8 +219,8 @@ public static class RecordExport
         return parts.Count == 0 ? "none: every record of the ledger" : string.Join("; ", parts);
     }
 
-    /// <summary>The drift and held-step filters in words, as a flow's listing and the lookup across flows both say them.</summary>
-    private static List<string> Narrowing(bool drifted, bool stepHeld, bool restricted)
+    /// <summary>The drift, held-step and access filters in words, as a flow's listing and the lookup across flows both say them.</summary>
+    private static List<string> Narrowing(bool drifted, bool stepHeld, bool restricted, bool incomplete, long? missing)
     {
         var parts = new List<string>();
         if (drifted)
@@ -236,6 +236,15 @@ public static class RecordExport
         if (restricted)
         {
             parts.Add("access restricted in OSDU");
+        }
+
+        if (missing is { } group)
+        {
+            parts.Add($"restricted until complete for missing values {ProblemSignature.Format(group)}");
+        }
+        else if (incomplete)
+        {
+            parts.Add("restricted until complete");
         }
 
         return parts;
@@ -259,6 +268,15 @@ public static class RecordExport
 
     /// <summary>The record as a row names it: its label, or its source key when its mapping gives none.</summary>
     private static string Named(RecordState record) => string.IsNullOrEmpty(record.Label) ? record.SourceKey : record.Label;
+
+    /// <summary>
+    /// Who may read the record in OSDU when it is not its mapping's ACL: an operator's restriction, which holds the record off,
+    /// comes first; then the restriction its mapping put it under until complete. Null for a record with its own access.
+    /// </summary>
+    private static string? AccessText(RecordState record)
+        => record.Restricted
+            ? (record.RestrictedUntilComplete ? "restricted by an operator (and until complete)" : "restricted by an operator")
+            : record.RestrictedUntilComplete ? "restricted until complete" : null;
 
     private static int Compare(string recordA, string sourceA, DeliveryKey keyA, string recordB, string sourceB, DeliveryKey keyB)
     {
@@ -310,7 +328,9 @@ public static class RecordExport
             columns.AddRange(KeyColumns.Select(k => new XlsxColumn(k, Math.Clamp(k.Length + 4, 12, 30))));
             columns.AddRange(
             [
-                new("Status", 11), new("Blocked", 9), new("Issue", 18), new("Problem", 100), new("Source file", 40), new("Source row", 11),
+                new("Status", 11), new("Blocked", 9), new("Issue", 18), new("Problem", 100),
+                new("Access", 26), new("Missing values", 100), new("Missing group", 18),
+                new("Source file", 40), new("Source row", 11),
                 new("Identities", 30), new("Attempts", 10), new("Next attempt (UTC)", 20), new("Waiting for", 50), new("Document waiting", 18),
                 new("Delivered (UTC)", 20), new("Verified (UTC)", 20), new("Verify", 10), new("OSDU id", 60), new("OSDU version", 18),
                 new("Mapping", 24), new("Updated (UTC)", 20), new("Delivery key", 38),
@@ -350,6 +370,9 @@ public static class RecordExport
                 XlsxCell.Text(record.Blocked ? "yes" : null),
                 XlsxCell.Text(record.ProblemHash is { } problem ? ProblemSignature.Format(problem) : null),
                 XlsxCell.Text(record.LastError),
+                XlsxCell.Text(AccessText(record)),
+                XlsxCell.Text(record.IncompleteMissing?.Replace("\n", "; ", StringComparison.Ordinal)),
+                XlsxCell.Text(record.IncompleteHash is { } missing ? ProblemSignature.Format(missing) : null),
                 XlsxCell.Text(origin.FileName),
                 XlsxCell.Number(origin.RowNumber),
                 XlsxCell.Text(record.Identities.Count == 0 ? null : string.Join("; ", record.Identities)),
@@ -392,6 +415,9 @@ public static class RecordExport
             yield return ("Blocked", "yes while the record is kept from delivery until its row changes or it is released.");
             yield return ("Issue", "What every record refused for the same reason shares; the flow's Issues tab and 'sqlflow records issues' group the records by it.");
             yield return ("Problem", "The last error, or why the record is held.");
+            yield return ("Access", "Who may read the record in OSDU when it is not its mapping's ACL: restricted by an operator, or restricted until complete, delivered under a registered access restriction's groups while values its mapping marks $restrictWhenMissing are missing. Empty for a record with its own access.");
+            yield return ("Missing values", "For a record restricted until complete: what the document OSDU holds goes without, as a hold would say it; it gets its own access back once a delivery finds them all.");
+            yield return ("Missing group", "What every record restricted for the same missing values shares; a flow's Records tab narrows to it.");
             yield return ("Source file, Source row", "The ingestion file and row the record's newest version came from: the queued version's while work waits.");
             yield return ("Identities", "The values of the columns the mapping declares as identities (a wellbore id, a well name).");
             yield return ("Next attempt (UTC)", "When a delivery that failed is tried again.");

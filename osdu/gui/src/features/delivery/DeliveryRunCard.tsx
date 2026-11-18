@@ -74,6 +74,12 @@ function filterText(filter: Record<string, unknown>): string {
     parts.push("access restricted");
   }
 
+  if (typeof filter.missing === "string" && filter.missing !== "") {
+    parts.push(`restricted until complete for missing values ${filter.missing}`);
+  } else if (filter.incomplete === true) {
+    parts.push("restricted until complete");
+  }
+
   return parts.length === 0 ? "every record of the ledger" : `every record matching ${parts.join(", ")}`;
 }
 

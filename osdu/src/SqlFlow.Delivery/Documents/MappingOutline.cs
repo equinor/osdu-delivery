@@ -174,6 +174,10 @@ public sealed record MappingOutlineAssertion(string Label, string Expected, stri
 /// <param name="Flow">How a value comes to its value; null for what only holds others.</param>
 /// <param name="Assertions">The rules it states.</param>
 /// <param name="Children">What it holds.</param>
+/// <param name="RestrictWhenMissing">
+/// True for a node marked <c>$restrictWhenMissing</c>: a value it does not give restricts the record (it goes out under the
+/// mapping's <c>restrictedAccess</c>, the property left out) rather than holding it (osdu/docs/reference/flow/mapping-restricted-access.md).
+/// </param>
 public sealed record MappingOutlineNode(
     string Path,
     string Name,
@@ -189,7 +193,8 @@ public sealed record MappingOutlineNode(
     int? EndLine,
     MappingOutlineFlow? Flow,
     IReadOnlyList<MappingOutlineAssertion> Assertions,
-    IReadOnlyList<MappingOutlineNode> Children);
+    IReadOnlyList<MappingOutlineNode> Children,
+    bool RestrictWhenMissing = false);
 
 /// <summary>What identifies a record of the dataset: the <c>dataset</c> block.</summary>
 /// <param name="System">The source system; empty for an enrichment mapping.</param>
@@ -278,6 +283,8 @@ public sealed record MappingOutline(
 
         public bool Required { get; set; } = true;
 
+        public bool RestrictWhenMissing { get; set; }
+
         public string? Type { get; set; }
 
         public string? When { get; set; }
@@ -298,7 +305,7 @@ public sealed record MappingOutline(
 
         public MappingOutlineNode Freeze() => new(
             Path, Name, Shape, How, Required, Type, When, Where, Dataset, Description, Lines?.Line, Lines?.EndLine, Flow, Assertions,
-            Children.Select(child => child.Freeze()).ToList());
+            Children.Select(child => child.Freeze()).ToList(), RestrictWhenMissing);
     }
 
     /// <summary>A source as the outline finds it, its fields in the order the document first reads them.</summary>
@@ -596,6 +603,7 @@ public sealed record MappingOutline(
             return new Branch(path, name, shape)
             {
                 Required = entry.Required,
+                RestrictWhenMissing = entry.RestrictWhenMissing,
                 When = entry.AppliesWhen?.Text,
                 Where = entry.RowFilter?.Text,
                 Description = entry.Description ?? variable?.Description ?? variable?.Title,
@@ -639,6 +647,7 @@ public sealed record MappingOutline(
                 var number = place.ToString(CultureInfo.InvariantCulture);
                 var alternative = Value(node, $"{path}|{number}", number);
                 alternative.Required = true;
+                alternative.RestrictWhenMissing = false;
                 alternative.Type = null;
                 alternative.Description = null;
                 alternative.Lines = LinesAt($"{entry.Location}.{MappingMapper.CoalesceKey}[{place - 1}]") ?? branch.Lines;
@@ -893,7 +902,9 @@ public sealed record MappingOutline(
                     ? ", then ignoring case where the platform's index allows"
                     : node.IgnoreSeparators ? ", then ignoring case, then ignoring punctuation and spacing" : ", then ignoring case";
                 var where = searched ? $" Searches {search?.Kind ?? type} on the platform." : string.Empty;
-                var none = node.Required ? ", and so does finding none" : "; finding none gives no value";
+                var none = !node.Required ? "; finding none gives no value"
+                    : node.RestrictWhenMissing ? "; finding none restricts the record, which goes out under the mapping's restricted access"
+                    : ", and so does finding none";
                 what = $"{order}{where} A value matches as written{loose}. Several matching records hold the record{none}.";
             }
 

@@ -69,6 +69,7 @@ flow delivered.
 | Keep a record in OSDU, readable only by a registered group | **Remove**, **Restrict access**, picking the restriction (`scope: restrict`). |
 | Give a restricted record its access back | **Remove**, **Lift the restriction** (`scope: unrestrict`). |
 | Keep a restricted record out of OSDU as well | Remove it at the `record` scope: it stays restricted, so it is not delivered again. |
+| Deliver a record missing a value that decides who may read it (a classification) under a registered group, opening by itself once the value arrives | Mark the value `$restrictWhenMissing` in the mapping and name the restriction under `restrictedAccess`: [restricted until complete](../flow/mapping-restricted-access.md). |
 | Register, describe or remove a restricting ACL | The **Access restrictions** page (administrators), or `/api/v1/delivery/access-restrictions`. |
 
 ## The registry
@@ -79,11 +80,14 @@ one can reach. Each restriction has a name (unique in its partition, whatever it
 **viewers** and **owners**, each a data group email storage accepts in an ACL (`data.<name>@<domain>`). The partition has to
 be registered. The groups never change once registered, since OSDU holds them on the records restricted under it; a
 different set of groups is a restriction of its own. What it is for can be said again, and a restriction is removed only
-while no record carries it (409 `Restriction in use` otherwise: lift its records first).
+while no record carries it (409 `Restriction in use` otherwise: lift its records first), and while OSDU holds no record
+[restricted until complete](../flow/mapping-restricted-access.md) under it, which a mapping naming it under
+`restrictedAccess` sends while a value it marks `$restrictWhenMissing` is missing. A restriction's page counts the two apart
+(`records`, `restrictedUntilComplete`).
 
 | Route | Who | Does |
 | --- | --- | --- |
-| `GET /api/v1/delivery/access-restrictions?partition=<p>` | anyone signed in | The partition's restrictions (every partition's without `partition`), by name, each with its groups and how many records carry it. |
+| `GET /api/v1/delivery/access-restrictions?partition=<p>` | anyone signed in | The partition's restrictions (every partition's without `partition`), by name, each with its groups, how many records carry it, and how many OSDU holds restricted until complete under it. |
 | `POST /api/v1/delivery/access-restrictions` | administrators | Registers one: `{partition, name, description, viewers, owners}`; 400 naming what it refuses. |
 | `PUT /api/v1/delivery/access-restrictions/{id}` | administrators | Says what it is for: `{description}`. |
 | `DELETE /api/v1/delivery/access-restrictions/{id}` | administrators | Removes one no record carries. |

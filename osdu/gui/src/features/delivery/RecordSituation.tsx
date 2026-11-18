@@ -11,7 +11,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { ExplainMark } from "@/components/ExplainTip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
-import type { DeliveryRecord, DeliveryRecordLink, DeliveryRecordRestriction } from "../../api/delivery";
+import type { DeliveryRecord, DeliveryRecordIncomplete, DeliveryRecordLink, DeliveryRecordRestriction } from "../../api/delivery";
 import type { RemovedKey } from "../../api/removals";
 import { aclText } from "./accessRestrictionText";
 import { IssueMessage, IssueSummary } from "./IssueMessage";
@@ -152,6 +152,38 @@ function RestrictionLine({ restriction, onLift }: { restriction: DeliveryRecordR
   );
 }
 
+/**
+ * The access OSDU holds the record under while it is restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md):
+ * under which registered restriction and since when, the first value it goes without, and the way to every record missing the
+ * same. Who may read it, every missing value and how it gets its own access back are on hover, with a copy.
+ */
+function IncompleteLine({ incomplete, missingHref }: { incomplete: DeliveryRecordIncomplete; missingHref?: string }) {
+  const name = incomplete.name ?? `restriction #${incomplete.restrictionId}, no longer registered`;
+  const groups = incomplete.viewers !== null && incomplete.owners !== null ? aclText(incomplete.viewers, incomplete.owners) : null;
+  const count = incomplete.missing.length;
+  const first = incomplete.missing[0];
+  const explained = [
+    `OSDU holds the record ${groups !== null ? `readable only by ${groups}` : `under access restriction ${name}`}, because ${count === 1 ? "a value" : `${count.toLocaleString()} values`} its mapping marks $restrictWhenMissing ${count === 1 ? "is" : "are"} missing from the document it holds:`,
+    ...incomplete.missing.map((value) => `- ${value}`),
+    "Every run plans it as any other. Once its source gives every such value, the next delivery writes it with the access its mapping gives, and the records its enrichments add with it; nothing needs releasing.",
+  ].join("\n");
+  return (
+    <Line tone="warning" icon={Lock} testId="record-restricted-until-complete">
+      <span>
+        {`Restricted until complete under ${name} since `}
+        <RelativeTime value={incomplete.sinceUtc} />
+        {first !== undefined ? `: ${first}${count > 1 ? `, and ${(count - 1).toLocaleString()} more` : ""}.` : "."}
+      </span>
+      <ExplainMark title="What it waits for" text={explained} testId="record-restricted-until-complete-why" />
+      {missingHref !== undefined && (
+        <RouterLink to={missingHref} className="ml-2 text-[12px] underline-offset-2 hover:underline" data-testid="record-restricted-until-complete-same">
+          Every record missing the same
+        </RouterLink>
+      )}
+    </Line>
+  );
+}
+
 /** When the record was held or failed, by the tries made for its pending work: after them, or before any. */
 function afterTries(count: number): string {
   return count === 0 ? "before any try" : `after ${count} ${count === 1 ? "try" : "tries"}`;
@@ -259,7 +291,9 @@ function Waiters({ record, waiters }: { record: DeliveryRecord; waiters: Deliver
  * this one. A delivered record with nothing wrong has no situation and gets no lines: the status pill and the milestones
  * say everything there is.
  */
-export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLift, lifting = false, restriction, onLiftRestriction }: {
+export function RecordSituation({
+  record, waitsOn, waitedOnBy, removedKey, onLift, lifting = false, restriction, onLiftRestriction, restrictedUntilComplete, missingHref,
+}: {
   record: DeliveryRecord;
   waitsOn: DeliveryRecordLink | null | undefined;
   /** The records whose waiting document refers to this one, the first `MAX_WAITERS_SHOWN`. */
@@ -273,12 +307,21 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
   restriction?: DeliveryRecordRestriction | null;
   /** Opens the lift of that restriction; absent where the reader cannot. */
   onLiftRestriction?: () => void;
+  /** The access OSDU holds the record under while it is restricted until complete. */
+  restrictedUntilComplete?: DeliveryRecordIncomplete | null;
+  /** The flow's records listing narrowed to every record missing the same values; absent where none can be linked. */
+  missingHref?: string;
 }) {
   const leaseExpired = useHasPassed(record.leaseExpiresUtc);
   const lines: ReactNode[] = [];
   // A restriction keeps the record out of everything below, so it says so first.
   if (restriction != null) {
     lines.push(<RestrictionLine key="restriction" restriction={restriction} onLift={onLiftRestriction} />);
+  }
+
+  // Who may read the record in OSDU while values are missing comes next: it moves by itself once they arrive.
+  if (restrictedUntilComplete != null) {
+    lines.push(<IncompleteLine key="incomplete" incomplete={restrictedUntilComplete} missingHref={missingHref} />);
   }
   if (removedKey !== undefined) {
     lines.push(<RemovalLine key="removal" removedKey={removedKey} onLift={onLift} lifting={lifting} />);

@@ -210,7 +210,8 @@ internal static class DeliveryValueCheckVerbs
             $"    rows        {rows.Checked:N0} checked of {rows.Read:N0} read{(rows.Complete ? ", the whole scope" : $" (the scope holds about {rows.ScopeRecords:N0})")}"));
         writer.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"    outcome     {rows.Clean:N0} clean, {rows.WithHeld:N0} held, {rows.WithInvalid:N0} with an invalid value, {rows.WithEmpty:N0} leaving a variable out"));
+            $"    outcome     {rows.Clean:N0} clean, {rows.WithHeld:N0} held, {rows.WithInvalid:N0} with an invalid value, {rows.WithEmpty:N0} leaving a variable out")
+            + (rows.WithRestricted > 0 ? string.Create(CultureInfo.InvariantCulture, $", {rows.WithRestricted:N0} restricted until complete") : string.Empty));
         if (rows.WithFailedAssertion > 0)
         {
             writer.WriteLine(string.Create(
@@ -230,7 +231,7 @@ internal static class DeliveryValueCheckVerbs
         foreach (var variable in check.Variables)
         {
             var counts = variable.Rows;
-            var failed = counts.Held + counts.Invalid + counts.Empty + counts.Asserted;
+            var failed = counts.Held + counts.Invalid + counts.Empty + counts.Restricted + counts.Asserted;
             if (failed == 0)
             {
                 continue;
@@ -239,6 +240,7 @@ internal static class DeliveryValueCheckVerbs
             writer.WriteLine(string.Create(
                 CultureInfo.InvariantCulture,
                 $"    {variable.Target}: {counts.Held:N0} held, {counts.Invalid:N0} invalid, {counts.Empty:N0} empty, {counts.Valid:N0} valid, {counts.NotApplicable:N0} not applicable")
+                + (counts.Restricted > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {counts.Restricted:N0} restricted until complete") : string.Empty)
                 + (counts.Asserted > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {counts.Asserted:N0} failing an assertion") : string.Empty));
             foreach (var finding in variable.Findings.Where(f => f.Outcome != "notApplicable"))
             {

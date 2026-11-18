@@ -3752,6 +3752,19 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(600)
                         .HasColumnType("nvarchar(600)");
 
+                    b.Property<long?>("IncompleteHash")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IncompleteMissing")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("IncompleteRestrictionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("IncompleteSinceUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Label")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
@@ -3958,6 +3971,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .IsUnique()
                         .HasFilter("[ClaimedTargetId] IS NOT NULL");
 
+                    b.HasIndex("IncompleteRestrictionId")
+                        .HasFilter("[IncompleteRestrictionId] IS NOT NULL");
+
                     b.HasIndex("LeaseOwner");
 
                     b.HasIndex("RestrictionId")
@@ -4046,6 +4062,11 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_HeldSteps"), new[] { "HeldSteps" });
 
+                    b.HasIndex(new[] { "PartitionId", "FlowId", "IncompleteHash" }, "IX_Record_PartitionId_FlowId_Incomplete")
+                        .HasFilter("[IncompleteRestrictionId] IS NOT NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex(new[] { "PartitionId", "FlowId", "IncompleteHash" }, "IX_Record_PartitionId_FlowId_Incomplete"), new[] { "IncompleteRestrictionId" });
+
                     b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_Restricted")
                         .HasFilter("[RestrictionId] IS NOT NULL");
 
@@ -4067,6 +4088,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("bigint");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("EventId"));
+
+                    b.Property<bool>("AccessSent")
+                        .HasColumnType("bit");
 
                     b.Property<long?>("AssertionFailures")
                         .HasColumnType("bigint");
@@ -4133,6 +4157,16 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<Guid>("FlowId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("IncompleteHash")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IncompleteMissing")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("IncompleteRestrictionId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Kind")
                         .IsRequired()

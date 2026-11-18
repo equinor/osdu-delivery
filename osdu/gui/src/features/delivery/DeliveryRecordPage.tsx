@@ -18,7 +18,7 @@ import { IdChip } from "@/components/IdChip";
 import { ExplainPageButton } from "@/features/chat/ExplainPageButton";
 import { Page } from "@/components/Page";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
-import { BlockedBadge, RecordStatusBadge, RestrictedBadge } from "./DeliveryBadges";
+import { BlockedBadge, RecordStatusBadge, RestrictedBadge, RestrictedUntilCompleteBadge } from "./DeliveryBadges";
 import { RecordJourney, RecordMilestones } from "./RecordJourney";
 import { RecordName } from "./RecordName";
 import { RECORD_ARTIFACTS_SHOWN, RecordArtifacts, RecordUndoNotice } from "./RecordArtifacts";
@@ -274,6 +274,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           <ExplainPageButton />
           <RecordStatusBadge status={record.status} />
           {record.restrictionId != null && <RestrictedBadge asked={record.restrictedUtc == null} />}
+          {record.incompleteRestrictionId != null && <RestrictedUntilCompleteBadge missing={record.incompleteMissing} />}
           {record.blocked && <BlockedBadge />}
           <div className="grow" />
           <div className="flex flex-wrap items-center gap-2">
@@ -403,6 +404,10 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
               setRemoveLifts(true);
               setRemoveOpen(true);
             }
+            : undefined}
+          restrictedUntilComplete={detail.restrictedUntilComplete}
+          missingHref={detail.pipelineId !== null && detail.restrictedUntilComplete?.group
+            ? flowLedgerRoute(detail.pipelineId, flowScope, { tab: "records", missing: detail.restrictedUntilComplete.group })
             : undefined}
         />
         <RecordUndoNotice artifacts={artifacts.data} onOpen={() => setTab("artifacts")} />

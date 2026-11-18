@@ -16,6 +16,7 @@ keywords:
   - sync timeline
   - reverse a run
   - waiting records
+  - restricted until complete
   - troubleshooting
   - issues tab
   - stopped submission
@@ -27,6 +28,7 @@ related:
   - delivery-concept-record-lifecycle
   - delivery-concept-removal-and-reversal
   - delivery-concept-access-restriction
+  - delivery-flow-mapping-restricted-access
   - delivery-concept-ledger
   - delivery-concept-submissions
   - delivery-cli-records
@@ -358,6 +360,20 @@ with that restriction's groups, in place and with no new version, and no run, re
 **Lift the restriction**, under the same **Remove**, gives each back the ACL it had. A restriction the flow's identity could
 not lift again (it is in none of the restriction's owner groups) is refused before anything changes: add the identity to the
 group in Entitlements. The flow's **Restricted** filter lists them. See [Restricting access](../concepts/access-restriction.md).
+
+## Records are restricted until complete
+
+**You see** records with **restricted until complete** in their **Access** column, or the flow's card counting them: OSDU
+holds them under the mapping's `restrictedAccess` because values the mapping marks `$restrictWhenMissing` were missing from
+their rows.
+
+**Do:** nothing to the records themselves. The record's page says what it goes without, under **What it waits for**, and
+**Every record missing the same** lists the flow's records with the same missing values (`sqlflow records list
+<flow.yaml> --missing <group>`; `--incomplete` lists them all). Fill those values where the rows come from; the next run
+that reads a row delivers its record with the access its mapping gives, in a new version. A run refuses to start when the
+restriction is no longer registered in the flow's partition or the flow's identity is in none of its owner groups: register
+it again on the **Access restrictions** page, or add the identity to the group in Entitlements. See
+[Restricted until complete](../flow/mapping-restricted-access.md).
 
 ## A run delivered the wrong thing
 

@@ -28,11 +28,14 @@ sourceRefs:
 The access restrictions an administrator registered for each OSDU partition
 ([Restricting access](../concepts/access-restriction.md#the-registry)): a name operators pick it by, what it is for, and
 the entitlements groups that become a restricted record's `acl.viewers` and `acl.owners`. A record restricted under one
-names it in [`osdu.Record.RestrictionId`](record.md). Added by migration `RecordAccessRestrictions` (module version 1.65.0).
+names it in [`osdu.Record.RestrictionId`](record.md), and a record OSDU holds restricted until complete under one, in
+[`osdu.Record.IncompleteRestrictionId`](record.md) ([restricted until complete](../flow/mapping-restricted-access.md)).
+Added by migration `RecordAccessRestrictions` (module version 1.65.0).
 
 A restriction's groups never change once it is registered, since OSDU holds them on the records restricted under it: a
 different set of groups is a restriction of its own. Only what it is for can be said again. It is removed only while no
-record carries it, in one serializable transaction with the count that says so; no foreign key backs the record's column,
+record carries it in either column, in one serializable transaction with the counts that say so; no foreign key backs the
+record's columns,
 since adding one to the ledger would read every one of its rows under a schema lock as the migration ran.
 
 ## Columns

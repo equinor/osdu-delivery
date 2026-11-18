@@ -450,9 +450,14 @@ public sealed class ReversalRunner
             return [];
         }
 
+        // A record OSDU holds restricted until complete is written back under the restriction's groups, so a reversal never opens it.
+        var restrictions = await VersionWriteBack.RestrictionsOfAsync(_ledger, work.Select(w => w.Record), ct).ConfigureAwait(false);
         var written = await VersionWriteBack.RunAsync(
             _protocol,
-            work.Select(w => new WriteBack(w.Item.DeliveryKey, w.Item.TargetId!, w.Prior ?? w.Item.PriorVersion!.Value, w.Latest, TargetStateOf(w.Record))).ToList(),
+            work.Select(w => VersionWriteBack.Guarded(
+                new WriteBack(w.Item.DeliveryKey, w.Item.TargetId!, w.Prior ?? w.Item.PriorVersion!.Value, w.Latest, TargetStateOf(w.Record)),
+                w.Record,
+                restrictions)).ToList(),
             Concurrency,
             ct).ConfigureAwait(false);
         var settlements = new List<ReversalSettlement>(work.Count);

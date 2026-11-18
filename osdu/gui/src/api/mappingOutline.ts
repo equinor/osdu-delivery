@@ -96,6 +96,11 @@ export interface MappingOutlineNode {
   flow?: MappingOutlineFlow | null;
   assertions: { label: string; expected: string; onFail: string; stage: string }[];
   children: MappingOutlineNode[];
+  /**
+   * A node marked `$restrictWhenMissing`: a value it does not give restricts the record (it goes out under the mapping's
+   * `restrictedAccess`, the property left out) rather than holding it. Absent from an older control plane.
+   */
+  restrictWhenMissing?: boolean;
 }
 
 /** What a mapping does, laid out for a person to read: everything it reads, and how each property of the record is filled. */

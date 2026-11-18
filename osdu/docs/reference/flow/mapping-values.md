@@ -141,6 +141,7 @@ and takes its settings beside it:
 | `$modifiers` | Changes to an incoming dataset value, top to bottom. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$cache`, `$search`, and `$parent` and `$base` on a single value |
 | `$when` | A condition: when the property applies to the row. See [$when](#when-when-a-property-applies). | every node |
 | `$required` | What an empty value does: `true` (the default) holds the record, `false` leaves the property out. See [$required](#required-what-an-empty-value-does). | every node but `$value` and `$link`; only `false` on `$child`, its default |
+| `$restrictWhenMissing` | `true` leaves the property out of a record missing the value and sends the record restricted, under the mapping's `restrictedAccess`, rather than holding it; it gets its own access back once a delivery finds the value. See [restricted until complete](mapping-restricted-access.md). | a required value node, `$lookup` or `$coalesce`; never `$forEach`, `$value`, `$child`, `$link` or an alternative |
 | `$description` | Free text. | every node |
 | `$findBy` | Which record to read: one line or a list, tried in order. | `$cache`, `$search` |
 | `$findAll` | Every cached row that matches, read as a list. | `$cache` |
@@ -148,10 +149,11 @@ and takes its settings beside it:
 | `$unverified` | Write an id an `id` or `ref` modifier builds even when the cache does not hold its record. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$parent` and `$base` with `id` or `ref` |
 | `$assert` | Business rules the value must meet, each holding, reporting or leaving out a record that breaks it. See [mapping assertions](mapping-assertions.md). | every node but `$value`, `$link`, an alternative of `$coalesce` and an item of a list of values |
 
-A `$value` takes only `$when` and `$description`; a `$lookup` takes only `$when`, `$required`, `$assert` and
-`$description`; a `$coalesce` takes `$when`, `$required`, `$assert` and `$description` beside its list; a `$forEach`
-takes `$item`, `$where`, `$when`, `$required`, `$assert` and `$description`. Anything else is refused by name, such as
-`record.data.Description: a literal $value takes only $when and $description beside it; $findBy, $findAll, $modifiers, $required, $ignoreSeparators and $unverified belong to a node that reads the dataset, the cache or a search.`
+A `$value` takes only `$when` and `$description`; a `$lookup` takes only `$when`, `$required`, `$restrictWhenMissing`,
+`$assert` and `$description`; a `$coalesce` takes `$when`, `$required`, `$restrictWhenMissing`, `$assert` and
+`$description` beside its list; a `$forEach` takes `$item`, `$where`, `$when`, `$required`, `$assert` and
+`$description`. Anything else is refused by name, such as
+`record.data.Description: a literal $value takes only $when and $description beside it; $findBy, $findAll, $modifiers, $required, $restrictWhenMissing, $ignoreSeparators and $unverified belong to a node that reads the dataset, the cache or a search.`
 
 ## Reading a column: $from
 
@@ -299,6 +301,12 @@ osdu.data.Curves: dataset.curves has no rows with values, and the entry is requi
 
 A property the schema requires in `data` must not be `$required: false`; the [preflight](../concepts/preflight.md)
 refuses that, since the record could go out without it.
+
+A value that decides who may read the record (a security classification, an export control) can send the record
+**restricted until complete** instead of holding it: `$restrictWhenMissing: true` beside a required node leaves the
+property out wherever `$required: false` would, and the record goes out under the access restriction the mapping names
+under `restrictedAccess`, getting its own access back once a delivery finds the value. Everything that holds a record
+whatever `$required` says still holds it. See [restricted until complete](mapping-restricted-access.md).
 
 ## $coalesce: the first value that is there
 

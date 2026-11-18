@@ -15,19 +15,21 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 
 /// <summary>
 /// One registered access restriction (osdu/docs/reference/concepts/access-restriction.md, The registry): the partition it
-/// belongs to, its name and what it is for, the groups a restricted record's ACL in OSDU becomes, and how many records carry
-/// it now.
+/// belongs to, its name and what it is for, the groups a restricted record's ACL in OSDU becomes, and how many records OSDU
+/// holds under its groups now: those an operator restricted under it (<c>records</c>), and those their mapping restricted until
+/// complete under it (<c>restrictedUntilComplete</c>, osdu/docs/reference/flow/mapping-restricted-access.md).
 /// </summary>
 public sealed record DeliveryAccessRestrictionDto(
     int RestrictionId, string Partition, string Name, string? Description, IReadOnlyList<string> Viewers, IReadOnlyList<string> Owners, long Records,
-    DateTime CreatedUtc, string CreatedBy, DateTime UpdatedUtc, string UpdatedBy)
+    DateTime CreatedUtc, string CreatedBy, DateTime UpdatedUtc, string UpdatedBy, long RestrictedUntilComplete = 0)
 {
     internal static DeliveryAccessRestrictionDto Of(RegisteredAccessRestriction registered)
     {
         ArgumentNullException.ThrowIfNull(registered);
         var r = registered.Restriction;
         return new DeliveryAccessRestrictionDto(
-            r.RestrictionId, r.Partition, r.Name, r.Description, r.Acl.Viewers, r.Acl.Owners, registered.Records, r.CreatedUtc, r.CreatedBy, r.UpdatedUtc, r.UpdatedBy);
+            r.RestrictionId, r.Partition, r.Name, r.Description, r.Acl.Viewers, r.Acl.Owners, registered.Records, r.CreatedUtc, r.CreatedBy, r.UpdatedUtc, r.UpdatedBy,
+            registered.RestrictedUntilComplete);
     }
 }
 

@@ -24,6 +24,8 @@ pub struct FindRecordsInput {
     pub flow_id: Option<String>,
     /// One OSDU data partition. Omit for all.
     pub partition: Option<String>,
+    /// true keeps only records OSDU holds restricted until complete, whose hits say what each goes without (incompleteMissing).
+    pub incomplete: Option<bool>,
     pub page: Option<i64>,
     /// Default 25, max 200.
     #[serde(rename = "pageSize")]
@@ -63,8 +65,9 @@ totalCapped=true means more match than were counted: narrow with status, flowId 
             Err(refused) => return refused,
         };
         let (search, status, partition) = (text(i.search), text(i.status), text(i.partition));
+        let incomplete = i.incomplete.filter(|on| *on).map(|_| "true".to_string());
         // The Records page asked the same: the lookup, the state, the flow and the partition, as its address takes them.
-        let asked: Vec<String> = [("q", &search), ("status", &status), ("flow", &flow_id), ("partition", &partition)]
+        let asked: Vec<String> = [("q", &search), ("status", &status), ("incomplete", &incomplete), ("flow", &flow_id), ("partition", &partition)]
             .into_iter()
             .filter_map(|(name, value)| value.as_deref().map(|value| format!("{name}={}", encode(value))))
             .collect();
@@ -73,6 +76,7 @@ totalCapped=true means more match than were counted: narrow with status, flowId 
         let query = Query::new()
             .text("search", search)
             .text("status", status)
+            .text("incomplete", incomplete)
             .text("flowId", flow_id)
             .text("partition", partition)
             .page(i.page, i.page_size);

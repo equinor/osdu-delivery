@@ -291,7 +291,11 @@ internal static partial class SqlServerLedgerBulk
     // after all) is applied only while the record stands where the hand-back left it: pending, or failed once its tries
     // were used up, with the try count the try's claim left. A later claim, release, removal, delivery or newly queued
     // work changed the count, and a plan that held the record changed its status; what they did stands, and the try's
-    // attempt, written when it was appended, is on the record's history either way.
+    // attempt, written when it was appended, is on the record's history either way. A try that sent the record's document
+    // (AccessSent) says the access OSDU holds the record under now: restricted until complete under the restriction it names,
+    // since the first delivery that restricted it, or its own (osdu/docs/reference/flow/mapping-restricted-access.md); the
+    // document it sent is the claim's whether or not newer work was queued behind it, so that holds superseded or not. Any
+    // other completion leaves the record's access as it was, since OSDU's changes only when a document is sent.
     private const string CompletionUpdateSql = $$"""
         UPDATE r SET
             [Status] = CASE WHEN x.[Superseded] = 1 THEN N'pending' ELSE s.[Status] END,
@@ -341,6 +345,13 @@ internal static partial class SqlServerLedgerBulk
             [PayloadModifiedUtc] = CASE WHEN s.[Promote] = 0 THEN r.[PayloadModifiedUtc]
                 WHEN x.[Superseded] = 1 THEN CASE WHEN s.[ClaimPayload] = 1 THEN COALESCE(s.[ClaimPayloadModifiedUtc], r.[PayloadModifiedUtc]) ELSE r.[PayloadModifiedUtc] END
                 WHEN r.[PendingPayload] = 1 THEN COALESCE(r.[PendingPayloadModifiedUtc], r.[PayloadModifiedUtc]) ELSE r.[PayloadModifiedUtc] END,
+            [IncompleteRestrictionId] = CASE WHEN s.[AccessSent] = 1 THEN s.[IncompleteRestrictionId] ELSE r.[IncompleteRestrictionId] END,
+            [IncompleteMissing] = CASE WHEN s.[AccessSent] = 1 THEN s.[IncompleteMissing] ELSE r.[IncompleteMissing] END,
+            [IncompleteHash] = CASE WHEN s.[AccessSent] = 1 THEN s.[IncompleteHash] ELSE r.[IncompleteHash] END,
+            [IncompleteSinceUtc] = CASE WHEN s.[AccessSent] = 0 THEN r.[IncompleteSinceUtc]
+                WHEN s.[IncompleteRestrictionId] IS NULL THEN NULL
+                WHEN r.[IncompleteRestrictionId] IS NOT NULL THEN COALESCE(r.[IncompleteSinceUtc], s.[AtUtc])
+                ELSE s.[AtUtc] END,
             [LastDeliveredUtc] = CASE WHEN s.[Promote] = 1 AND s.[NothingSent] = 0 THEN s.[AtUtc] ELSE r.[LastDeliveredUtc] END,
             [LastVerifiedUtc] = CASE WHEN s.[Promote] = 1 AND s.[NothingSent] = 0 THEN NULL ELSE r.[LastVerifiedUtc] END,
             [LastVerifyOutcome] = CASE WHEN s.[Promote] = 1 AND s.[NothingSent] = 0 THEN NULL ELSE r.[LastVerifyOutcome] END,
@@ -999,6 +1010,10 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("ClaimPayloadModifiedUtc", typeof(DateTime));
         table.Columns.Add("ClaimMetadata", typeof(bool));
         table.Columns.Add("ClaimPayload", typeof(bool));
+        table.Columns.Add("AccessSent", typeof(bool));
+        table.Columns.Add("IncompleteRestrictionId", typeof(int));
+        table.Columns.Add("IncompleteMissing", typeof(string));
+        table.Columns.Add("IncompleteHash", typeof(long));
         foreach (var e in events)
         {
             table.Rows.Add(
@@ -1008,7 +1023,8 @@ internal static partial class SqlServerLedgerBulk
                 Value(e.TargetId), Value(e.TargetVersion), Value(e.TargetStateJson), Value(e.PendingStepJson),
                 Value(e.ClaimSubmissionId), Value(e.ClaimDocumentRef), Value(e.ClaimAttemptCount), Value(e.ClaimRenderContext), Value(e.ClaimSourceFingerprint),
                 Value(e.ClaimSourceModifiedUtc), Value(e.ClaimSourceFileName), Value(e.ClaimSourceRowNumber), Value(e.ClaimSourceUpdatedUtc),
-                Value(e.ClaimMetadataHash), Value(e.ClaimParentVersion), Value(e.ClaimPayloadHash), Value(e.ClaimPayloadModifiedUtc), e.ClaimMetadata, e.ClaimPayload);
+                Value(e.ClaimMetadataHash), Value(e.ClaimParentVersion), Value(e.ClaimPayloadHash), Value(e.ClaimPayloadModifiedUtc), e.ClaimMetadata, e.ClaimPayload,
+                e.AccessSent, Value(e.IncompleteRestrictionId), Value(e.IncompleteMissing), Value(e.IncompleteHash));
         }
 
         return table;

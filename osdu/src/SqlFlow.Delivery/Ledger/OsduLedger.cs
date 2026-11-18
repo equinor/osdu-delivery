@@ -1718,6 +1718,18 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => r.RestrictionId != null);
         }
 
+        if (narrowing.Incomplete)
+        {
+            // The index of the records restricted until complete holds them, and no others.
+            rows = rows.Where(r => r.IncompleteRestrictionId != null);
+        }
+
+        if (narrowing.Missing is { } missing)
+        {
+            // The same index holds them by what they go without; naming its filter lets the server read it.
+            rows = rows.Where(r => r.IncompleteRestrictionId != null && r.IncompleteHash == missing);
+        }
+
         return rows;
     }
 
@@ -1896,7 +1908,7 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => sent.Contains(r.DeliveryKey));
         }
 
-        rows = Narrowed(rows, new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted));
+        rows = Narrowed(rows, new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing));
         if (query.Problem is { } problem)
         {
             // The problem index holds the blocked records alone; naming its filter lets the server read it.
@@ -1914,7 +1926,7 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>Whether the listing has a filter besides its search.</summary>
     private static bool Narrows(RecordQuery query)
         => query.Status is not null || query.SubmissionId is not null || query.DeliveredBySubmissionId is not null || query.RunId is not null
-            || query.Drifted || query.StepHeld || query.Restricted || query.EverDelivered is not null;
+            || query.Drifted || query.StepHeld || query.Restricted || query.Incomplete || query.Missing is not null || query.EverDelivered is not null;
 
     /// <summary>The listing's search term when it is a prefix search: not empty, not a delivery key, not a contains search.</summary>
     private static string? PrefixTerm(RecordQuery query)
@@ -1985,7 +1997,7 @@ public sealed partial class OsduLedger : ILedger
     private static async Task<FlowStats> StatsAsync(OsduDbContext db, short partition, Guid flowId, DateTime nowUtc, CancellationToken ct)
     {
         var since = nowUtc.AddHours(-24);
-        var (byStatus, drifted, last24, stepsHeld, restricted) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
+        var (byStatus, drifted, last24, stepsHeld, restricted, incomplete) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
         var (blocked, stranded) = await SqlServerLedgerBulk.ParkedCountsAsync(db, partition, flowId, ct).ConfigureAwait(false);
 
         // The held records an adoption may be asked of, read from the held records alone through the status index: the test is
@@ -2017,6 +2029,7 @@ public sealed partial class OsduLedger : ILedger
             Drifted = drifted,
             StepsHeld = stepsHeld,
             Restricted = restricted,
+            RestrictedUntilComplete = incomplete,
             DeliveredLast24h = last24,
             LastDeliveredUtc = lastDelivered,
             LastVerifiedUtc = lastVerified,
@@ -2030,7 +2043,7 @@ public sealed partial class OsduLedger : ILedger
     /// kept the counts in a few rows per flow and was written inside the transaction of every record write, so every
     /// node delivering a flow met every other one on those rows.
     /// </summary>
-    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld, long Restricted)> CountFromRecordsAsync(
+    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld, long Restricted, long Incomplete)> CountFromRecordsAsync(
         OsduDbContext db, short partition, Guid flowId, DateTime since, CancellationToken ct)
     {
         var byStatus = await db.DeliveryRecords
@@ -2051,7 +2064,12 @@ public sealed partial class OsduLedger : ILedger
         var restricted = await db.DeliveryRecords
             .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.RestrictionId != null, ct)
             .ConfigureAwait(false);
-        return (byStatus, drifted, deliveredSince, stepsHeld, restricted);
+
+        // The records restricted until complete, read from the index that holds them alone.
+        var incomplete = await db.DeliveryRecords
+            .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.IncompleteRestrictionId != null, ct)
+            .ConfigureAwait(false);
+        return (byStatus, drifted, deliveredSince, stepsHeld, restricted, incomplete);
     }
 
     public async Task<IReadOnlyList<AttemptRecord>> ListAttemptsAsync(Guid flowId, DeliveryKey key, int max, CancellationToken ct = default)
@@ -4433,6 +4451,10 @@ public sealed partial class OsduLedger : ILedger
         RestrictionId = r.RestrictionId,
         RestrictedUtc = r.RestrictedUtc is { } restricted ? DateTime.SpecifyKind(restricted, DateTimeKind.Utc) : null,
         RestrictedFromAcl = r.RestrictedFromAcl,
+        IncompleteRestrictionId = r.IncompleteRestrictionId,
+        IncompleteSinceUtc = r.IncompleteSinceUtc is { } incomplete ? DateTime.SpecifyKind(incomplete, DateTimeKind.Utc) : null,
+        IncompleteMissing = r.IncompleteMissing,
+        IncompleteHash = r.IncompleteHash,
         TargetVersion = r.TargetVersion,
         Status = StatusText.ToRecordStatus(r.Status),
         LastDeliveredUtc = r.LastDeliveredUtc,

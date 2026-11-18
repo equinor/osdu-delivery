@@ -78,6 +78,12 @@ export interface DeliveryFlowStats {
    * no run delivers them until it is lifted. Absent from an older control plane.
    */
   restricted?: number;
+  /**
+   * Records OSDU holds restricted until complete, whatever their status: delivered under a registered access restriction's
+   * groups because values their mapping marks `$restrictWhenMissing` were missing, each going back to its own access once a
+   * delivery finds them all (osdu/docs/reference/flow/mapping-restricted-access.md). Absent from an older control plane.
+   */
+  restrictedUntilComplete?: number;
   deliveredLast24h: number;
   lastDeliveredUtc: string | null;
   lastVerifiedUtc: string | null;
@@ -295,6 +301,34 @@ export interface DeliveryRecord {
   restrictionId?: number | null;
   /** When OSDU confirmed the restriction; null while it is asked and OSDU's answer is not known. */
   restrictedUtc?: string | null;
+  /**
+   * The registered access restriction OSDU holds the record under, restricted until complete, because values its mapping marks
+   * `$restrictWhenMissing` were missing from the document OSDU holds; null or absent while OSDU holds it with its own access.
+   * Every run plans it as any other, and the delivery that finds every such value gives it its own access back.
+   */
+  incompleteRestrictionId?: number | null;
+  /** When OSDU first held the record restricted until complete; null while it is not. */
+  incompleteSinceUtc?: string | null;
+  /** What the document OSDU holds goes without, one value to an item, as a hold would say each; null while not restricted until complete. */
+  incompleteMissing?: string[] | null;
+  /** What every record restricted for the same missing values shares: the `missing` filter of a listing. */
+  incompleteGroup?: string | null;
+}
+
+/**
+ * The access OSDU holds a record restricted until complete under (osdu/docs/reference/flow/mapping-restricted-access.md): the
+ * registered restriction its mapping named and its groups (null when the registry no longer names it), since when, what the
+ * document OSDU holds goes without, and the group every record missing the same shares.
+ */
+export interface DeliveryRecordIncomplete {
+  restrictionId: number;
+  name: string | null;
+  description: string | null;
+  viewers: string[] | null;
+  owners: string[] | null;
+  sinceUtc: string | null;
+  missing: string[];
+  group: string | null;
 }
 
 /**
@@ -388,6 +422,8 @@ export interface DeliveryRecordDetail {
   removedKey?: object | null;
   /** The access restriction the record carries while its access in OSDU is restricted; null or absent otherwise. */
   restriction?: DeliveryRecordRestriction | null;
+  /** The access OSDU holds the record under while it is restricted until complete; null or absent otherwise. */
+  restrictedUntilComplete?: DeliveryRecordIncomplete | null;
 }
 
 /** One run of an execution, as a lookup by run id or correlation id answers it (DeliveryRunLookupRunDto). */
@@ -448,6 +484,12 @@ export interface DeliveryRecordHit {
   sourceRowNumber?: number | null;
   /** The partition the record's ledger delivers to, for a flow that names its partitions. */
   partition?: string | null;
+  /** Whether an operator restricted the record's access in OSDU. Absent from an older control plane. */
+  restricted?: boolean;
+  /** Whether OSDU holds the record restricted until complete. Absent from an older control plane. */
+  restrictedUntilComplete?: boolean;
+  /** What a record restricted until complete goes without, one value to an item. */
+  incompleteMissing?: string[] | null;
 }
 
 /** One value of a record a lookup matched: the value as it was read, and what it is (identity, key, label, osdu, file). */
@@ -1181,6 +1223,10 @@ export interface DeliveryRecordListQuery extends PageQuery {
   stepHeld?: boolean;
   /** Only records whose access in OSDU is restricted, or asked to be. */
   restricted?: boolean;
+  /** Only records OSDU holds restricted until complete. */
+  incomplete?: boolean;
+  /** Only records restricted until complete for one set of missing values, by its group. */
+  missing?: string;
 }
 
 /**
@@ -1271,6 +1317,10 @@ export interface DeliveryRecordLookupQuery extends PageQuery {
   stepHeld?: boolean;
   /** Only the records whose access in OSDU is restricted, or asked to be. */
   restricted?: boolean;
+  /** Only the records OSDU holds restricted until complete. */
+  incomplete?: boolean;
+  /** Only the records restricted until complete for one set of missing values, by its group. */
+  missing?: string;
   /** The ledger identity of one flow (a {@link DeliveryRecordFlow}'s `flowId`); left out, every flow. */
   flowId?: string;
   /** The partition whose ledgers are read; left out, the workbench's, which every call carries. */
@@ -1856,13 +1906,18 @@ export interface DeliveryValueIssuesExport {
  * What a variable came to in a row that did not give it a value the template accepts, that the mapping means no value for,
  * or (`asserted`) whose value fails an assertion of the mapping.
  */
-export type ValueCheckOutcome = "held" | "invalid" | "empty" | "notApplicable" | "asserted";
+export type ValueCheckOutcome = "held" | "invalid" | "restricted" | "empty" | "notApplicable" | "asserted";
 
 /** A variable's rows (or items) by what they came to. */
 export interface DeliveryValueCheckCounts {
   valid: number;
   invalid: number;
   empty: number;
+  /**
+   * Rows (or items) a node marked `$restrictWhenMissing` gave no value: the record goes out restricted until complete, without
+   * it. Absent from an older node.
+   */
+  restricted?: number;
   notApplicable: number;
   held: number;
   /**
@@ -2067,6 +2122,8 @@ export interface DeliveryValueCheckRows {
   withHeld: number;
   withInvalid: number;
   withEmpty: number;
+  /** Rows a variable checked restricts: their record goes out restricted until complete. Absent from an older node. */
+  withRestricted?: number;
   /** Rows whose record fails an assertion of the mapping on a variable checked, whatever the failure does. */
   withFailedAssertion: number;
   /** Of those, the rows whose record a failed assertion would hold at the check before sending. */
@@ -2147,6 +2204,10 @@ export interface DeliveryRecordFilter {
   stepHeld?: boolean;
   /** The records whose access in OSDU is restricted, or asked to be. */
   restricted?: boolean;
+  /** The records OSDU holds restricted until complete. */
+  incomplete?: boolean;
+  /** The records restricted until complete for one set of missing values, by its group. */
+  missing?: string;
 }
 
 /**
@@ -2951,6 +3012,12 @@ export interface MappingDraftEntry {
   /** Repeat: the condition (`$where`) a child row must hold to become an item; null keeps every row. */
   where: string | null;
   required: boolean;
+  /**
+   * `$restrictWhenMissing`: a value the entry should give and does not restricts the record (it goes out under the mapping's
+   * `restrictedAccess`, the property left out) rather than holding it. Beside a required entry only. Absent from an older
+   * control plane, which reads as false.
+   */
+  restrictWhenMissing?: boolean;
   ignoreSeparators: boolean;
   /**
    * An entry that builds an id with id or ref ($unverified): the id is written even when the cache holds records of its
@@ -3105,6 +3172,12 @@ export interface MappingDraft {
   searches: MappingDraftSearch[];
   /** The records the mapping finds once for a row, which lookup entries and find all lines read. */
   lookups: MappingDraftLookup[];
+  /**
+   * The access restriction a record goes out under while a value an entry marks `$restrictWhenMissing` is missing
+   * (`restrictedAccess`, osdu/docs/reference/flow/mapping-restricted-access.md): its registered name, or text reading a
+   * parameter such as `{$param.restriction}`; null or absent for none.
+   */
+  restrictedAccess?: string | null;
   entries: MappingDraftEntry[];
 }
 

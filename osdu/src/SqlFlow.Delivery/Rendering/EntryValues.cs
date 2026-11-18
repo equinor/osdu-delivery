@@ -31,6 +31,11 @@ internal static partial class EntryValues
     public static JsonNode? Evaluate(
         MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out bool applied)
     {
+        if (entry.RestrictWhenMissing)
+        {
+            return Restricting(entry, root, item, renderer, holds, usages, searched, out applied);
+        }
+
         var path = entry.Target.Text;
         applied = true;
         if (entry.AppliesWhen is { } condition && !Applies(condition, root, item, renderer, holds, path))
@@ -166,6 +171,51 @@ internal static partial class EntryValues
     }
 
     /// <summary>
+    /// The value of a node marked <c>$restrictWhenMissing</c> (osdu/docs/reference/flow/mapping-restricted-access.md): the node is
+    /// evaluated as <c>$required: false</c> evaluates it, so a value it should give and does not leaves the variable out, and
+    /// everything that holds the record whatever <c>$required</c> says (a value that cannot be read, several records answering
+    /// to it, a parent OSDU does not hold) still holds it. When the node left its variable out for want of a value (its
+    /// <c>$when</c> held, it held nothing, and it waits for no answer from the platform), it is asked again as a required node,
+    /// whose hold says why, as <see cref="WhyEmpty"/> asks it, and the trail notes the record restricted for that reason. A node
+    /// left out for another reason (an assertion whose <c>onFail</c> is <c>omit</c>) gives no reason, and restricts nothing. The
+    /// second evaluation reads what the first already read, so it asks the platform nothing new and records nothing.
+    /// </summary>
+    private static JsonNode? Restricting(
+        MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out bool applied)
+    {
+        var held = holds.Count;
+        var waiting = searched.Unanswered.Count;
+        var value = Evaluate(entry with { Required = false, RestrictWhenMissing = false }, root, item, renderer, holds, usages, searched, out applied);
+        if (value is not null || !applied || holds.Count > held || searched.Unanswered.Count > waiting)
+        {
+            return value;
+        }
+
+        var said = new List<string>();
+        Evaluate(entry with { RestrictWhenMissing = false, AppliesWhen = null }, root, item, renderer, said, [], new RenderTrail { Base = searched.Base });
+        if (said.Count > 0)
+        {
+            searched.Restrict(Missed(said[0], entry.Target.Text));
+        }
+
+        return null;
+    }
+
+    /// <summary>The clause a required node's hold ends its reason with, or puts before the reasons of a <c>$coalesce</c>'s alternatives.</summary>
+    private const string RequiredClause = ", and the entry is required";
+
+    /// <summary>
+    /// What a required node's hold says, as a record restricted for it says it: the variable, then why it has no value, without
+    /// the clause that the entry is required (<c>osdu.tags['dra.securityClassification']: dataset.Lra_securityClassification is empty</c>).
+    /// </summary>
+    private static string Missed(string said, string path)
+    {
+        var reason = said.StartsWith(path + ": ", StringComparison.Ordinal) ? said[(path.Length + 2)..] : said;
+        var clause = reason.IndexOf(RequiredClause, StringComparison.Ordinal);
+        return $"{path}: {(clause < 0 ? reason : reason.Remove(clause, RequiredClause.Length))}";
+    }
+
+    /// <summary>
     /// The value of a <c>$coalesce</c> node: the first of its alternatives that gives one, each tried as an optional node
     /// of its own. An alternative that gives nothing (an empty column, no record in the cache, a key its table does not
     /// list, an id the partition holds no record under) passes to the next. One that meets a mistake (a date that is not a
@@ -230,7 +280,7 @@ internal static partial class EntryValues
     internal static IReadOnlyList<MappingEntry> Alternatives(MappingEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        return [entry with { Alternatives = [], AppliesWhen = null, Required = false, Location = null, Assertions = [] }, .. entry.Alternatives];
+        return [entry with { Alternatives = [], AppliesWhen = null, Required = false, RestrictWhenMissing = false, Location = null, Assertions = [] }, .. entry.Alternatives];
     }
 
     /// <summary>
@@ -252,7 +302,7 @@ internal static partial class EntryValues
         ArgumentNullException.ThrowIfNull(renderer);
         var said = new List<string>();
         var log = entry.IncomingAssertions.Any() ? new AssertionLog(renderer.Mapping.Reference) : null;
-        var value = Evaluate(entry with { Required = true, AppliesWhen = null }, root, item, renderer, said, [], new RenderTrail { Assertions = log, Base = baseRecord }, out _);
+        var value = Evaluate(entry with { Required = true, RestrictWhenMissing = false, AppliesWhen = null }, root, item, renderer, said, [], new RenderTrail { Assertions = log, Base = baseRecord }, out _);
         if (said.Count > 0)
         {
             return Reason(said[0], entry.Target.Text);
@@ -270,8 +320,7 @@ internal static partial class EntryValues
     private static string Reason(string said, string path)
     {
         var reason = said.StartsWith(path + ": ", StringComparison.Ordinal) ? said[(path.Length + 2)..] : said;
-        const string Required = ", and the entry is required";
-        return reason.EndsWith(Required, StringComparison.Ordinal) ? reason[..^Required.Length] : reason;
+        return reason.EndsWith(RequiredClause, StringComparison.Ordinal) ? reason[..^RequiredClause.Length] : reason;
     }
 
     /// <summary>

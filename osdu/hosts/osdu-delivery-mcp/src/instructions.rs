@@ -63,7 +63,9 @@ Vocabulary:
   on every hit of delivery_find_records and every row of delivery_flow_records. Custody states: pending, delivering,
   delivered, held (stopped until released), failed, deleted (removed from OSDU, follows its source again), reverted
   (put back by a reversal, blocked until its source changes or it is released), waiting (for a record it refers to
-  to land first).
+  to land first). Access is apart from the state: restricted (an operator restricted it; no run delivers it until
+  lifted) or restricted until complete (delivered under its mapping's restrictedAccess while values it marks
+  $restrictWhenMissing are missing, which incompleteMissing names; it opens by itself once they arrive).
 - interface: one OSDU type of a source that delivers several. Pass `interface` when a tool asks which.
 - partition: an OSDU data-partition-id, the `partition` argument everywhere. delivery_partitions lists them.
 - submission: one plan a run made over the ingestion tables. activity: one entry of the audit trail.

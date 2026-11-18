@@ -196,6 +196,11 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
   );
   // An item of a list of objects is one object: a group of properties each filled on its own, or a fixed object.
   const objectItem = isItem && variable.shape === "GroupList";
+  // Whether a node of this input can restrict the record when it gives no value ($restrictWhenMissing): one that reads a
+  // value, as the entry itself or an item of a list of values; never a literal, a list or an object whole, a child link, a
+  // repeat, an alternative of a coalesce (whose node decides for all of them) or an object item.
+  const restrictable = (kind: Choice) => !isAlternative && !objectItem
+    && kind !== "None" && kind !== "Static" && kind !== "List" && kind !== "Group" && kind !== "Child" && kind !== "Repeat";
   // An item of a list of values is one value of the list's items, so a fixed item is edited as one value of that type.
   const valueVariable: DeliveryTemplateVariable = objectItem
     ? { ...variable, shape: "Group", type: "object" }
@@ -263,6 +268,8 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
   const [whereOn, setWhereOn] = useState(entry !== null && entry.where !== null);
   const [where, setWhere] = useState(entry?.where ?? "");
   const [required, setRequired] = useState(entry?.required ?? true);
+  // $restrictWhenMissing: a missing value sends the record restricted under the mapping's restrictedAccess instead of holding it.
+  const [restrict, setRestrict] = useState(entry?.restrictWhenMissing ?? false);
   const [description, setDescription] = useState(entry?.description ?? "");
   const [unverified, setUnverified] = useState(entry?.unverified ?? false);
   const [alternatives, setAlternatives] = useState<MappingDraftEntry[]>(entry?.alternatives ?? []);
@@ -397,9 +404,12 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
       where: kind === "Repeat" && whereOn && where.trim() !== "" ? where.trim() : null,
       // A child link never holds its record, so it is never required.
       required: kind === "Child" ? false : kind === "Static" || kind === "List" || kind === "Group" || isAlternative || objectItem ? true : required,
+      // Only a required node that reads a value restricts the record when it has none: never a literal, a list or an object as a
+      // whole, a child link, a repeat, an alternative (the coalesce decides for all of them) or an object item.
+      restrictWhenMissing: restrictable(kind) && required && restrict,
       ignoreSeparators: kind === "Cache" && !all && ignoreSeparators,
       unverified: (kind === "Dataset" || kind === "Expression") && buildsId && unverified,
-      alternatives: kind === "Coalesce" ? alternatives.map((alternative) => ({ ...alternative, target: newTarget, assertions: [] })) : [],
+      alternatives: kind === "Coalesce" ? alternatives.map((alternative) => ({ ...alternative, target: newTarget, restrictWhenMissing: false, assertions: [] })) : [],
       items: kind === "List" ? items.map((item) => ({ ...item, target: newTarget, assertions: [] })) : [],
       properties: kind === "Group" ? properties : [],
       static: kind === "Static" ? staticResult.json : null,
@@ -430,7 +440,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
       // What the form already reads becomes the first alternative, so turning an entry into a coalesce keeps it; its
       // assertions stay the entry's, which judge whichever alternative gives the value.
       if (alternatives.length === 0 && reads) {
-        setAlternatives([{ ...build(previous), when: null, required: true, description: null, assertions: [] }]);
+        setAlternatives([{ ...build(previous), when: null, required: true, restrictWhenMissing: false, description: null, assertions: [] }]);
       }
 
       return;
@@ -1223,6 +1233,22 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
               <Switch checked={required} onCheckedChange={setRequired} data-testid="mapping-builder-entry-required" />
               Hold the record when there is no value
             </Label>
+            {restrictable(choice) && (
+              <Label
+                className="mt-1 flex items-center gap-2 text-[13px] font-normal"
+                title={variable.required && !isItem
+                  ? "The template requires this variable, so a record without it cannot be sent: it stays held when the value is missing."
+                  : "$restrictWhenMissing: when the value is missing, the property is left out and the record goes out under the mapping's restricted access instead of being held, and it gets its own access back once a delivery finds the value. The mapping names that access under restrictedAccess."}
+              >
+                <Switch
+                  checked={required && restrict}
+                  disabled={!required || (variable.required && !isItem)}
+                  onCheckedChange={setRestrict}
+                  data-testid="mapping-builder-entry-restrict-when-missing"
+                />
+                Restrict the record instead while the value is missing
+              </Label>
+            )}
           </Section>
         )}
 

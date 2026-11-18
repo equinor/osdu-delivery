@@ -55,13 +55,14 @@ public static class MappingCoverage
 {
     /// <summary>
     /// Whether an entry writes its target on every row: a static value, a <c>$coalesce</c> whose last alternative is one,
-    /// or a required entry that always applies. An entry that may be left out (<c>required: false</c>) or that only
-    /// applies to some rows (<c>appliesWhen</c>) does not.
+    /// or a required entry that always applies. An entry that may be left out (<c>required: false</c>, or
+    /// <c>$restrictWhenMissing</c>, which sends the record restricted without the value) or that only applies to some rows
+    /// (<c>appliesWhen</c>) does not.
     /// </summary>
     public static bool FillsEveryRow(MappingEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        return entry.AppliesWhen is null && (entry.IsStatic || entry.Required || HasDefault(entry));
+        return entry.AppliesWhen is null && (entry.IsStatic || (entry.Required && !entry.RestrictWhenMissing) || HasDefault(entry));
     }
 
     /// <summary>True for a <c>$coalesce</c> node whose last alternative is a literal: it gives a value whenever it applies.</summary>
@@ -92,6 +93,11 @@ public static class MappingCoverage
                 {
                     issues.Add(ValidationIssue.Error(
                         $"{where}: {entry.Where} is $required: false, but the template requires {target}, so a record without it cannot be sent.", target));
+                }
+                else if (entry.RestrictWhenMissing && !HasDefault(entry))
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {entry.Where} is $restrictWhenMissing, which sends the record restricted without the value, but the template requires {target}, so a record without it cannot be sent; keep it required, and restrict the record on a value the template lets it go without.", target));
                 }
 
                 continue;

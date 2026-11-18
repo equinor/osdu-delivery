@@ -28,6 +28,7 @@ related:
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-assertions
+  - delivery-flow-mapping-restricted-access
   - delivery-guide-writing-a-mapping
   - flow-transform
   - flow-ing
@@ -76,7 +77,8 @@ A property's value passes through these steps, in this order:
 2. **The node reads a value**: a column, an expression, a literal, the cache or a search.
 3. **`$modifiers`** change it, top to bottom, each working on what the one before gave.
 4. **`$required`** decides what an empty value does: the record is held (the default), or with `$required: false` the
-   property is left out.
+   property is left out. With **`$restrictWhenMissing: true`** the property is left out and the record goes out
+   [restricted until complete](mapping-restricted-access.md), under the access restriction the mapping names.
 5. **The template** converts the value to the property's type.
 6. **`$assert`** judges the value, if the mapping states rules for it. A `stage: incoming` rule judges it earlier, between
    steps 2 and 3.
@@ -144,6 +146,7 @@ someone releases it ([a record held at its render](../concepts/record-lifecycle.
 | Write a property only on some rows | `$when: depth_coding = "REGULAR"` | any other value | property left out |
 | Turn text into true or false | `- equals: REGULAR` | `" regular "` | `true` |
 | Leave out a value that breaks a rule | `$assert` with `notIn: [-999.25]` and `onFail: omit` | `-999.25` | property left out, failure recorded |
+| Send a record without a value that decides who may read it | [`$restrictWhenMissing: true`](mapping-restricted-access.md), with `restrictedAccess` in the header | empty | property left out, record restricted until the value arrives |
 
 ### Arrays and lists
 
@@ -290,7 +293,7 @@ it. [Mapping values](mapping-values.md) has the full rules.
 | `$base` | In an [enrichment mapping](mapping-enrichment.md): a section of the record as it stands. | The file |
 | `$link` | The ids of the records an [enrichment](enrich-records.md) adds. | The file |
 
-Beside the node go its settings: `$modifiers`, `$when`, `$required`, `$description`, `$assert`, and on a lookup `$findBy`,
+Beside the node go its settings: `$modifiers`, `$when`, `$required`, `$restrictWhenMissing`, `$description`, `$assert`, and on a lookup `$findBy`,
 `$findAll` and `$ignoreSeparators`; `$unverified` goes on a node that builds an id. An array takes `$where`.
 
 ## Automatic type conversion
@@ -351,6 +354,8 @@ SpudDate:
 `$required: false` covers a value that is missing. It never covers a value that is wrong: a date that is not a date, a
 number written another way, a value several records answer to, and an expression that meets a value it cannot work with
 all hold the record, whatever it says ([the full table](mapping-values.md#required-what-an-empty-value-does)).
+`$restrictWhenMissing: true` restricts the record in the same cases `$required: false` leaves the property out, and holds
+it in the rest ([what a missing value does](mapping-restricted-access.md#what-a-missing-value-does)).
 
 ## A worked example
 

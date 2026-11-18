@@ -170,6 +170,7 @@ public sealed class ValueIssuesWorkbook : IDisposable
         "held" => "Held",
         "invalid" => "Invalid",
         "empty" => "Left out",
+        "restricted" => "Restricted until complete",
         "asserted" => "Assertion failed",
         _ => outcome,
     };

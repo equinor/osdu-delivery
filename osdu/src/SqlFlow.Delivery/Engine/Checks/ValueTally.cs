@@ -23,6 +23,10 @@ internal sealed partial class ValueTally
         NotApplicable,
         Valid,
         Empty,
+
+        // A missing value a node marks $restrictWhenMissing: the record goes out restricted, which is worse than a value it
+        // may go without and less than a value it cannot be sent with.
+        Restricted,
         Invalid,
         Held,
     }
@@ -43,6 +47,7 @@ internal sealed partial class ValueTally
     private long _withHeld;
     private long _withInvalid;
     private long _withEmpty;
+    private long _withRestricted;
     private long _withFailedAssertion;
     private long _heldByAssertion;
     private readonly FlowSystemColumns _system;
@@ -155,7 +160,7 @@ internal sealed partial class ValueTally
         _withFailedAssertion += findings is { Failed: > 0 } ? 1 : 0;
         _heldByAssertion += findings?.Holds == true ? 1 : 0;
 
-        bool held = false, invalid = false, empty = false;
+        bool held = false, invalid = false, empty = false, restricted = false;
         foreach (var variable in _variables.Values)
         {
             // A variable of data the schema requires that no entry fills directly speaks only when the record lacks it.
@@ -164,12 +169,14 @@ internal sealed partial class ValueTally
             held |= standing == Standing.Held;
             invalid |= standing == Standing.Invalid;
             empty |= standing == Standing.Empty;
+            restricted |= standing == Standing.Restricted;
         }
 
         _withHeld += held ? 1 : 0;
         _withInvalid += invalid ? 1 : 0;
         _withEmpty += empty ? 1 : 0;
-        _clean += held || invalid || empty || findings is { Failed: > 0 } ? 0 : 1;
+        _withRestricted += restricted ? 1 : 0;
+        _clean += held || invalid || empty || restricted || findings is { Failed: > 0 } ? 0 : 1;
     }
 
     public ValueCheckRows Rows(long scopeRecords, long read, bool complete) => new()
@@ -189,6 +196,7 @@ internal sealed partial class ValueTally
         WithHeld = _withHeld,
         WithInvalid = _withInvalid,
         WithEmpty = _withEmpty,
+        WithRestricted = _withRestricted,
         WithFailedAssertion = _withFailedAssertion,
         HeldByAssertion = _heldByAssertion,
     };
@@ -232,6 +240,11 @@ internal sealed partial class ValueTally
                 var why = outcome.Reasons.Count > 0 ? Said(outcome.Reasons[0], outcome.Target) : "gives no value";
                 Note(variable, "empty", outcome.Target, null, why, Looked(outcome.Misses) ?? Cause(why), row, sample, outcome.Misses);
                 return Standing.Empty;
+            case EntryOutcomeKind.Restricted:
+                // What the record goes without is what keeps it restricted: the same cause an empty value has, said apart.
+                var missing = outcome.Reasons.Count > 0 ? Said(outcome.Reasons[0], outcome.Target) : "gives no value";
+                Note(variable, "restricted", outcome.Target, null, missing, Looked(outcome.Misses) ?? Cause(missing), row, sample, outcome.Misses);
+                return Standing.Restricted;
             default:
                 var because = outcome.Reasons.Count > 0 ? Said(outcome.Reasons[0], outcome.Target) : "the mapping means no value for the row";
                 Note(variable, "notApplicable", outcome.Target, null, because, null, row, sample, []);
@@ -690,6 +703,7 @@ internal sealed partial class ValueTally
             Valid = counts.GetValueOrDefault(Standing.Valid),
             Invalid = counts.GetValueOrDefault(Standing.Invalid),
             Empty = counts.GetValueOrDefault(Standing.Empty),
+            Restricted = counts.GetValueOrDefault(Standing.Restricted),
             NotApplicable = counts.GetValueOrDefault(Standing.NotApplicable),
             Held = counts.GetValueOrDefault(Standing.Held),
         };

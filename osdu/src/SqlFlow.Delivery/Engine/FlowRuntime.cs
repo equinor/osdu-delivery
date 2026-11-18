@@ -308,6 +308,7 @@ public sealed partial class FlowRuntime : IDisposable
 
     /// <summary>True once the mapping's legal tags were asked about for this runtime (a source's preflight asks up front).</summary>
     private bool _legalTagsChecked;
+    private bool _restrictedAccessChecked;
 
     /// <summary>Which records this interface's records wait for, worked out once per runtime.</summary>
     private WaitRules? _waits;
@@ -441,7 +442,7 @@ public sealed partial class FlowRuntime : IDisposable
         try
         {
             search = context.RecordSearches.Create(flow, target.ClientAsync, context.Loggers);
-            var resolver = new RenderResolver(mappings, context.Cache, context.DocumentTemplates, context.Secrets, search);
+            var resolver = new RenderResolver(mappings, context.Cache, context.DocumentTemplates, context.Secrets, search, RenderResolver.RestrictionsOf(context.Ledger));
             var mapping = await resolver.ResolveAsync(flow, ct).ConfigureAwait(false);
             var runtime = new FlowRuntime(context, flow, layout, mappings, values, mapping, target, search);
             if (context.Trace is not null)
@@ -776,6 +777,7 @@ public sealed partial class FlowRuntime : IDisposable
 
             var started = _context.Time.GetUtcNow().UtcDateTime;
             await EnsureLegalTagsAsync(ct).ConfigureAwait(false);
+            await EnsureRestrictedAccessAsync(ct).ConfigureAwait(false);
 
             // The cache the pipeline needs current is brought up to date before anything is read; when it cannot be, the run
             // stops here, with nothing sent.
@@ -904,6 +906,7 @@ public sealed partial class FlowRuntime : IDisposable
         => TrackAsync("intake", new { force, source = Flow.Source.Record.Object, selection = Selection.Describe(), parameters = Parameters, slices = Slices is null ? null : KeySlices.Describe(Slices) }, null, async () =>
         {
             await EnsureLegalTagsAsync(ct).ConfigureAwait(false);
+            await EnsureRestrictedAccessAsync(ct).ConfigureAwait(false);
             var intake = await Intake.IntakeAsync(Flow, Mapping, Parameters, Request, force, ct).ConfigureAwait(false);
             return (intake, intake.AlreadyProcessed ? "the submission was already planned" : intake.Counts.Headline, intake.Submission.SubmissionId, intake.Counts.Idle);
         }, ct);
@@ -1067,7 +1070,7 @@ public sealed partial class FlowRuntime : IDisposable
             return;
         }
 
-        var resolver = new RenderResolver(Mappings, _context.Cache, _context.DocumentTemplates, _context.Secrets, _search);
+        var resolver = new RenderResolver(Mappings, _context.Cache, _context.DocumentTemplates, _context.Secrets, _search, RenderResolver.RestrictionsOf(_context.Ledger));
         _mapping = await resolver.ResolveAsync(Flow, ct).ConfigureAwait(false);
         _log.LogInformation(
             "The cache of partition {Scope} moved from version {Resolved} to {Current} since the run opened; it renders against {Current}.",
@@ -2509,6 +2512,45 @@ public sealed partial class FlowRuntime : IDisposable
 
         _log.LogInformation("The legal service accepts the legal tag(s) the mapping puts on every record ({Tags}).", string.Join(", ", tags));
         _legalTagsChecked = true;
+    }
+
+    /// <summary>
+    /// Before a run plans anything for a mapping that restricts a record while a value its <c>$restrictWhenMissing</c> nodes should
+    /// give is missing (osdu/docs/reference/flow/mapping-restricted-access.md): the restriction the run resolved is still the
+    /// one the partition registers under that name, and the flow can give a restricted record its own access back once the
+    /// value arrives. Storage lets only an owner write a record again, so the flow's identity has to be a member of one of the
+    /// restriction's owner groups, or a data manager, which Entitlements is asked once
+    /// (<see cref="Restrictions.RecordRestrictions.CheckAsync"/>, the check a restriction an operator asks makes). Refused
+    /// before anything is planned or sent, and asked once a runtime.
+    /// </summary>
+    private async Task EnsureRestrictedAccessAsync(CancellationToken ct)
+    {
+        if (_restrictedAccessChecked || Mapping.Context.RestrictedAccess is not { } restricted)
+        {
+            return;
+        }
+
+        var reference = Mapping.Mapping.Reference;
+        var partition = Mapping.Context.DataPartition;
+        var registered = await RequireLedger().FindAccessRestrictionAsync(partition, restricted.Name, ct).ConfigureAwait(false);
+        if (registered is null || registered.RestrictionId != restricted.RestrictionId)
+        {
+            throw new DeliveryException(
+                $"Mapping {reference} restricts a record under access restriction '{restricted.Name}' while a value its $restrictWhenMissing nodes should give is missing, and partition '{partition}' no longer registers it as it did when the run opened, so nothing was planned or sent; register it under Access restrictions, or name one the partition registers.");
+        }
+
+        var protocol = await ProtocolAsync(ct).ConfigureAwait(false);
+        var check = await Restrictions.RecordRestrictions.CheckAsync(Flow, protocol, [registered], ct, again: "run the flow again").ConfigureAwait(false);
+        if ((check.Refusal ?? check.Uses[0].Refusal) is { } reason)
+        {
+            throw new DeliveryException(
+                $"Mapping {reference} restricts a record under access restriction '{restricted.Name}' while a value its $restrictWhenMissing nodes should give is missing, and {reason}. Nothing was planned or sent.");
+        }
+
+        _log.LogInformation(
+            "A record mapping {Mapping} finds a $restrictWhenMissing value missing in goes out under access restriction {Restriction} of partition {Partition}, which {Identity} can give it its own access back from.",
+            reference, restricted.Name, partition, check.Identity ?? "the flow's identity");
+        _restrictedAccessChecked = true;
     }
 
     /// <summary>Announces one record's removal, now that the ledger holds it, and says what it did.</summary>

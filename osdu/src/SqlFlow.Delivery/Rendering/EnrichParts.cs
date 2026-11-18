@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Validation;
 using ContentHash = SqlFlow.Delivery.Hashing.ContentHash;
 
@@ -23,7 +24,14 @@ namespace SqlFlow.Delivery.Rendering;
 /// <param name="FilesHash">The content hash of its files, from the dataset's hash column; empty for a record written through storage.</param>
 /// <param name="Record">What the enrichment's mapping rendered into the record, as canonical JSON (<c>{}</c> for none).</param>
 /// <param name="ContentType">The media type its files are uploaded as; null takes the flow's.</param>
-public sealed record EnrichPart(string Step, string RecordId, string Kind, string Location, string FilesHash, string Record, string? ContentType)
+/// <param name="Access">
+/// The access restriction the enriched record goes out under while a value its mapping marks <c>$restrictWhenMissing</c> is
+/// missing (osdu/docs/reference/flow/mapping-restricted-access.md), as <see cref="RestrictedAccess"/> writes it; null while the
+/// record has the access its mapping gives. The part is written with the enriched record's ACL, so this enters its hash while
+/// it is set: restricting the record, or giving it its access back, writes the part again with the record's ACL, and a part
+/// of a record with its own access hashes as it always did.
+/// </param>
+public sealed record EnrichPart(string Step, string RecordId, string Kind, string Location, string FilesHash, string Record, string? ContentType, string? Access = null)
 {
     /// <summary>The role every enrichment part is forced by in a redelivery: <c>files</c> sends a record's enrichment records again too.</summary>
     public const string Role = PayloadParts.Files;
@@ -31,8 +39,18 @@ public sealed record EnrichPart(string Step, string RecordId, string Kind, strin
     /// <summary>True for a dataset registered with its files through the Dataset service; false for a record written through storage.</summary>
     public bool RegistersFiles => Location.Length > 0;
 
-    /// <summary>The hash of the record as the part renders it: its kind and what the mapping wrote, without the files.</summary>
-    public string RecordHash => ContentHash.Of(Kind + "\n" + Record);
+    /// <summary>
+    /// The hash of the record as the part renders it: its kind and what the mapping wrote, without the files, and the access
+    /// restriction the enriched record goes out under while it is restricted (<see cref="Access"/>).
+    /// </summary>
+    public string RecordHash => Access is null ? ContentHash.Of(Kind + "\n" + Record) : ContentHash.Of(Kind + "\n" + Record + "\n" + Access);
+
+    /// <summary>How <see cref="Access"/> names the access restriction a part's enriched record goes out under.</summary>
+    public static string RestrictedAccess(RenderRestriction restriction)
+    {
+        ArgumentNullException.ThrowIfNull(restriction);
+        return "restricted:" + restriction.RestrictionId.ToString(CultureInfo.InvariantCulture);
+    }
 
     /// <summary>The hash of the whole part: the record and its files.</summary>
     public string Hash => ContentHash.Of(RecordHash + "\n" + FilesHash);
@@ -112,6 +130,10 @@ public static class EnrichParts
         var keep = new Dictionary<string, string>(StringComparer.Ordinal);
         var trace = new Dictionary<string, string>(StringComparer.Ordinal);
         var columns = flow.Source.SystemColumns;
+
+        // The records the enrichments add carry the record's ACL, so a record going out restricted, or getting its own access
+        // back, writes them again with it.
+        var access = render.Restriction is { } restriction ? EnrichPart.RestrictedAccess(restriction) : null;
         foreach (var contribution in render.Enrichment)
         {
             var step = steps.First(s => string.Equals(s.Step.Name, contribution.Step, StringComparison.Ordinal)).Step;
@@ -136,7 +158,7 @@ public static class EnrichParts
                 if (records.Files is not { } files)
                 {
                     // A record of any kind, written through storage as the enrichment's mapping rendered it.
-                    parts.Add(new EnrichPart(step.Name, added.Id, added.Kind, string.Empty, string.Empty, CanonicalJson.ToString(added.Record), null));
+                    parts.Add(new EnrichPart(step.Name, added.Id, added.Kind, string.Empty, string.Empty, CanonicalJson.ToString(added.Record), null, access));
                     continue;
                 }
 
@@ -153,7 +175,7 @@ public static class EnrichParts
                         : (render, $"enrich.{step.Name}: {refusal}", null);
                 }
 
-                parts.Add(new EnrichPart(step.Name, added.Id, added.Kind, location.Location!.Value.ToString(), hash!, CanonicalJson.ToString(added.Record), records.ContentType));
+                parts.Add(new EnrichPart(step.Name, added.Id, added.Kind, location.Location!.Value.ToString(), hash!, CanonicalJson.ToString(added.Record), records.ContentType, access));
             }
 
             if (step.OnHold == EnrichHold.Step)

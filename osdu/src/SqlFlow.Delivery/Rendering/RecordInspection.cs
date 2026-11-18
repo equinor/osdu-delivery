@@ -15,6 +15,12 @@ public enum EntryOutcomeKind
     Empty,
 
     /// <summary>
+    /// The entry, marked <c>$restrictWhenMissing</c>, gave no value: the record goes without the variable and out under its
+    /// mapping's restricted access until a delivery finds the value (osdu/docs/reference/flow/mapping-restricted-access.md).
+    /// </summary>
+    Restricted,
+
+    /// <summary>
     /// The mapping means no value for this row: the entry's <c>$when</c> does not hold, or an entry of a repeated item met no
     /// item to write, since the row has no child row its repeater takes.
     /// </summary>

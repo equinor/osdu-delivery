@@ -58,6 +58,13 @@ internal static partial class MappingMapper
     internal const string FindAllKey = "$findAll";
     internal const string AssertKey = "$assert";
 
+    /// <summary>
+    /// <c>$restrictWhenMissing: true</c> (osdu/docs/reference/flow/mapping-restricted-access.md): a value the node should give and
+    /// does not restricts the record (it goes out under the mapping's <c>restrictedAccess</c>, the property left out) rather than
+    /// holding it.
+    /// </summary>
+    internal const string RestrictWhenMissingKey = "$restrictWhenMissing";
+
     /// <summary>How a <c>$findAll</c> operand reads a path of the record a lookup finds: <c>$lookup.wellbore.GeoContexts.FieldID</c>.</summary>
     internal const string LookupReference = Marker + MappingLookup.Prefix;
 
@@ -71,10 +78,10 @@ internal static partial class MappingMapper
     internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, LinkKey, CoalesceKey];
 
     /// <summary>The settings a value node takes beside the key it reads its value with.</summary>
-    internal static readonly IReadOnlyList<string> ValueSettings = [FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
+    internal static readonly IReadOnlyList<string> ValueSettings = [FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, RestrictWhenMissingKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The settings a <c>$lookup</c> node takes beside it: the lookup says how its record is found.</summary>
-    internal static readonly IReadOnlyList<string> LookupSettings = [WhenKey, RequiredKey, AssertKey, DescriptionKey];
+    internal static readonly IReadOnlyList<string> LookupSettings = [WhenKey, RequiredKey, RestrictWhenMissingKey, AssertKey, DescriptionKey];
 
     /// <summary>The settings a <c>$link</c> node takes beside it: the enrichment says what it links.</summary>
     internal static readonly IReadOnlyList<string> LinkSettings = [WhenKey, DescriptionKey];
@@ -83,14 +90,14 @@ internal static partial class MappingMapper
     internal static readonly IReadOnlyList<string> LookupKeys = [CacheKey, FindByKey, ModifiersKey, IgnoreSeparatorsKey, DescriptionKey];
 
     /// <summary>The settings a <c>$coalesce</c> node takes beside its alternatives: those that decide for all of them.</summary>
-    internal static readonly IReadOnlyList<string> CoalesceSettings = [WhenKey, RequiredKey, AssertKey, DescriptionKey];
+    internal static readonly IReadOnlyList<string> CoalesceSettings = [WhenKey, RequiredKey, RestrictWhenMissingKey, AssertKey, DescriptionKey];
 
     /// <summary>The settings a <c>$forEach</c> node takes beside the child dataset it repeats.</summary>
     internal static readonly IReadOnlyList<string> RepeatSettings = [ItemKey, WhereKey, WhenKey, RequiredKey, AssertKey, DescriptionKey];
 
     /// <summary>Every word of the mapping language a key of the record tree can be.</summary>
     internal static readonly IReadOnlyList<string> NodeKeys =
-        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, LinkKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
+        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, LinkKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, RestrictWhenMissingKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The value keys, as a message lists them.</summary>
     private static string SourceList => string.Join(", ", SourceKeys.Take(SourceKeys.Count - 1)) + " or " + SourceKeys[^1];
@@ -173,7 +180,7 @@ internal static partial class MappingMapper
 
             foreach (var key in map.Keys.Select(KeyText).Where(key => !LookupKeys.Contains(key)))
             {
-                throw new FlowValidationException(key == WhenKey || key == RequiredKey
+                throw new FlowValidationException(key == WhenKey || key == RequiredKey || key == RestrictWhenMissingKey
                     ? $"{at}: {key} decides for the node that reads a lookup, not for the lookup; write it beside {LookupKey} where the record reads it."
                     : $"{at}: a lookup takes {SettingList(LookupKeys)}, not '{key}'.");
             }
@@ -486,7 +493,9 @@ internal static partial class MappingMapper
 
             throw new FlowValidationException(SourceKeys.Contains(key)
                 ? $"{at} repeats rows with {ForEachKey} and reads a value with {key}; a node does one of them. What each row gives is a property under {ItemKey}."
-                : $"{at}: a {ForEachKey} node takes {ForEachKey}, {SettingList(RepeatSettings)}, not '{key}'.");
+                : key == RestrictWhenMissingKey
+                    ? $"{at}: {RestrictWhenMissingKey} restricts the record when a value is missing, and a {ForEachKey} node writes an array of rows; write it on a property under {ItemKey} whose value restricts the record when an item has none, or keep {RequiredKey} on the {ForEachKey}."
+                    : $"{at}: a {ForEachKey} node takes {ForEachKey}, {SettingList(RepeatSettings)}, not '{key}'.");
         }
 
         if (scope.Child is not null)
@@ -585,10 +594,10 @@ internal static partial class MappingMapper
                     $"{at}: {AssertKey} judges the value a record is given, and a literal {ValueKey} gives every record the same one; remove {AssertKey}, or read the value from the row with {FromKey} or {ExprKey}.");
             }
 
-            if (new[] { FindByKey, FindAllKey, ModifiersKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey }.Any(key => Has(map, key)))
+            if (new[] { FindByKey, FindAllKey, ModifiersKey, RequiredKey, RestrictWhenMissingKey, IgnoreSeparatorsKey, UnverifiedKey }.Any(key => Has(map, key)))
             {
                 throw new FlowValidationException(
-                    $"{at}: a literal {ValueKey} takes only {WhenKey} and {DescriptionKey} beside it; {FindByKey}, {FindAllKey}, {ModifiersKey}, {RequiredKey}, {IgnoreSeparatorsKey} and {UnverifiedKey} belong to a node that reads the dataset, the cache or a search.");
+                    $"{at}: a literal {ValueKey} takes only {WhenKey} and {DescriptionKey} beside it; {FindByKey}, {FindAllKey}, {ModifiersKey}, {RequiredKey}, {RestrictWhenMissingKey}, {IgnoreSeparatorsKey} and {UnverifiedKey} belong to a node that reads the dataset, the cache or a search.");
             }
 
             var literal = StaticValue(Get(map, ValueKey), at)
@@ -682,6 +691,12 @@ internal static partial class MappingMapper
                 throw new FlowValidationException(
                     $"{at}: a {ChildKey} node never holds its record: the link is written once OSDU holds the child, and left out until then, since a parent waiting for a child that waits for its parent would wait for ever; remove {RequiredKey}.");
             }
+
+            if (Flag(map, RestrictWhenMissingKey, at) == true)
+            {
+                throw new FlowValidationException(
+                    $"{at}: a {ChildKey} node never restricts its record: the link is written once OSDU holds the child, and left out until then, which says nothing about who may read the record; remove {RestrictWhenMissingKey}.");
+            }
         }
 
         var findBy = read.Resolves && findAll is null ? FindByLines(Get(map, FindByKey), read, scope, at) : [];
@@ -730,6 +745,7 @@ internal static partial class MappingMapper
         }
 
         var required = Flag(map, RequiredKey, at) ?? read.Kind != MappingSourceKind.Child;
+        var restrict = RestrictsWhenMissing(map, required, at);
         var notIncoming = read.ReadsRow
             ? null
             : read.Kind switch
@@ -751,6 +767,7 @@ internal static partial class MappingMapper
             Modifiers = modifiers,
             AppliesWhen = condition,
             Required = required,
+            RestrictWhenMissing = restrict,
             IgnoreSeparators = Flag(map, IgnoreSeparatorsKey, at) ?? false,
             Unverified = unverified,
             Assertions = Assertions(map, notIncoming, scope, required, location, source),
@@ -774,9 +791,12 @@ internal static partial class MappingMapper
         var at = $"{source}: {location}";
         foreach (var key in map.Keys.Select(KeyText).Where(key => key != LinkKey && !LinkSettings.Contains(key)))
         {
-            throw new FlowValidationException(key == RequiredKey
-                ? $"{at}: a {LinkKey} node never holds its record: an enrichment that registers no record for it gives no id, and the property is left out; remove {RequiredKey}."
-                : $"{at}: a {LinkKey} node writes the ids an enrichment's records are registered under, as OSDU names them, so it takes {SettingList(LinkSettings)} beside it, not '{key}'.");
+            throw new FlowValidationException(key switch
+            {
+                RequiredKey => $"{at}: a {LinkKey} node never holds its record: an enrichment that registers no record for it gives no id, and the property is left out; remove {RequiredKey}.",
+                RestrictWhenMissingKey => $"{at}: a {LinkKey} node never restricts its record: an enrichment that registers no record for it gives no id, which says nothing about who may read the record; remove {RestrictWhenMissingKey}.",
+                _ => $"{at}: a {LinkKey} node writes the ids an enrichment's records are registered under, as OSDU names them, so it takes {SettingList(LinkSettings)} beside it, not '{key}'.",
+            });
         }
 
         if (scope.Child is not null)
@@ -827,6 +847,7 @@ internal static partial class MappingMapper
 
         var (lookup, path) = LookupPath(RequiredText(map, LookupKey, at), scope, $"{at}: {LookupKey}", LookupKey + ": wellbore.id");
         var required = Flag(map, RequiredKey, at) ?? true;
+        var restrict = RestrictsWhenMissing(map, required, at);
         return new MappingEntry
         {
             Index = index,
@@ -838,6 +859,7 @@ internal static partial class MappingMapper
             IgnoreSeparators = lookup.IgnoreSeparators,
             AppliesWhen = condition,
             Required = required,
+            RestrictWhenMissing = restrict,
             Assertions = Assertions(map, $"this node's value is a field of the record lookup '{lookup.Name}' finds", scope, required, location, source),
             Description = description,
         };
@@ -1059,15 +1081,35 @@ internal static partial class MappingMapper
         }
 
         var required = Flag(map, RequiredKey, at) ?? true;
+        var restrict = RestrictsWhenMissing(map, required, at);
         return alternatives[0] with
         {
             Location = location,
             Alternatives = alternatives.Skip(1).ToList(),
             AppliesWhen = Has(map, WhenKey) ? Condition(Get(map, WhenKey), WhenKey, scope, at) : null,
             Required = required,
+            RestrictWhenMissing = restrict,
             Assertions = Assertions(map, "this node's value is the first its alternatives give", scope, required, location, source),
             Description = Text(map, DescriptionKey, at),
         };
+    }
+
+    /// <summary>
+    /// A node's <c>$restrictWhenMissing</c> (osdu/docs/reference/flow/mapping-restricted-access.md): true restricts the record
+    /// when the node gives no value, the property left out and the record under its mapping's <c>restrictedAccess</c>. It goes
+    /// beside a required node only: <c>$required: false</c> already says a missing value leaves the property out with the record
+    /// as it is, and the two would say opposite things of the record's access.
+    /// </summary>
+    private static bool RestrictsWhenMissing(IDictionary<object, object> map, bool required, string at)
+    {
+        var restrict = Flag(map, RestrictWhenMissingKey, at) ?? false;
+        if (restrict && !required)
+        {
+            throw new FlowValidationException(
+                $"{at}: {RestrictWhenMissingKey} restricts the record when the value is missing, and {RequiredKey}: false leaves the property out with the record's own access; keep one of them.");
+        }
+
+        return restrict;
     }
 
     /// <summary><c>$cache: UnitOfMeasure.id</c>: the cached type, then the field read, or a path into one.</summary>

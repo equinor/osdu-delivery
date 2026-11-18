@@ -166,13 +166,15 @@ interface picker whose choice is in the address; a flow that names its partition
   read again within seconds of a run ending.
 - **Records**: the ledger's records, searched by delivery key, or by the start of the label, source key, OSDU id or
   ingestion file, or of a word or key value a row shows inside them (`LOG-0002` finds `Wellbore B-1 / COMPOSITE / LOG-0002/1`),
-  with a status picker,
+  with a status picker that lists **restricted until complete** below the statuses, with its count
+  ([records OSDU holds under their mapping's restricted access while values are missing](../flow/mapping-restricted-access.md)),
   **Drifted only**, **Step held** (while an enrichment is set aside on any record,
   [an enrichment set aside on its hold](../flow/enrich-holds.md)), **Restricted** (while any record's access is restricted,
-  [restricting access](access-restriction.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
-  planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`), and a link can start its filters set,
+  [restricting access](access-restriction.md)) and **Match anywhere**; an **Access** column beside the status marks each
+  restricted record, and one restricted until complete lists what it goes without on hover. Links from elsewhere narrow it to one run (`?run=`), what a submission last
+  planned (`?submission=`) or delivered (`?delivered=`), one issue (`?issue=`), or one group of missing values (`?missing=`), and a link can start its filters set,
   as the [Delivery](gui-ledger.md#delivery) page's counts do (`?status=held`, `?drifted=true`, `?stepHeld=true`,
-  `?restricted=true`). **Export** downloads every record the
+  `?restricted=true`, `?incomplete=true`). **Export** downloads every record the
   filter matches, not the page in view, as an Excel workbook to work through where the records come from
   ([records export](../cli/records.md#records-export)); it says on hover why it cannot when nothing matches or more than
   25,000 records do. Rows tick; the selection bar offers

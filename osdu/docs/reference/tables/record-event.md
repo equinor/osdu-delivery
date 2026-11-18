@@ -69,6 +69,10 @@ Self-clearing: the table holds in-flight work only. Its primary key grows at its
 | `TargetVersion` | `bigint` | yes | The OSDU version the try returned. |
 | `TargetStateJson` | `nvarchar(max)` | yes | The target state the record holds after the try, when the try changed it. |
 | `PendingStepJson` | `nvarchar(max)` | yes | The step progress the record keeps for its next try; null clears it. |
+| `AccessSent` | `bit` | no | A completion of a delivered try that sent the record's document: the access the document went out under (the three columns below) is the access OSDU holds the record under now, which the record takes ([Restricted until complete](../flow/mapping-restricted-access.md)). False for any other event, which leaves the record's access as it was. Added by migration `RecordRestrictedUntilComplete` (module version 1.76.0). |
+| `IncompleteRestrictionId` | `int` | yes | With `AccessSent`: the access restriction the sent document went out under, restricted until complete; null for its own access. |
+| `IncompleteMissing` | `nvarchar(2000)` | yes | With `AccessSent`: what the sent document goes without, as the record keeps it; null for its own access. |
+| `IncompleteHash` | `bigint` | yes | With `AccessSent`: the group of missing values, as the record keeps it; null for its own access. |
 | `ClaimSubmissionId` | `uniqueidentifier` | yes | The submission of the pending work the try carried. |
 | `ClaimDocumentRef` | `nvarchar(64)` | yes | Where that work's document sits in its work batches; null when the try carried none. |
 | `ClaimAttemptCount` | `int` | yes | A completion: the record's try count as the claim left it. A completion that reaches a record no lease holds is applied only while the count is still that one: a later claim, release, removal or delivery moved it, and is newer than the try. |

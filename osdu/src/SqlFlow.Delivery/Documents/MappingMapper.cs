@@ -126,6 +126,7 @@ internal static partial class MappingMapper
 
         var enrich = MapEnrich(y.Enrich, source);
         ValidateLinks(entries, enrich, fragment, source);
+        var restrictedAccess = RestrictedAccess(y.RestrictedAccess, entries, parameters, fragment, kind, source);
 
         return new MappingDefinition
         {
@@ -141,9 +142,75 @@ internal static partial class MappingMapper
             Parameters = parameters,
             Searches = searches,
             Lookups = lookups,
+            RestrictedAccess = restrictedAccess,
             Entries = entries,
             Envelope = fragment ? NoEnvelope : Envelope(entries, kind, source),
         };
+    }
+
+    /// <summary>The header key that names the access a restricted record goes out under.</summary>
+    internal const string RestrictedAccessKey = "restrictedAccess";
+
+    /// <summary>
+    /// The mapping's <c>restrictedAccess</c> (osdu/docs/reference/flow/mapping-restricted-access.md), checked against the nodes
+    /// marked <c>$restrictWhenMissing</c>: a mapping names one exactly when a node restricts the record, each parameter its text
+    /// reads is one the mapping declares, and a mapping that writes no access of its own (an enrichment mapping, a DSPDM row)
+    /// names none and marks no node. The restriction it names is found when a run resolves the flow, in the partition the flow
+    /// delivers to.
+    /// </summary>
+    private static string? RestrictedAccess(
+        string? written, IReadOnlyList<MappingEntry> entries, IReadOnlyDictionary<string, MappingParameter> parameters, bool fragment, string kind, string source)
+    {
+        var restricting = entries.SelectMany(e => e.ValueNodes).Where(n => n.RestrictWhenMissing).ToList();
+        var text = written?.Trim();
+        if (text is { Length: 0 })
+        {
+            throw new FlowValidationException(
+                $"{source}: {RestrictedAccessKey} is empty; name the access restriction a record goes out under while a value its nodes mark {RestrictWhenMissingKey} is missing, such as {RestrictedAccessKey}: \"{{$param.restriction}}\", or remove it.");
+        }
+
+        if (fragment && (text is not null || restricting.Count > 0))
+        {
+            throw new FlowValidationException(
+                $"{source}: {(restricting.Count > 0 ? restricting[0].Where + " is marked " + RestrictWhenMissingKey : RestrictedAccessKey + " is named")}, and an enrichment mapping writes no access of its own: the record it renders into carries the keying mapping's. Mark the node, and name {RestrictedAccessKey}, in the mapping that keys the record.");
+        }
+
+        if (DspdmKinds.Is(kind) && (text is not null || restricting.Count > 0))
+        {
+            throw new FlowValidationException(
+                $"{source}: {kind} is a row of a DSPDM business object, which carries no OSDU ACL, so no value can restrict it; remove {(restricting.Count > 0 ? RestrictWhenMissingKey : RestrictedAccessKey)}.");
+        }
+
+        if (restricting.Count > 0 && text is null)
+        {
+            throw new FlowValidationException(
+                $"{source}: {restricting[0].Where} is marked {RestrictWhenMissingKey}, and the mapping names no {RestrictedAccessKey}: name the access restriction, registered under Access restrictions for the partition the flow delivers to, that a record goes out under while the value is missing, such as {RestrictedAccessKey}: \"{{$param.restriction}}\".");
+        }
+
+        if (text is null)
+        {
+            return null;
+        }
+
+        if (restricting.Count == 0)
+        {
+            throw new FlowValidationException(
+                $"{source}: {RestrictedAccessKey} names the access a record goes out under while a value a node marks {RestrictWhenMissingKey} is missing, and no node is marked so; mark the node whose missing value restricts the record, or remove {RestrictedAccessKey}.");
+        }
+
+        foreach (var name in MappingEntry.ParameterNames(text).Where(name => !parameters.ContainsKey(name)).Distinct(StringComparer.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{source}: {RestrictedAccessKey} reads parameter '{name}', which the mapping does not declare; declare it under parameters, such as parameters: {{ {name}: {{ required: true }} }}.");
+        }
+
+        if (MappingEntry.ExpandParameters(text, _ => "x").IndexOfAny(['{', '}']) >= 0)
+        {
+            throw new FlowValidationException(
+                $"{source}: {RestrictedAccessKey} is '{text}', and its text reads a parameter only as {{$param.<name>}}, such as {RestrictedAccessKey}: \"{{$param.restriction}}\".");
+        }
+
+        return text;
     }
 
     /// <summary>The envelope of a fragment, which writes none: the record it adds to carries the flow's own mapping's.</summary>

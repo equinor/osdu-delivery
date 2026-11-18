@@ -94,3 +94,42 @@ export function RestrictedBadge({ asked = false }: { asked?: boolean }) {
     </Badge>
   );
 }
+
+/**
+ * A record OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md): delivered under its
+ * mapping's restricted access because values it marks `$restrictWhenMissing` were missing. A state the data office acts on,
+ * so it takes the warning tone, with what is missing on hover; it lifts itself once a delivery finds every value.
+ */
+export function RestrictedUntilCompleteBadge({ missing }: { missing?: string[] | null }) {
+  const values = missing ?? [];
+  const title = values.length === 0
+    ? "Restricted until complete: OSDU holds it under its mapping's restricted access while values its mapping marks $restrictWhenMissing are missing. It gets its own access back once a delivery finds them all."
+    : `Restricted until complete: OSDU holds it under its mapping's restricted access while ${values.length === 1 ? "this value is" : `these ${values.length} values are`} missing, and gives it its own access back once a delivery finds ${values.length === 1 ? "it" : "them all"}:\n${values.join("\n")}`;
+  return (
+    <span className="inline-flex whitespace-nowrap" title={title}>
+      <StatePill tone="warning" label="restricted until complete" icon={Lock} testId="record-restricted-until-complete" />
+    </span>
+  );
+}
+
+/**
+ * The access a record's OSDU copy is held under when it is not its mapping's: an operator's restriction (`asked` while OSDU's
+ * answer is not known), then its mapping's until complete, with what it goes without. Nothing for a record with its own access.
+ */
+export function AccessBadges({ restricted, asked = false, restrictedUntilComplete, missing }: {
+  restricted: boolean;
+  asked?: boolean;
+  restrictedUntilComplete: boolean;
+  missing?: string[] | null;
+}) {
+  if (!restricted && !restrictedUntilComplete) {
+    return null;
+  }
+
+  return (
+    <span className="inline-flex gap-1" data-testid="record-access">
+      {restricted && <RestrictedBadge asked={asked} />}
+      {restrictedUntilComplete && <RestrictedUntilCompleteBadge missing={missing} />}
+    </span>
+  );
+}

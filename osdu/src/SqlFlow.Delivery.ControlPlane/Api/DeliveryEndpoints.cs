@@ -52,7 +52,7 @@ public sealed record DeliveryFlowStatsDto(
     long Deleted, long Drifted, long DeliveredLast24h, DateTime? LastDeliveredUtc, DateTime? LastVerifiedUtc, long Submissions,
     DeliverySubmissionDto? LastSubmission, string? Interface = null, int Interfaces = 1, long Waiting = 0, string? Partition = null,
     IReadOnlyList<string>? Partitions = null, string? HeaderPartition = null, IReadOnlyList<string>? RedeliverParts = null, long Reverted = 0,
-    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0, long Restricted = 0);
+    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0, long Restricted = 0, long RestrictedUntilComplete = 0);
 
 /// <summary>
 /// One interface of a delivery flow (osdu/docs/reference/flow/interfaces.md): its ledger identity, how it is delivered
@@ -145,7 +145,8 @@ public sealed record DeliveryRecordDto(
     string? WaitingFor = null, IReadOnlyList<DeliveryRecordReferenceDto>? References = null, DateTime? SourceInsertedUtc = null,
     string? Partition = null, string? Issue = null, string? ParentId = null, long? ParentVersion = null, long? PendingParentVersion = null,
     string? OccupiedTargetId = null, long? OccupiedTargetVersion = null, bool Adoptable = false, DateTime? AdoptRequestedUtc = null,
-    bool Claimed = false, int? RestrictionId = null, DateTime? RestrictedUtc = null);
+    bool Claimed = false, int? RestrictionId = null, DateTime? RestrictedUtc = null,
+    int? IncompleteRestrictionId = null, DateTime? IncompleteSinceUtc = null, IReadOnlyList<string>? IncompleteMissing = null, string? IncompleteGroup = null);
 
 /// <summary>
 /// The access restriction a record carries (osdu/docs/reference/concepts/access-restriction.md): the registered restriction,
@@ -156,6 +157,16 @@ public sealed record DeliveryRecordDto(
 public sealed record DeliveryRecordRestrictionDto(
     int RestrictionId, string? Name, string? Description, IReadOnlyList<string>? Viewers, IReadOnlyList<string>? Owners, DateTime? RestrictedUtc,
     IReadOnlyList<string>? FormerViewers, IReadOnlyList<string>? FormerOwners, IReadOnlyList<string>? Beside = null);
+
+/// <summary>
+/// The access OSDU holds a record restricted until complete under (osdu/docs/reference/flow/mapping-restricted-access.md): the
+/// registered restriction its mapping named (its name, what it is for and its groups; null when the registry no longer names
+/// it), since when OSDU holds it so, what the document OSDU holds goes without, one value to a line, and the group every record
+/// missing the same shares, which the Records listing narrows to with <c>missing=</c>.
+/// </summary>
+public sealed record DeliveryRecordIncompleteDto(
+    int RestrictionId, string? Name, string? Description, IReadOnlyList<string>? Viewers, IReadOnlyList<string>? Owners, DateTime? SinceUtc,
+    IReadOnlyList<string> Missing, string? Group);
 
 /// <summary>An OSDU id a record's pending document refers to, and the property of the record holding it.</summary>
 public sealed record DeliveryRecordReferenceDto(string Id, string Property);
@@ -198,7 +209,7 @@ public sealed record DeliveryRecordDetailDto(
     DeliveryRecordLinkDto? WaitsOn = null, IReadOnlyList<DeliveryRecordLinkDto>? WaitedOnBy = null,
     IReadOnlyList<string>? KeyColumns = null, string? Partition = null,
     DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null, DeliveryRemovedKeyDto? RemovedKey = null,
-    DeliveryRecordRestrictionDto? Restriction = null);
+    DeliveryRecordRestrictionDto? Restriction = null, DeliveryRecordIncompleteDto? RestrictedUntilComplete = null);
 
 /// <summary>One delivery try, as the append-only history holds it: its outcome, and every step with what the target returned.</summary>
 public sealed record DeliveryAttemptDto(
@@ -474,11 +485,13 @@ public sealed record DeliveryTargetDto(
 /// </summary>
 /// <summary>
 /// A record listing's filter, as a listing, a removal and a sync name it. <c>Issue</c> keeps the blocked records one
-/// issue keeps blocked: the sixteen characters the flow's issues listing gives it.
+/// issue keeps blocked: the sixteen characters the flow's issues listing gives it. <c>Incomplete</c> keeps the records OSDU
+/// holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md), and <c>Missing</c> those of them
+/// restricted for one set of missing values: the sixteen characters a record's <c>incompleteGroup</c> gives it.
 /// </summary>
 public sealed record DeliveryRecordFilterDto(
     string? Status, string? Search, string? Mode, Guid? SubmissionId, Guid? RunId, bool Drifted = false, Guid? DeliveredBy = null, string? Issue = null,
-    bool StepHeld = false, bool Restricted = false);
+    bool StepHeld = false, bool Restricted = false, bool Incomplete = false, string? Missing = null);
 
 /// <summary>
 /// A removal of one or many records. <c>scope</c> is record, previous, history or everything, or restrict or unrestrict their
@@ -979,11 +992,12 @@ public static class DeliveryEndpoints
             stats.Sum(s => s.Stats.Stranded),
             stats.Sum(s => s.Stats.Adoptable),
             stats.Sum(s => s.Stats.StepsHeld),
-            stats.Sum(s => s.Stats.Restricted));
+            stats.Sum(s => s.Stats.Restricted),
+            stats.Sum(s => s.Stats.RestrictedUntilComplete));
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryRecordDto>>, ProblemHttpResult>> ListRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, int? page, int? pageSize,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, int? page, int? pageSize,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, CancellationToken ct)
     {
         var (flow, unresolved) = await ResolveKeptAsync(db, documents, partitions, ledger, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -992,7 +1006,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing));
         if (query is null)
         {
             return invalid!;
@@ -1050,6 +1064,19 @@ public static class DeliveryEndpoints
             issue = parsed;
         }
 
+        long? missing = null;
+        if (!string.IsNullOrWhiteSpace(filter.Missing))
+        {
+            if (!ProblemSignature.TryParse(filter.Missing.Trim().ToLowerInvariant(), out var parsed))
+            {
+                return (null, TypedResults.Problem(
+                    detail: $"missing '{filter.Missing}' is not a set of missing values: it is the {ProblemSignature.TextLength} characters a record restricted until complete gives as its incompleteGroup.",
+                    statusCode: StatusCodes.Status400BadRequest, title: "Invalid request"));
+            }
+
+            missing = parsed;
+        }
+
         return (new RecordQuery
         {
             Status = status,
@@ -1062,6 +1089,8 @@ public static class DeliveryEndpoints
             Drifted = filter.Drifted,
             StepHeld = filter.StepHeld,
             Restricted = filter.Restricted,
+            Incomplete = filter.Incomplete || missing is not null,
+            Missing = missing,
         }, null);
     }
 
@@ -1078,19 +1107,19 @@ public static class DeliveryEndpoints
     /// rest of the lookup leaves, and is refused as too broad when they are more than the scan limit.
     /// </summary>
     private static async Task<Results<Ok<PagedResult<DeliveryRecordHitDto>>, ProblemHttpResult>> LookupRecordsAsync(
-        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, [FromQuery] string? partition, int? page, int? pageSize,
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, [FromQuery] string? partition, int? page, int? pageSize,
         CatalogDbContext db, OsduDbContext osdu, ILedger ledger, HttpRequest request, CancellationToken ct)
     {
         // The partition the page reads: the one the request names, else the workbench's.
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true, Incomplete: incomplete == true, Missing: missing));
         if (query is null)
         {
             return invalid!;
         }
 
-        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted);
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing);
         var (p, size) = PageRequest.Normalize(page, pageSize);
         var wanted = (long)p * size;
         var take = (int)Math.Min(wanted, RecordListing.LookupCandidateLimit);
@@ -1126,7 +1155,7 @@ public static class DeliveryEndpoints
     /// starts, so a refusal or a failure is answered as a problem, never as half a file.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
         IPartitionRegistry partitions, ILedger ledger, TimeProvider clock, HttpResponse response, CancellationToken ct)
     {
@@ -1136,7 +1165,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing));
         if (query is null)
         {
             return invalid!;
@@ -1162,18 +1191,18 @@ public static class DeliveryEndpoints
     /// records than the scan limit is refused as too broad, before any of the file is written.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordLookupAsync(
-        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, [FromQuery] string? partition, CatalogDbContext db,
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, [FromQuery] string? partition, CatalogDbContext db,
         OsduDbContext osdu, ILedger ledger, TimeProvider clock, HttpRequest request, HttpResponse response, CancellationToken ct)
     {
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true, Restricted: restricted == true, Incomplete: incomplete == true, Missing: missing));
         if (query is null)
         {
             return invalid!;
         }
 
-        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted);
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld, query.Restricted, query.Incomplete, query.Missing);
         const int reach = RecordListing.LookupCandidateLimit;
         IReadOnlyList<RecordState> found;
         var more = false;
@@ -1350,7 +1379,25 @@ public static class DeliveryEndpoints
         return TypedResults.Ok(new DeliveryRecordDetailDto(
             ToDto(record), found?.Pipeline.Id, found?.Pipeline.RepoId, found?.Pipeline.Name, NamedInterface(found), waitsOn, waitedOnBy,
             KeyColumnsOf(documents, found), NamedPartition(found), parent, readBy, removedKey is null ? null : DeliveryRemovalEndpoints.ToDto(removedKey),
-            await RestrictionOfAsync(ledger, record, ct).ConfigureAwait(false)));
+            await RestrictionOfAsync(ledger, record, ct).ConfigureAwait(false),
+            await IncompleteOfAsync(ledger, record, ct).ConfigureAwait(false)));
+    }
+
+    /// <summary>
+    /// The access OSDU holds <paramref name="record"/> restricted until complete under, with the restriction's registered name
+    /// and groups and what the record goes without; null for a record OSDU holds with its own access.
+    /// </summary>
+    private static async Task<DeliveryRecordIncompleteDto?> IncompleteOfAsync(ILedger ledger, RecordState record, CancellationToken ct)
+    {
+        if (record.IncompleteRestrictionId is not { } id)
+        {
+            return null;
+        }
+
+        var registered = (await ledger.AccessRestrictionsAsync([id], ct).ConfigureAwait(false)).GetValueOrDefault(id);
+        return new DeliveryRecordIncompleteDto(
+            id, registered?.Name, registered?.Description, registered?.Acl.Viewers, registered?.Acl.Owners, record.IncompleteSinceUtc,
+            MissingLines(record.IncompleteMissing) ?? [], record.IncompleteHash is { } missing ? ProblemSignature.Format(missing) : null);
     }
 
     /// <summary>The access restriction <paramref name="record"/> carries, with its registered groups and the ACL it had before; null for a record not restricted.</summary>
@@ -4105,7 +4152,15 @@ public static class DeliveryEndpoints
         // Whether its flow wrote to OSDU under the id: only a claimed id is read back or removed.
         r.ClaimedTargetId is not null,
         // While its access in OSDU is restricted: the restriction, and when OSDU confirmed it.
-        r.RestrictionId, r.RestrictedUtc);
+        r.RestrictionId, r.RestrictedUtc,
+        // While OSDU holds it restricted until complete: the restriction its mapping named, since when, what the document OSDU
+        // holds goes without (one value to a line, as the ledger keeps it), and the group every record missing the same shares.
+        r.IncompleteRestrictionId, r.IncompleteSinceUtc, MissingLines(r.IncompleteMissing),
+        r.IncompleteHash is { } missing ? ProblemSignature.Format(missing) : null);
+
+    /// <summary>What a record restricted until complete goes without, one value to a line as the ledger keeps it; null for one that goes without nothing.</summary>
+    internal static IReadOnlyList<string>? MissingLines(string? missing)
+        => string.IsNullOrEmpty(missing) ? null : missing.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
     private static DeliveryAttemptDto ToDto(AttemptRecord a) => new(
         a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),

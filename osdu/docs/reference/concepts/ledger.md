@@ -308,8 +308,10 @@ record's values are rewritten as a set whenever it is staged. The lookup takes a
 answers every one of them that matches (newest first), and reports a larger match as a floor.
 
 The lookup takes the filters a flow's listing has, read over every flow of the partition: `status`, `flowId` (one
-ledger), `drifted=true` (the records whose last verify found drift or a missing record) and `stepHeld=true` (the records
-an enrichment was set aside on, [held steps](../flow/enrich-holds.md)). Without a term they narrow the records listed
+ledger), `drifted=true` (the records whose last verify found drift or a missing record), `stepHeld=true` (the records
+an enrichment was set aside on, [held steps](../flow/enrich-holds.md)), `restricted=true` (the records an operator
+restricted, [restricting access](access-restriction.md)) and `incomplete=true` with `missing=<group>` (the records OSDU holds
+[restricted until complete](../flow/mapping-restricted-access.md), and of them those missing one set of values). Without a term they narrow the records listed
 newest first; with one, the candidates. `mode=contains` matches a term that is not a UUID anywhere in the source key, the
 label, the OSDU id or the ingestion file (the one the version OSDU holds came from, or the queued version's), as a flow's
 listing does. It has no index: it runs only when the rest of the lookup leaves at most 100,000 records, and is refused

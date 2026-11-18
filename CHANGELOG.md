@@ -754,6 +754,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   template version (`template: 2f8a99cb38d32480`) is taken as before ([Tests](osdu/docs/reference/flow/assertion.md#tests)).
 - **Aggregates that leave values out.** An aggregate's `except` lists values it does not count, such as a log's index
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
+- **Restricted until complete.** `$restrictWhenMissing: true` on a mapping's node sends a record whose value is missing
+  under the ACL of the registered access restriction the mapping names in `restrictedAccess`, rather than holding it, and
+  the delivery that finds every such value gives it its own access back. The ledger keeps the access OSDU holds each
+  record under and what it goes without, shown in an **Access** column on the Records tab and the Records page, on the
+  record's page and in the export, and listed with `--incomplete` and `--missing <group>` or `incomplete=true` and
+  `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
 - **An issue names the property its records are held for.** A property name in brackets (`tags['dra.securityClassification']`)

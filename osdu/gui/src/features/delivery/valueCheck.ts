@@ -1,4 +1,4 @@
-import { CircleCheck, CircleDashed, CircleMinus, CircleX, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
+import { CircleCheck, CircleDashed, CircleMinus, CircleX, Lock, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
 import type {
   DeliveryMappingFlow,
   DeliveryValueCheckCounts,
@@ -58,6 +58,22 @@ const INVALID: OutcomeVisual = {
   meaning: "A value is written that breaks a rule of the template (type, format, pattern, allowed values). The record is still sent.",
 };
 
+/**
+ * A value a node marked `$restrictWhenMissing` does not give: the record is sent without it, under the mapping's restricted
+ * access, until a delivery finds it (osdu/docs/reference/flow/mapping-restricted-access.md). Worse than a value left out, since
+ * who may read the record changes, and short of a value the template refuses.
+ */
+const RESTRICTED: OutcomeVisual = {
+  key: "restricted",
+  label: "Restricted until complete",
+  icon: Lock,
+  tone: "warning",
+  textClass: "text-warning",
+  barClass: "bg-warning/60",
+  chipClass: "bg-warning/15 text-warning",
+  meaning: "No value where the mapping restricts the record for one: the record is sent without the attribute, under the mapping's restricted access, and gets its own access back once a delivery finds it.",
+};
+
 const EMPTY: OutcomeVisual = {
   key: "empty",
   label: "Left out",
@@ -112,10 +128,10 @@ export const ASSERTED: OutcomeVisual = {
  * The outcomes a row comes to by the template, worst first: the order a meter lays its segments out in. Each row comes to
  * exactly one of them, so their counts add up to the rows checked.
  */
-export const OUTCOMES: readonly OutcomeVisual[] = [HELD, INVALID, EMPTY, NOT_APPLICABLE, VALID];
+export const OUTCOMES: readonly OutcomeVisual[] = [HELD, INVALID, RESTRICTED, EMPTY, NOT_APPLICABLE, VALID];
 
 /** Every outcome a finding can name, worst first, a failed assertion after an invalid value: the order the worst is picked in. */
-export const FINDING_OUTCOMES: readonly OutcomeVisual[] = [HELD, INVALID, ASSERTED, EMPTY, NOT_APPLICABLE, VALID];
+export const FINDING_OUTCOMES: readonly OutcomeVisual[] = [HELD, INVALID, ASSERTED, RESTRICTED, EMPTY, NOT_APPLICABLE, VALID];
 
 export function outcomeVisual(key: OutcomeKey): OutcomeVisual {
   return FINDING_OUTCOMES.find((outcome) => outcome.key === key) ?? VALID;
@@ -127,9 +143,9 @@ export function countOf(counts: DeliveryValueCheckCounts, key: OutcomeKey): numb
   return typeof count === "number" ? count : 0;
 }
 
-/** Rows that will not give the variable an expected value: held, written with an invalid value, or left empty. */
+/** Rows that will not give the variable an expected value: held, written with an invalid value, restricted for want of it, or left empty. */
 export function failingOf(counts: DeliveryValueCheckCounts): number {
-  return counts.held + counts.invalid + counts.empty;
+  return counts.held + counts.invalid + countOf(counts, "restricted") + counts.empty;
 }
 
 /**
@@ -147,7 +163,7 @@ export function needsLook(counts: DeliveryValueCheckCounts): boolean {
 
 /** The worst outcome any row came to by the template, or null for a variable no row was checked for. */
 export function worstOf(counts: DeliveryValueCheckCounts): OutcomeKey | null {
-  return OUTCOMES.find((outcome) => counts[outcome.key] > 0)?.key ?? null;
+  return OUTCOMES.find((outcome) => countOf(counts, outcome.key) > 0)?.key ?? null;
 }
 
 /**

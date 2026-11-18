@@ -198,6 +198,96 @@ public sealed class DeliveryRecordLookupApiTests
     }
 
     [Fact]
+    public async Task The_lookup_narrows_to_records_restricted_until_complete_and_to_one_set_of_missing_values()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var flowId = FlowId.Of(FlowName + "-lookup-incomplete");
+        var marker = "LI" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        var open = new DeliveryKey(Guid.NewGuid());
+        var unclassified = new DeliveryKey(Guid.NewGuid());
+        var unowned = new DeliveryKey(Guid.NewGuid());
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(flowId);
+        const string Classification = "osdu.tags['dra.securityClassification']: dataset.class is empty";
+        const string Owner = "osdu.data.DataOwner: dataset.owner is empty";
+
+        try
+        {
+            await ledger.UpsertPendingAsync(flowId,
+            [
+                Record(flowId, open, $"Wellbore A {marker}", $"dev:master-data--Wellbore:{marker}-A", marker + "_wellbores.csv", 1),
+                Record(flowId, unclassified, $"Wellbore B {marker}", $"dev:master-data--Wellbore:{marker}-B", marker + "_wellbores.csv", 2),
+                Record(flowId, unowned, $"Wellbore C {marker}", $"dev:master-data--Wellbore:{marker}-C", marker + "_wellbores.csv", 3),
+            ]);
+
+            // What a delivery that sent them restricted leaves in the ledger: the restriction, since when, what each goes without.
+            var since = new DateTime(2026, 11, 18, 9, 0, 0, DateTimeKind.Utc);
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                foreach (var (key, missing) in new[] { (unclassified, Classification), (unowned, Classification + "\n" + Owner) })
+                {
+                    var hash = ProblemSignature.Of(missing);
+                    await osdu.DeliveryRecords.Where(r => r.DeliveryKey == key.Value).ExecuteUpdateAsync(s => s
+                        .SetProperty(r => r.IncompleteRestrictionId, 7)
+                        .SetProperty(r => r.IncompleteSinceUtc, since)
+                        .SetProperty(r => r.IncompleteMissing, missing)
+                        .SetProperty(r => r.IncompleteHash, hash));
+                }
+            }
+
+            await using var factory = Factory(cs);
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+            var scope = $"flowId={flowId:D}";
+
+            // Every record restricted until complete, each hit saying what it goes without.
+            var incomplete = await LookupAsync(client, token, $"incomplete=true&{scope}");
+            Assert.Equal(2, incomplete.GetProperty("total").GetInt64());
+            var hits = incomplete.GetProperty("items").EnumerateArray().ToDictionary(h => h.GetProperty("deliveryKey").GetGuid());
+            Assert.Equal([unclassified.Value, unowned.Value], hits.Keys.Order());
+            Assert.True(hits[unowned.Value].GetProperty("restrictedUntilComplete").GetBoolean());
+            Assert.Equal([Classification, Owner], hits[unowned.Value].GetProperty("incompleteMissing").EnumerateArray().Select(m => m.GetString()));
+            Assert.Equal(3, (await LookupAsync(client, token, $"incomplete=false&{scope}")).GetProperty("total").GetInt64());
+            Assert.Equal(2, (await LookupAsync(client, token, $"search={marker}&incomplete=true&{scope}")).GetProperty("total").GetInt64());
+
+            // One set of missing values, by the group a record gives; a group no record has lists none, and text that is not
+            // one is refused rather than read as no filter.
+            var group = ProblemSignature.Format(ProblemSignature.Of(Classification));
+            var same = await LookupAsync(client, token, $"missing={group}&{scope}");
+            Assert.Equal(unclassified.Value, Assert.Single(same.GetProperty("items").EnumerateArray().ToList()).GetProperty("deliveryKey").GetGuid());
+            Assert.Equal(0, (await LookupAsync(client, token, $"missing=0000000000000001&{scope}")).GetProperty("total").GetInt64());
+            using (var refused = await GetAsync(client, token, $"/api/v1/delivery/records?missing=not-a-group&{scope}"))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+                Assert.Contains("is not a set of missing values", await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            }
+
+            // The record's page: the access OSDU holds it under, since when, each missing value and the group, and the record
+            // fields the listing shows.
+            var detail = await DetailAsync(client, token, flowId, unowned);
+            var access = detail.GetProperty("restrictedUntilComplete");
+            Assert.Equal(7, access.GetProperty("restrictionId").GetInt32());
+            Assert.Equal(since, access.GetProperty("sinceUtc").GetDateTime().ToUniversalTime());
+            Assert.Equal([Classification, Owner], access.GetProperty("missing").EnumerateArray().Select(m => m.GetString()));
+            Assert.Equal(ProblemSignature.Format(ProblemSignature.Of(Classification + "\n" + Owner)), access.GetProperty("group").GetString());
+            var record = detail.GetProperty("record");
+            Assert.Equal(7, record.GetProperty("incompleteRestrictionId").GetInt32());
+            Assert.Equal([Classification, Owner], record.GetProperty("incompleteMissing").EnumerateArray().Select(m => m.GetString()));
+            Assert.False((await DetailAsync(client, token, flowId, open)).TryGetProperty("restrictedUntilComplete", out var none) && none.ValueKind != JsonValueKind.Null);
+        }
+        finally
+        {
+            await using var osdu = SampleEstate.Context(cs);
+            var keys = new[] { open.Value, unclassified.Value, unowned.Value };
+            await osdu.DeliveryRecordIdentities.Where(i => keys.Contains(i.DeliveryKey)).ExecuteDeleteAsync();
+            await osdu.DeliveryRecords.Where(r => keys.Contains(r.DeliveryKey)).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
     public async Task A_record_and_its_parent_each_link_to_the_other_on_their_pages()
     {
         var cs = OsduTestServer.Require();

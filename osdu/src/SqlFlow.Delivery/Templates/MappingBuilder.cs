@@ -114,6 +114,12 @@ public sealed record MappingDraft
     /// <summary>The records the mapping finds once for a row and reads wherever the record needs them (<c>lookups</c>).</summary>
     public IReadOnlyList<MappingDraftLookup> Lookups { get; init; } = [];
 
+    /// <summary>
+    /// The access restriction a record goes out under while a value an entry marks <c>$restrictWhenMissing</c> is missing
+    /// (<c>restrictedAccess</c>, osdu/docs/reference/flow/mapping-restricted-access.md), as the mapping writes it; null for none.
+    /// </summary>
+    public string? RestrictedAccess { get; init; }
+
     public IReadOnlyList<MappingDraftEntry> Entries { get; init; } = [];
 }
 
@@ -205,6 +211,12 @@ public sealed record MappingDraftEntry
     public string? Where { get; init; }
 
     public bool Required { get; init; } = true;
+
+    /// <summary>
+    /// <c>$restrictWhenMissing</c>: a value the entry should give and does not restricts the record (it goes out under the
+    /// mapping's <c>restrictedAccess</c>, the property left out) rather than holding it. Beside a required entry only.
+    /// </summary>
+    public bool RestrictWhenMissing { get; init; }
 
     public bool IgnoreSeparators { get; init; }
 
@@ -743,7 +755,52 @@ public static partial class MappingBuilder
             Error($"Lookup '{name}' is read by no entry; read a field of its record with a lookup input, or in a find all line, or remove it.", LookupTarget(name));
         }
 
+        // A record restricted while a value is missing goes out under the access the mapping names, so the loader refuses either
+        // without the other (osdu/docs/reference/flow/mapping-restricted-access.md), and the draft says so before it is written.
+        RestrictionIssues(draft, Error);
         return issues;
+    }
+
+    /// <summary>
+    /// What the draft's <c>$restrictWhenMissing</c> entries and its <c>restrictedAccess</c> lack, as the loader would refuse them:
+    /// a restricting entry is a required one, never a repeat, an alternative or an object item, and the mapping names the access
+    /// its restricted records go out under exactly when an entry restricts.
+    /// </summary>
+    private static void RestrictionIssues(MappingDraft draft, Action<string, string?> error)
+    {
+        foreach (var entry in draft.Entries)
+        {
+            var target = entry.Target.Trim();
+            if (entry.RestrictWhenMissing && entry.Input == MappingDraftInput.Repeat)
+            {
+                error($"{target}: {MappingMapper.RestrictWhenMissingKey} restricts the record when a value is missing, and a repeat writes an array of rows; mark a property of its items instead.", target);
+            }
+
+            foreach (var alternative in entry.Alternatives.Where(a => a.RestrictWhenMissing))
+            {
+                error($"{target}: {MappingMapper.RestrictWhenMissingKey} decides for the whole coalesce entry; mark the entry, not one of its alternatives.", target);
+            }
+        }
+
+        var restricting = draft.Entries.SelectMany(e => e.Alternatives.Count > 0 ? [e] : ValueNodesOf(e)).Where(e => e.RestrictWhenMissing).ToList();
+        foreach (var entry in restricting.Where(e => !e.Required))
+        {
+            error(
+                $"{entry.Target.Trim()}: {MappingMapper.RestrictWhenMissingKey} restricts the record when the value is missing, and an entry that is not required leaves the property out with the record's own access; keep one of them.",
+                entry.Target.Trim());
+        }
+
+        if (restricting.Count > 0 && string.IsNullOrWhiteSpace(draft.RestrictedAccess))
+        {
+            error(
+                $"{restricting[0].Target.Trim()} restricts the record when its value is missing; name the access restriction, registered for the partition the flow delivers to, that such a record goes out under ({MappingMapper.RestrictedAccessKey}).",
+                restricting[0].Target.Trim());
+        }
+
+        if (restricting.Count == 0 && !string.IsNullOrWhiteSpace(draft.RestrictedAccess))
+        {
+            error($"{MappingMapper.RestrictedAccessKey} names the access a record goes out under while a value an entry marks {MappingMapper.RestrictWhenMissingKey} is missing, and no entry is marked so; mark one, or clear it.", null);
+        }
     }
 
     /// <summary>The issue target that names a lookup, so the page can open the lookup an issue is about.</summary>
@@ -955,9 +1012,9 @@ public static partial class MappingBuilder
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(item.When) || !string.IsNullOrWhiteSpace(item.Description) || !item.Required)
+        if (!string.IsNullOrWhiteSpace(item.When) || !string.IsNullOrWhiteSpace(item.Description) || !item.Required || item.RestrictWhenMissing)
         {
-            error($"{name}: an object item is written as its properties alone, so it takes no condition, required flag or description; give them to its properties.", target);
+            error($"{name}: an object item is written as its properties alone, so it takes no condition, required flag, {MappingMapper.RestrictWhenMissingKey} or description; give them to its properties.", target);
         }
 
         if (item.Properties.Count == 0)
@@ -1184,6 +1241,11 @@ public static partial class MappingBuilder
         if (entry.Required)
         {
             error($"{name}: a child link never holds its record: it is written once OSDU holds the child and left out until then, so the entry is not required.", target);
+        }
+
+        if (entry.RestrictWhenMissing)
+        {
+            error($"{name}: a child link never restricts its record: it is written once OSDU holds the child and left out until then, which says nothing about who may read the record.", target);
         }
     }
 
@@ -1525,6 +1587,13 @@ public static partial class MappingBuilder
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(draft.RestrictedAccess))
+        {
+            // The access a record goes out under while a value an entry marks $restrictWhenMissing is missing.
+            Line(string.Empty);
+            Line(MappingMapper.RestrictedAccessKey + ": " + Scalar(draft.RestrictedAccess.Trim()));
+        }
+
         Line(string.Empty);
         Line("record:");
         var layout = Layout(draft);
@@ -1576,6 +1645,7 @@ public static partial class MappingBuilder
             IdFrom = mapping.Dataset.IdFrom == MappingIdSource.Key ? MappingMapper.IdFromKey : null,
             Rules = mapping.Dataset.Assertions.Select(DraftRule).ToList(),
             Parameters = mapping.Parameters.Select(kv => new MappingDraftParameter(kv.Key, kv.Value.Required, kv.Value.Default, kv.Value.Description)).ToList(),
+            RestrictedAccess = mapping.RestrictedAccess,
             Searches = mapping.Searches.Values
                 .OrderBy(s => s.Name, StringComparer.Ordinal)
                 .Select(s => new MappingDraftSearch(s.Name, s.Kind, s.Schema.Kind, s.Schema.Version, s.Description))
@@ -1606,10 +1676,11 @@ public static partial class MappingBuilder
                 Target = entry.Target.Text,
                 Input = MappingDraftInput.Coalesce,
                 Alternatives = entry.ValueNodes
-                    .Select(node => DraftNode(node with { Alternatives = [], AppliesWhen = null, Required = true, Description = null, Assertions = [] }))
+                    .Select(node => DraftNode(node with { Alternatives = [], AppliesWhen = null, Required = true, RestrictWhenMissing = false, Description = null, Assertions = [] }))
                     .ToList(),
                 When = entry.AppliesWhen?.Text,
                 Required = entry.Required,
+                RestrictWhenMissing = entry.RestrictWhenMissing,
                 Description = entry.Description,
                 Assertions = entry.Assertions.Select(DraftAssertion).ToList(),
             };
@@ -1654,6 +1725,7 @@ public static partial class MappingBuilder
                 CacheField = source.CacheField,
                 When = entry.AppliesWhen?.Text,
                 Required = entry.Required,
+                RestrictWhenMissing = entry.RestrictWhenMissing,
                 Description = entry.Description,
                 Assertions = entry.Assertions.Select(DraftAssertion).ToList(),
             };
@@ -1696,6 +1768,7 @@ public static partial class MappingBuilder
             When = entry.AppliesWhen?.Text,
             Where = entry.RowFilter?.Text,
             Required = entry.Required,
+            RestrictWhenMissing = entry.RestrictWhenMissing,
             IgnoreSeparators = entry.IgnoreSeparators,
             Unverified = entry.Unverified,
             Static = entry.Static?.ToJsonString(),
@@ -2024,7 +2097,7 @@ public static partial class MappingBuilder
         {
             // How the record is found is the lookup's to say, so the node holds the field it reads and its own settings alone.
             var field = $"{entry.Lookup?.Trim()}.{entry.CacheField?.Trim()}";
-            if (string.IsNullOrWhiteSpace(entry.When) && entry.Required && !entry.Unverified && string.IsNullOrWhiteSpace(entry.Description) && entry.Assertions.Count == 0)
+            if (string.IsNullOrWhiteSpace(entry.When) && entry.Required && !entry.RestrictWhenMissing && !entry.Unverified && string.IsNullOrWhiteSpace(entry.Description) && entry.Assertions.Count == 0)
             {
                 line(key + ": { " + MappingMapper.LookupKey + ": " + FlowScalar(field) + " }");
                 return;
@@ -2048,7 +2121,7 @@ public static partial class MappingBuilder
         // A child link is never required, and the node says so by leaving $required out.
         var findAll = entry.Input == MappingDraftInput.Cache ? entry.FindAll : null;
         var bare = entry.FindBy.Count == 0 && findAll is null && entry.Modifiers.Count == 0 && string.IsNullOrWhiteSpace(entry.When)
-            && (entry.Required || entry.Input == MappingDraftInput.Child)
+            && (entry.Required || entry.Input == MappingDraftInput.Child) && !entry.RestrictWhenMissing
             && !(entry.Input == MappingDraftInput.Cache && entry.IgnoreSeparators) && !entry.Unverified && string.IsNullOrWhiteSpace(entry.Description)
             && entry.Assertions.Count == 0;
         if (bare)
@@ -2317,6 +2390,11 @@ public static partial class MappingBuilder
         if (entry.Input is not (MappingDraftInput.Static or MappingDraftInput.Child) && !entry.Required)
         {
             line(inner + MappingMapper.RequiredKey + ": false");
+        }
+
+        if (entry.RestrictWhenMissing)
+        {
+            line(inner + MappingMapper.RestrictWhenMissingKey + ": true");
         }
 
         if (entry.Input == MappingDraftInput.Cache && entry.IgnoreSeparators)

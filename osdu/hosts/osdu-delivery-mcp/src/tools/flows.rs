@@ -52,6 +52,13 @@ pub struct FlowRecordsInput {
     pub run_id: Option<String>,
     /// true keeps only records a verify found drifted.
     pub drifted: Option<bool>,
+    /// true keeps only records whose access an operator restricted in OSDU.
+    pub restricted: Option<bool>,
+    /// true keeps only records OSDU holds restricted until complete: delivered under the mapping's restrictedAccess while
+    /// values it marks $restrictWhenMissing are missing. Each row's incompleteMissing says what.
+    pub incomplete: Option<bool>,
+    /// Only the records restricted until complete for one set of missing values: a row's incompleteGroup.
+    pub missing: Option<String>,
     pub page: Option<i64>,
     /// Default 25, max 200.
     #[serde(rename = "pageSize")]
@@ -184,8 +191,8 @@ are left out. Follow with delivery_flow_records for the records behind a count."
 
     #[tool(
         description = "A delivery flow at a glance. `stats`: records per custody state (pending, delivering, delivered, \
-held, failed, deleted, waiting), drifted, delivered in the last 24 hours, last delivery, last verify, last \
-submission. `interfaces`: per interface its mapping, OSDU kind, route, record table, key columns, run parameters, the \
+held, failed, deleted, waiting), drifted, restricted and restrictedUntilComplete, delivered in the last 24 hours, last \
+delivery, last verify, last submission. `interfaces`: per interface its mapping, OSDU kind, route, record table, key columns, run parameters, the \
 order a run takes them in and what each waits for. `target`: the OSDU endpoint and data partition it declares. Use it \
 for 'how is this flow doing', 'where does it deliver', 'what does a run of it need'. pipelineId comes from \
 list_pipelines(kind=\"delivery\"). Follow with delivery_flow_records(status=\"failed\") for the records behind a count."
@@ -229,9 +236,10 @@ list_pipelines(kind=\"delivery\"). Follow with delivery_flow_records(status=\"fa
 
     #[tool(
         description = "List one delivery flow's records, filtered by custody state, by the submission that planned or \
-delivered them, by run, by drift, or by a search term. Each row has the record's OSDU id and version, attempt count, \
-next attempt time, last error, and source file and row. Use it for 'which records failed and why' (status=failed, \
-read lastError), 'what is held', 'what did last night's run deliver' (deliveredBy or runId), 'what drifted'. \
+delivered them, by run, by drift, by restricted access, or by a search term. Each row has the record's OSDU id and \
+version, attempt count, next attempt time, last error, and source file and row. Use it for 'which records failed and \
+why' (status=failed, read lastError), 'what is held', 'what did last night's run deliver' (deliveredBy or runId), 'what \
+drifted', 'what is restricted until complete and what is missing' (incomplete=true, read incompleteMissing). \
 totalCapped=true means more match than were counted: narrow the filter. When the flow is unknown use \
 delivery_find_records; for one record's full history use delivery_record."
     )]
@@ -251,12 +259,16 @@ delivery_find_records; for one record's full history use delivery_record."
         };
         // The flow's Records tab narrowed as far as it can be: to the interface and partition, and to the submission or
         // run asked about. Its search and state are chosen on the tab itself.
-        let (interface, partition) = (text(i.interface), text(i.partition));
+        let (interface, partition, missing) = (text(i.interface), text(i.partition), text(i.missing));
+        let incomplete = i.incomplete.filter(|on| *on);
         let mut narrowed = vec![("tab", "records")];
-        for (name, value) in [("submission", &submission), ("delivered", &delivered_by), ("run", &run)] {
+        for (name, value) in [("submission", &submission), ("delivered", &delivered_by), ("run", &run), ("missing", &missing)] {
             if let Some(value) = value {
                 narrowed.push((name, value.as_str()));
             }
+        }
+        if incomplete.is_some() && missing.is_none() {
+            narrowed.push(("incomplete", "true"));
         }
         let links = json!({
             "page": flow_page(self.ctx.links(), &pipeline, interface.as_deref(), partition.as_deref(), &narrowed),
@@ -269,6 +281,9 @@ delivery_find_records; for one record's full history use delivery_record."
             .text("deliveredBy", delivered_by.clone())
             .text("runId", run.clone())
             .value("drifted", i.drifted.filter(|d| *d))
+            .value("restricted", i.restricted.filter(|r| *r))
+            .value("incomplete", incomplete)
+            .text("missing", missing)
             .text("interface", interface)
             .text("partition", partition)
             .page(i.page, i.page_size);

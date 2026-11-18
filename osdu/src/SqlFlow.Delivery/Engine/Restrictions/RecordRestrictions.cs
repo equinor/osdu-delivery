@@ -86,11 +86,18 @@ public sealed class RecordRestrictions
     /// (osdu/specs/core/INTEGRATION.md, 2.8, item 3). The removal dialog asks it before a restriction is queued, and the run
     /// asks it again before anything is changed (<see cref="EnsureLiftableAsync"/>), so both refuse with the same words.
     /// </summary>
-    public static async Task<RestrictionCheck> CheckAsync(FlowDefinition flow, IDeliveryProtocol protocol, IReadOnlyList<AccessRestrictionState> restrictions, CancellationToken ct)
+    /// <param name="flow">The flow whose records would be restricted.</param>
+    /// <param name="protocol">The flow's route, which reaches storage ACLs or says why it does not.</param>
+    /// <param name="restrictions">The restrictions to judge.</param>
+    /// <param name="again">What a refusal tells the reader to do once the identity is in an owner group: restrict again, by default.</param>
+    /// <param name="ct">Cancels the question to Entitlements.</param>
+    public static async Task<RestrictionCheck> CheckAsync(
+        FlowDefinition flow, IDeliveryProtocol protocol, IReadOnlyList<AccessRestrictionState> restrictions, CancellationToken ct, string again = "restrict again")
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(protocol);
         ArgumentNullException.ThrowIfNull(restrictions);
+        ArgumentException.ThrowIfNullOrWhiteSpace(again);
         if (FlowRefusal(flow, protocol) is { } refusal)
         {
             return new RestrictionCheck(null, refusal, [.. restrictions.Select(r => new RestrictionUse(r, refusal))]);
@@ -131,7 +138,7 @@ public sealed class RecordRestrictions
             r,
             caller.MayChange(r.Acl.Owners)
                 ? null
-                : $"{caller.Who} is a member of none of access restriction '{r.Name}''s owner groups ({string.Join(", ", r.Acl.Owners)}), nor a data manager, so a record restricted under it could never be given its access back by '{flow.Label}': storage lets only an owner change a record; add the identity to one of those groups, then restrict again"))]);
+                : $"{caller.Who} is a member of none of access restriction '{r.Name}''s owner groups ({string.Join(", ", r.Acl.Owners)}), nor a data manager, so a record restricted under it could never be given its access back by '{flow.Label}': storage lets only an owner change a record; add the identity to one of those groups, then {again}"))]);
     }
 
     /// <summary>

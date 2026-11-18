@@ -100,6 +100,13 @@ records into issues, and what releasing a record does. For removals and reversal
 A record whose access in OSDU is restricted, whatever its status, is left as it is by every plan, release, step back and
 reversal, and kept by the ledger, until the restriction is lifted ([Restricting access](access-restriction.md)).
 
+The access OSDU holds a record under is apart from its status. A record **restricted until complete** went out under a
+registered restriction's groups because values its mapping marks `$restrictWhenMissing` were missing, and keeps whatever
+status its deliveries give it: `delivered` once OSDU holds it, `pending` while newer work waits. Nothing holds it off: every
+run plans it, a release and a redelivery reach it, and the delivery that finds every marked value gives it its own access
+back ([restricted until complete](../flow/mapping-restricted-access.md)). The Records tab's status filter lists it below the
+statuses, and the record carries an **Access** badge beside its status.
+
 A **blocked** record is skipped by every later plan as `blocked`, with the reason
 `<status> since <time>: <last error>; release the record or change the source to plan it again`, until either its source
 row moves on from the version it was left at or an operator releases it; a record held at its render also moves when the

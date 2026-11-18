@@ -14,6 +14,12 @@ using SqlFlow.Delivery.Validation;
 
 namespace SqlFlow.Delivery.Engine;
 
+/// <summary>
+/// Finds the access restriction <paramref name="partition"/> registers under <paramref name="name"/> (osdu.AccessRestriction,
+/// osdu/docs/reference/concepts/access-restriction.md), or null when it registers none so named.
+/// </summary>
+public delegate Task<Ledger.AccessRestrictionState?> AccessRestrictionLookup(string partition, string name, CancellationToken ct);
+
 /// <summary>A flow's render inputs pinned together: the mapping, its template, the cache, the context and a renderer over them.</summary>
 public sealed record ResolvedMapping(
     MappingDefinition Mapping,
@@ -74,6 +80,7 @@ public sealed class RenderResolver
     private readonly ITemplateSource _templates;
     private readonly ISecretResolver _secrets;
     private readonly IRecordSearch? _search;
+    private readonly AccessRestrictionLookup? _restrictions;
 
     /// <param name="mappings">Where the flow's mapping is read from.</param>
     /// <param name="cache">The partitions' caches, for a mapping that reads one.</param>
@@ -86,7 +93,13 @@ public sealed class RenderResolver
     /// Where the mapping's search sources are answered: the platform the flow delivers to. A mapping that searches and is
     /// resolved without one renders every search as finding nothing, which holds the records that need it.
     /// </param>
-    public RenderResolver(MappingCatalog mappings, ICacheStore? cache, ITemplateSource templates, ISecretResolver secrets, IRecordSearch? search = null)
+    /// <param name="restrictions">
+    /// Where the access restriction a mapping's <c>restrictedAccess</c> names is found (osdu/docs/reference/flow/mapping-restricted-access.md):
+    /// the registry of the catalog the run's ledger is kept in. A mapping that names one cannot be resolved without it, since a
+    /// record it restricts would otherwise go out with no known access.
+    /// </param>
+    public RenderResolver(
+        MappingCatalog mappings, ICacheStore? cache, ITemplateSource templates, ISecretResolver secrets, IRecordSearch? search = null, AccessRestrictionLookup? restrictions = null)
     {
         ArgumentNullException.ThrowIfNull(mappings);
         ArgumentNullException.ThrowIfNull(templates);
@@ -96,7 +109,12 @@ public sealed class RenderResolver
         _templates = templates;
         _secrets = secrets;
         _search = search;
+        _restrictions = restrictions;
     }
+
+    /// <summary>The lookup a resolver finds access restrictions with in <paramref name="ledger"/>'s registry, or null without a ledger.</summary>
+    public static AccessRestrictionLookup? RestrictionsOf(Ledger.ILedger? ledger)
+        => ledger is null ? null : ledger.FindAccessRestrictionAsync;
 
     /// <summary>
     /// Resolves the flow's mapping and runs its preflight. The flow is bound to the enrichments its mapping declares first
@@ -136,6 +154,7 @@ public sealed class RenderResolver
             Parameters = await ParametersAsync(flow, mapping, ct).ConfigureAwait(false),
             SystemProperties = systemProperties,
         };
+        context = context with { RestrictedAccess = await RestrictedAccessAsync(flow, mapping, context, where, ct).ConfigureAwait(false) };
 
         var searches = await SearchesAsync(_templates, mapping, schema, ct).ConfigureAwait(false);
         var issues = Preflight.Check(mapping, schema, references, context, sourceColumns: null, searches).ToList();
@@ -164,6 +183,48 @@ public sealed class RenderResolver
             TemplateOrigin = template.Template?.File,
             Chain = steps.Count == 0 ? null : new RecordChain(renderer, steps),
         };
+    }
+
+    /// <summary>
+    /// The access restriction the mapping's <c>restrictedAccess</c> names (osdu/docs/reference/flow/mapping-restricted-access.md),
+    /// found in the partition the records are minted in, with the groups a record goes out under while a value its
+    /// <c>$restrictWhenMissing</c> nodes should give is missing; null for a mapping that names none. Refused, before anything is
+    /// read or sent: a flow whose route keeps a record's access to more than its ACL, or that sets aside an enrichment adding
+    /// records (whose kept records a restriction of the record would not reach); a name the partition does not register; and a
+    /// resolver with no registry to look in. A record is never sent with the access its mapping gives for want of the
+    /// restriction.
+    /// </summary>
+    private async Task<RenderRestriction?> RestrictedAccessAsync(FlowDefinition flow, MappingDefinition mapping, RenderContext context, string where, CancellationToken ct)
+    {
+        if (mapping.RestrictedAccess is null)
+        {
+            return null;
+        }
+
+        const string Marked = "restricts a record when a value its $restrictWhenMissing nodes should give is missing";
+        if (Restrictions.RestrictionRoute.Of(flow, mapping.Kind).Refusal is { } refusal)
+        {
+            throw new FlowValidationException($"{where}: mapping {mapping.Reference} {Marked}, and the flow cannot keep a record's access to its ACL: {refusal}.");
+        }
+
+        if ((flow.Enrich ?? []).FirstOrDefault(step => step.OnHold == EnrichHold.Step && step.Records is not null) is { } aside)
+        {
+            throw new FlowValidationException(
+                $"{where}: mapping {mapping.Reference} {Marked}, and its enrichment '{aside.Name}' adds records and is set aside on its holds (onHold: step), so a record restricted while it is set aside would keep linking records its last delivery wrote with the access it had then; let the enrichment hold the record (remove onHold), or restrict the record on values of its own.");
+        }
+
+        var name = mapping.RestrictionName(parameter => context.Parameters.TryGetValue(parameter, out var value) ? value : null)!;
+        var partition = context.DataPartition;
+        if (_restrictions is null)
+        {
+            throw new FlowValidationException(
+                $"{where}: mapping {mapping.Reference} {Marked}, under access restriction '{name}', which is found in the registry of the catalog the ledger is kept in, and this render has no catalog to look in.");
+        }
+
+        var registered = await _restrictions(partition, name, ct).ConfigureAwait(false)
+            ?? throw new FlowValidationException(
+                $"{where}: mapping {mapping.Reference} {Marked}, under access restriction '{name}', and partition '{partition}' registers none under that name; register it under Access restrictions, or name one the partition registers.");
+        return new RenderRestriction(registered.RestrictionId, registered.Name, registered.Acl.Viewers, registered.Acl.Owners);
     }
 
     /// <summary>

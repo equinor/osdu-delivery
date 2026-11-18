@@ -18,8 +18,13 @@ export interface AccessRestriction {
   viewers: string[];
   /** The groups a restricted record's `acl.owners` becomes; the flow's identity has to be a member of one to lift it. */
   owners: string[];
-  /** Records whose access is restricted under it now, or asked to be. It is removed only while none is. */
+  /** Records an operator restricted under it now, or asked to. It is removed only while none is. */
   records: number;
+  /**
+   * Records OSDU holds restricted until complete under it, because their mapping names it as its `restrictedAccess` and values
+   * it marks `$restrictWhenMissing` are missing. It is removed only while none is either. Absent from an older control plane.
+   */
+  restrictedUntilComplete?: number;
   createdUtc: string;
   createdBy: string;
   updatedUtc: string;

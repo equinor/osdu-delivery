@@ -387,7 +387,18 @@ export default function AccessRestrictionsPage() {
                 <TableCell className="min-w-40 max-w-64 whitespace-normal px-3 py-1.5"><Groups groups={restriction.viewers} testId={`restriction-viewers-${restriction.name}`} /></TableCell>
                 <TableCell className="min-w-40 max-w-64 whitespace-normal px-3 py-1.5"><Groups groups={restriction.owners} testId={`restriction-owners-${restriction.name}`} /></TableCell>
                 <TableCell className="whitespace-nowrap px-3 py-1.5 text-right font-mono text-[13px] tabular-nums" data-testid={`restriction-records-${restriction.name}`}>
-                  <span className={restriction.records === 0 ? "text-muted-foreground" : undefined}>{restriction.records.toLocaleString()}</span>
+                  <span className="flex flex-col items-end">
+                    <span className={restriction.records === 0 ? "text-muted-foreground" : undefined}>{restriction.records.toLocaleString()}</span>
+                    {(restriction.restrictedUntilComplete ?? 0) > 0 && (
+                      <span
+                        className="font-sans text-[12px] text-muted-foreground"
+                        title="Records OSDU holds under its groups because their mapping names it as its restrictedAccess and values it marks $restrictWhenMissing are missing; each gets its own access back once a delivery finds them all"
+                        data-testid={`restriction-incomplete-${restriction.name}`}
+                      >
+                        {`${(restriction.restrictedUntilComplete ?? 0).toLocaleString()} until complete`}
+                      </span>
+                    )}
+                  </span>
                 </TableCell>
                 <TableCell className="max-w-40 whitespace-normal px-3 py-1.5 text-[13px]">
                   <span className="flex min-w-0 flex-col" title={`by ${restriction.createdBy}, last changed by ${restriction.updatedBy}`}>
@@ -405,10 +416,12 @@ export default function AccessRestrictionsPage() {
                         variant="ghost"
                         size="xs"
                         className="text-destructive hover:text-destructive"
-                        disabled={restriction.records > 0}
+                        disabled={restriction.records > 0 || (restriction.restrictedUntilComplete ?? 0) > 0}
                         title={restriction.records > 0
                           ? `${restriction.records.toLocaleString()} record${restriction.records === 1 ? " carries" : "s carry"} it: lift their restrictions first (a flow's Records tab, Restricted, then Remove).`
-                          : undefined}
+                          : (restriction.restrictedUntilComplete ?? 0) > 0
+                            ? `OSDU holds ${(restriction.restrictedUntilComplete ?? 0).toLocaleString()} record${restriction.restrictedUntilComplete === 1 ? "" : "s"} restricted until complete under it: each gets its own access back once a delivery finds the values its mapping marks $restrictWhenMissing, or goes out under another restriction once its mapping names one.`
+                            : undefined}
                         onClick={() => setRemoving(restriction)}
                         data-testid={`restriction-remove-${restriction.name}`}
                       >

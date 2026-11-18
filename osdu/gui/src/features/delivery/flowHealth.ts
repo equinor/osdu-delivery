@@ -21,6 +21,8 @@ export interface FlowCounts {
   adoptable?: number;
   stranded?: number;
   restricted?: number;
+  /** Records OSDU holds restricted until complete while values their mapping marks `$restrictWhenMissing` are missing. */
+  restrictedUntilComplete?: number;
   stepsHeld?: number;
   lastSubmission: { submissionId: string; status: string; error: string | null } | null;
 }

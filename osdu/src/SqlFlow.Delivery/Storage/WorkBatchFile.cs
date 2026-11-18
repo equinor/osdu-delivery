@@ -21,7 +21,12 @@ namespace SqlFlow.Delivery.Storage;
 /// decided a delivery does with them, as compact JSON, or
 /// null for a record whose steps register none.
 /// </param>
-public sealed record WorkItem(Guid Key, string TargetId, string Document, string? Assertions = null, string? Enrich = null);
+/// <param name="Restricted">
+/// The access restriction the document goes out under because values its mapping's <c>$restrictWhenMissing</c> nodes should
+/// give are missing, with what is missing (<see cref="Ledger.DocumentAccess.Encode"/>), as compact JSON; null for a document
+/// with the access its mapping gives. A delivery that sends the document hands it to the ledger as the access OSDU holds.
+/// </param>
+public sealed record WorkItem(Guid Key, string TargetId, string Document, string? Assertions = null, string? Enrich = null, string? Restricted = null);
 
 /// <summary>Where one document sits inside a work batch: the batch index and the byte range of its line.</summary>
 public readonly record struct DocumentRef(int Batch, long Offset, int Length)
@@ -102,6 +107,11 @@ public static class WorkBatchFile
             builder.Append(",\"enrich\":").Append(enrich);
         }
 
+        if (item.Restricted is { Length: > 0 } restricted)
+        {
+            builder.Append(",\"restricted\":").Append(restricted);
+        }
+
         builder.Append('}');
         return Utf8.GetBytes(builder.ToString());
     }
@@ -123,7 +133,16 @@ public static class WorkBatchFile
 
         // A line written before steps registered files carries no parts.
         var enrich = root.TryGetProperty("enrich", out var parts) && parts.ValueKind == JsonValueKind.Object ? parts.GetRawText() : null;
-        return new WorkItem(parsedKey, targetId, doc.GetRawText(), assertions, enrich);
+
+        // A line written before documents could be restricted, or of a document with its own access, carries none. One that is
+        // there and is not an object is kept as it is, so reading the access refuses it rather than taking the document as open.
+        string? restricted = null;
+        if (root.TryGetProperty("restricted", out var access) && access.ValueKind != JsonValueKind.Null)
+        {
+            restricted = access.GetRawText();
+        }
+
+        return new WorkItem(parsedKey, targetId, doc.GetRawText(), assertions, enrich, restricted);
     }
 
     /// <summary>

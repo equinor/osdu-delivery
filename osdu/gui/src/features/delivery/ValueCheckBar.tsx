@@ -36,6 +36,7 @@ const COUNTED: readonly {
 }[] = [
   { filter: "held", label: "Held", rows: (last) => last.rows.withHeld },
   { filter: "invalid", label: "Invalid", rows: (last) => last.rows.withInvalid },
+  { filter: "restricted", label: "Restricted until complete", rows: (last) => last.rows.withRestricted ?? 0 },
   { filter: "empty", label: "Left out", rows: (last) => last.rows.withEmpty },
   { filter: "asserted", label: "Assertion failed", rows: (last) => assertionRows(last.rows).failed, apart: true },
 ];

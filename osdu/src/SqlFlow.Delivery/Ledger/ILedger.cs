@@ -489,6 +489,28 @@ public sealed record RecordState
     /// <summary>Whether the record's access in OSDU is restricted, or asked to be: the ledger keeps it out of every run until it is lifted.</summary>
     public bool Restricted => RestrictionId is not null;
 
+    /// <summary>
+    /// The registered access restriction whose groups OSDU holds the record under, restricted until complete, because values its
+    /// mapping marks <c>$restrictWhenMissing</c> were missing from the document OSDU holds
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md); null while OSDU holds it with the access its mapping gives. It holds
+    /// nothing off, unlike <see cref="RestrictionId"/>: every run plans the record as any other, and the delivery of a document
+    /// with every such value gives the record its own access back. Written by the ledger when a try that sent the document lands,
+    /// never by a caller.
+    /// </summary>
+    public int? IncompleteRestrictionId { get; init; }
+
+    /// <summary>When OSDU first held the record restricted until complete, kept through the deliveries that kept it so; null while it is not.</summary>
+    public DateTime? IncompleteSinceUtc { get; init; }
+
+    /// <summary>What the document OSDU holds goes without (<see cref="DocumentAccess.MissingText"/>), one value to a line; null while not restricted until complete.</summary>
+    public string? IncompleteMissing { get; init; }
+
+    /// <summary>The issue signature of <see cref="IncompleteMissing"/>: records restricted for the same values share it. Null while not restricted until complete.</summary>
+    public long? IncompleteHash { get; init; }
+
+    /// <summary>Whether OSDU holds the record restricted until complete (<see cref="IncompleteRestrictionId"/>).</summary>
+    public bool RestrictedUntilComplete => IncompleteRestrictionId is not null;
+
     public long? TargetVersion { get; init; }
 
     public RecordStatus Status { get; init; } = RecordStatus.Pending;
@@ -813,6 +835,15 @@ public sealed record RecordCompletion
 
     /// <summary>The OSDU ids an earlier delivery minted that this one made obsolete: the ledger marks them superseded.</summary>
     public IReadOnlyList<string> Superseded { get; init; } = [];
+
+    /// <summary>
+    /// For a delivered try that sent the record's document: the access the document went out under
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md), which the record keeps as the access OSDU holds it under, restricted
+    /// until complete or its own. Null for any other completion (a try that sent a payload alone, found OSDU holding the work
+    /// already, was retried, held or failed), which leaves the record's access as it was: OSDU's changes only when a document
+    /// is sent.
+    /// </summary>
+    public DocumentAccess? Access { get; init; }
 }
 
 /// <summary>
@@ -1238,6 +1269,14 @@ public sealed record FlowStats
     /// </summary>
     public long Restricted { get; init; }
 
+    /// <summary>
+    /// Records OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md): delivered under a
+    /// registered restriction's groups because values their mapping marks <c>$restrictWhenMissing</c> were missing, whatever
+    /// their status. Each goes back to its own access once a delivery finds every such value; counted apart from
+    /// <see cref="Restricted"/>, which an operator asked for and which holds the record off.
+    /// </summary>
+    public long RestrictedUntilComplete { get; init; }
+
     public long DeliveredLast24h { get; init; }
 
     public DateTime? LastDeliveredUtc { get; init; }
@@ -1492,7 +1531,9 @@ public enum SearchMode
 /// <param name="Drifted">Only the records whose last verify found drift or a missing record.</param>
 /// <param name="StepHeld">Only the records whose last render set a step of <c>enrich:</c> aside on its hold.</param>
 /// <param name="Restricted">Only the records whose access in OSDU is restricted, or asked to be.</param>
-public readonly record struct LookupNarrowing(bool Drifted = false, bool StepHeld = false, bool Restricted = false);
+/// <param name="Incomplete">Only the records OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md).</param>
+/// <param name="Missing">Only the records restricted until complete for one set of missing values (<see cref="RecordState.IncompleteHash"/>).</param>
+public readonly record struct LookupNarrowing(bool Drifted = false, bool StepHeld = false, bool Restricted = false, bool Incomplete = false, long? Missing = null);
 
 /// <summary>
 /// What a release reaches: the records named by key, the records one problem keeps blocked, or every blocked record of
@@ -1648,6 +1689,18 @@ public sealed record RecordQuery
     /// read from the restricted records' index.
     /// </summary>
     public bool Restricted { get; init; }
+
+    /// <summary>
+    /// Only records OSDU holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md), read from the
+    /// index that holds them alone.
+    /// </summary>
+    public bool Incomplete { get; init; }
+
+    /// <summary>
+    /// Only the records restricted until complete for one set of missing values: those whose
+    /// <see cref="RecordState.IncompleteHash"/> is this one, as <see cref="Problem"/> narrows to one issue. Read from the same index.
+    /// </summary>
+    public long? Missing { get; init; }
 
     /// <summary>Only the blocked records one problem keeps blocked (<see cref="ProblemSignature"/>), read from the problem index.</summary>
     public long? Problem { get; init; }

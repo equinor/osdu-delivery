@@ -25,6 +25,7 @@ related:
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
+  - delivery-flow-mapping-restricted-access
   - delivery-cli-check
   - delivery-cli-values
   - delivery-cli-preview
@@ -384,7 +385,7 @@ found any ([the Mappings page](../concepts/gui-build.md#mappings)).
 | `template ... requires osdu.data.<property>, which the mapping does not fill.` | `check` | Fill the property, without `$required: false`. |
 | `... reads <column>, which the record table does not hold. Columns: ...` | `values`, `preview`, a run | The column name, or the ingestion flow. |
 | A held reason naming a value the cache does not know | `values`, `preview` | A `replace` for the spelling, a row in the lookup table, or the reference data in the cache. |
-| A held reason for an empty column | `values`, `preview` | The source, or `$required: false` where the template allows the property to be absent. |
+| A held reason for an empty column | `values`, `preview` | The source, or `$required: false` where the template allows the property to be absent, or `$restrictWhenMissing: true` where the value decides who may read the record ([restricted until complete](../flow/mapping-restricted-access.md)). |
 | A value the template does not accept | `values` | A modifier (`date`, `number`, `split`) or the source. |
 | `<property>.$assert[<n>]: '<path>' is a number in ...; matches compares text.` | `check` | A condition that suits the property's type ([mapping assertions](../flow/mapping-assertions.md#the-preflight)). |
 | An `asserted` finding, `fails "<assertion>" (record); the record is held before it is sent` | `values`, `preview` | The source rows, or the rule, if the rule is wrong; `onFail: report` to send such records and record the failure. |

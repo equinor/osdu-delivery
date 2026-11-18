@@ -62,15 +62,15 @@ export function OutcomeMeter({
   testId: string;
 }) {
   const total = counts.total;
-  const shown = OUTCOMES.filter((outcome) => counts[outcome.key] > 0);
+  const shown = OUTCOMES.filter((outcome) => countOf(counts, outcome.key) > 0);
   // The outcome picked stays in the legend when the count switched to has none of it, so it can be put down again.
-  const listed = OUTCOMES.filter((outcome) => counts[outcome.key] > 0 || outcome.key === selected);
+  const listed = OUTCOMES.filter((outcome) => countOf(counts, outcome.key) > 0 || outcome.key === selected);
   const asserted = assertedOf(counts) > 0 || selected === "asserted";
   const bar = (
     <div
       className={cn("flex w-full gap-[2px] overflow-hidden rounded-full bg-muted", compact ? "h-1.5" : "h-2")}
       role="img"
-      aria-label={shown.map((outcome) => `${formatCount(counts[outcome.key])} ${outcome.label.toLowerCase()}`).join(", ")}
+      aria-label={shown.map((outcome) => `${formatCount(countOf(counts, outcome.key))} ${outcome.label.toLowerCase()}`).join(", ")}
       data-testid={testId}
     >
       {shown.map((outcome) => (
@@ -79,11 +79,11 @@ export function OutcomeMeter({
             <div
               className={cn("h-full", outcome.barClass)}
               // A share too small to see still gets a sliver, so an outcome that happened never vanishes from the bar.
-              style={{ flex: `${counts[outcome.key]} 1 0`, minWidth: 3 }}
+              style={{ flex: `${countOf(counts, outcome.key)} 1 0`, minWidth: 3 }}
               data-testid={`${testId}-${outcome.key}`}
             />
           </TooltipTrigger>
-          <TooltipContent>{`${outcome.label}: ${formatCount(counts[outcome.key])} ${unit} (${percent(counts[outcome.key], total)})`}</TooltipContent>
+          <TooltipContent>{`${outcome.label}: ${formatCount(countOf(counts, outcome.key))} ${unit} (${percent(countOf(counts, outcome.key), total)})`}</TooltipContent>
         </Tooltip>
       ))}
     </div>
@@ -224,7 +224,10 @@ function Quiet({ path, said }: { path: string; said: string }) {
 function CountChip({ counts, unit, path }: { counts: DeliveryValueCheckCounts; unit: string; path: string }) {
   const failing = failingOf(counts);
   const asserted = assertedOf(counts);
-  const said = `${formatCount(counts.held)} ${unit} held, ${formatCount(counts.invalid)} invalid, ${formatCount(counts.empty)} empty, `
+  const restricted = countOf(counts, "restricted");
+  const said = `${formatCount(counts.held)} ${unit} held, ${formatCount(counts.invalid)} invalid, `
+    + (restricted > 0 ? `${formatCount(restricted)} restricted until complete, ` : "")
+    + `${formatCount(counts.empty)} empty, `
     + `${formatCount(counts.valid)} valid, ${formatCount(counts.notApplicable)} not applicable, of ${formatCount(counts.total)} checked`
     + (asserted > 0 ? `; ${formatCount(asserted)} ${unit} failing an assertion of the mapping` : "");
   if (failing === 0 && asserted === 0) {

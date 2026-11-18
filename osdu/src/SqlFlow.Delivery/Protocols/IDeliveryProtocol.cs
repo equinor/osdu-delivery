@@ -52,6 +52,13 @@ public sealed record DeliveryWork
     /// </summary>
     public Validation.AssertionFindings? Assertions { get; init; }
 
+    /// <summary>
+    /// The access <see cref="Document"/> goes out under (osdu/docs/reference/flow/mapping-restricted-access.md): restricted until
+    /// complete, its ACL a registered restriction's groups, or its own. The route sends the document's ACL as it is; a delivery
+    /// that sends the document reports this to the ledger as the access OSDU holds the record under.
+    /// </summary>
+    public Ledger.DocumentAccess Access { get; init; } = Ledger.DocumentAccess.Own;
+
     public required bool DeliverMetadata { get; init; }
 
     public required bool DeliverPayload { get; init; }

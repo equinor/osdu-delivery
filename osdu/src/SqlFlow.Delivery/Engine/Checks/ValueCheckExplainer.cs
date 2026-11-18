@@ -111,6 +111,7 @@ public static class ValueCheckExplainer
         {
             "held" => "Held: these records are not delivered until it is fixed.",
             "empty" => $"Left out: these records are delivered without {leaf}.",
+            "restricted" => $"Restricted until complete: these records are delivered without {leaf}, under the mapping's restricted access, and get their own access back once a delivery finds it.",
             "invalid" => $"Invalid: these records are delivered with a {leaf} the template does not accept.",
             "asserted" => finding.OnFail switch
             {

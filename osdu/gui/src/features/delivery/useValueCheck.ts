@@ -40,13 +40,14 @@ import { withFirstOptions } from "./scopeDefaults";
 import { useFirstOptions } from "./useFirstOptions";
 
 /** Which variables the tree narrows to after a check: any that fails (an assertion included), or those failing one way. */
-export type FailingFilter = "any" | "held" | "invalid" | "empty" | "asserted";
+export type FailingFilter = "any" | "held" | "invalid" | "restricted" | "empty" | "asserted";
 
 /** What each narrowing reads in a variable's rows and findings. */
 const FILTER_KINDS: Record<FailingFilter, readonly OutcomeKey[]> = {
-  any: ["held", "invalid", "empty", "asserted"],
+  any: ["held", "invalid", "restricted", "empty", "asserted"],
   held: ["held"],
   invalid: ["invalid"],
+  restricted: ["restricted"],
   empty: ["empty"],
   asserted: ["asserted"],
 };
@@ -196,7 +197,7 @@ function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined
   const text = run !== null
     ? `Dry run of ${formatCount(run.outcomes.rows)} rows of ${flowLabel(task.flow)}: ${formatCount(run.outcomes.ready)} ready, ${formatCount(run.outcomes.attention)} worth a look, ${formatCount(run.outcomes.held)} held. Nothing was sent.`
     : task.targets === null
-    ? `Checked ${formatCount(rows.checked)} rows of ${flowLabel(task.flow)}: ${formatCount(rows.withHeld)} held, ${formatCount(rows.withInvalid)} with an invalid value, ${formatCount(rows.withEmpty)} leaving an attribute out${assertedRows === null ? "" : `; ${assertedRows}`}.`
+    ? `Checked ${formatCount(rows.checked)} rows of ${flowLabel(task.flow)}: ${formatCount(rows.withHeld)} held, ${formatCount(rows.withInvalid)} with an invalid value, ${formatCount(rows.withEmpty)} leaving an attribute out${(rows.withRestricted ?? 0) > 0 ? `, ${formatCount(rows.withRestricted ?? 0)} restricted until complete` : ""}${assertedRows === null ? "" : `; ${assertedRows}`}.`
     : `Checked ${task.targets.join(", ")} over ${formatCount(rows.checked)} rows: ${formatCount(asked
       .reduce((sum, variable) => sum + failingOf(variable.rows), 0))} rows will not give it an expected value${asserted > 0 ? `, ${formatCount(asserted)} fail an assertion of the mapping` : ""}.`;
   return {

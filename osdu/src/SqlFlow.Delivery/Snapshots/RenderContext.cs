@@ -51,6 +51,14 @@ public sealed partial record RenderContext
     public IReadOnlyList<RenderStep> Steps { get; init; } = [];
 
     /// <summary>
+    /// The access restriction the mapping's <c>restrictedAccess</c> names, as the partition registers it
+    /// (osdu/docs/reference/flow/mapping-restricted-access.md): a record a <c>$restrictWhenMissing</c> node gives no value for
+    /// goes out with its groups as its ACL. Null for a mapping that names none, which leaves the context of every other mapping
+    /// as it always was. It is one of the render's rules, so naming another restriction renders the flow's records again.
+    /// </summary>
+    public RenderRestriction? RestrictedAccess { get; init; }
+
+    /// <summary>
     /// Whether a search that finds nothing exactly asks again regardless of case: the pinned properties say the
     /// partition's indexer keeps a lowercased keyword of text (<see cref="Snapshots.SystemProperties.KeywordLowerOn"/>).
     /// </summary>
@@ -147,6 +155,11 @@ public sealed partial record RenderContext
             node["enrich"] = new JsonArray(Steps.Select(step => (JsonNode?)step.Node()).ToArray());
         }
 
+        if (RestrictedAccess is not null)
+        {
+            node["restrictedAccess"] = RestrictedAccess.Node();
+        }
+
         return node;
     }
 
@@ -172,6 +185,7 @@ public sealed partial record RenderContext
             Parameters = parameters,
             SystemProperties = ParseSystemProperties(node["systemProperties"]),
             Steps = ParseSteps(node["enrich"]),
+            RestrictedAccess = node["restrictedAccess"] is { } restricted ? RenderRestriction.Parse(restricted) : null,
         };
     }
 
@@ -244,7 +258,74 @@ public sealed partial record RenderContext
             SchemaSnapshotVersion = step.SchemaSnapshotVersion,
             Parameters = step.Parameters,
             Steps = [],
+
+            // An enrichment mapping writes no access of its own and restricts nothing: the record it renders into does.
+            RestrictedAccess = null,
         };
+    }
+}
+
+/// <summary>
+/// The access restriction a mapping's restricted records go out under (osdu/docs/reference/flow/mapping-restricted-access.md),
+/// as the partition registers it in <c>osdu.AccessRestriction</c>: its id and name, and the groups a restricted record's
+/// <c>acl.viewers</c> and <c>acl.owners</c> become, whole. A registered restriction's groups never change, so a context naming
+/// one names what the records went out under.
+/// </summary>
+/// <param name="RestrictionId">The restriction's id in the registry.</param>
+/// <param name="Name">Its name, unique in its partition.</param>
+/// <param name="Viewers">The groups a restricted record's <c>acl.viewers</c> becomes.</param>
+/// <param name="Owners">The groups a restricted record's <c>acl.owners</c> becomes.</param>
+public sealed record RenderRestriction(int RestrictionId, string Name, IReadOnlyList<string> Viewers, IReadOnlyList<string> Owners)
+{
+    /// <summary>The ACL a restricted record carries, as a record's <c>acl</c> block.</summary>
+    public JsonObject Acl() => new()
+    {
+        ["viewers"] = new JsonArray(Viewers.Select(group => (JsonNode?)JsonValue.Create(group)).ToArray()),
+        ["owners"] = new JsonArray(Owners.Select(group => (JsonNode?)JsonValue.Create(group)).ToArray()),
+    };
+
+    internal JsonObject Node() => new()
+    {
+        ["id"] = RestrictionId,
+        ["name"] = Name,
+        ["viewers"] = new JsonArray(Viewers.Select(group => (JsonNode?)JsonValue.Create(group)).ToArray()),
+        ["owners"] = new JsonArray(Owners.Select(group => (JsonNode?)JsonValue.Create(group)).ToArray()),
+    };
+
+    /// <summary>The restriction a canonical context names; one that cannot be read whole is refused rather than guessed.</summary>
+    internal static RenderRestriction Parse(JsonNode node)
+    {
+        if (node is not JsonObject restriction
+            || restriction["id"] is not JsonValue id || !id.TryGetValue<int>(out var restrictionId)
+            || restriction["name"] is not JsonValue name || !name.TryGetValue<string>(out var named) || string.IsNullOrWhiteSpace(named)
+            || Groups(restriction["viewers"]) is not { Count: > 0 } viewers
+            || Groups(restriction["owners"]) is not { Count: > 0 } owners)
+        {
+            throw new DeliveryException("Render context restrictedAccess is not an access restriction: an id, a name, and the groups of its viewers and owners.");
+        }
+
+        return new RenderRestriction(restrictionId, named, viewers, owners);
+    }
+
+    private static List<string>? Groups(JsonNode? node)
+    {
+        if (node is not JsonArray groups)
+        {
+            return null;
+        }
+
+        var listed = new List<string>(groups.Count);
+        foreach (var group in groups)
+        {
+            if (group is not JsonValue value || !value.TryGetValue<string>(out var text) || string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            listed.Add(text);
+        }
+
+        return listed;
     }
 }
 
