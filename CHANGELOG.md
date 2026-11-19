@@ -1280,6 +1280,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **Picking several values in the run form keeps the list under the pointer.** A pick that wrapped the chips onto
+  another line moved the list away from the pointer, so the next click dropped a value already picked or closed the
+  list; the list now holds still while the pointer is on it, and a pick no longer scrolls the form
+  ([run inputs](sqlflow/docs/reference/concepts/run-inputs.md#the-gui)).
 - **A record held at its render follows the mapping.** A record held because its render failed (a value the mapping
   requires is empty, no `$coalesce` alternative gives one, a lookup finds nothing) is rendered again by the next run after
   its flow's mapping, template or parameters change: sent when it now renders, or held again with the error the new rules

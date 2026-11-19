@@ -142,9 +142,11 @@ member's document refuses (a required parameter the schedule does not give, say)
 - **The run form** (Trigger run) builds a registered kind's fields from the flow's inputs. **Flow parameters** lists
   each declared parameter the chosen operation takes, with its description and default ("Default from the flow: north. Leave empty to use it."): a list to pick from
   for `choices`, a searchable list with counts for a `lookup` (searched again on the server as the operator types when
-  the lookup has `more`), and a typed value otherwise; a parameter that takes several values takes them as chips.
-  **Run settings** lists the settings of the chosen operation with the document's value and where it is written, and a
-  reset back to it. As the operator types, the form asks the control plane to explain the run and shows each problem
+  the lookup has `more`), and a typed value otherwise; a parameter that takes several values takes them as chips. The
+  list holds still while the pointer is on it: a pick that wraps the chips onto another line, or changes the form around
+  the field, moves neither the list nor the form under the pointer, and the list goes back against the field once the
+  pointer leaves it. **Run settings** lists the settings of the chosen operation with the document's value and where it
+  is written, and a reset back to it. As the operator types, the form asks the control plane to explain the run and shows each problem
   under its field, and the rest above the buttons; a run that would be refused cannot be started. A field left empty
   gives the run nothing, so the document's own value applies. Repeating a run opens the form with its values.
 - **Schedules** marks, on each schedule's row, what it gives its flows ("Runs with": tinted when it gives an operation

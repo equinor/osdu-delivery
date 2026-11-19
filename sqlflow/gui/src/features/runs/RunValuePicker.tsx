@@ -157,6 +157,11 @@ export interface RunValuePickerProps {
  * for the next, or, for a field of one value, makes it the value. Enter takes what is typed, and Backspace in an empty
  * field drops the last value. A value the complete list does not hold is marked once the list is closed: an error for a
  * document's choices, which a run refuses, a warning for a lookup, whose source may hold it by the time the run reads it.
+ *
+ * The list holds still while the pointer is on it. A pick can move the field: the chips wrap onto another line, or the page
+ * around the field changes with the value. A list that moved with it would put another value, or the page behind it, under
+ * the pointer, and the next click would drop a value picked already or close the list. Once the pointer leaves the list,
+ * the list follows the field again.
  */
 export function RunValuePicker({
   id, source, value, onChange, multiple, closed, options, more, loading, error, placeholder, label, title, className, onSearch,
@@ -165,6 +170,31 @@ export function RunValuePicker({
   const [text, setText] = useState("");
   const anchorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Where the list is placed: the field's place as last measured, which stays as it is while the pointer is on the list.
+  const listPlace = useRef<{ rect: DOMRect | null; pointerOnList: boolean }>({ rect: null, pointerOnList: false });
+  const listAnchor = useRef({
+    getBoundingClientRect: (): DOMRect => {
+      const place = listPlace.current;
+      const field = anchorRef.current;
+      if (field !== null && !place.pointerOnList) {
+        place.rect = field.getBoundingClientRect();
+      }
+
+      if (place.rect === null) {
+        throw new Error(`The value list of ${id} was placed before its field was laid out.`);
+      }
+
+      return place.rect;
+    },
+  });
+  // A list that closes lets go of the field's place, so it opens again where the field is.
+  const showList = (next: boolean) => {
+    if (!next) {
+      listPlace.current.pointerOnList = false;
+    }
+
+    setOpen(next);
+  };
   // What is typed is the last of the values the page holds, so the values picked are the ones before it. Values the page
   // replaced from outside no longer end with it, and the text goes with them.
   const held = text.trim() === "" || (value.length > 0 && value[value.length - 1] === text.trim());
@@ -200,12 +230,14 @@ export function RunValuePicker({
     setText("");
     if (!multiple) {
       report(picked.includes(candidate) ? [] : [candidate], "");
-      setOpen(false);
+      showList(false);
       return;
     }
 
     report(picked.includes(candidate) ? picked.filter((other) => other !== candidate) : [...picked, candidate], "");
-    inputRef.current?.focus();
+    // The field takes the focus back for what is typed next, without scrolling the page to it: a page that scrolled to an
+    // input the chips wrapped below its edge would carry the list away from the pointer.
+    inputRef.current?.focus({ preventScroll: true });
   };
   const drop = (candidate: string) => report(picked.filter((other) => other !== candidate), text);
 
@@ -252,21 +284,21 @@ export function RunValuePicker({
       // A field of one value holds what is typed in place of what was picked.
       report(multiple ? picked : [], event.target.value);
       onSearch?.(event.target.value.trim());
-      setOpen(!listless);
+      showList(!listless);
     },
-    onClick: () => setOpen(!listless),
+    onClick: () => showList(!listless),
     onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "ArrowDown") {
-        setOpen(!listless);
+        showList(!listless);
       } else if (event.key === "Escape") {
-        setOpen(false);
+        showList(false);
       } else if (event.key === "Enter" && typed !== "") {
         // Enter takes the value typed; with nothing typed it is the form's, as it was.
         event.preventDefault();
         setText("");
         report(add(typed), "");
         if (!multiple) {
-          setOpen(false);
+          showList(false);
         }
       } else if (event.key === "Backspace" && text === "" && picked.length > 0) {
         report(picked.slice(0, -1), "");
@@ -280,46 +312,53 @@ export function RunValuePicker({
 
   return (
     <div className={cn("flex flex-col gap-1", !inline && className)}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverAnchor asChild>
-          <div ref={anchorRef}>
-            {!inline
-              ? (
-                <div
-                  className={cn(
-                    "relative flex min-h-8 w-full flex-wrap items-center gap-1 py-[5px] pr-8 pl-1.5", FIELD_SURFACE,
-                    "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
-                    flag === "warning" && "border-warning",
-                    flag === "error" && "border-destructive",
-                  )}
-                >
-                  {chips}
-                  <input {...inputProps} className="h-5 min-w-[6rem] flex-1 bg-transparent px-0.5 font-mono text-[12px] outline-none placeholder:text-muted-foreground" />
-                  <span className="absolute top-[7px] right-0">{icon}</span>
-                </div>
-              )
-              : (
-                <Shell id={id} label={label} title={title} className={className} flagged={flag}>
-                  {picked.length > 0 && <div className="flex min-w-0 max-w-[60%] items-center pl-1.5">{chips}</div>}
-                  <input {...inputProps} className={cn(BARE, "min-w-12")} />
-                  {/* A toolbar keeps to one line, so a value outside the list is flagged inside the field. */}
-                  {flag !== null && (
-                    <span
-                      className={cn("flex shrink-0", flag === "error" ? "text-destructive" : "text-warning")}
-                      title={flagText(unknownNamed)}
-                      data-testid={`${id}-unknown`}
-                    >
-                      <TriangleAlert className="size-3.5" />
-                    </span>
-                  )}
-                  {icon}
-                </Shell>
-              )}
-          </div>
-        </PopoverAnchor>
+      <Popover open={open} onOpenChange={showList}>
+        <PopoverAnchor virtualRef={listAnchor} />
+        <div ref={anchorRef}>
+          {!inline
+            ? (
+              <div
+                className={cn(
+                  "relative flex min-h-8 w-full flex-wrap items-center gap-1 py-[5px] pr-8 pl-1.5", FIELD_SURFACE,
+                  "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
+                  flag === "warning" && "border-warning",
+                  flag === "error" && "border-destructive",
+                )}
+              >
+                {chips}
+                <input {...inputProps} className="h-5 min-w-[6rem] flex-1 bg-transparent px-0.5 font-mono text-[12px] outline-none placeholder:text-muted-foreground" />
+                <span className="absolute top-[7px] right-0">{icon}</span>
+              </div>
+            )
+            : (
+              <Shell id={id} label={label} title={title} className={className} flagged={flag}>
+                {picked.length > 0 && <div className="flex min-w-0 max-w-[60%] items-center pl-1.5">{chips}</div>}
+                <input {...inputProps} className={cn(BARE, "min-w-12")} />
+                {/* A toolbar keeps to one line, so a value outside the list is flagged inside the field. */}
+                {flag !== null && (
+                  <span
+                    className={cn("flex shrink-0", flag === "error" ? "text-destructive" : "text-warning")}
+                    title={flagText(unknownNamed)}
+                    data-testid={`${id}-unknown`}
+                  >
+                    <TriangleAlert className="size-3.5" />
+                  </span>
+                )}
+                {icon}
+              </Shell>
+            )}
+        </div>
         <PopoverContent
           className="w-[max(var(--radix-popover-trigger-width),16rem)] p-0"
           align="start"
+          // Placed against the field's place every frame, so the list follows the field once the pointer leaves it.
+          updatePositionStrategy="always"
+          onPointerEnter={() => {
+            listPlace.current.pointerOnList = true;
+          }}
+          onPointerLeave={() => {
+            listPlace.current.pointerOnList = false;
+          }}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onInteractOutside={(event) => {
             // A click back into the field must not dismiss the list it anchors.

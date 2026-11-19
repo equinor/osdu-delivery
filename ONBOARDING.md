@@ -181,7 +181,7 @@ stops a duplicate when runs overlap.</p>
 ## Into OSDU
 
 The routes into OSDU and the files that travel them, however late or large, the ledger that accounts for every record
-sent and what sends one again, and the workers that share the load.
+sent and what sends one again, who may read each record, and the workers that share the load.
 
 <table>
 <tr>
@@ -234,9 +234,20 @@ reaches before anything goes.</p>
 </td>
 </tr>
 <tr>
+<td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=O_fKgRt1YCQ"><img src="https://img.youtube.com/vi/O_fKgRt1YCQ/maxresdefault.jpg" width="100%" alt="Who can read your OSDU records? Access control and restrictions explained"></a></td>
+<td width="62%" valign="top">
+<h3>21 <a href="https://www.youtube.com/watch?v=O_fKgRt1YCQ">Who can read your records?</a></h3>
+<p>7:08 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
+<p>Every record says who reads it and who may change it. A registered restriction hides a record without deleting it,
+keeping its data, versions and history, and lifting it gives back the access it had. A record missing a value that
+decides who may read it, a classification say, goes out restricted until complete and opens by itself once the value
+arrives; in the ledger a restricted record is still delivered.</p>
+</td>
+</tr>
+<tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=06ZcsDXt2O0"><img src="https://img.youtube.com/vi/06ZcsDXt2O0/maxresdefault.jpg" width="100%" alt="Scaling: why 5,000 records ran on one worker"></a></td>
 <td width="62%" valign="top">
-<h3>21 <a href="https://www.youtube.com/watch?v=06ZcsDXt2O0">Why 5,000 records ran on one worker</a></h3>
+<h3>22 <a href="https://www.youtube.com/watch?v=06ZcsDXt2O0">Why 5,000 records ran on one worker</a></h3>
 <p>9:52 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>Autoscalers count work, not records: a delivery split into parts, the rate limit shared among them, recovery when a
 worker fails, and a scale-down that lets running work finish.</p>
@@ -252,7 +263,7 @@ What OSDU really holds beside the ledger, and proof that what it holds is right.
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=8a8YU9PFSwE"><img src="https://img.youtube.com/vi/8a8YU9PFSwE/maxresdefault.jpg" width="100%" alt="What's really in OSDU? Finding the hidden differences"></a></td>
 <td width="62%" valign="top">
-<h3>22 <a href="https://www.youtube.com/watch?v=8a8YU9PFSwE">What's really in OSDU?</a></h3>
+<h3>23 <a href="https://www.youtube.com/watch?v=8a8YU9PFSwE">What's really in OSDU?</a></h3>
 <p>3:36 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>The ledger knows what was sent, not what OSDU holds: an inventory of the partition finds orphans, missing records
 and duplicates, keeps the most complete copy, and removes the rest with a soft delete that can be restored.</p>
@@ -261,7 +272,7 @@ and duplicates, keeps the most complete copy, and removes the rest with a soft d
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=fKtOs3eIEyU"><img src="https://img.youtube.com/vi/fKtOs3eIEyU/maxresdefault.jpg" width="100%" alt="OSDU assertions: can you prove your data is right?"></a></td>
 <td width="62%" valign="top">
-<h3>23 <a href="https://www.youtube.com/watch?v=fKtOs3eIEyU">Can you prove your data is right?</a></h3>
+<h3>24 <a href="https://www.youtube.com/watch?v=fKtOs3eIEyU">Can you prove your data is right?</a></h3>
 <p>7:41 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>A successful delivery is not proof: assertion flows check what users see in OSDU against values known from the
 source, account for every source row, held and failed ones included, and turn the result into dashboards, reports and
@@ -279,7 +290,7 @@ it, run a merged change straight from GitHub, and find where a change to the fra
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=91fI1XZquGA"><img src="https://img.youtube.com/vi/91fI1XZquGA/maxresdefault.jpg" width="100%" alt="How to structure an OSDU Delivery estate repository: Git, flows and schedules"></a></td>
 <td width="62%" valign="top">
-<h3>24 <a href="https://www.youtube.com/watch?v=91fI1XZquGA">Structure an estate repository</a></h3>
+<h3>25 <a href="https://www.youtube.com/watch?v=91fI1XZquGA">Structure an estate repository</a></h3>
 <p>8:52 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>One Git repository holds an estate's instructions, never its data: a folder per record kind with its flows, mappings
 and templates, names that read in the order a record travels, two homes for the caches, one file of schedules, schema
@@ -290,7 +301,7 @@ and duplicate record ids.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=9jOs8EDwBk4"><img src="https://img.youtube.com/vi/9jOs8EDwBk4/maxresdefault.jpg" width="100%" alt="The code doesn't change: AI-driven data pipelines"></a></td>
 <td width="62%" valign="top">
-<h3>25 <a href="https://www.youtube.com/watch?v=9jOs8EDwBk4">The code doesn't change</a></h3>
+<h3>26 <a href="https://www.youtube.com/watch?v=9jOs8EDwBk4">The code doesn't change</a></h3>
 <p>8:09 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>Only the configuration does: an assistant reads the schema, drafts the mapping and opens a pull request, and a
 person reviews it.</p>
@@ -299,7 +310,7 @@ person reviews it.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=-JwDR8WOWoQ"><img src="https://img.youtube.com/vi/-JwDR8WOWoQ/maxresdefault.jpg" width="100%" alt="EU AI Act explained: is OSDU Delivery high-risk AI?"></a></td>
 <td width="62%" valign="top">
-<h3>26 <a href="https://www.youtube.com/watch?v=-JwDR8WOWoQ">Is OSDU Delivery high-risk AI?</a></h3>
+<h3>27 <a href="https://www.youtube.com/watch?v=-JwDR8WOWoQ">Is OSDU Delivery high-risk AI?</a></h3>
 <p>7:38 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"> <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p>The EU AI Act read against OSDU Delivery: rules, not a model, move the data; the assistant reads but never changes
 records, mappings or runs; and disclosure and human oversight keep people in charge. An interpretation, not legal
@@ -309,7 +320,7 @@ advice.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=40okusVYQZA"><img src="https://img.youtube.com/vi/40okusVYQZA/maxresdefault.jpg" width="100%" alt="OSDU external triggers: merge, run, get the result"></a></td>
 <td width="62%" valign="top">
-<h3>27 <a href="https://www.youtube.com/watch?v=40okusVYQZA">Merge, run, get the result</a></h3>
+<h3>28 <a href="https://www.youtube.com/watch?v=40okusVYQZA">Merge, run, get the result</a></h3>
 <p>3:38 · <img src="https://img.shields.io/badge/data_engineer-f2b56b?style=flat-square" alt="data engineer"></p>
 <p>A merge in GitHub starts a delivery without waiting for its schedule: GitHub Actions signs in with OIDC and no stored
 secret, the control plane runs the commit just merged, a repeated request runs once, and the result comes back to the
@@ -319,7 +330,7 @@ workflow.</p>
 <tr>
 <td width="38%" valign="top"><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough: architecture and where to make changes"></a></td>
 <td width="62%" valign="top">
-<h3>28 <a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></h3>
+<h3>29 <a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></h3>
 <p>12:58 · <img src="https://img.shields.io/badge/extending-9cc8ff?style=flat-square" alt="extending"></p>
 <p><code>osdu/</code> and <code>sqlflow/</code> and the line between them, one CSV row through the real classes, the
 ledger's rules, and where a change belongs.</p>
