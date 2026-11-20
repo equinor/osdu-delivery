@@ -356,6 +356,10 @@ export interface RunSummary {
   /** What started the run. The runs list and a run's read carry it; a group's live member stream leaves it null, since
    * the group's own read carries the one every member shares. */
   startedBy: RunStartedBy | null;
+  /** The whole numbers at the top of the run's result, by the names the result gives them, when the list was asked for
+   * them (`resultCounts: true`): what a flow kind that counts something other than rows shows on a list of its runs.
+   * Null for a run that recorded no result; absent when the list was not asked. */
+  resultCounts?: Record<string, number> | null;
 }
 
 export interface RunDetail extends RunSummary {

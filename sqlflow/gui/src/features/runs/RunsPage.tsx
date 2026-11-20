@@ -29,6 +29,7 @@ import { secondsSince, setTiming } from "../../lib/runTiming";
 import { formatDurationSeconds, parseUtc } from "../../lib/time";
 import { contributedKinds, kindContribution } from "../../modules/registry";
 import { scheduleFilterOptions, useAllSchedules } from "../schedules/useAllSchedules";
+import { withKindCounts } from "./runCountColumns";
 import { isStartedByKind, startedByAnyLabel, startedByFilterOptions } from "./startedBy";
 import { TriggerRunDialog } from "./TriggerRunDialog";
 
@@ -87,6 +88,8 @@ const impactColumns: Column<RunSummary>[] = [
   { id: "inserted", header: "Inserted", align: "right", render: (row) => numCell(row.rowsInserted) },
   { id: "updated", header: "Updated", align: "right", render: (row) => numCell(row.rowsUpdated) },
 ];
+/** The impact columns by id: what a kind that counts something other than rows replaces with its own counts. */
+const IMPACT_COLUMNS: readonly string[] = impactColumns.map((column) => column.id);
 
 const baseColumns: Column<RunSummary>[] = [
   statusColumn,
@@ -351,6 +354,9 @@ export default function RunsPage() {
     [],
   );
   const kindColumns = kind === "all" ? [] : kindContribution(kind)?.runColumns ?? [];
+  // A kind that counts something other than rows shows its own counts in place of the impact columns, read from what
+  // each run's result reports.
+  const kindCounts = kind === "all" ? undefined : kindContribution(kind)?.runCountColumns;
   const [flowNameInput, setFlowNameInput] = useLocalStorageState("sqlflow.filters.runs.flowName", "");
   // Seed the debounced value from the same remembered text so the first query runs filtered, with no flash.
   const [flowName, setFlowName] = useState(() =>
@@ -555,12 +561,13 @@ export default function RunsPage() {
               batch: batch === "" ? undefined : batch,
               scheduleId: scheduleId === "" ? undefined : scheduleId,
               latest: view === "last" || undefined,
+              resultCounts: kindCounts !== undefined || undefined,
               page,
               pageSize,
             }
-            : { runId, page, pageSize });
+            : { runId, resultCounts: kindCounts !== undefined || undefined, page, pageSize });
         }}
-        columns={[...(grouped && !findsOneRun ? baseColumns : flatColumns), ...kindColumns]}
+        columns={[...withKindCounts(grouped && !findsOneRun ? baseColumns : flatColumns, IMPACT_COLUMNS, kindCounts), ...kindColumns]}
         rowKey={(row) => row.runId}
         onRowClick={(row) => navigate(`/runs/${row.runId}`)}
         pollMs={5000}

@@ -20,7 +20,8 @@ namespace SqlFlow.ControlPlane.Tests;
 /// The records exports as the API serves them (osdu/docs/reference/concepts/api.md, Flows and records;
 /// osdu/docs/reference/cli/records.md, records export): a flow's records a listing filter matches, and the records the
 /// lookup across every flow reaches, each as a workbook of the records the page lists, read from the ledger in SQL Server.
-/// A filter the listing refuses is refused here too, as a problem rather than a file.
+/// A filter the listing refuses is refused here too, as a problem rather than a file. A run's records, listed or exported,
+/// are those it and the parts it split its delivery into touched.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -127,6 +128,131 @@ public sealed class DeliveryRecordExportApiTests
         }
     }
 
+    [Fact]
+    public async Task The_records_of_a_run_that_split_its_delivery_are_its_own_and_its_parts()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var (repoId, pipelineId, flowId, flowName) = await SeedFlowAsync(cs, suffix);
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(flowId, TestLedgers.Partition, flowName);
+
+        // The run that split the delivery sent one record its parts left; each of its two parts sent one; another run one more.
+        var now = DateTime.UtcNow;
+        var (split, first, second, other) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await using (var db = CatalogDatabase.Create(cs))
+        {
+            db.Runs.AddRange(
+                SplitRun(split, null, null, pipelineId, repoId, flowName, now),
+                SplitRun(first, split, 1, pipelineId, repoId, flowName, now),
+                SplitRun(second, split, 2, pipelineId, repoId, flowName, now),
+                SplitRun(other, null, null, pipelineId, repoId, flowName, now));
+            await db.SaveChangesAsync();
+        }
+
+        var submission = Guid.NewGuid();
+        var leftOver = await DeliveredAsync(ledger, flowId, $"R-{suffix}-0", submission, split, now);
+        var byFirst = await DeliveredAsync(ledger, flowId, $"R-{suffix}-1", submission, first, now);
+        var bySecond = await DeliveredAsync(ledger, flowId, $"R-{suffix}-2", submission, second, now);
+        await DeliveredAsync(ledger, flowId, $"R-{suffix}-3", Guid.NewGuid(), other, now);
+
+        try
+        {
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+
+            // The run that split the delivery lists what it sent and what its parts sent; a part lists its own alone.
+            var whole = await ListedAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/records?runId={split:D}&pageSize=50");
+            Assert.Equal(
+                new[] { leftOver, byFirst, bySecond }.Select(k => k.Value.ToString("D")).Order(StringComparer.Ordinal),
+                whole.Order(StringComparer.Ordinal));
+            Assert.Equal([byFirst.Value.ToString("D")], await ListedAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/records?runId={first:D}"));
+
+            // The export reads the same records, and says the parts are in its filter.
+            using var read = new WorkbookReading((await WorkbookAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/records/export?runId={split:D}")).Bytes);
+            Assert.Equal(3, read.Rows().Count);
+            Assert.Equal(
+                ($"touched by run {split:D} or by the 2 parts it split its delivery into", 3d),
+                (read.About()["Filter"].GetText(), read.About()["Records"].GetNumber()));
+        }
+        finally
+        {
+            await CleanAsync(cs, repoId, flowId);
+        }
+    }
+
+    /// <summary>A delivery run of the flow that has ended; a part names the run that split the delivery and its slot.</summary>
+    private static CatalogRun SplitRun(Guid runId, Guid? root, int? slot, Guid pipelineId, Guid repoId, string flowName, DateTime now) => new()
+    {
+        RunId = runId, PipelineId = pipelineId, RepoId = repoId, FlowName = flowName, FlowKind = "delivery", Operation = "deliver",
+        Status = RunStatuses.Succeeded, Success = true, EnqueuedUtc = now.AddMinutes(-5), StartUtc = now.AddMinutes(-4), EndUtc = now,
+        WrittenUtc = now, FanOutRoot = root, FanOutSlot = slot, FanOutCount = root is null ? null : 2,
+    };
+
+    /// <summary>A record of the flow delivered by <paramref name="runId"/> under <paramref name="submission"/>, as a worker settles one.</summary>
+    private static async Task<DeliveryKey> DeliveredAsync(OsduLedger ledger, Guid flowId, string sourceKey, Guid submission, Guid runId, DateTime now)
+    {
+        var key = DeliveryKey.Derive("export", [sourceKey]);
+        await ledger.UpsertPendingAsync(flowId, [new RecordState
+        {
+            DeliveryKey = key,
+            FlowId = flowId,
+            SourceKey = sourceKey,
+            SourceKeyJson = JsonSerializer.Serialize(new[] { sourceKey }),
+            Label = sourceKey,
+            MappingName = "Wellbore",
+            TargetId = "dev:master-data--Wellbore:" + sourceKey,
+            LastSubmissionId = submission,
+            PendingDocumentRef = "0:0:10",
+            PendingRenderContext = "{}",
+            PendingSourceFingerprint = "fp",
+            PendingMetadataHash = "mh",
+            PendingMetadata = true,
+        }]);
+        var record = (await ledger.ClaimAsync(flowId, submission, "w", 10, TimeSpan.FromMinutes(5), now)).Records.Single(r => r.DeliveryKey == key);
+        var lease = record.LeaseOwner ?? throw new InvalidOperationException($"The claim of {key} left it unleased.");
+        await ledger.AppendAsync(flowId, lease, new LeaseAppend([], [new RecordCompletion
+        {
+            DeliveryKey = key,
+            Status = RecordStatus.Delivered,
+            Promote = true,
+            TargetVersion = 42,
+            TargetId = record.TargetId,
+            Attempt = new AttemptRecord
+            {
+                DeliveryKey = key,
+                SubmissionId = submission,
+                RunId = runId,
+                Worker = "w",
+                StartedUtc = now,
+                CompletedUtc = now,
+                Outcome = AttemptOutcome.Delivered,
+                Phase = "metadata",
+                TargetVersion = 42,
+            },
+        }]));
+        await ledger.CheckpointLeaseAsync(lease, now);
+        return key;
+    }
+
+    /// <summary>The delivery keys of a records listing's page.</summary>
+    private static async Task<List<string>> ListedAsync(HttpClient client, string token, string path)
+    {
+        using var response = await SendAsync(client, token, path);
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"GET {path} answered {(int)response.StatusCode}: {text}");
+        using var page = JsonDocument.Parse(text);
+        return [.. page.RootElement.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("deliveryKey").GetString()!)];
+    }
+
     /// <summary>A delivery flow keyed by one column, in a repository of its own in the catalog, named with <paramref name="suffix"/>.</summary>
     private static async Task<(Guid RepoId, Guid PipelineId, Guid FlowId, string FlowName)> SeedFlowAsync(string cs, string suffix)
     {
@@ -187,6 +313,7 @@ public sealed class DeliveryRecordExportApiTests
 
         await using (var db = CatalogDatabase.Create(cs))
         {
+            await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
             await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
             await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
         }

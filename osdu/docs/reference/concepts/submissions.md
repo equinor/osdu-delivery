@@ -248,6 +248,11 @@ is settled, waiting out retries. It claims only its own range's batches and reco
 it wrote them to, so no part reads another's batches: `source.work` stays a folder next to the flow file, in each node's
 own copy of the repository. The parts appear as a run family on the run's page.
 
+**Records of a split run.** Each part writes its records' attempts under its own run id, so the records a split delivery
+touched are named by the parts' attempts and the first run's together. The records of the first run (the Records tab
+narrowed to it, `runId` on the record listing and its export, a removal of every record matching it) are all of them;
+those of a part are its own alone, and its chip on the Records tab leads to the whole run.
+
 **The first run coordinates.** It delivers no range itself: it waits for the parts, finalises the submission with every
 part's totals, sends what the submission still holds (a record a part left in backoff, a record released from a wait),
 and closes it. A part never closes the submission, moves the watermark or brings the cache up to date: the first run does

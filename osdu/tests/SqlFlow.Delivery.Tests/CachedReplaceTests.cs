@@ -132,7 +132,9 @@ public sealed class CachedReplaceTests : IDisposable
         // this record; the entry is required, so the record is held.
         var none = renderer.Render(Record("NONE"));
         Assert.True(none.IsHeld);
-        Assert.Contains("dataset.unit is empty, so there is nothing to find in the cache, and the entry is required", Assert.Single(none.Holds), StringComparison.Ordinal);
+        var noneHold = Assert.Single(none.Holds);
+        Assert.Contains("dataset.unit is 'NONE', which its modifiers (", noneHold, StringComparison.Ordinal);
+        Assert.Contains(") turn into no value, so there is nothing to find in the cache, and the entry is required", noneHold, StringComparison.Ordinal);
         Assert.Contains(new CacheUsage("UnitAlias", "NONE", "value", string.Empty, CacheUsageKind.Empty), none.CacheUsages);
 
         // The partition's own spelling is listed too, ignoring case, so it is looked up like any other.
@@ -246,9 +248,10 @@ public sealed class CachedReplaceTests : IDisposable
         Assert.Contains(new CacheUsage("UnitOfMeasure", "dev:reference-data--UnitOfMeasure:m", "Code", "m", CacheUsageKind.Value), byName);
         Assert.Equal("dev:reference-data--UnitOfMeasure:ft", Symbol("id", "foot", out _));
 
-        // A value no OSDU record holds on a field other than a key depends on no row, so nothing is recorded for it.
+        // A value no OSDU record holds is recorded under the field it was looked for by, as a findBy line that found none
+        // records it, so a version holding a record by it reaches the record.
         Assert.Equal("yard", Symbol("Code", "yard", out var missing));
-        Assert.Empty(missing);
+        Assert.Equal([new CacheUsage("UnitOfMeasure", "YARD", "Name", "yard", CacheUsageKind.Unlisted)], missing);
     }
 
     [Fact]

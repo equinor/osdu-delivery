@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.Core.Identity;
 using SqlFlow.Core.Runs;
+using SqlFlow.Yaml;
 using Xunit;
 
 namespace SqlFlow.Tests.Integration;
@@ -1086,6 +1087,110 @@ public sealed class CatalogSyncIntegrationTests : IDisposable
             await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
         }
     }
+
+    [SkippableFact]
+    public async Task A_registered_kinds_run_recorded_from_its_artifact_keeps_its_result_as_a_queued_run_does()
+    {
+        var cs = IntegrationDb.Require();
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var repo = "cat_result_" + suffix;
+        var repoId = FlowIdentity.FromName(repo);
+        string probe = "probe_" + suffix, orders = "orders_" + suffix;
+        Guid probeRun = Guid.NewGuid(), ordersRun = Guid.NewGuid(), syncedProbeRun = Guid.NewGuid(), syncedOrdersRun = Guid.NewGuid();
+
+        var probeFile = Path.Combine(_dir, "flows", "probe.flow.yaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(probeFile)!);
+        File.WriteAllText(probeFile, $"flowType: probe\nname: {probe}\n");
+        WriteFlow(orders, "flows/orders.flow.yaml");
+        var ordersFile = Path.Combine(_dir, "flows", "orders.flow.yaml");
+        const string probeResult = """{ "operation": "deliver", "delivered": 4, "held": 1, "sample": [{ "key": "a" }] }""";
+        const string ordersResult = """{ "rowsLoaded": 5, "totalMs": 100.0 }""";
+        var probeJson = WriteKindRun(probe, "probe", probeRun, "100000", probeResult);
+        var ordersJson = WriteKindRun(orders, "file", ordersRun, "100000", ordersResult);
+        await CatalogDatabase.MigrateAsync(cs);
+        var sync = new CatalogSync(YamlDocumentLoader.CreateDefault([new ProbeFlowKind()]));
+
+        try
+        {
+            // The per-run write-back: the registered kind's run keeps its result object, compact; the built-in kind's
+            // result is projected into the typed columns and is not kept whole.
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                Assert.True((await sync.RecordRunAsync(db, probeFile, probeJson, repo, null, DateTime.UtcNow)).RunRecorded);
+                Assert.True((await sync.RecordRunAsync(db, ordersFile, ordersJson, repo, null, DateTime.UtcNow)).RunRecorded);
+            }
+
+            // The full sync of the same estate records the runs written since, by the same rule.
+            WriteKindRun(probe, "probe", syncedProbeRun, "110000", probeResult);
+            WriteKindRun(orders, "file", syncedOrdersRun, "110000", ordersResult);
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                var synced = await sync.SyncAsync(db, _dir, repo, null, DateTime.UtcNow);
+                Assert.Equal(2, synced.RunsAdded);
+            }
+
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                var runs = await db.Runs.AsNoTracking().Where(r => r.RepoId == repoId).ToDictionaryAsync(r => r.RunId);
+                const string compact = """{"operation":"deliver","delivered":4,"held":1,"sample":[{"key":"a"}]}""";
+                Assert.Equal(compact, runs[probeRun].ResultJson);
+                Assert.Equal(compact, runs[syncedProbeRun].ResultJson);
+                Assert.Null(runs[ordersRun].ResultJson);
+                Assert.Null(runs[syncedOrdersRun].ResultJson);
+                Assert.Equal(5, runs[ordersRun].RowsLoaded);
+            }
+
+            // A sync whose host registered no such kind keeps no result of its run: the registration is what asks for it.
+            var bare = Guid.NewGuid();
+            var bareDir = Path.Combine(_dir, "bare");
+            Directory.CreateDirectory(Path.Combine(bareDir, "flows"));
+            File.WriteAllText(Path.Combine(bareDir, "flows", "orders.flow.yaml"), File.ReadAllText(ordersFile));
+            var bareRunDir = Path.Combine(bareDir, ".sqlflow", "runs", RunHistoryWriter.SafeName(orders), $"20260617-130000_{bare.ToString("N")[..8]}");
+            Directory.CreateDirectory(bareRunDir);
+            File.WriteAllText(Path.Combine(bareRunDir, "run.json"), RunJson(probe, "probe", bare, probeResult));
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                await new CatalogSync().SyncAsync(db, bareDir, repo + "_bare", null, DateTime.UtcNow);
+            }
+
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                Assert.Null(await db.Runs.AsNoTracking().Where(r => r.RunId == bare).Select(r => r.ResultJson).SingleAsync());
+            }
+        }
+        finally
+        {
+            await using var db = CatalogDatabase.Create(cs);
+            var bareRepoId = FlowIdentity.FromName(repo + "_bare");
+            foreach (var id in new[] { repoId, bareRepoId })
+            {
+                await db.RunFiles.Where(f => f.RepoId == id).ExecuteDeleteAsync();
+                await db.RunAssertions.Where(a => a.RepoId == id).ExecuteDeleteAsync();
+                await db.Runs.Where(r => r.RepoId == id).ExecuteDeleteAsync();
+                await db.Pipelines.Where(p => p.RepoId == id).ExecuteDeleteAsync();
+                await db.Repos.Where(r => r.Id == id).ExecuteDeleteAsync();
+            }
+        }
+    }
+
+    /// <summary>A run.json of <paramref name="flowKind"/> written where the engine would put it, carrying
+    /// <paramref name="result"/>; returns its path.</summary>
+    private string WriteKindRun(string flowName, string flowKind, Guid runId, string time, string result)
+    {
+        var dir = Path.Combine(_dir, ".sqlflow", "runs", RunHistoryWriter.SafeName(flowName), $"20260617-{time}_{runId.ToString("N")[..8]}");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "run.json");
+        File.WriteAllText(path, RunJson(flowName, flowKind, runId, result));
+        return path;
+    }
+
+    private static string RunJson(string flowName, string flowKind, Guid runId, string result) => $$"""
+        {
+          "schemaVersion": 1, "flowKind": "{{flowKind}}", "flowName": "{{flowName}}", "runId": "{{runId}}",
+          "success": true, "writtenUtc": "2026-06-17T10:00:00Z",
+          "result": {{result}}
+        }
+        """;
 
     public void Dispose()
     {

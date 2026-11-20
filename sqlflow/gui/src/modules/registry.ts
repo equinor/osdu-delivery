@@ -226,6 +226,13 @@ export interface FlowKindContribution {
   pipelineFacts?: (pipeline: PipelineDetail) => ReactNode;
   /** Extra columns on run lists of this kind: the pipeline's Runs tab, and the runs board filtered to the kind. */
   runColumns?: readonly Column<RunSummary>[];
+  /**
+   * The kind's own counts on run lists of this kind, in place of SQLFlow's row and file counts (Rows loaded, Inserted,
+   * Updated, Deleted, Files), as `run.headerDetails` takes their place on a run's page: for a kind whose runs count
+   * something other than rows. The lists then ask for the counts each run's result reports, which the columns read from
+   * `RunSummary.resultCounts`. An empty list leaves the counts out.
+   */
+  runCountColumns?: readonly Column<RunSummary>[];
   run?: RunDetailContribution;
   trigger?: TriggerContribution;
 }

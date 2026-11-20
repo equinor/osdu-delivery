@@ -870,7 +870,10 @@ public sealed record MappingOutline(
                 }
 
                 var empty = all.Empty.Count == 0 ? string.Empty : $", and nothing under {string.Join(" and ", all.Empty)}";
-                what = $"Every row whose {all.Field} holds the value, or any of its values, ignoring case{empty}, adds its {source.CacheField} to the list.";
+                var contains = all.Contains.Count == 0
+                    ? string.Empty
+                    : $", and whose {string.Join(" and whose ", all.Contains.Select(line => $"{line.Field} holds its {line.Part} (letters and digits, ignoring case)"))}";
+                what = $"Every row whose {all.Field} holds the value, or any of its values, ignoring case{empty}{contains}, adds its {source.CacheField} to the list.";
             }
             else
             {

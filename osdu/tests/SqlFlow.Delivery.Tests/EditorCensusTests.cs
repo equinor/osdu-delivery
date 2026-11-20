@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Expressions;
+using SqlFlow.Delivery.Model;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -155,6 +156,9 @@ public sealed class EditorCensusTests
             .Append("{$value}")
             .Append("$$<name>")
             .Append("$param.<name>")
+            // A $findAll's line forms, which the mapper reads by hand.
+            .Append("<field> is empty")
+            .Append($"<field> {FindAllContains.Word} <field>")
             .Append("iif(condition, value, other)")
             .Concat(ExpressionFunctions.All.Select(f => f.Signature))
             // An assertion's words: its conditions are the assertion flows' own, without resolves, and its settings.

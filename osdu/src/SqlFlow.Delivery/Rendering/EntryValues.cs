@@ -441,6 +441,7 @@ internal static partial class EntryValues
             ? $"({column} | {ModifierText(node.Modifiers)})"
             : findAll.Operand.ToString();
         return string.Join(" and ", findAll.Empty.Select(field => $"{ReferenceField.Normalize(field)} is empty")
+            .Concat(findAll.Contains.Select(line => $"{ReferenceField.Normalize(line.Field)} {FindAllContains.Word} {ReferenceField.Normalize(line.Part)}"))
             .Prepend($"{ReferenceField.Normalize(findAll.Field)} = {operand}"));
     }
 
@@ -990,10 +991,16 @@ internal static partial class EntryValues
         if (lookup.Kind == ReplaceLookupKind.NotListed)
         {
             // Only a key can be told apart from every other value a row might come to hold, so it is a key a lookup table
-            // does not list that is recorded; a key longer than any the table can hold never will be listed.
+            // does not list that is recorded; a key longer than any the table can hold never will be listed. A type of OSDU
+            // records notes the value and the field it was looked for under, as a findBy line that found none does, so a
+            // version holding a record by it (a code arriving as reference data) reaches the record.
             if (type.IsLookup && fields.Match.Equals(type.Key, StringComparison.OrdinalIgnoreCase) && value.Length <= LookupKeys.MaxLength)
             {
                 usages.Add(new CacheUsage(type.Name, CacheUsage.ListingKey(value), fields.Field, value, CacheUsageKind.Unlisted));
+            }
+            else if (!type.IsLookup)
+            {
+                usages.Add(new CacheUsage(type.Name, CacheUsage.ListingKey(value), ReferenceField.Normalize(fields.Match), value, CacheUsageKind.Unlisted));
             }
 
             result = Otherwise(modifier.Otherwise, value);
@@ -1063,17 +1070,21 @@ internal static partial class EntryValues
         var name = entry.Source!.CacheType!;
         var outcomes = new List<string>();
         var tries = new List<RenderMissTry>();
+        var emptied = new List<EmptiedValue>();
         var unaskable = false;
         foreach (var find in entry.FindBy)
         {
             string? value;
+            object? raw = null;
             if (find.Literal is not null)
             {
-                value = find.Literal;
+                // A quoted text reads the mapping's parameters, as every literal does: '{$param.dataPartition}:...'.
+                value = MappingEntry.ExpandParameters(find.Literal, renderer.ParameterValue);
             }
             else
             {
-                if (!TryModify(entry, Read(find.Column!, root, item), root, item, renderer, holds, usages, searched, out var modified))
+                raw = Read(find.Column!, root, item);
+                if (!TryModify(entry, raw, root, item, renderer, holds, usages, searched, out var modified))
                 {
                     return null;
                 }
@@ -1084,6 +1095,11 @@ internal static partial class EntryValues
             value = value?.Trim();
             if (string.IsNullOrEmpty(value))
             {
+                if (find.Column is { } empty)
+                {
+                    emptied.Add(Emptied(empty, raw));
+                }
+
                 continue;
             }
 
@@ -1104,7 +1120,7 @@ internal static partial class EntryValues
                 var searchedType = kind.Split(':')[2];
                 if (string.Equals(entityType, searchedType, StringComparison.Ordinal))
                 {
-                    return WithVersionSeparator(value);
+                    return AsReference(value);
                 }
 
                 holds.Add($"{path}: '{value}' is already an OSDU id, of a {entityType} record, and search.{name} looks for {searchedType} records ({kind})");
@@ -1188,9 +1204,13 @@ internal static partial class EntryValues
         {
             if (entry.Required || searched.NotesMisses)
             {
-                var operands = string.Join(", ", entry.FindBy.Where(f => f.Column is not null).Select(f => f.Column!.ToString()).Distinct(StringComparer.Ordinal));
-                var nothing = $"{path}: {operands} is empty, so there is nothing to search for";
-                searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = nothing, Columns = FindColumns(entry), Types = [name], EntityType = searchedKind });
+                var nothing = $"{path}: {EmptiedText(emptied, entry)}, so there is nothing to search for";
+                var blank = emptied.Where(e => e.Held is null).Select(e => e.Column).Distinct().ToList();
+                if (blank.Count > 0)
+                {
+                    searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = nothing, Columns = blank, Types = [name], EntityType = searchedKind });
+                }
+
                 if (entry.Required)
                 {
                     holds.Add($"{nothing}, and the entry is required");
@@ -1285,8 +1305,8 @@ internal static partial class EntryValues
         var typeName = type.Name;
         var version = CacheLabel(renderer.Context);
         var tried = new List<IReadOnlyList<(FindBy Find, string Value)>>();
-        var emptied = new List<DatasetColumn>();
-        (IReadOnlyList<(FindBy Find, string Value)> Line, ReferenceMatch Found)? undecided = null;
+        var emptied = new List<EmptiedValue>();
+        var ambiguous = new List<(IReadOnlyList<(FindBy Find, string Value)> Line, ReferenceMatch Found)>();
         foreach (var line in entry.FindBy)
         {
             if (!TryLineValues(entry, line, type, root, item, renderer, holds, usages, searched, emptied, out var values))
@@ -1306,6 +1326,8 @@ internal static partial class EntryValues
                 var met = type.Find(values.Select(v => (v.Find.Field, v.Value)).ToList(), entry.IgnoreSeparators);
                 if (met.Item is { } row)
                 {
+                    NoteEarlierLines();
+
                     // The record is found by every value together, so each is what it still has to hold: a later version in
                     // which it no longer holds any one of them stops it being the record the line finds.
                     foreach (var (find, value) in values)
@@ -1318,7 +1340,7 @@ internal static partial class EntryValues
 
                 if (met.IsCaseAmbiguous)
                 {
-                    undecided ??= (values, met);
+                    ambiguous.Add((values, met));
                 }
 
                 continue;
@@ -1331,7 +1353,7 @@ internal static partial class EntryValues
             // like any other.
             if (!type.IsLookup && OsduId().IsMatch(oneValue))
             {
-                if (CachedReferences.Parse(oneValue) is { } named && type.ById(named.Id) is { } byId)
+                if (RecordIds(oneValue).Select(type.ById).FirstOrDefault(found => found is not null) is { } byId)
                 {
                     usages.Add(new CacheUsage(typeName, byId.Id, "id", oneValue, CacheUsageKind.Match));
                     return new Located(byId, null);
@@ -1339,8 +1361,13 @@ internal static partial class EntryValues
 
                 if (source.ReadsRecordId)
                 {
-                    return new Located(null, WithVersionSeparator(oneValue));
+                    return new Located(null, AsReference(oneValue));
                 }
+
+                // The id the record was built without is noted, so a version that brings the record in reaches it: a held record
+                // is planned again (osdu/docs/reference/concepts/partition-cache.md, A record held for a reference waits for
+                // it), and one delivered without the property is tagged.
+                usages.Add(new CacheUsage(typeName, RecordIds(oneValue).First(), "id", oneValue, CacheUsageKind.Missing));
 
                 Missing(
                     entry,
@@ -1361,29 +1388,31 @@ internal static partial class EntryValues
             var found = type.Find(one.Field, oneValue, entry.IgnoreSeparators);
             if (found.Item is { } hit)
             {
+                NoteEarlierLines();
                 usages.Add(new CacheUsage(typeName, hit.Id, ReferenceField.Normalize(one.Field), oneValue, CacheUsageKind.Match));
                 return new Located(hit, null);
             }
 
             if (found.IsCaseAmbiguous)
             {
-                undecided ??= (values, found);
+                ambiguous.Add((values, found));
             }
         }
 
-        if (undecided is { } choice)
+        if (ambiguous.Count > 0)
         {
             // Several records answer to the value. Taking the first would deliver the wrong reference without a trace, so
             // the record is held whatever the required flag says, and the reason names every candidate.
+            var choice = ambiguous[0];
             var candidates = string.Join(", ", choice.Found.CaseVariants.Select(c => c.Id));
             var count = choice.Found.CaseVariants.Count;
-            var ambiguous = choice.Line.Count == 1
+            var several = choice.Line.Count == 1
                 ? $"{path}: '{choice.Line[0].Value}' matches {count} {typeName} records by {ReferenceField.Normalize(choice.Line[0].Find.Field)} {choice.Found.Loosening} ({candidates}) in {version}; make the incoming value exact with a replace modifier"
                 : $"{path}: {Compared(choice.Line)} match {count} {typeName} records {choice.Found.Loosening} ({candidates}) in {version}; make the incoming values exact with a replace modifier, or compare another field that tells them apart";
             searched.Miss(new RenderMiss
             {
                 Kind = RenderMissKind.Ambiguous,
-                Reason = ambiguous,
+                Reason = several,
                 Columns = choice.Line.Select(t => t.Find.Column).OfType<DatasetColumn>().Distinct().ToList(),
                 Types = [typeName],
                 EntityType = type.IsLookup ? null : type.EntityType,
@@ -1391,7 +1420,7 @@ internal static partial class EntryValues
                 Candidates = choice.Found.CaseVariants.Select(c => c.Id).ToList(),
                 IgnoreSeparators = entry.IgnoreSeparators,
             });
-            holds.Add(ambiguous);
+            holds.Add(several);
             return Located.Nothing;
         }
 
@@ -1399,9 +1428,13 @@ internal static partial class EntryValues
         {
             if (entry.Required || searched.NotesMisses)
             {
-                var operands = string.Join(", ", emptied.Select(c => c.ToString()).Distinct(StringComparer.Ordinal));
-                var nothing = $"{path}: {operands} is empty, so there is nothing to find in the cache";
-                searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = nothing, Columns = emptied.Distinct().ToList(), Types = [typeName] });
+                var nothing = $"{path}: {EmptiedText(emptied, entry)}, so there is nothing to find in the cache";
+                var blank = emptied.Where(e => e.Held is null).Select(e => e.Column).Distinct().ToList();
+                if (blank.Count > 0)
+                {
+                    searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = nothing, Columns = blank, Types = [typeName] });
+                }
+
                 if (entry.Required)
                 {
                     holds.Add($"{nothing}, and the entry is required");
@@ -1411,26 +1444,7 @@ internal static partial class EntryValues
             return Located.Nothing;
         }
 
-        foreach (var values in tried)
-        {
-            if (values.Count > 1)
-            {
-                // The values no row met together are noted together, of a lookup table as of a type of OSDU records, so a later
-                // version holding a row that meets them all reaches the record, and one holding a row that shares only some of
-                // them does not.
-                if (CacheUsage.CompositeMiss(typeName, values.Select(v => (v.Find.Field, v.Value)).ToList(), entry.IgnoreSeparators) is { } miss)
-                {
-                    usages.Add(miss);
-                }
-            }
-            else if (!type.IsLookup)
-            {
-                // Each value no record answered to is recorded, so a later version holding a record it finds (a wellbore loaded
-                // after the logs that name it) reaches the records built without one.
-                var (find, value) = values[0];
-                usages.Add(new CacheUsage(typeName, CacheUsage.ListingKey(value), ReferenceField.Normalize(find.Field), value, CacheUsageKind.Unlisted));
-            }
-        }
+        NoteMisses(tried);
 
         var fold = entry.IgnoreSeparators ? ", even with punctuation and spacing ignored" : string.Empty;
         var described = tried.All(values => values.Count == 1) && tried.Select(values => values[0].Value).Distinct(StringComparer.Ordinal).Count() == 1
@@ -1451,6 +1465,59 @@ internal static partial class EntryValues
             holds,
             searched);
         return Located.Nothing;
+
+        // The lines tried before the one that found the record decide nothing now, and would in a version where they find one:
+        // the first line that finds exactly one record wins. So each is noted as a render that found nothing notes it, and a
+        // line several records answered to notes each of them, so a version leaving it one record reaches this one.
+        void NoteEarlierLines()
+        {
+            foreach (var (line, found) in ambiguous)
+            {
+                foreach (var candidate in found.CaseVariants)
+                {
+                    foreach (var (find, value) in line)
+                    {
+                        usages.Add(new CacheUsage(typeName, candidate.Id, ReferenceField.Normalize(find.Field), value, CacheUsageKind.Match));
+                    }
+                }
+            }
+
+            NoteMisses(tried.Take(tried.Count - 1).Where(line => !ambiguous.Any(a => ReferenceEquals(a.Line, line))));
+        }
+
+        void NoteMisses(IEnumerable<IReadOnlyList<(FindBy Find, string Value)>> lines)
+        {
+            foreach (var values in lines)
+            {
+                if (values.Count > 1)
+                {
+                    // The values no row met together are noted together, of a lookup table as of a type of OSDU records, so a
+                    // later version holding a row that meets them all reaches the record, and one holding a row that shares
+                    // only some of them does not.
+                    if (CacheUsage.CompositeMiss(typeName, values.Select(v => (v.Find.Field, v.Value)).ToList(), entry.IgnoreSeparators) is { } miss)
+                    {
+                        usages.Add(miss);
+                    }
+                }
+                else if (entry.IgnoreSeparators)
+                {
+                    // A value the node folds punctuation and spacing away for may be found by a record holding it written
+                    // another way (WB_A_12 for WB A-12), which no key of the value tells; it is noted as a composite miss,
+                    // which every version of the type is asked again, of a lookup table as of a type of OSDU records.
+                    if (CacheUsage.CompositeMiss(typeName, [(values[0].Find.Field, values[0].Value)], ignoreSeparators: true) is { } folded)
+                    {
+                        usages.Add(folded);
+                    }
+                }
+                else if (!type.IsLookup)
+                {
+                    // Each value no record answered to is recorded, so a later version holding a record it finds (a wellbore
+                    // loaded after the logs that name it) reaches the records built without one.
+                    var (find, value) = values[0];
+                    usages.Add(new CacheUsage(typeName, CacheUsage.ListingKey(value), ReferenceField.Normalize(find.Field), value, CacheUsageKind.Unlisted));
+                }
+            }
+        }
     }
 
     /// <summary>The values one findBy line compared, as a miss keeps them: each comparison after the first marked as joining it.</summary>
@@ -1470,20 +1537,23 @@ internal static partial class EntryValues
     /// </summary>
     private static bool TryLineValues(
         MappingEntry entry, FindBy line, ReferenceType type, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages,
-        RenderTrail searched, List<DatasetColumn> emptied, out IReadOnlyList<(FindBy Find, string Value)>? values)
+        RenderTrail searched, List<EmptiedValue> emptied, out IReadOnlyList<(FindBy Find, string Value)>? values)
     {
         values = null;
         var read = new List<(FindBy Find, string Value)>(line.Comparisons.Count);
         foreach (var find in line.Comparisons)
         {
             string? value;
+            object? raw = null;
             if (find.Literal is not null)
             {
-                value = find.Literal;
+                // A quoted text reads the mapping's parameters, as every literal does: '{$param.dataPartition}:...'.
+                value = MappingEntry.ExpandParameters(find.Literal, renderer.ParameterValue);
             }
             else
             {
-                if (!TryModify(entry, Read(find.Column!, root, item), root, item, renderer, holds, usages, searched, out var modified))
+                raw = Read(find.Column!, root, item);
+                if (!TryModify(entry, raw, root, item, renderer, holds, usages, searched, out var modified))
                 {
                     return false;
                 }
@@ -1496,7 +1566,7 @@ internal static partial class EntryValues
             {
                 if (find.Column is { } empty)
                 {
-                    emptied.Add(empty);
+                    emptied.Add(Emptied(empty, raw));
                 }
 
                 return true;
@@ -1512,6 +1582,41 @@ internal static partial class EntryValues
 
         values = read;
         return true;
+    }
+
+    /// <summary>
+    /// A column a findBy line compares that gave nothing to compare: what the row held there when the node's modifiers turned
+    /// it into nothing, or null when the row held nothing.
+    /// </summary>
+    private readonly record struct EmptiedValue(DatasetColumn Column, string? Held);
+
+    private static EmptiedValue Emptied(DatasetColumn column, object? raw)
+        => new(column, IsEmpty(raw) ? null : SourceRow.Stringify(raw)?.Trim());
+
+    /// <summary>
+    /// Why the columns a node's findBy lines compare gave nothing, as a hold says it: <c>dataset.unit is empty</c>, or, for a
+    /// value the node's modifiers turned into nothing, <c>dataset.unit is 'NONE', which its modifiers (replace) turn into no
+    /// value</c>, as a <c>$from</c> node says it.
+    /// </summary>
+    private static string EmptiedText(IReadOnlyList<EmptiedValue> emptied, MappingEntry entry)
+    {
+        var blank = emptied.Where(e => e.Held is null).Select(e => e.Column.ToString()).Distinct(StringComparer.Ordinal).ToList();
+        var modified = emptied.Where(e => e.Held is not null)
+            .GroupBy(e => e.Column.ToString(), StringComparer.Ordinal)
+            .Select(g => $"{g.Key} is '{Clip(g.First().Held!)}'")
+            .ToList();
+        var parts = new List<string>();
+        if (blank.Count > 0)
+        {
+            parts.Add($"{string.Join(", ", blank)} is empty");
+        }
+
+        if (modified.Count > 0)
+        {
+            parts.Add($"{string.Join(", ", modified)}, which its modifiers ({ModifierText(entry.Modifiers)}) turn into no value");
+        }
+
+        return parts.Count == 0 ? "every value its findBy lines compare is empty" : string.Join(", and ", parts);
     }
 
     /// <summary>The source columns a cache or search node's findBy lines compare, every comparison of every line.</summary>
@@ -1652,7 +1757,7 @@ internal static partial class EntryValues
             usages.Add(CacheUsage.Listing(type.Name, field, key, found.Select(row => row.Id)));
             foreach (var row in found)
             {
-                if (!rows.Contains(row) && Passes(type, row, query.Empty, usages))
+                if (!rows.Contains(row) && Passes(type, row, query, usages))
                 {
                     rows.Add(row);
                 }
@@ -1693,7 +1798,10 @@ internal static partial class EntryValues
         }
 
         var keysText = string.Join(", ", keys.Select(k => $"'{k}'"));
-        var narrowed = query.Empty.Count == 0 ? string.Empty : $" with {string.Join(" and ", query.Empty.Select(f => $"{ReferenceField.Normalize(f)} empty"))}";
+        var narrowing = query.Empty.Select(f => $"{ReferenceField.Normalize(f)} empty")
+            .Concat(query.Contains.Select(c => $"{ReferenceField.Normalize(c.Field)} containing its {ReferenceField.Normalize(c.Part)}"))
+            .ToList();
+        var narrowed = narrowing.Count == 0 ? string.Empty : $" with {string.Join(" and ", narrowing)}";
         if (rows.Count > 0)
         {
             // The rows are there and hold nothing at the field read: what is missing is in the cache's own rows, not the source.
@@ -1746,7 +1854,13 @@ internal static partial class EntryValues
         keys = [];
         if (operand.Literal is { } literal)
         {
-            keys.Add(literal.Trim());
+            // The text reads the mapping's parameters, as every literal does; one that gives nothing is no key.
+            var expanded = MappingEntry.ExpandParameters(literal, renderer.ParameterValue).Trim();
+            if (expanded.Length > 0)
+            {
+                keys.Add(expanded);
+            }
+
             return true;
         }
 
@@ -1854,13 +1968,14 @@ internal static partial class EntryValues
     }
 
     /// <summary>
-    /// Whether a row a <c>$findAll</c> key found holds nothing under every field the node asks to be empty. Each field a row
-    /// passed on is recorded as read empty, and the first it failed on with what it held, so a later version that fills one
-    /// or empties the other reaches the record.
+    /// Whether a row a <c>$findAll</c> key found holds nothing under every field the node asks to be empty, and meets every
+    /// contains line. Each field a row passed on is recorded as read empty, and the first it failed on with what it held; a
+    /// contains line records both of its fields as the row held them. So a later version that fills one, empties the other,
+    /// or renames a group, reaches the record.
     /// </summary>
-    private static bool Passes(ReferenceType type, ReferenceItem row, IReadOnlyList<string> empty, List<CacheUsage> usages)
+    private static bool Passes(ReferenceType type, ReferenceItem row, FindAllQuery query, List<CacheUsage> usages)
     {
-        foreach (var field in empty)
+        foreach (var field in query.Empty)
         {
             var name = ReferenceField.Normalize(field);
             if (type.HoldsNothing(row, field))
@@ -1873,7 +1988,31 @@ internal static partial class EntryValues
             return false;
         }
 
+        foreach (var line in query.Contains)
+        {
+            var text = Judged(type, row, line.Field, usages);
+            var part = Judged(type, row, line.Part, usages);
+            if (!text.Any(t => part.Any(p => ReferenceKeyFold.Holds(t, p))))
+            {
+                return false;
+            }
+        }
+
         return true;
+    }
+
+    /// <summary>The values a row holds under a field a contains line reads, recorded as read: its terms, or none when it holds nothing.</summary>
+    private static IReadOnlyList<string> Judged(ReferenceType type, ReferenceItem row, string field, List<CacheUsage> usages)
+    {
+        var name = ReferenceField.Normalize(field);
+        if (type.Value(row, field) is not { Terms.Count: > 0 } value)
+        {
+            usages.Add(new CacheUsage(type.Name, row.Id, name, string.Empty, CacheUsageKind.Empty));
+            return [];
+        }
+
+        usages.Add(new CacheUsage(type.Name, row.Id, name, value.Text, CacheUsageKind.Value));
+        return value.Terms;
     }
 
     /// <summary>The cache version a render read, as a hold reason names it: "version 20260910T165153Z of the cache of partition 'dev'".</summary>
@@ -1899,9 +2038,10 @@ internal static partial class EntryValues
         }
 
         var field = source.CacheField!;
-        if (type.Value(hit, field) is not { } cached)
+        if (type.Value(hit, field) is not { Terms.Count: > 0 } cached)
         {
-            // The document is built without the value, so a later version giving the record one changes it.
+            // The document is built without the value, so a later version giving the record one changes it. Blank text, an
+            // empty list or an object of empty values is no value either, as it is to every other reader of the cache.
             usages.Add(new CacheUsage(type.Name, hit.Id, ReferenceField.Normalize(field), string.Empty, CacheUsageKind.Empty));
             return Missing(
                 entry,
@@ -1964,6 +2104,13 @@ internal static partial class EntryValues
             {
                 if (CachedReferences.Find(holding, reference) is not { } found)
                 {
+                    // The record is held. The render notes the id it looked for in every type that would hold the record, so a
+                    // version that brings the record in plans the held record again, as it does for an id a modifier built.
+                    foreach (var holder in holding)
+                    {
+                        usages.Add(new CacheUsage(holder.Name, reference.Id, "id", CachedReferences.Written(text!), CacheUsageKind.Missing));
+                    }
+
                     var unheld =
                         $"{path}: {type.Name} '{hit.Id}' names {reference.Id} at '{field}', and {version} holds no such {reference.EntityType} record in {string.Join(", ", holding.Select(t => t.Name))}, so the reference would point at nothing";
                     searched.Miss(new RenderMiss
@@ -2004,6 +2151,37 @@ internal static partial class EntryValues
     }
 
     private static string WithVersionSeparator(string id) => id.EndsWith(':') ? id : id + ":";
+
+    /// <summary>
+    /// An OSDU id a value already was, as a relationship takes it. One naming a version, as OSDU's reference pattern reads
+    /// an id whose code holds no colon and is followed by the version's digits
+    /// (<c>dev:master-data--Wellbore:1234:1700000000000</c>), is written as it is: the separator added after it would make
+    /// the version part of the code, a reference to another record. Any other is written with the separator a reference to
+    /// the latest version ends in, a code holding colons of its own included
+    /// (<c>dev:reference-data--CoordinateReferenceSystem:Projected:EPSG::23031:</c>).
+    /// </summary>
+    internal static string AsReference(string id)
+    {
+        var trimmed = id.Trim();
+        return !trimmed.EndsWith(':') && CachedReferences.Parse(trimmed) is { } named && !string.Equals(named.Id, trimmed, StringComparison.Ordinal)
+            ? trimmed
+            : WithVersionSeparator(trimmed);
+    }
+
+    /// <summary>
+    /// The record ids an OSDU id written in a value may name, in the order they are tried: as a relationship parses it (a
+    /// version after the code dropped), as a code holding colons of its own reads it
+    /// (<c>dev:reference-data--CoordinateReferenceSystem:Projected:EPSG::23031:</c>), and as written, without the separator a
+    /// reference to the latest version ends in. Never empty for a value <see cref="OsduId"/> matches.
+    /// </summary>
+    private static IEnumerable<string> RecordIds(string id)
+    {
+        var trimmed = id.Trim();
+        return new[] { CachedReferences.Parse(trimmed)?.Id, CachedReferences.Named(trimmed)?.Id, trimmed.TrimEnd(':') }
+            .OfType<string>()
+            .Where(candidate => candidate.Length > 0)
+            .Distinct(StringComparer.Ordinal);
+    }
 
     private static JsonNode Expand(JsonNode node, MappingRenderer renderer) => node switch
     {

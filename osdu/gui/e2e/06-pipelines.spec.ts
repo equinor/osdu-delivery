@@ -118,4 +118,53 @@ test.describe.serial("pipelines", () => {
     await expect(exportButton).toBeDisabled();
     await expect(adminPage.getByTestId("delivery-records-export-hint")).toHaveAttribute("title", /nothing to export/);
   });
+
+  test("a run on the Runs tab leads to the records it touched, and the Records tab says what it is narrowed to", async ({ adminPage }) => {
+    // The intake that stages the records is the flow's newest run: the earlier specs plan, and a plan touches no record.
+    test.setTimeout(600_000);
+    expect(stageWellLogRecords()).toContain("record(s)");
+
+    await adminPage.getByTestId("nav-pipelines").click();
+    await adminPage.getByTestId("filter-name").fill(DELIVERY_FLOW);
+    await adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW }).first().click();
+    await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible();
+    const tabs = adminPage.getByTestId("pipeline-tabs");
+    await tabs.getByRole("tab", { name: /runs/i }).click();
+
+    // A delivery run counts records, not rows: its own counts stand where SQLFlow's row and file counts stand.
+    const runs = adminPage.getByTestId("paged-table").filter({ has: adminPage.getByTestId("run-records-link") });
+    for (const header of ["Delivered", "Unchanged", "Held", "Failed"]) {
+      await expect(runs.getByRole("columnheader", { name: header, exact: true })).toBeVisible({ timeout: 30_000 });
+    }
+    for (const header of ["Rows loaded", "Inserted", "Updated", "Deleted", "Files"]) {
+      await expect(runs.getByRole("columnheader", { name: header, exact: true })).toHaveCount(0);
+    }
+
+    // The intake that staged the records reports what it planned: rows it found unchanged and records it held, as
+    // numbers; it delivers nothing itself, so Delivered is a dash.
+    const newest = runs.getByTestId("table-row").first();
+    await expect(newest.getByTestId("run-list-unchanged")).toHaveText(/^\d+$/, { timeout: 30_000 });
+    await expect(newest.getByTestId("run-list-held")).toHaveText(/^\d+$/);
+    await expect(newest.getByTestId("run-list-delivered")).toHaveCount(0);
+
+    // A run's row opens the run; its Records icon opens the flow's Records tab narrowed to what the run touched.
+    const link = adminPage.getByTestId("run-records-link").first();
+    await expect(link).toBeVisible({ timeout: 30_000 });
+    const runId = await link.getAttribute("data-run");
+    expect(runId).toMatch(/^[0-9a-f-]{36}$/);
+    await link.click();
+    await expect(tabs.getByRole("tab", { name: /records/i })).toHaveAttribute("aria-selected", "true");
+    expect(new URL(adminPage.url()).searchParams.get("run")).toBe(runId);
+
+    // The list says what it is narrowed to, inside the list: the run, a link to it, and the cross that widens the list again.
+    const chip = adminPage.getByTestId("delivery-records-narrowed-run");
+    await expect(chip).toBeVisible();
+    await expect(chip.locator(`a[href="/runs/${runId}"]`)).toBeVisible();
+    const table = adminPage.getByTestId("delivery-records-table");
+    await expect(table.getByTestId("table-row").first().or(table.getByText(/was touched by run/))).toBeVisible({ timeout: 30_000 });
+    await adminPage.getByTestId("delivery-records-clear-run").click();
+    await expect(chip).toHaveCount(0);
+    expect(new URL(adminPage.url()).searchParams.get("run")).toBeNull();
+    await expect(table.getByTestId("table-row").first()).toBeVisible({ timeout: 30_000 });
+  });
 });

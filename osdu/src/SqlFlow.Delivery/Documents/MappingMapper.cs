@@ -327,6 +327,18 @@ internal static partial class MappingMapper
         }
     }
 
+    /// <summary>
+    /// Every quoted text a node's findBy lines, its <c>$findAll</c> key line, or the lookup that key line reads compare a
+    /// field with, where parameter tokens can appear: <c>'{$param.dataPartition}:master-data--GeoPoliticalEntity:NO:'</c>.
+    /// </summary>
+    internal static IEnumerable<string> FindTexts(MappingEntry node)
+        => node.FindBy
+            .Concat(node.FindAll?.Operand.Lookup?.FindBy ?? [])
+            .SelectMany(line => line.Comparisons)
+            .Select(comparison => comparison.Literal)
+            .Append(node.FindAll?.Operand.Literal)
+            .OfType<string>();
+
     /// <summary>Every text inside a static value, where parameter tokens can appear.</summary>
     internal static IEnumerable<string> StaticTexts(JsonNode? node)
     {
@@ -405,7 +417,7 @@ internal static partial class MappingMapper
                 }
             }
 
-            foreach (var name in entry.ValueNodes.SelectMany(node => StaticTexts(node.Static)).SelectMany(MappingEntry.ParameterNames))
+            foreach (var name in entry.ValueNodes.SelectMany(node => StaticTexts(node.Static).Concat(FindTexts(node))).SelectMany(MappingEntry.ParameterNames))
             {
                 if (!parameters.ContainsKey(name))
                 {
@@ -464,8 +476,13 @@ internal static partial class MappingMapper
             {
                 // The legal service checks a record's tags and countries before a run, which it can only do for a list that
                 // is the same on every record.
+                // A plain $value item is a node too, though it reads nothing, so the message names it as written.
+                var nodes = entry.Parts.Where(p => !p.IsStatic).Select(p => p.Where).ToList();
+                var how = nodes.Count > 0
+                    ? $"reads values with {string.Join(" and ", nodes)}"
+                    : $"writes some of its items as {ValueKey} nodes";
                 throw new FlowValidationException(
-                    $"{source}: {entry.Where} reads values with {string.Join(" and ", entry.Parts.Where(p => !p.IsStatic).Select(p => p.Where))}, and the {name} are a literal list: the legal service checks them before a run, for every record alike.");
+                    $"{source}: {entry.Where} {how}, and the {name} are a literal list: the legal service checks them before a run, for every record alike. Write each item as the text it is.");
             }
 
             if (entry.Static is not JsonArray array || array.Count == 0
@@ -691,6 +708,10 @@ internal static partial class MappingMapper
                         "number" => Number(settings, where),
                         "id" => Id(settings, child, where),
                         "ref" => Ref(settings, where),
+                        "trim" or "upper" or "lower" => throw new FlowValidationException(
+                            $"{where}: {modifier} takes no setting; write it as a name in the list, such as {ModifiersKey}: [{modifier}]."),
+                        "otherwise" => throw new FlowValidationException(
+                            $"{where}: otherwise is a setting of replace, written in the same item beside it, such as - replace: {{ A: B }} followed by otherwise: <text> at the same indent; here it is an item of its own."),
                         _ => throw new FlowValidationException($"{where}: '{modifier}' is not a modifier. The modifiers are {ModifierList}."),
                     };
                 }
@@ -705,6 +726,28 @@ internal static partial class MappingMapper
     }
 
     private static string KeyText(object key) => Convert.ToString(key, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+
+    /// <summary>
+    /// A literal object from its properties in the order written, refused when two keys come to one property name: a key
+    /// is read trimmed, and YAML reads an unquoted number as a number, so <c>"a "</c> and <c>a</c>, or <c>1.0</c> and
+    /// <c>"1"</c>, name one property.
+    /// </summary>
+    private static JsonObject LiteralObject(IEnumerable<KeyValuePair<string, JsonNode?>> properties, string where)
+    {
+        var literal = new JsonObject();
+        foreach (var (name, value) in properties)
+        {
+            if (literal.ContainsKey(name))
+            {
+                throw new FlowValidationException(
+                    $"{where}: the literal names the property '{name}' twice once its keys are read (trimmed, an unquoted number as the number it is); write it once.");
+            }
+
+            literal[name] = value;
+        }
+
+        return literal;
+    }
 
     /// <summary>A modifier's name as a message says it: id or ref.</summary>
     private static string Word(Modifier modifier) => modifier.Kind.ToString().ToLowerInvariant();
@@ -983,9 +1026,9 @@ internal static partial class MappingMapper
         float number when !float.IsFinite(number) => throw NonFiniteStatic(number, where),
         float number => JsonValue.Create(Rendering.NumberValues.Widen(number)),
         decimal number => JsonValue.Create((double)number),
-        IDictionary<object, object> map => new JsonObject(map.Select(kv => new KeyValuePair<string, JsonNode?>(
+        IDictionary<object, object> map => LiteralObject(map.Select(kv => new KeyValuePair<string, JsonNode?>(
             Convert.ToString(kv.Key, CultureInfo.InvariantCulture) ?? string.Empty,
-            StaticValue(kv.Value, where) ?? throw new FlowValidationException($"{where}: the literal's '{kv.Key}' has no value.")))),
+            StaticValue(kv.Value, where) ?? throw new FlowValidationException($"{where}: the literal's '{kv.Key}' has no value."))), where),
         IEnumerable<object> list => new JsonArray(list.Select(item => StaticValue(item, where)
             ?? throw new FlowValidationException($"{where}: a literal list holds an empty item.")).ToArray()),
         _ => JsonValue.Create(Convert.ToString(value, CultureInfo.InvariantCulture)),

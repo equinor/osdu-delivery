@@ -38,7 +38,10 @@ namespace SqlFlow.ControlPlane.Api;
 /// its last end. <see cref="TriggerScheduleId"/> is the schedule whose fire enqueued the run and
 /// <see cref="TriggerRunId"/> the parent fire's run a chained fire followed. <see cref="StartedBy"/> says what started
 /// the run (<see cref="RunStartedBy"/>): the runs list resolves it, and the group stream leaves it null, since every
-/// member of a group shares the one its group read carries.</summary>
+/// member of a group shares the one its group read carries. <see cref="ResultCounts"/> holds the counts the run's result
+/// reports (<see cref="RunResultCounts"/>) when the list is asked for them (<c>resultCounts=true</c>), so a flow kind
+/// whose runs count something other than rows shows its own figures on a list of its runs; null otherwise, and for a run
+/// that recorded no result.</summary>
 public sealed record RunSummaryDto(
     Guid RunId, Guid PipelineId, Guid? RepoId, string FlowName, string FlowKind, string Batch, int Wave,
     string Status, bool Success,
@@ -50,7 +53,8 @@ public sealed record RunSummaryDto(
     string? Operation = null, string? RequestedBy = null,
     Guid? FanOutRoot = null, int? FanOutSlot = null, int? FanOutCount = null,
     DateTime? StartUtc = null, DateTime? EndUtc = null,
-    Guid? TriggerScheduleId = null, Guid? TriggerRunId = null, RunStartedByDto? StartedBy = null);
+    Guid? TriggerScheduleId = null, Guid? TriggerRunId = null, RunStartedByDto? StartedBy = null,
+    IReadOnlyDictionary<string, long>? ResultCounts = null);
 
 /// <summary>One run with its full header for the detail view: the summary plus the lifecycle fields (status, when it
 /// was enqueued, the node that claimed it), the schema version, the start/end window, the host, the error, and the
@@ -199,7 +203,7 @@ public static class RunEndpoints
     private static async Task<Results<Ok<PagedResult<RunSummaryDto>>, ProblemHttpResult>> ListRunsAsync(
         CatalogDbContext db, Guid? repoId, Guid? pipelineId, string? flowKind, string? status, bool? success,
         string? flowName, string? batch, Guid? scheduleId, Guid? groupId, bool? latest, DateTime? from, DateTime? to,
-        int? page, int? pageSize, Guid? runId, string? startedBy, CancellationToken ct)
+        int? page, int? pageSize, Guid? runId, string? startedBy, bool? resultCounts, CancellationToken ct)
     {
         var (p, size) = PageRequest.Normalize(page, pageSize);
 
@@ -345,6 +349,10 @@ public static class RunEndpoints
         var items = await ProjectSummaries(db, ordered.Skip((p - 1) * size).Take(size), groupId is not null)
             .ToListAsync(ct).ConfigureAwait(false);
         items = await WithStartedByAsync(db, items, ct).ConfigureAwait(false);
+        if (resultCounts == true)
+        {
+            items = await WithResultCountsAsync(db, items, ct).ConfigureAwait(false);
+        }
 
         // The page is read first because it often proves the total: a first page that came back short IS the whole
         // result, so the count query (which re-runs the filters, the latest-run resolution and the pipeline join)
@@ -366,6 +374,28 @@ public static class RunEndpoints
                 i.RunId, i.TriggerSource, i.RequestedBy, i.TriggerScheduleId, i.TriggerRunId, i.FanOutRoot)).ToList(),
             ct).ConfigureAwait(false);
         return items.Select(i => i with { StartedBy = startedBy[i.RunId] }).ToList();
+    }
+
+    /// <summary>The page's summaries with the counts each run's result reports (<see cref="RunResultCounts"/>), read for
+    /// the whole page in one query by run id. Only a list asked for them pays for it: a result runs to
+    /// <see cref="CatalogProjection.MaxResultJsonChars"/> characters, and SQLFlow's own kinds have their row counts on the
+    /// summary already.</summary>
+    private static async Task<List<RunSummaryDto>> WithResultCountsAsync(
+        CatalogDbContext db, List<RunSummaryDto> items, CancellationToken ct)
+    {
+        if (items.Count == 0)
+        {
+            return items;
+        }
+
+        var ids = items.Select(i => i.RunId).ToList();
+        var results = await db.Runs.AsNoTracking()
+            .Where(r => ids.Contains(r.RunId))
+            .Select(r => new { r.RunId, r.ResultJson })
+            .ToDictionaryAsync(r => r.RunId, r => r.ResultJson, ct).ConfigureAwait(false);
+        return items
+            .Select(i => i with { ResultCounts = RunResultCounts.Of(results.GetValueOrDefault(i.RunId)) })
+            .ToList();
     }
 
     /// <summary>The run row paired with its pipeline's batch label and lineage wave: the intermediate shape the
@@ -419,7 +449,7 @@ public static class RunEndpoints
                 x.Run.TriggerSource, x.Run.FullLoad, x.Run.BackfillFrom, x.Run.BackfillTo,
                 x.Run.IncrementalMode, x.Run.IncrementalFilter, x.Run.IncrementalWatermark,
                 x.Run.Operation, x.Run.RequestedBy, x.Run.FanOutRoot, x.Run.FanOutSlot, x.Run.FanOutCount,
-                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null))
+                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null, null))
             : source.Select(x => new RunSummaryDto(
                 x.Run.RunId, x.Run.PipelineId, x.Run.RepoId, x.Run.FlowName, x.Run.FlowKind, x.Batch, x.Wave,
                 x.Run.Status, x.Run.Success,
@@ -431,7 +461,7 @@ public static class RunEndpoints
                 x.Run.TriggerSource, x.Run.FullLoad, x.Run.BackfillFrom, x.Run.BackfillTo,
                 x.Run.IncrementalMode, x.Run.IncrementalFilter, x.Run.IncrementalWatermark,
                 x.Run.Operation, x.Run.RequestedBy, x.Run.FanOutRoot, x.Run.FanOutSlot, x.Run.FanOutCount,
-                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null));
+                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null, null));
 
     /// <summary>A group's member summaries in execution order: the shape both the group view's member list and
     /// the group stream serve. This is the one list that shows the last action, so it resolves it.</summary>

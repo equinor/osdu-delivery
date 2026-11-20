@@ -1687,6 +1687,15 @@ public sealed record RecordQuery
     /// </summary>
     public Guid? RunId { get; init; }
 
+    /// <summary>
+    /// The parts <see cref="RunId"/> split its delivery into when it spread one over several nodes
+    /// (osdu/docs/reference/concepts/submissions.md, Many nodes). Each part writes its records' attempts under its own run
+    /// id and the run that split them delivers no range itself, so the records it touched are those its own attempts and
+    /// its parts' name. The ledger keeps no run of its own: the control plane reads the parts from the platform's runs.
+    /// Empty for a run that was not split, and for a part, whose records are its own attempts' alone.
+    /// </summary>
+    public IReadOnlyList<Guid> RunParts { get; init; } = [];
+
     /// <summary>Only delivered records whose last verify found drift or a missing record.</summary>
     public bool Drifted { get; init; }
 

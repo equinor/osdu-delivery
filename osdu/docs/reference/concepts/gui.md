@@ -171,9 +171,18 @@ interface picker whose choice is in the address; a flow that names its partition
   either way, **restricted until complete**, [records OSDU holds under their mapping's restricted access while values are
   missing](../flow/mapping-restricted-access.md), and **restricted by an operator**, [restricting access](access-restriction.md),
   each with its count), **Drifted only**, **Step held** (while an enrichment is set aside on any record,
-  [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; an **Access** column beside the
-  status marks each restricted record, and one restricted until complete lists what it goes without on hover. Links from elsewhere narrow it to one run (`?run=`), what a submission last
-  planned (`?submission=`) or delivered (`?delivered=`), one issue (`?issue=`), or one group of missing values (`?missing=`), and a link can start its filters set,
+  [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**, a picker set to anything but
+  all wearing the tint of a filter in use; an **Access** column beside the
+  status marks each restricted record, and one restricted until complete lists what it goes without on hover. Links from
+  elsewhere narrow it to the records one run touched (`?run=`: those an attempt of the run names, and of the parts it
+  split its delivery into, [Many nodes](submissions.md#many-nodes)), what a submission last planned (`?submission=`) or
+  delivered (`?delivered=`), one issue (`?issue=`), or one group of missing values (`?missing=`). Each is a chip at the
+  top of the list, read as a sentence (**Touched by run …1a2b3c**, **Last planned by submission …**, **Kept blocked by
+  issue …**) whose id opens what it names and whose cross drops it, with what it means on hover and **Clear all** when
+  there are several. The run's chip says its operation, how it ended and when; a part of a split delivery says which part
+  it is and offers **Show the whole run**; and a run that worked in another interface or partition than the one in view
+  says which, with **show its records**. A run keeps narrowing the list when another interface is picked, since a run of
+  a source works through every interface's ledger. A link can also start the filters set,
   as the [Delivery](gui-ledger.md#delivery) page's counts do (`?status=held`, `?drifted=true`, `?stepHeld=true`,
   `?accessRestricted=true`, `?incomplete=true`, `?restricted=true`). **Export** downloads every record the
   filter matches, not the page in view, as an Excel workbook to work through where the records come from
@@ -193,6 +202,15 @@ interface picker whose choice is in the address; a flow that names its partition
   narrowed to it) and **Release N**, which can queue a deliver run straight after. An issue of records held because OSDU
   already holds a record at the ids their keys make also offers **Adopt N**, which asks every record of it to adopt the
   record OSDU holds once the partition is typed back, and can queue a deliver run straight after.
+- **Runs**: SQLFlow's list of the flow's runs, a row opening its run. A delivery run counts records, not rows, so in
+  place of SQLFlow's **Rows loaded**, **Inserted**, **Updated**, **Deleted** and **Files** each run shows the records it
+  **Delivered**, found **Unchanged** (rows read and found as they were, and records OSDU already held when it came to
+  send them), **Held** and **Failed**, as its page counts them, with a dash for a count it does not report (a `plan`
+  sends nothing; an `intake` plans what its `drain` delivers). A delivery split over nodes counts the whole submission on
+  the run that split it and each part's own share on the part ([Many nodes](submissions.md#many-nodes)). After them come
+  the run's **Operation** and a **Records** icon that opens the Records tab narrowed to what the run touched (a dash for
+  a `plan` run, which changes nothing, and for a `delete-ledger` run, which leaves no record). The runs board filtered to
+  delivery flows carries the same columns.
 - **Submissions**: every submission with what it read, when it was received and its counts, one line each, in a grid
   that fits the window; a row opens its page. The **Run** icon opens the run that coordinated it (its id on hover), and a
   submission that stopped wears a mark under **Error** whose card holds the whole reason with a copy. **Received** reads
@@ -258,7 +276,7 @@ A run page gains, by kind:
 
 | Kind | Header actions | Counts |
 | --- | --- | --- |
-| delivery | **Records of this run**; **Reverse this run** once a `deliver`, `replan`, `drain` or `intake` run has ended | Planned, Delivered, Held, Failed, Unchanged, Waiting; the submission as a chip. A `remove` run: Selected, Removed (Restored for a step back), Already gone, Skipped, Failed, and Deleted from the ledger when it was asked to, with what it was asked to take and its summary line |
+| delivery | **Records of this run** (the Records tab narrowed to it, in the interface and partition it ran in); **Reverse this run** once a `deliver`, `replan`, `drain` or `intake` run has ended | Planned, Delivered, Held, Failed, Unchanged (a deliver run's rows found as they were and records OSDU already held when it came to send them; a drain's records OSDU already held), Waiting; the submission as a chip. A `remove` run: Selected, Removed (Restored for a step back), Already gone, Skipped, Failed, and Deleted from the ledger when it was asked to, with what it was asked to take and its summary line |
 | cache | **Open the cache** | |
 | assertion | **Open the report** | Assertions, Passed, Failed, Warned, Errored, Skipped |
 | dimension | **Open dimensions** | Built, Failed, Skipped, Values, Keys, and Views when the run reported any |

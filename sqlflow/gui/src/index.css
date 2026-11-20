@@ -347,6 +347,30 @@
 }
 
 /*
+  The device sign-in page (auth/DeviceApprovalPage.tsx), used under motion-safe only. The dotted lane between the client
+  and the product flows toward the product, as the login picture's lanes do: its dashes repeat every 8 units, so moving
+  two of them loops without a jump. The code field's caret blinks in the box the next character goes into.
+*/
+@keyframes device-lane {
+  100% {
+    stroke-dashoffset: -16;
+  }
+}
+
+@keyframes device-caret {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+  }
+
+  20%,
+  50% {
+    opacity: 0;
+  }
+}
+
+/*
   React Flow (lineage graph) draws from the workbench tokens in both modes. The library ships a palette of its own per
   color mode (neutral grays in dark) behind `--xy-*-default` variables, and its stylesheet loads with the graph's
   chunk, after this one, so a rule here on one of its classes loses to it. The unsuffixed variables below are the

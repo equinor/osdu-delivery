@@ -133,6 +133,8 @@ A run recorded from its artifact is born in a terminal `Status`: `succeeded` or 
 
 Metric fields are best-effort from the kind-specific `result`: `StartUtc` / `EndUtc` from `result.startTimeUtc` / `endTimeUtc`, `DurationSeconds` from `result.durationSeconds` (seconds, fractions kept) or `result.totalMs / 1000`, `RowsLoaded` from `result.rowsLoaded ?? result.totalRows`, plus `RowsInserted` / `RowsUpdated` / `RowsDeleted`; `Host` comes from the root's `host` field.
 
+A run of a flow kind a host registered keeps its whole `result` object, as compact JSON, in `ResultJson`, where its run page, its run lists (`GET /runs?resultCounts=true`) and a fan-out root read what it did. The rule is the same however the run reaches the catalog: a run the queue completed, the per-run write-back after `sqlflow run`, and `sqlflow db sync` each keep it when the sync's document loader knows the kind (`CatalogSync` built with the host's `YamlDocumentLoader`). A built-in kind's result is projected into the columns above and the drill-down tables instead, and a result over 32,000 characters stays in the artifact only.
+
 Per-run substitution columns make the built-in backfill auditable from history: `FullLoad`, `BackfillFrom` / `BackfillTo` (UTC), `FilePattern`. Queue-routing columns are `TargetPool` (null means any node), `CommitSha` (a pinned commit), `ClaimedByNode`, and `EnqueuedUtc`. The control plane's run queue sets these eight when it enqueues and claims a run (`RunQueueStore`, `src/SqlFlow.Catalog/RunQueueStore.cs`), not the run.json projection: a run recorded straight from an on-disk artifact leaves them at their defaults, since `run.json` carries none of them.
 
 ### How long a run took

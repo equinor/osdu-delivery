@@ -164,6 +164,17 @@ public sealed record MappingDraftFindAll
     public string? Lookup { get; init; }
 
     public IReadOnlyList<string> Empty { get; init; } = [];
+
+    /// <summary>The lines comparing two fields of the same row, <c>GroupName contains CountryName</c>.</summary>
+    public IReadOnlyList<MappingDraftFindAllContains> Contains { get; init; } = [];
+}
+
+/// <summary>A find all line a row meets when its text under <see cref="Field"/> holds its text under <see cref="Part"/>.</summary>
+public sealed record MappingDraftFindAllContains
+{
+    public string Field { get; init; } = string.Empty;
+
+    public string Part { get; init; } = string.Empty;
 }
 
 /// <summary>One entry as the builder edits it.</summary>
@@ -1479,6 +1490,29 @@ public static partial class MappingBuilder
             }
         }
 
+        var compared = new HashSet<(string, string)>();
+        foreach (var line in findAll.Contains)
+        {
+            var text = line.Field?.Trim() ?? string.Empty;
+            var part = line.Part?.Trim() ?? string.Empty;
+            if (!IsCachedRowField(text) || !IsCachedRowField(part))
+            {
+                error($"{name}: find all compares two fields of the same row, such as GroupName contains CountryName; '{text} contains {part}' does not name two.", target);
+            }
+            else if (string.Equals(text, part, StringComparison.OrdinalIgnoreCase))
+            {
+                error($"{name}: find all compares {text} with itself, which every row holding a value meets; name two fields of the row.", target);
+            }
+            else if (!compared.Add((text.ToUpperInvariant(), part.ToUpperInvariant())))
+            {
+                error($"{name}: find all asks for {text} to contain {part} twice.", target);
+            }
+            else if (seen.FirstOrDefault(empty => string.Equals(empty, text, StringComparison.OrdinalIgnoreCase) || string.Equals(empty, part, StringComparison.OrdinalIgnoreCase)) is { } both)
+            {
+                error($"{name}: find all asks for {both} to be empty and compares it with another field, which a row holding nothing under {both} never meets.", target);
+            }
+        }
+
         if (entry.Modifiers.Count > 0 && column.Length == 0)
         {
             error($"{name}: modifiers change the dataset value find all compares, and this one compares none; remove the modifiers.", target);
@@ -1762,6 +1796,7 @@ public static partial class MappingBuilder
                     Literal = all.Operand.Literal,
                     Lookup = all.Operand.Lookup is { } read ? $"{read.Name}.{all.Operand.LookupPath}" : null,
                     Empty = all.Empty,
+                    Contains = all.Contains.Select(line => new MappingDraftFindAllContains { Field = line.Field, Part = line.Part }).ToList(),
                 }
                 : null,
             Modifiers = entry.Modifiers.Select(DraftModifier).ToList(),
@@ -2186,7 +2221,8 @@ public static partial class MappingBuilder
 
     /// <summary>
     /// A find all as the document writes it: the key line, comparing the field with a column in the entry's scope, a
-    /// quoted text or <c>$lookup.&lt;lookup&gt;.&lt;field&gt;</c>, then one <c>&lt;field&gt; is empty</c> line per field.
+    /// quoted text or <c>$lookup.&lt;lookup&gt;.&lt;field&gt;</c>, then one <c>&lt;field&gt; is empty</c> line per field,
+    /// then one <c>&lt;field&gt; contains &lt;field&gt;</c> line per comparison of two fields.
     /// </summary>
     private static List<string> FindAllLines(MappingDraftFindAll findAll, string? scope)
     {
@@ -2195,7 +2231,12 @@ public static partial class MappingBuilder
             : !string.IsNullOrWhiteSpace(findAll.Lookup)
                 ? MappingMapper.LookupReference + "." + findAll.Lookup.Trim()
                 : ScopedColumn(findAll.Column ?? string.Empty, scope);
-        return [$"{findAll.Field?.Trim()} = {operand}", .. findAll.Empty.Select(field => $"{field?.Trim()} is empty")];
+        return
+        [
+            $"{findAll.Field?.Trim()} = {operand}",
+            .. findAll.Empty.Select(field => $"{field?.Trim()} is empty"),
+            .. findAll.Contains.Select(line => $"{line.Field?.Trim()} {FindAllContains.Word} {line.Part?.Trim()}"),
+        ];
     }
 
     /// <summary>

@@ -3,6 +3,35 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
+## [1.0.5]
+
+### A run's records
+
+- A delivery flow's **Runs** tab has a **Records** icon on each run that opens the flow's Records tab narrowed to the
+  records the run touched, those of the parts a delivery split over nodes included, and **Records of this run** on a
+  run's page opens them in the interface and partition the run worked in.
+- What a link narrowed a flow's Records tab to (a run, a submission, an issue, a set of missing values) is a chip at the
+  top of the list whose id opens what it names and whose cross drops it, with **Clear all** for several. The run's chip
+  says its operation, how it ended and when, and leads from a part to the whole run
+  ([a delivery flow's page](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
+- A delivery flow's **Runs** tab shows what each run **Delivered**, found **Unchanged**, **Held** and **Failed**, in
+  place of the row counts (Rows loaded, Inserted, Updated, Deleted, Files) a delivery run never reported.
+
+### A field that contains another
+
+- A mapping property's hover describes the `$findAll` line `<field> contains <field>`, which keeps the cached rows whose
+  text under one field holds their text under another, and the mapping builder's find all adds such a line under the
+  fields that must be empty
+  ([$findAll](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/flow/mapping-lookups-find-all.md)).
+
+### Mappings read more strictly, and kept current
+
+- A mapping property's hover says that a `$findBy` text reads `{$param.<name>}` and that the first line finding exactly
+  one record wins. The command line and the MCP server the extension carries refuse a modifier text YAML would read
+  back otherwise (an unquoted `01` or `1.0`), naming its line, and give the fix for an empty modifier setting, a stray
+  `otherwise` and an unquoted `{$param.<name>}`
+  ([rules that hold for every modifier](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/flow/mapping-modifiers.md#rules-that-hold-for-every-modifier)).
+
 ## [1.0.4]
 
 ### Restricted until complete
@@ -18,6 +47,14 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   restricted until complete says on hover what it goes without, and its page names the restriction and links to every
   record missing the same values. The mapping builder's switch marks a node, and **Check values** counts its rows as
   restricted.
+
+### A mapping's overview
+
+- The YAML beside a mapping's overview, in **Preview** or on its page, closes from the button at the end of its heading,
+  as **YAML** on the toolbar closes it.
+- A part's menu leaves out **Details**: **Show in the YAML** shows the lines of the same part beside the canvas, and a
+  double click, or Enter, still opens its details
+  ([a mapping's overview](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/mapping-overview.md#the-menus)).
 
 ## [1.0.3]
 

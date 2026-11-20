@@ -208,7 +208,10 @@ public static class RecordExport
 
         if (query.RunId is { } run)
         {
-            parts.Add($"touched by run {run:D}");
+            var split = query.RunParts.Count(part => part != run);
+            parts.Add(split == 0
+                ? $"touched by run {run:D}"
+                : $"touched by run {run:D} or by the {split} part{(split == 1 ? string.Empty : "s")} it split its delivery into");
         }
 
         if (query.EverDelivered is { } ever)

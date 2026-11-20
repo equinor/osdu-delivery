@@ -496,7 +496,10 @@ test.describe.serial("templates and the mapping builder", () => {
     await logId.click();
     await expect(logId).toHaveAttribute("data-picked", "true");
     await logRun.click({ button: "right" });
-    await adminPage.getByTestId("mapping-overview-menu-details").hover();
+    await adminPage.getByTestId("mapping-overview-menu-copy").hover();
+    // A double click opens the details; the menu offers the YAML's lines instead, which show the same part in place.
+    await expect(adminPage.getByTestId("mapping-overview-menu-yaml-line")).toBeVisible();
+    await expect(adminPage.getByTestId("mapping-overview-menu-details")).toHaveCount(0);
     await expect(logRun).toHaveAttribute("data-picked", "true");
     await expect(logRun).toHaveAttribute("data-lit", "on");
     await expect(logId).toHaveAttribute("data-lit", "off");
@@ -525,6 +528,11 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(adminPage.getByTestId("mapping-overview-yaml-menu")).toHaveCount(0);
     await adminPage.mouse.move(0, 0);
     await expect(logRunLine).not.toHaveAttribute("data-lit");
+    await expect(logId).toHaveAttribute("data-lit", "on");
+
+    // The close button in the YAML's heading closes it, as the toolbar's button does, and what was picked stays lit.
+    await yamlPane.getByTestId("mapping-overview-yaml-close").click();
+    await expect(overview.getByTestId("mapping-overview-yaml")).toHaveCount(0);
     await expect(logId).toHaveAttribute("data-lit", "on");
   });
 

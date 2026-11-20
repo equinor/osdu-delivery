@@ -3121,7 +3121,7 @@ export interface MappingDraftAssertionFilter {
 /**
  * A cache entry's $findAll: the cached field the rows are found by, compared with exactly one of a dataset column, a fixed
  * text, or a field of a lookup's record written with the lookup's name (`wellbore.GeoContexts.FieldID`); and the fields a
- * row must hold nothing under.
+ * row must hold nothing under; and the lines comparing two fields of the same row (`GroupName contains CountryName`).
  */
 export interface MappingDraftFindAll {
   field: string;
@@ -3129,6 +3129,16 @@ export interface MappingDraftFindAll {
   literal: string | null;
   lookup: string | null;
   empty: string[];
+  contains: MappingDraftFindAllContains[];
+}
+
+/**
+ * A $findAll line a row meets when its text under `field` holds its text under `part`, both read by their letters and
+ * digits alone, ignoring case.
+ */
+export interface MappingDraftFindAllContains {
+  field: string;
+  part: string;
 }
 
 /**
@@ -3304,6 +3314,26 @@ const recordApiPath = ({ flowId, deliveryKey }: DeliveryRecordRef) =>
 /** The GUI page of one record. */
 export const deliveryRecordRoute = ({ flowId, deliveryKey }: DeliveryRecordRef) =>
   `/delivery/records/${encodeURIComponent(flowId)}/${encodeURIComponent(deliveryKey)}`;
+
+/**
+ * A delivery flow's Records tab narrowed to the records one run touched: those its attempts name, and its parts' when it
+ * split its delivery over nodes. A run that names the interface or the partition it ran in opens that ledger; one that names
+ * neither opens the ledger in view, whose records it touched like every other interface's of its source.
+ */
+export function deliveryRunRecordsRoute(
+  pipelineId: string, runId: string, scope: { interfaceName: string | null; partition: string | null } = { interfaceName: null, partition: null },
+): string {
+  const params = new URLSearchParams({ tab: "records", run: runId });
+  if (scope.interfaceName !== null) {
+    params.set("interface", scope.interfaceName);
+  }
+
+  if (scope.partition !== null) {
+    params.set("partition", scope.partition);
+  }
+
+  return `/pipelines/${encodeURIComponent(pipelineId)}?${params.toString()}`;
+}
 
 /**
  * One OSDU partition: whether the registry holds it and whether it is the default, and what it holds (its cache, the

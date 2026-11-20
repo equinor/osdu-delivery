@@ -232,6 +232,37 @@ public sealed class RunPayloadPerKindTests
         Assert.Equal(listing, back.Filter);
         Assert.Contains($"\"issue\":\"{ProblemSignature.Format(issue)}\"", byFilter.ToJson(), StringComparison.Ordinal);
 
+        // So do the Step held and access filters, a set of missing values, and the parts a run split its delivery into, which a
+        // node cannot read again: left out, the run would remove more records, or fewer, than the operator was shown.
+        var missing = ProblemSignature.Of("data.Curves[].CurveUnit");
+        var narrowed = new RecordQuery
+        {
+            RunId = Guid.Parse("0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f73"),
+            RunParts = [Guid.Parse("0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f74"), Guid.Parse("0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f75")],
+            StepHeld = true,
+            Restricted = true,
+            AccessRestricted = true,
+            Incomplete = true,
+            Missing = missing,
+        };
+        var narrowedBack = DeliveryRunPayload.Parse(new DeliveryRunPayload { Filter = narrowed, Scope = RemovalChoice.Record }.ToJson()).Filter!;
+        Assert.Equal(narrowed.RunParts, narrowedBack.RunParts);
+        Assert.Equal(narrowed, narrowedBack with { RunParts = narrowed.RunParts });
+        foreach (var part in new[] { "incomplete", "restricted" })
+        {
+            var only = DeliveryRunPayload.Parse($$"""{"filter":{"{{part}}":true},"scope":"record"}""").Filter!;
+            Assert.Equal((part == "incomplete", part == "restricted"), (only.Incomplete, only.Restricted));
+        }
+
+        Assert.Contains(
+            "runParts names the parts of a run, and the filter names no runId",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"filter":{"runParts":["0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f74"]},"scope":"record"}""")).Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "payload filter missing 'unit' is not a set of missing values",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"filter":{"missing":"unit"},"scope":"record"}""")).Message,
+            StringComparison.Ordinal);
+
         // A removal takes as many keys as one removal may, past the thousand any other run is scoped to.
         var keys = Enumerable.Range(0, DeliveryRunPayload.MaxRecordKeys + 1).Select(_ => Guid.NewGuid()).ToList();
         DeliveryRunPayload.Parse(new DeliveryRunPayload { RecordKeys = keys, Scope = RemovalChoice.Record }.ToJson()).Validate(DeliveryOperations.Remove);

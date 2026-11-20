@@ -4,7 +4,26 @@ import { LOGIN_ACCENT } from "./loginStreamLanes";
 
 // The product's brand on the pages a person signs in through, outside the workbench: the login page, and the page that
 // approves a client's browser sign-in, which a person reaches straight after it. Both stand on the brand's navy field
-// (BRAND_FIELD) with these, so signing in reads as one journey whichever page it ends on.
+// (BRAND_FIELD) under the lockup and the dot grid, so signing in reads as one journey whichever page it ends on; the
+// brand panel with its pitch is the login page's alone.
+
+/**
+ * A fine dot grid on the navy field, brightest where `mask` is opaque and fading out toward the edges, so the field has
+ * a surface. `mask` is a CSS mask image, centred on whatever the page puts in front of it.
+ */
+export function BrandDots({ mask }: { mask: string }) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0"
+      style={{
+        backgroundImage: "radial-gradient(color-mix(in srgb, white 11%, transparent) 1px, transparent 1.5px)",
+        backgroundSize: "24px 24px",
+        maskImage: mask,
+      }}
+      aria-hidden="true"
+    />
+  );
+}
 
 /** The product's lockup: the full logo and, when the product carries one, its "powered by" attribution beside it. */
 export function Lockup({ logoClassName }: { logoClassName: string }) {
@@ -31,16 +50,8 @@ export function BrandPanel() {
   const brand = branding();
   return (
     <section className="relative hidden flex-col text-white lg:flex lg:w-[54%] xl:w-[56%]" data-testid="login-brand-panel">
-      {/* A fine dot grid, brightest around the rings and fading out toward the edges, so the field has a surface. */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: "radial-gradient(color-mix(in srgb, white 11%, transparent) 1px, transparent 1.5px)",
-          backgroundSize: "24px 24px",
-          maskImage: "radial-gradient(ellipse 75% 60% at 62% 42%, black 0%, transparent 72%)",
-        }}
-        aria-hidden="true"
-      />
+      {/* The dot grid, brightest around the rings. */}
+      <BrandDots mask="radial-gradient(ellipse 75% 60% at 62% 42%, black 0%, transparent 72%)" />
       {/* A soft light behind the pitch, so the gradient is not the only depth cue. */}
       <div
         className="pointer-events-none absolute -bottom-48 -left-40 size-[38rem] rounded-full"

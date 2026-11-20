@@ -79,9 +79,9 @@ const MAX_MENU_COLUMNS = 6;
  * where the lines name it. The first line of what is picked is brought into view. Explain asks the assistant about the lines
  * selected, or the whole mapping; a right click offers it over the lines selected, or else over the property the line
  * clicked writes, copies the same lines, and offers the lineage of each table column they read, traced by the assistant
- * back to its source.
+ * back to its source. The close button in its heading closes the pane, as the toolbar's YAML button does.
  */
-export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, onPick, onExplain, columnsOf, onExplainLineage, blockOf }: {
+export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, onPick, onExplain, columnsOf, onExplainLineage, blockOf, onClose }: {
   file: string;
   yaml: string;
   /** The lines lit, from 1. */
@@ -102,6 +102,7 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
   onExplainLineage: ((column: LineageColumn) => void) | null;
   /** The lines of the property a line writes, with the property's path; null for a line that writes none. */
   blockOf: (line: number) => { range: LineRange; named: string } | null;
+  onClose: () => void;
 }) {
   const lines = useMemo(() => yamlLines(yaml).map(runsOf), [yaml]);
   const box = useRef<HTMLDivElement>(null);
@@ -185,7 +186,16 @@ export function OverviewYaml({ file, yaml, lit, marks, focus, focusKey, onLine, 
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-card" data-testid="mapping-overview-yaml">
-      <YamlHeading file={file} first={null} last={null} copy={yaml} copyLabel="Copy the mapping's YAML" copyTestId="mapping-overview-yaml-copy" actions={explain} />
+      <YamlHeading
+        file={file}
+        first={null}
+        last={null}
+        copy={yaml}
+        copyLabel="Copy the mapping's YAML"
+        copyTestId="mapping-overview-yaml-copy"
+        actions={explain}
+        close={{ label: "Close the YAML", testId: "mapping-overview-yaml-close", onClose }}
+      />
       {/* Without the assistant there is nothing of the pane's own to offer, and the browser's menu stays. */}
       <ContextMenu onOpenChange={(open) => !open && closedMenu()}>
         <ContextMenuTrigger asChild disabled={onExplain === null} onContextMenu={(event) => aimMenu(event.target)}>

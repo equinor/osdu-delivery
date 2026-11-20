@@ -251,6 +251,8 @@ export interface RunListQuery extends PageQuery {
   from?: string;
   /** Inclusive upper bound on WrittenUtc (ISO 8601, UTC): the schedules timeline reads runs by day. */
   to?: string;
+  /** Carry the counts each run's result reports (`RunSummary.resultCounts`), for a kind that shows its own counts. */
+  resultCounts?: boolean;
 }
 
 export interface RunScopePreviewQuery {

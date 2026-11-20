@@ -1,4 +1,4 @@
-import type { RunDetail } from "@/api/types";
+import type { RunDetail, RunSummary } from "@/api/types";
 import { firstRecordsOf } from "./firstRecords";
 
 // What a delivery, retrieval or cache run was asked to do and what it reported, read from the run page's generic fields:
@@ -34,6 +34,12 @@ function count(result: Record<string, unknown>, field: string): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** The sum of the counts given, or null when none of them was reported. */
+function sum(...counts: (number | null)[]): number | null {
+  const reported = counts.filter((value): value is number => value !== null);
+  return reported.length === 0 ? null : reported.reduce((total, value) => total + value, 0);
+}
+
 export interface RunRecordCounts {
   planned: number | null;
   delivered: number | null;
@@ -62,9 +68,20 @@ export function runRecordCounts(result: Record<string, unknown> | null): RunReco
     delivered: count(result, "delivered") ?? (matched === null && gone === null ? null : (matched ?? 0) + (gone ?? 0)),
     held: count(result, "held") ?? (drifted === null && missing === null && served === null ? null : (drifted ?? 0) + (missing ?? 0) + (served ?? 0)),
     failed: count(result, "failed") ?? count(result, "errors"),
-    unchanged: count(result, "skippedUnchanged"),
+    // A deliver run counts the rows it read and found unchanged apart from the records its final hash check found OSDU
+    // already holding; a drain counts only the latter, as unchanged.
+    unchanged: sum(count(result, "skippedUnchanged"), count(result, "unchangedAtPush")) ?? count(result, "unchanged"),
     waiting: count(result, "waiting"),
   };
+}
+
+/**
+ * The record counts of a run on a list of runs (a delivery flow's Runs tab, the runs board filtered to delivery flows),
+ * read from the counts its result reports (`RunSummary.resultCounts`) as a run's page reads them from the result itself.
+ */
+export function listedRunCounts(run: Pick<RunSummary, "operation" | "resultCounts">): RunRecordCounts {
+  const counts = run.resultCounts;
+  return runRecordCounts(counts === null || counts === undefined ? null : { ...counts, operation: run.operation });
 }
 
 /** What a remove run reported of the records it selected; each null when the run reports none of it. */

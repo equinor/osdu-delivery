@@ -665,6 +665,36 @@ public class RemovalLedgerTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_run_that_split_its_delivery_over_nodes_touched_the_records_its_parts_wrote()
+    {
+        // The run that splits a delivery sends what its parts left (here one record); each part writes its own run id.
+        var submission = Guid.NewGuid();
+        var (split, first, second) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var leftOver = await DeliveredAsync("a", submission, split);
+        var byFirst = await DeliveredAsync("b", submission, first);
+        var bySecond = await DeliveredAsync("c", submission, second);
+        var otherRun = await DeliveredAsync("d", submission, Guid.NewGuid());
+
+        var whole = new RecordQuery { RunId = split, RunParts = [first, second] };
+        Assert.Equal(
+            new[] { leftOver, byFirst, bySecond }.OrderBy(k => k.Value).ToList(),
+            (await Ledger.ListKeysAsync(_flow, whole, 100)).OrderBy(k => k.Value).ToList());
+        Assert.Equal(new BoundedCount(3, Exact: true), await Ledger.CountAsync(_flow, whole, 100));
+        Assert.DoesNotContain(otherRun, await Ledger.ListKeysAsync(_flow, whole, 100));
+
+        // Without its parts, the run is what it sent itself; a part is its own attempts alone, and a part named twice or
+        // the run named among its own parts reads each run once.
+        Assert.Equal([leftOver], await Ledger.ListKeysAsync(_flow, new RecordQuery { RunId = split }, 100));
+        Assert.Equal([byFirst], await Ledger.ListKeysAsync(_flow, new RecordQuery { RunId = first }, 100));
+        Assert.Equal(
+            new BoundedCount(3, Exact: true),
+            await Ledger.CountAsync(_flow, new RecordQuery { RunId = split, RunParts = [first, first, split, second] }, 100));
+
+        // The parts narrow with every other filter, as the run alone does.
+        Assert.Empty(await Ledger.ListKeysAsync(_flow, whole with { Status = RecordStatus.Failed }, 100));
+    }
+
+    [Fact]
     public async Task Selected_keys_come_back_in_key_order_so_a_removal_never_reshuffles_its_own_pages()
     {
         var submission = Guid.NewGuid();

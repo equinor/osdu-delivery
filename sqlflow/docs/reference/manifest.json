@@ -875,6 +875,7 @@
         "src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/RunEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunResultCounts.cs",
         "src/SqlFlow.ControlPlane/Api/RunSetTiming.cs",
         "src/SqlFlow.ControlPlane/Api/PipelineRunDurations.cs",
         "src/SqlFlow.ControlPlane/Api/SearchEndpoints.cs",

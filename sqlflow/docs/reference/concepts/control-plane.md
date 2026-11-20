@@ -43,6 +43,7 @@ sourceRefs:
   - src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs
   - src/SqlFlow.ControlPlane/Api/RunEndpoints.cs
+  - src/SqlFlow.ControlPlane/Api/RunResultCounts.cs
   - src/SqlFlow.ControlPlane/Api/RunSetTiming.cs
   - src/SqlFlow.ControlPlane/Api/PipelineRunDurations.cs
   - src/SqlFlow.ControlPlane/Api/SearchEndpoints.cs
@@ -113,7 +114,7 @@ Read surface (policy `read`):
 | `GET /pipelines/{id}/parameters` | The run controls that apply to the flow and, for a registered kind's flow, what its document declares a run may be given: its parameters, their defaults, choices and lookups, and its run settings ([Run inputs](run-inputs.md)) |
 | `GET /pipelines/{id}/columns` | Declared and detected pre-ingestion transform columns |
 | `GET /pipelines/{id}/files`, `GET /pipelines/{id}/files/stats` | Every distinct file the pipeline has processed (deduplicated by name and path), and the size profile over them: average, median, standard deviation, extremes, totals, and a window over the newest files, so a caller can tell a normal delivery from an anomalous one |
-| `GET /runs`, `GET /runs/{runId}` | Run history and detail (filters include `repoId`, `pipelineId`, `flowKind`, `status`, `success`, `flowName`, `batch`, `latest`, `runId`, `startedBy`). A summary carries `startUtc` and `endUtc` beside `durationSeconds`, so how long a running run has been executing is known before it has a duration, and `startedBy`, what started the run; the detail adds `causes`, the chain of fires behind a chained run ([what started a run](what-started-a-run.md)) |
+| `GET /runs`, `GET /runs/{runId}` | Run history and detail (filters include `repoId`, `pipelineId`, `flowKind`, `status`, `success`, `flowName`, `batch`, `latest`, `runId`, `startedBy`). A summary carries `startUtc` and `endUtc` beside `durationSeconds`, so how long a running run has been executing is known before it has a duration, and `startedBy`, what started the run; the detail adds `causes`, the chain of fires behind a chained run ([what started a run](what-started-a-run.md)). With `resultCounts=true` each summary also carries `resultCounts`, the whole numbers at the top of the run's result under the names the result gives them (null for a run that recorded no result), read for the whole page in one query: a module kind whose runs count something other than rows shows them on a list of its runs in place of the row and file counts (`FlowKindContribution.runCountColumns`) |
 | `GET /runs/groups/{groupId}` | One run group: its mode, anchor and member counts by state, what started it (`startedBy`), and when it ran and how long it took: `startedUtc` (its first member's start), `endedUtc` (its last member's end, null while a member is queued or running) and `durationSeconds` between them, the wall-clock time of the set rather than its members' durations added up. Time spent waiting before the first member started is `startedUtc - enqueuedUtc` |
 | `GET /runs/{runId}/files` `/assertions` `/statements` `/surrogate-keys` `/health-metrics` | Per-run drill-down |
 | `GET /runs/{runId}/trace` | The run's consolidated trace: canonical engine events (file progress, resolved watermarks, decisions, stage summaries, warnings) interleaved with the generated SQL statements by timestamp |

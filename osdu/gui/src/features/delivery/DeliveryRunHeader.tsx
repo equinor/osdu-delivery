@@ -1,12 +1,14 @@
-import { useNavigate } from "react-router-dom";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { DatabaseZap, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { RunDetail } from "@/api/types";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { RunDetail, RunSummary } from "@/api/types";
 import { DetailPair } from "@/components/DetailPair";
 import { IdChip } from "@/components/IdChip";
-import { ledgerLabel } from "../../api/delivery";
+import { deliveryRunRecordsRoute, ledgerLabel } from "../../api/delivery";
 import {
-  DELIVERING_OPERATIONS, runRecordCounts, runRemovalCounts, runRequest, runResult, runScope, runSubmissionId, type RunRemovalCounts,
+  DELIVERING_OPERATIONS, listedRunCounts, runRecordCounts, runRemovalCounts, runRequest, runResult, runScope, runSubmissionId,
+  type RunRecordCounts, type RunRemovalCounts,
 } from "./runOutcome";
 import { ReverseButton } from "./ReverseButton";
 import { shortId } from "./idTail";
@@ -21,7 +23,8 @@ function RecordCount({ value, testId }: { value: number | null; testId: string }
 }
 
 /**
- * The delivery run's way to the records it touched (the flow's Records tab, filtered to this run), and, once a run that
+ * The delivery run's way to the records it touched (the flow's Records tab, filtered to this run, in the interface and
+ * partition it ran in), and, once a run that
  * sends records has ended, its reversal when it left anything to reverse: what it put into OSDU put back as OSDU held it
  * before (osdu/docs/reference/concepts/removal-and-reversal.md, Reversing a run or a submission). A run of a source of
  * several interfaces that names none is reversed one interface at a time, from each interface's entry in the audit trail
@@ -37,7 +40,7 @@ export function DeliveryRunActions({ run }: { run: RunDetail }) {
       <Button
         variant="outline"
         size="sm"
-        onClick={() => navigate(`/pipelines/${run.pipelineId}?tab=records&run=${run.runId}`)}
+        onClick={() => navigate(deliveryRunRecordsRoute(run.pipelineId, run.runId, scope))}
         data-testid="run-records"
       >
         <ListTree />
@@ -55,6 +58,52 @@ export function DeliveryRunActions({ run }: { run: RunDetail }) {
       )}
     </>
   );
+}
+
+/** The operations whose runs touch no record: a plan changes nothing, and deleting the ledger deletes every record it held. */
+const TOUCHES_NO_RECORD: readonly string[] = ["plan", "delete-ledger"];
+
+/**
+ * A delivery run's way to the records it touched from a list of runs (the flow's Runs tab, the runs board narrowed to
+ * delivery flows), whose rows open the run itself: an icon that opens the flow's Records tab narrowed to the run. A plan
+ * and a ledger's deletion leave no record to lead to.
+ */
+export function DeliveryRunRecordsLink({ run }: { run: Pick<RunSummary, "runId" | "pipelineId" | "operation"> }) {
+  if (TOUCHES_NO_RECORD.includes(run.operation ?? "deliver")) {
+    return <span className="text-muted-foreground" title={`A ${run.operation} run touches no record.`}>-</span>;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button asChild variant="ghost" size="icon-xs" className="size-5 align-middle text-muted-foreground hover:text-primary">
+          <RouterLink
+            to={deliveryRunRecordsRoute(run.pipelineId, run.runId)}
+            aria-label="Records this run touched"
+            // Inside a row that opens the run: the icon opens its records instead.
+            onClick={(event) => event.stopPropagation()}
+            data-testid="run-records-link"
+            data-run={run.runId}
+          >
+            <ListTree />
+          </RouterLink>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Records this run touched</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * One of a delivery run's record counts on a list of runs (the flow's Runs tab, the runs board narrowed to delivery
+ * flows), in place of the row counts SQLFlow's own runs carry: what its result reports, as its page shows it, and a muted
+ * dash for a count the run does not report (a plan delivers nothing; an intake plans, and its drain delivers).
+ */
+export function DeliveryRunListCount({ run, count }: { run: Pick<RunSummary, "operation" | "resultCounts">; count: keyof RunRecordCounts }) {
+  const value = listedRunCounts(run)[count];
+  return value === null
+    ? <span className="text-muted-foreground">-</span>
+    : <span className="font-mono tabular-nums" data-testid={`run-list-${count}`}>{value}</span>;
 }
 
 /** The cache run's way to the cache it refreshed. */

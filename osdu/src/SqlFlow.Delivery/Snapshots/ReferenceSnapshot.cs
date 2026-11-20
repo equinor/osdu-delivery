@@ -683,7 +683,7 @@ public sealed class ReferenceType
     /// type and that code (<c>{partition}:reference-data--LogCurveFamily:Gamma%20Ray:</c>), so a table that names reference
     /// data by its code (a curve dictionary giving each mnemonic its family) finds the one record of the type it names.
     /// </summary>
-    private static IEnumerable<string> RecordIdTerms(string id)
+    internal static IEnumerable<string> RecordIdTerms(string id)
     {
         yield return id;
         var parts = id.Split(':');
@@ -1153,6 +1153,41 @@ public static class ReferenceKeyFold
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// The letters and digits of <paramref name="value"/>, in order and lower-cased, with everything else dropped: how a
+    /// <c>$findAll</c> contains line compares two names, so <c>United Kingdom</c>, <c>united-kingdom</c> and
+    /// <c>unitedkingdom</c> read alike. Letters outside ASCII are kept, a character outside the basic plane included. Empty
+    /// when the value carries no letter or digit.
+    /// </summary>
+    public static string LettersAndDigits(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(value.Length);
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (Rune.IsLetterOrDigit(rune))
+            {
+                builder.Append(Rune.ToLowerInvariant(rune).ToString());
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// True when <paramref name="text"/> holds <paramref name="part"/>, both read by their letters and digits alone
+    /// (<see cref="LettersAndDigits"/>). A part with no letter or digit is held by nothing, since every text would hold it.
+    /// </summary>
+    public static bool Holds(string? text, string? part)
+    {
+        var folded = LettersAndDigits(part);
+        return folded.Length > 0 && LettersAndDigits(text).Contains(folded, StringComparison.Ordinal);
     }
 }
 

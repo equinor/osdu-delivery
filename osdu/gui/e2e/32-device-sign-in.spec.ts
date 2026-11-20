@@ -28,14 +28,14 @@ test.describe("a client's browser sign-in", () => {
     await adminPage.goto(device.verificationUriComplete);
     await expect(adminPage).toHaveURL(new RegExp(`^${E2E.guiBaseUrl}/device\\?code=`));
     await expect(adminPage.getByLabel("Code")).toHaveValue(device.userCode, { timeout: FIRST_PAGE_MS });
-    await expect(adminPage.getByText(`act as ${E2E.adminUsername}`)).toBeVisible();
+    await expect(adminPage.getByTestId("device-account")).toContainText(E2E.adminUsername);
 
     // Nothing happens until the person approves: a link alone must never sign anyone in.
     const before = await request.post(`${E2E.apiBaseUrl}/api/v1/auth/device/token`, { data: { deviceCode: device.deviceCode } });
     expect(((await before.json()) as { error: string }).error).toBe("authorization_pending");
 
     await adminPage.getByRole("button", { name: "Approve" }).click();
-    await expect(adminPage.getByText("Signed in", { exact: true })).toBeVisible();
+    await expect(adminPage.getByRole("heading", { name: "Signed in" })).toBeVisible();
 
     // A client polls at the grant's interval, and a poll sooner than that is told to slow down.
     let accessToken = "";
@@ -67,12 +67,25 @@ test.describe("a client's browser sign-in", () => {
     await adminPage.goto(device.verificationUriComplete);
     await expect(adminPage.getByLabel("Code")).toHaveValue(device.userCode, { timeout: FIRST_PAGE_MS });
     await adminPage.getByRole("button", { name: "Deny" }).click();
-    await expect(adminPage.getByText("Sign-in denied")).toBeVisible();
+    await expect(adminPage.getByRole("heading", { name: "Sign-in denied" })).toBeVisible();
 
     await expect.poll(async () => {
       const token = await request.post(`${E2E.apiBaseUrl}/api/v1/auth/device/token`, { data: { deviceCode: device.deviceCode } });
       return ((await token.json()) as { error: string }).error;
     }, { timeout: 20_000, intervals: [6_000] }).toBe("access_denied");
+  });
+
+  test("a code typed by hand, in any case and without its dash, is read as the client shows it", async ({ adminPage, request }) => {
+    const device = await startDevice(request);
+
+    await adminPage.goto("/device");
+    const code = adminPage.getByLabel("Code");
+    await code.click({ timeout: FIRST_PAGE_MS });
+    await adminPage.keyboard.type(device.userCode.replace("-", "").toLowerCase());
+    await expect(code).toHaveValue(device.userCode);
+
+    await adminPage.getByRole("button", { name: "Approve" }).click();
+    await expect(adminPage.getByRole("heading", { name: "Signed in" })).toBeVisible();
   });
 
   test("a code the control plane does not hold says so", async ({ adminPage }) => {

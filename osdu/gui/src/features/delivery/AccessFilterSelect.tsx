@@ -15,7 +15,7 @@ export function AccessFilterSelect({ value, onChange, figure, testId }: {
   const chosen = ACCESS_FILTERS.find((choice) => choice.value === value) ?? ACCESS_FILTERS[0];
   return (
     <Select value={value} onValueChange={(next) => onChange(next as AccessFilter)}>
-      <SelectTrigger size="sm" className="h-8 w-60" title={chosen.meaning} data-testid={testId}>
+      <SelectTrigger size="sm" active={value !== "any"} className="h-8 w-60" title={chosen.meaning} data-testid={testId}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

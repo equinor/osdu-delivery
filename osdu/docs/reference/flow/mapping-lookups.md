@@ -15,8 +15,6 @@ keywords:
   - reference data lookup
   - find record by code
   - wellbore id by name
-  - access groups from cache
-  - acl viewers by field and country
   - cache miss held record
 yamlPath: "(documentType: mapping) lookups, searches, record.<property>.$cache | $lookup | $search"
 related:
@@ -28,6 +26,7 @@ related:
   - delivery-concept-change-detection
   - delivery-concept-preflight
   - delivery-flow-mapping-lookups-composite
+  - delivery-flow-mapping-lookups-find-all
   - delivery-wiki-pattern-catalog
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
@@ -108,10 +107,13 @@ Each line is `<field> = <operand>`:
   wellbore with three aliases is found by each of them. A lookup table is matched on its key column by name, or any
   other column it keeps.
 - `<operand>` is a column, named as `$from` names it (a bare name reads the row the node is in, `$dataset.<column>` the
-  dataset's own row from inside a `$forEach`), or a quoted text (`'KellyBushing'`).
+  dataset's own row from inside a `$forEach`), or a quoted text (`'KellyBushing'`), which reads the mapping's
+  parameters as every literal does (`'{$param.dataPartition}:master-data--GeoPoliticalEntity:NO:'`); a parameter the
+  mapping does not declare is refused when the mapping is read.
 
 One line, or a list. The lines are tried in order: a line whose value is empty is skipped, and the first line that finds
-exactly one record wins. A node's [modifiers](mapping-modifiers.md) change the incoming value before every line compares
+exactly one record wins. The lines tried before it are recorded with the render, each as it found nothing or several
+records, so a version in which one of them finds exactly one record reaches the records built from the later line. A node's [modifiers](mapping-modifiers.md) change the incoming value before every line compares
 it; what the cache holds is OSDU's own and is never modified, so `$modifiers` on a node whose lines compare only quoted
 texts is refused (`$modifiers change incoming dataset values, and this node's $findBy reads none; cache values are never
 modified.`).
@@ -129,7 +131,9 @@ value: `well = wellbore_name and mnemonic = curve_mnemonic`. How such a line is 
 3. **Ignoring separators**, only with `$ignoreSeparators: true` on the node, and only after both comparisons above found
    nothing. Letters and digits are kept in order (letters outside ASCII included, lower-cased) and every run of anything
    else counts as one separator, on the cached values and the incoming value alike: `WB A-12 ST2`, `WB_A_12_ST2` and
-   `wb-a-12-st2` find the same name. It is for names, never codes (`s/m` and `S.M` would fold together).
+   `wb-a-12-st2` find the same name. It is for names, never codes (`s/m` and `S.M` would fold together). A value no
+   record answers to even so is recorded with the render, and every version of the type is asked for it again, so one
+   holding a record written another way (`WB_A_12` for `WB A-12`) reaches the record.
 
 A value several records answer to, at whichever step, holds the record **whatever `$required` says**, naming the
 candidates: `'<value>' matches 2 UnitOfMeasure records by Code once case is ignored (...) in <version>; make the incoming
@@ -142,9 +146,12 @@ value exact with a replace modifier`. A later line that finds exactly one record
   reference data by its code therefore finds the record that code is the id of, even where the record's own `Code` says
   something else. A type whose cache flow keeps a field called `ID` (the `data.ID` of reference data) compares that
   field under `id` and `ID` instead. `$cache: <Type>.id` always writes the record id.
-- **A value that already is an OSDU id** (`dev:reference-data--UnitOfMeasure:m`) names its record by id, exactly. When
-  the cache does not hold it, a `<Type>.id` node writes it as it is, ending in `:`, and a node reading another field
-  counts it as a miss (`'<value>' is already an OSDU id that <version> does not hold, ...`).
+- **A value that already is an OSDU id** (`dev:reference-data--UnitOfMeasure:m`) names its record by id, exactly, a code
+  holding colons of its own included (`dev:reference-data--CoordinateReferenceSystem:Projected:EPSG::23031:`). When
+  the cache does not hold it, a `<Type>.id` node writes it as it is, ending in `:` unless it names a version
+  (`dev:master-data--Wellbore:1234:1700000000000`, as OSDU's reference pattern reads it), and a node reading another field
+  counts it as a miss (`'<value>' is already an OSDU id that <version> does not hold, ...`). A required node held for it
+  waits for the record ([a record held for a reference waits for it](../concepts/partition-cache.md#a-record-held-for-a-reference-waits-for-it)).
 - **A lookup table** (a `table` or `dictionary` type) holds rows, not OSDU records, so it has no id to write. Read one of
   its fields: `$cache: CurveDictionary.log_curve_type_id` with `$findBy: mnemonic = curve_mnemonic`. A value shaped like
   an OSDU id is matched there like any other text.
@@ -155,9 +162,9 @@ value exact with a replace modifier`. A later line that finds exactly one record
 | --- | --- | --- |
 | One record | Its id or field | Its id or field |
 | No record on any line | Record held: `no UnitOfMeasure matches 'furlong' by Code/Name in version <version> of the cache of partition 'dev'` | Property left out |
-| Every line's value empty | Record held: `<columns> is empty, so there is nothing to find in the cache, and the entry is required` | Property left out |
+| Every line's value empty | Record held: `<columns> is empty, so there is nothing to find in the cache, and the entry is required`, or, for a value the node's modifiers turned into nothing, `<column> is '<value>', which its modifiers (...) turn into no value, ...` | Property left out |
 | Several records | Record held | Record held |
-| The record keeps nothing at the field read | Record held, naming what the type caches | Property left out |
+| The record keeps nothing at the field read: no value, blank text, or an empty list | Record held, naming what the type caches | Property left out |
 | The cache version holds no such type | Record held: `the cache holds no type '<Type>' in <version>` | Record held |
 
 A cached field that holds a set writes a list where the template takes one, and holds the record where the template
@@ -244,110 +251,19 @@ the platform instead ([searches](#searches-and-search)).
 ## $findAll: every matching row
 
 `$findBy` names the one record a value stands for. `$findAll` reads every row of a cached type a value keys, however
-many, and the node gives the field it reads from each of them, as a list.
+many, narrowed by fields that must be empty and by one field of the row that must contain another, and the node gives
+the field it reads from each of them, as a list: the access groups of a wellbore's field and country, for one.
 
 ```yaml
 $cache: AccessGroup.GroupEmail
 $findAll:
   - CountryID = $lookup.wellbore.GeoContexts.GeoPoliticalEntityID
   - FieldIDs is empty
+  - GroupName contains CountryName
 ```
 
-Reads as: the group address of every access group naming the wellbore's country and no field.
-
-- **Exactly one key line**, `<field> = <operand>`. The operand is a column (after the node's modifiers), a quoted text,
-  or `$lookup.<lookup>.<path>`, a path of the record a lookup finds, every value of which is a key of its own (a
-  wellbore in two fields keys both). A `$lookup` operand must read another type than the node.
-- **Any number of `<field> is empty` lines**, which keep only the rows holding nothing under that field.
-- A row matches when any value of its key field is a key, **ignoring case**. A key that is an OSDU reference also finds
-  rows naming the record with or without the separator before its version (`dev:master-data--Field:1234:` and
-  `dev:master-data--Field:1234`).
-- Rows are read in the order of their ids, and a value two rows give (whatever its case) is written once.
-- `<Type>.id` writes each row's id in the reference form; a lookup table has no id to write.
-
-A `$findAll` gives a list, so it fills a list property, or an item of a
-[list of values](mapping-values.md) such as `acl.viewers`. When it finds no row, or the rows give nothing, a required
-node holds the record naming the keys (`no AccessGroup row with FieldIDs empty holds '...' under CountryID in
-<version>`), and an optional one adds nothing. A lookup that finds no record gives no keys, which counts the same way.
-
-Every key is recorded with the ids of the rows it found, none included, and every field a row was judged by. A refresh
-that lists another row under a key, drops one, or changes one tags every record built from the key as `relisted`, so a
-record may go out without a group the cache does not list yet and is delivered again when it does.
-
-Refused when the mapping is read:
-
-| Written | Message |
-| --- | --- |
-| `$findAll` beside `$findBy` | `... finds its record with $findBy and reads every matching row with $findAll; a node does one of them ...` |
-| two `=` lines | `... it takes one such line, the key the rows are found by, and any number of <field> is empty.` |
-| only `is empty` lines | `$findAll needs the line the rows are found by, <field> = <value>, ...` |
-| on a `$from` or `$search` node | `$findAll reads every row of a cached type that matches, so it belongs to a $cache node; ...` |
-| a line joined by `and` | `... joins conditions with and; a $findAll takes each condition as a line of its own, ...` |
-| with `$ignoreSeparators` | `... remove $ignoreSeparators.` |
-
-The preflight also refuses a key field the cache version does not hold, a field asked to be empty that no row of the
-type holds (`... no row of cache version '<version>' holds a <field>, so every row would pass. Capture data.<field> in
-the cache flow that fills <Type>.`), a `$lookup` path no record holds, and a `$findAll` written to a single-value
-property.
-
-## Access groups from cached records
-
-An organisation that keeps its entitlement groups per field and per country as records in the partition can widen
-each record's viewers from them. Here the partition holds a type the cache flow names `AccessGroup` (the kind below
-stands for whatever kind your organisation defines), one record per group: the group address, the fields it covers, and
-its country. The cache flow captures the paths the mapping reads:
-
-```yaml
-types:
-  - kind: "osdu:wks:master-data--Wellbore:*"
-    name: Wellbore
-    fields:
-      - data.FacilityName
-      - data.NameAliases.AliasName
-      - data.GeoContexts.FieldID
-      - data.GeoContexts.GeoPoliticalEntityID
-  - kind: "example:governance:reference-data--AccessGroup:*"
-    name: AccessGroup
-    fields: [data.GroupEmail, data.FieldIDs, data.CountryID]
-```
-
-The mapping finds the wellbore once and reads its field and country there:
-
-```yaml
-lookups:
-  wellbore:
-    $cache: Wellbore
-    $findBy:
-      - FacilityName = wellbore_name
-      - NameAliases.AliasName = wellbore_name
-    $ignoreSeparators: true
-
-record:
-  acl:
-    owners: ["{$param.aclOwner}"]
-    viewers:
-      - "{$param.aclViewer}"
-      - $cache: AccessGroup.GroupEmail
-        $findAll: FieldIDs = $lookup.wellbore.GeoContexts.FieldID
-        $required: false
-      - $cache: AccessGroup.GroupEmail
-        $findAll:
-          - CountryID = $lookup.wellbore.GeoContexts.GeoPoliticalEntityID
-          - FieldIDs is empty
-        $required: false
-  legal:
-    legaltags: ["{$param.legalTag}"]
-    otherRelevantDataCountries: [US]
-  data:
-    WellboreID:
-      $lookup: wellbore.id
-```
-
-The viewers are the flow's group, then the groups of the wellbore's fields, then the country groups of its country,
-each once. A country group is a row naming the country and no field, so a field's group never widens to the whole
-country. A wellbore in no field, or a field with no group yet, gives the record what was found and the flow's group at
-the least; the refresh that brings the missing group redelivers it. The access lists must hold at least one literal
-value, so no record goes out without a viewer; the legal lists take no nodes at all.
+Its lines, how a row is matched, what it gives, the cache trail it records and its errors are on
+[$findAll](mapping-lookups-find-all.md), with the access groups example.
 
 ## searches and $search
 
@@ -404,8 +320,8 @@ does not have, or a schema no template folder on the mapping's path holds.
 A value that cannot be asked for is not sent: an empty value, a value longer than the 256 characters the keyword
 sub-field keeps, the text `null` (what the keyword holds for a property without a value), a control character, the text
 `nested(` anywhere, and inside a nested query unbalanced parentheses or `AND`, `OR` or `NOT` followed by a word ending in
-a colon. A value that already is an OSDU id of the searched entity type names its record without a search; one of
-another entity type holds the record.
+a colon. A value that already is an OSDU id of the searched entity type names its record without a search, and is
+written with the version separator added unless it names a version; one of another entity type holds the record.
 
 ### What a search gives
 

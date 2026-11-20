@@ -49,14 +49,18 @@ import { failureText } from "./answers";
 import { shortId } from "./idTail";
 import { AccessFilterSelect } from "./AccessFilterSelect";
 import { accessFilterOf, accessQuery, restrictedFigure, type AccessFilter } from "./recordAccess";
+import { RecordsNarrowing, type NarrowingKey } from "./RecordsNarrowing";
 
 const ALL = "all";
 
 /** The flow id a card that adds several ledgers up carries: no one ledger, so no record of it can be linked to. */
 const EMPTY_ID = "00000000-0000-0000-0000-000000000000";
 
-/** The URL filters that name records of one ledger, which the view of another interface or partition drops. */
-const SCOPED_TO_LEDGER = ["submission", "delivered", "run", "issue", "missing"] as const;
+/**
+ * The URL filters that name records of one ledger, which the view of another interface drops. A run is not one of them:
+ * a run of a source works through its interfaces, each in its own ledger, so its records are read interface by interface.
+ */
+const SCOPED_TO_LEDGER = ["submission", "delivered", "issue", "missing"] as const;
 
 /** The file and row a record's newest version came from: the queued version's while work waits, as the lookup names it. */
 function originOf(row: DeliveryRecord): RecordOrigin {
@@ -126,6 +130,14 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const issueFilter = searchParams.get("issue");
   // A record restricted until complete links here to every record missing the same values.
   const missingFilter = searchParams.get("missing");
+  // What the strip above the list says the records are narrowed to, each dropped on its own.
+  const narrowed: Partial<Record<NarrowingKey, string>> = {
+    run: runFilter ?? undefined,
+    submission: submissionFilter ?? undefined,
+    delivered: deliveredFilter ?? undefined,
+    issue: issueFilter ?? undefined,
+    missing: missingFilter ?? undefined,
+  };
   // The chips point at records of the ledger that was showing; another interface's or partition's records are not those.
   const {
     rows, names, many, interfaceName, partitions, partition, headerPartition, outside, unplaced, active, scope, ready, selectInterface,
@@ -458,7 +470,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
           <FilterBar>
             <SearchInput value={search} onChange={setSearch} placeholder="Delivery key, label, source key, OSDU id or file" label="Search records" testId="delivery-records-search" className="sm:w-96" />
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger size="sm" className="h-8 w-52" data-testid="delivery-records-status">
+              <SelectTrigger size="sm" active={status !== ALL} className="h-8 w-52" data-testid="delivery-records-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -492,31 +504,6 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
               <Switch checked={contains} onCheckedChange={setContains} data-testid="delivery-records-contains" />
               Match anywhere
             </Label>
-            {submissionFilter && (
-              <Button variant="outline" size="sm" className="h-8" onClick={() => setSearchParams((current) => { const next = new URLSearchParams(current); next.delete("submission"); return next; })} data-testid="delivery-records-clear-submission">
-                last planned by submission {shortId(submissionFilter)}: clear
-              </Button>
-            )}
-            {deliveredFilter && (
-              <Button variant="outline" size="sm" className="h-8" onClick={() => setSearchParams((current) => { const next = new URLSearchParams(current); next.delete("delivered"); return next; })} data-testid="delivery-records-clear-delivered">
-                delivered by submission {shortId(deliveredFilter)}: clear
-              </Button>
-            )}
-            {runFilter && (
-              <Button variant="outline" size="sm" className="h-8" onClick={() => setSearchParams((current) => { const next = new URLSearchParams(current); next.delete("run"); return next; })} data-testid="delivery-records-clear-run">
-                run {shortId(runFilter)}: clear
-              </Button>
-            )}
-            {issueFilter && (
-              <Button variant="outline" size="sm" className="h-8" onClick={() => setSearchParams((current) => { const next = new URLSearchParams(current); next.delete("issue"); return next; })} data-testid="delivery-records-clear-issue">
-                kept blocked by issue {shortId(issueFilter)}: clear
-              </Button>
-            )}
-            {missingFilter && (
-              <Button variant="outline" size="sm" className="h-8" onClick={() => setSearchParams((current) => { const next = new URLSearchParams(current); next.delete("missing"); return next; })} data-testid="delivery-records-clear-missing">
-                restricted until complete for missing values {shortId(missingFilter)}: clear
-              </Button>
-            )}
             {/* Every record the filter matches, not the page in view: the list to work through where the records come from. */}
             <ExportRecordsButton
               fetchWorkbook={() => deliveryApi.exportRecords(pipelineId, { interface: interfaceName ?? undefined, partition: partition ?? undefined, ...filter })}
@@ -543,7 +530,49 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             pollMs={selected.size > 0 || allMatching ? undefined : 10000}
             onPageLoaded={onPageLoaded}
             selection={{ selected, onChange: (next) => { setSelected(next); setAllMatching(false); } }}
-            toolbar={(selected.size > 0 || allMatching) && (
+            toolbar={(
+              <>
+              {/* What a link narrowed the list to, inside the list it narrows, above the selection that acts on it. */}
+              <RecordsNarrowing
+                narrowed={narrowed}
+                view={{ many, interfaceName, partitions, partition }}
+                issueLink={(issue) => {
+                  const params = new URLSearchParams(searchParams);
+                  params.set("tab", "issues");
+                  params.set("issue", issue);
+                  return `?${params.toString()}`;
+                }}
+                onDrop={(keys) => setSearchParams((current) => {
+                  const next = new URLSearchParams(current);
+                  for (const key of keys) {
+                    next.delete(key);
+                  }
+
+                  return next;
+                })}
+                onRun={(runId) => setSearchParams((current) => {
+                  const next = new URLSearchParams(current);
+                  next.set("run", runId);
+                  return next;
+                })}
+                // One change of the address: the ledger the run ran in, without what named records of the ledger left behind.
+                onShowLedger={(ran) => setSearchParams((current) => {
+                  const next = new URLSearchParams(current);
+                  if (ran.interfaceName !== null) {
+                    next.set("interface", ran.interfaceName);
+                    for (const scoped of SCOPED_TO_LEDGER) {
+                      next.delete(scoped);
+                    }
+                  }
+
+                  if (ran.partition !== null) {
+                    next.set("partition", ran.partition);
+                  }
+
+                  return next;
+                })}
+              />
+              {(selected.size > 0 || allMatching) && (
               <div className="flex flex-wrap items-center gap-2 border-b border-border bg-accent/40 px-3 py-1.5" data-testid="delivery-selection-bar">
                 <span className="text-[13px] font-medium tabular-nums" data-testid="delivery-selection-count">
                   {allMatching
@@ -613,12 +642,16 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                   Remove
                 </Button>
               </div>
+              )}
+              </>
             )}
             emptyMessage={filter.search !== undefined && !contains
               ? "No records match. A search finds the start of a value a record shows, or of a word in it; turn on Match anywhere to find the term inside one."
-              : Object.values(filter).some((value) => value !== undefined)
-                ? "No records match the filter."
-                : "No records match. A flow's records appear here once its first submission has been planned."}
+              : runFilter !== null
+                ? `No record of this ledger was touched by run ${shortId(runFilter)}${Object.entries(filter).some(([name, value]) => name !== "runId" && value !== undefined) ? " and matches the other filters" : ""}.${many ? " A run of the source works through each interface's ledger, so another interface may hold its records." : ""}`
+                : Object.values(filter).some((value) => value !== undefined)
+                  ? "No records match the filter."
+                  : "No records match. A flow's records appear here once its first submission has been planned."}
             data-testid="delivery-records-table"
           />
           )}

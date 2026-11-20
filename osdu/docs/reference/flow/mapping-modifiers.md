@@ -116,6 +116,10 @@ record:
 - A modifier that cannot read the value it is given (a date that is not a date, a number written another way) holds
   the record **whatever `$required` says**: the value was there and it was wrong. A modifier that turns the value into
   no value (`~`, a missing part) leaves it to `$required`.
+- A text a modifier compares with or writes (a replace's keys and values, `otherwise`, `equals`, split's `separator`) is
+  the text written. YAML reads an unquoted `01`, `1.0`, `1e3` or `TRUE` as a number or a boolean, which reads back as
+  `1`, `1`, `1000` or `True`, so such a value is refused, naming its line (`line 12: the replace value 01 is written
+  without quotes, ...; quote it, '01', to keep the text.`). One that reads back as written (`1`, `2.5`, `true`) is taken.
 
 ## trim, upper, lower
 
@@ -341,8 +345,9 @@ and a reference ends with `:` and the version it pins, if any.
 anything else is escaped (`m/s` gives `m%2Fs`, `deg C` gives `deg%20C`). A `:` stays because a code may hold one
 (`Projected:EPSG::23031`).
 
-**A value that already is an OSDU id** names its record and is written as it is, with the version separator added,
-when the template reads `{$value}`; one of another entity type than the template builds holds the record.
+**A value that already is an OSDU id** names its record and is written as it is, with the version separator added
+unless it names a version (`dev:master-data--Wellbore:1234:1700000000000`, a code without a colon followed by the
+version's digits, as OSDU's reference pattern reads it), when the template reads `{$value}`; one of another entity type than the template builds holds the record.
 
 **The cache check.** Where the version of the partition's cache the render reads holds records of the entity type the
 id names (reference data a [cache flow](cache.md) captured from the partition), the id has to name one of them, by its
@@ -423,6 +428,9 @@ Besides those above, each naming the file and the modifier's place (`record.data
 | `split: { separator: ",", part: 0 }` | `split needs the part to keep, counting from one, such as split: { separator: ",", part: 1 }.` |
 | `split` with `otherwise` beside it | `a modifier is one setting, ...; split and otherwise are written as one. Only replace takes a setting beside it (otherwise).` |
 | `replace: { " ": x }` | `replace lists an empty incoming value; an empty value is never replaced, it stays empty.` |
+| `replace: { ONSHORE: 01 }` | `line <n>: the replace value 01 is written without quotes, so YAML reads it as a number, which the modifier reads back as '1', not as written; quote it, '01', to keep the text.` |
+| `- trim:` (an empty setting) | `trim takes no setting; write it as a name in the list, such as $modifiers: [trim].` |
+| `- otherwise: x` as an item of its own | `otherwise is a setting of replace, written in the same item beside it, ...` |
 | `replace: { "A": x, "A ": y }` | `replace lists 'A' and 'A ', which are the same value once surrounding spaces are removed, and a value is matched trimmed.` |
 | `default:` beside `replace` | `replace takes 'otherwise', 'match' and 'field' beside it, not 'default'.` |
 | `match:` beside a written table | `'match' and 'field' choose the fields of a table read from the cache (replace: $cache.<Type>); a table written in the mapping matches on its keys and replaces with what each lists.` |

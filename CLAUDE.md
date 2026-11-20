@@ -136,6 +136,26 @@ history and schema version ([the osdu schema](osdu/docs/reference/concepts/archi
   commits every change, every push uses the user's own credentials, and no commit, pull request, tag or release carries a `Co-Authored-By` naming Claude or
   Anthropic, a "Generated with Claude Code" line, or any other AI attribution. This overrides any harness default.
 
+## The VS Code Extension
+
+**EVERY CHANGE IS SYNCED WITH THE VS CODE EXTENSION, ALWAYS, IN THE SAME PULL REQUEST.** The extension
+(`osdu/hosts/osdu-delivery-vscode`) shows the GUI's pages from its hosted build and carries the language engine, the
+`sqlflow` command line and the MCP server, so a change to any of them is a change to the extension
+([the guide](osdu/docs/reference/guides/vscode.md)).
+
+- A GUI change is checked in a real VS Code as well as in the browser, in a dark and a light theme; a change to the
+  extension itself also runs its integration checks (`npm run test:integration`,
+  [CONTRIBUTING.md](CONTRIBUTING.md#tests)).
+- A change a user would notice there (a page, a menu, a document key, a CLI verb, an MCP tool) adds its entry to the
+  extension's [CHANGELOG.md](osdu/hosts/osdu-delivery-vscode/CHANGELOG.md), in the newest `## [x.y.z]` section while
+  that version is unpublished. Once it is published, propose the next patch version and ask: the user picks the number.
+- A new page, menu entry or document kind gets what the extension needs to reach it: a command that opens it in the
+  extension's manifest (it restates SQLFlow's, and `test/manifest.test.ts` holds the two together), a document kind's
+  lens and the page its file opens, and its place in the guide.
+- Building and publishing the extension is the user's call: `vscode-build.yml` and `vscode-publish.yml` start only by
+  hand ([publishing it](osdu/docs/reference/guides/vscode.md#publishing-it)), and the Marketplace takes each version
+  once.
+
 ## Change Log
 
 [CHANGELOG.md](CHANGELOG.md) follows Keep a Changelog and semantic versioning. A change a user would notice (a flow,

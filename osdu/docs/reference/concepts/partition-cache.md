@@ -342,8 +342,10 @@ schedules are not waited for.
 
 ### A record held for a reference waits for it
 
-A record is held when an id its mapping builds names a record of an entity type the cache holds records of, and not this
-one. The held render records the id it looked for, in every type that would hold it. When a later version holds the
+A record is held when an id its mapping builds, or a cached field it writes to a relationship, names a record of an
+entity type the cache holds records of, and not this one, and when a value that already is an OSDU id names a record a
+required `$cache` node's type does not hold. The held render records the id it looked for, in every type that would
+hold it. When a later version holds the
 record, by a refresh, a before step or an after step, the held record is released to be planned again, and built against
 it, whichever flow, partition or repository it belongs to. Each flow's records are released under an activity of their
 own, `release` by `cache:<partition>@<version>`, so a record's history says why it went out again and when. What a held
@@ -355,8 +357,8 @@ the next version bringing in what they missed, or an operator's release.
 
 Every delivered record points at the set of cached values its render read: the record a value was found by, each value
 written into the document, each path read that held nothing, each key a lookup table did not list, the values a
-[line of several comparisons](../flow/mapping-lookups-composite.md) found no record meeting together, and each id written as
-an unverified reference. A refresh compares
+[line of several comparisons](../flow/mapping-lookups-composite.md) found no record meeting together, each id written as
+an unverified reference, and each id a record was built without because the cache did not hold its record. A refresh compares
 the new version with the one it replaces over those sets (thousands of them, never the records themselves) and writes
 one tag per change: the partition, the type, the cached record, the path, the value before and after, the versions it
 moved between, and how many delivered records it reaches.
@@ -366,9 +368,9 @@ moved between, and how many delivered records it reaches.
 | `changed` | A value records read now reads differently. |
 | `removed` | A cached record records used is no longer in the cache. |
 | `unmatched` | A record no longer matches by the value records found it by. |
-| `listed` | A lookup table now lists a key records looked up and found no row under, an OSDU type now holds a record by a value records found none by, or a type now holds a record meeting values a line compared together and found none meeting. |
+| `listed` | A lookup table now lists a key records looked up and found no row under, an OSDU type now holds a record by a value records found none by, or a type now holds a record meeting values a line compared together and found none meeting, or one a value finds once punctuation and spacing are ignored, where the node folds them away. |
 | `relisted` | The rows a key finds are no longer the ones records read every one of. |
-| `found` | The cache now holds a record that records reference as an unverified id, or that a held record's reference named and the cache did not hold. |
+| `found` | The cache now holds a record that records reference as an unverified id, that a held record's reference named and the cache did not hold, or that a record was built without, its property left out, because the cache did not hold it. |
 
 What a tag does depends on the type's `onChange`:
 

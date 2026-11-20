@@ -128,14 +128,15 @@ public sealed class CacheImpactAnalyzer
         // Only the items that actually moved are worth asking the ledger about, and, for a lookup table, the keys it lists
         // now and did not before: a record that looked one of them up found no row, and was built without it. For a type
         // of OSDU records, the records it holds now and did not before: a record that wrote an id of one of them as an
-        // unverified reference was built without finding it. And for a type of OSDU records, every value an item that
-        // arrived or moved holds, before and after: a record that found no item by one of them, or read every item keyed by
-        // one, may find another now.
+        // unverified reference was built without finding it. And for either, every value an item that arrived or moved holds,
+        // before and after: a record that read every item keyed by one of them ($findAll) may read other items now, and for
+        // a type of OSDU records, one that found no item by one of them may find one now. A lookup table's rows are keyed by
+        // their key column alone, which the added keys already ask for.
         var moved = before.Keys.Where(id => !after.ContainsKey(id) || Differs(previous, before[id], current, after[id])).ToList();
         var added = after.Keys.Where(id => !before.ContainsKey(id)).ToList();
         var listed = current.IsLookup ? added.Select(CacheUsage.ListingKey).Distinct(StringComparer.Ordinal).ToList() : [];
         var found = current.IsLookup ? [] : added;
-        var keyed = current.IsLookup ? [] : Keys(moved.Select(id => before[id]).Concat(moved.Where(after.ContainsKey).Concat(added).Select(id => after[id])));
+        var keyed = Keys(moved.Select(id => before[id]).Concat(moved.Where(after.ContainsKey).Concat(added).Select(id => after[id])));
         if (moved.Count == 0 && listed.Count == 0 && found.Count == 0)
         {
             return new CacheImpactResult(current.Name, 0, 0, 0, 0);
@@ -158,14 +159,17 @@ public sealed class CacheImpactAnalyzer
 
         if (found.Count > 0)
         {
+            // An id written unverified, or one a record was built without because the cache did not hold it: a record
+            // delivered so is tagged. One held for it is released (ReleaseHeldAsync); a held render's set is no delivered
+            // record's, so it is counted for none here.
             holders.AddRange((await _ledger.FindCacheSetsAsync(scope, current.Name, found, ct).ConfigureAwait(false))
-                .Where(use => use.Kind == CacheUsageKind.Unverified));
+                .Where(use => use.Kind is CacheUsageKind.Unverified or CacheUsageKind.Missing));
         }
 
         if (keyed.Count > 0)
         {
             holders.AddRange((await _ledger.FindCacheSetsAsync(scope, current.Name, keyed, ct).ConfigureAwait(false))
-                .Where(use => use.Kind is CacheUsageKind.Unlisted or CacheUsageKind.Listed));
+                .Where(use => use.Kind == CacheUsageKind.Listed || (use.Kind == CacheUsageKind.Unlisted && !current.IsLookup)));
         }
 
         if (moved.Count > 0 || added.Count > 0)
@@ -311,9 +315,10 @@ public sealed class CacheImpactAnalyzer
 
         if (use.Kind == CacheUsageKind.Empty)
         {
-            // The document was built without a value here: it changes only when the path now gives one. A cached record
-            // that is gone is told by the match that found it, which every such read sits beside.
-            return item is not null && current.Value(item, use.Path) is { } given ? ("changed", given.Text, use.ItemId) : null;
+            // The document was built without a value here: it changes only when the path now gives one, blank text and an
+            // empty list being none. A cached record that is gone is told by the match that found it, which every such read
+            // sits beside.
+            return item is not null && current.Value(item, use.Path) is { Terms.Count: > 0 } given ? ("changed", given.Text, use.ItemId) : null;
         }
 
         if (item is null)
@@ -453,13 +458,19 @@ public sealed class CacheImpactAnalyzer
     /// <summary>
     /// Every value the items hold under any of their fields, folded as a key is kept: what a record that found none of them
     /// by a value, or read every item keyed by one, recorded, so the sets to judge again are found by the keys alone. A value
-    /// that is an OSDU reference is also asked for without its version separator and with it, as a render looks it up.
+    /// that is an OSDU reference is also asked for without its version separator and with it, as a render looks it up. So
+    /// is each item's own id and the code it ends with, encoded and decoded, which a line on <c>id</c> finds it by.
     /// </summary>
     private static List<string> Keys(IEnumerable<ReferenceItem> items)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in items)
         {
+            foreach (var term in ReferenceType.RecordIdTerms(item.Id))
+            {
+                keys.Add(CacheUsage.ListingKey(term));
+            }
+
             foreach (var value in item.Fields.Values)
             {
                 foreach (var term in value.Terms)

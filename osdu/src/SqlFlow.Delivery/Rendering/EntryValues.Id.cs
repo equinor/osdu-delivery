@@ -44,7 +44,7 @@ internal static partial class EntryValues
                 return false;
             }
 
-            id = WithVersionSeparator(value);
+            id = AsReference(value);
         }
         else
         {

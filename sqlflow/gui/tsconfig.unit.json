@@ -16,6 +16,7 @@
   },
   "include": [
     "unit/**/*.ts",
+    "src/auth/deviceCode.ts",
     "src/auth/entraSignIn.ts",
     "src/embed/hostTransport.ts",
     "src/embed/protocol.ts",
@@ -60,6 +61,7 @@
     "src/lib/paging.ts",
     "src/lib/runTiming.ts",
     "src/lib/runValues.ts",
+    "src/features/runs/runCountColumns.ts",
     "src/features/runs/runInputs.ts",
     "src/features/runs/startedBy.ts",
     "src/features/schedules/scheduleValues.ts",

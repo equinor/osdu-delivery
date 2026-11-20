@@ -317,9 +317,16 @@ function findAllOperand(findAll: MappingDraftFindAll): string {
   return literal.trim() !== "" ? quoted(literal) : lookup !== "" ? `$lookup.${lookup}` : `dataset.${findAll.column ?? ""}`;
 }
 
-/** The rows a find all reads, as one phrase: `every row with FieldIDList = $lookup.wellbore.GeoContexts.FieldID and FieldList empty`. */
+/**
+ * The rows a find all reads, as one phrase:
+ * `every row with GeoPoliticalEntityID = $lookup.wellbore.GeoContexts.GeoPoliticalEntityID and FieldList empty and GroupName containing its CountryName`.
+ */
 export function findAllText(findAll: MappingDraftFindAll): string {
-  return [`every row with ${findAll.field} = ${findAllOperand(findAll)}`, ...findAll.empty.map((field) => `${field} empty`)].join(" and ");
+  return [
+    `every row with ${findAll.field} = ${findAllOperand(findAll)}`,
+    ...findAll.empty.map((field) => `${field} empty`),
+    ...findAll.contains.map((line) => `${line.field} containing its ${line.part}`),
+  ].join(" and ");
 }
 
 /** How an entry's record is found, as the words after its source: `by <findBy lines>`, `from <the rows of a find all>`, or nothing. */
@@ -664,6 +671,7 @@ export function lookupLines(entry: MappingDraftEntry): string[] {
     return [
       `cache.${type}.${entry.findAll.field} = ${findAllOperand(entry.findAll)}`,
       ...entry.findAll.empty.map((field) => `cache.${type}.${field} is empty`),
+      ...entry.findAll.contains.map((line) => `cache.${type}.${line.field} contains cache.${type}.${line.part}`),
     ];
   }
 

@@ -1958,8 +1958,11 @@ public sealed partial class OsduLedger : ILedger
 
         if (query.RunId is { } runId)
         {
-            // The attempt table is indexed on (RunId, PartitionId, FlowId, DeliveryKey), so this is a semi-join over that index rather than a scan.
-            var touched = db.DeliveryAttempts.AsNoTracking().Where(a => a.RunId == runId && a.PartitionId == partition && a.FlowId == flowId).Select(a => a.DeliveryKey);
+            // The attempt table is indexed on (RunId, PartitionId, FlowId, DeliveryKey), so this is a semi-join over that index
+            // rather than a scan: one seek for the run, and one for each part of a delivery it split over nodes.
+            var attempts = db.DeliveryAttempts.AsNoTracking().Where(a => a.PartitionId == partition && a.FlowId == flowId);
+            List<Guid?> runs = [runId, .. query.RunParts.Where(part => part != runId).Distinct().Select(part => (Guid?)part)];
+            var touched = (runs.Count == 1 ? attempts.Where(a => a.RunId == runId) : attempts.Where(a => runs.Contains(a.RunId))).Select(a => a.DeliveryKey);
             rows = rows.Where(r => touched.Contains(r.DeliveryKey));
         }
 

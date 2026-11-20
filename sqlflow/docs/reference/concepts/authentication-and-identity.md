@@ -63,9 +63,11 @@ Two further sign-in surfaces exist for clients that cannot drive an interactive 
   A client opens `GET /device`, which goes on to the GUI's `/device` page when the control plane knows the GUI's address
   (`ControlPlane:Notifications:GuiBaseUrl`, else the one origin `ControlPlane:Cors:AllowedOrigins` names). That page sits behind
   the GUI's sign-in, so an account that signs in with Microsoft Entra approves a client as it signs in anywhere, with nothing
-  more to register. The page stands on the login page's brand field, so signing in and approving read as one journey; it
-  names the account the client will act as and what the client may do, and approving takes a click on a code the person
-  compares with the client's. Without a GUI address the control
+  more to register. The page is a device sign-in, not a second login form: one card on the login page's brand field, under
+  the product's lockup, showing the client and the product with the link the answer opens or closes, the code in a box per
+  character (typed or pasted in any case, with or without its dash), the account the client will act as with a way to use
+  another (signing out brings the person back to the same code), and what the client may do. Approving takes a click on a
+  code the person compares with the client's. Without a GUI address the control
   plane answers with a page of its own, which takes a local account's password.
 - **Personal access tokens (PATs)** are a distinct, long-lived bearer credential for headless clients (the CLI, the VSCode extension, automation), rather than a short-lived session token. A PAT and an HS256 token share one `Authorization: Bearer` header; a policy scheme (`PersonalAccessTokenDefaults.PolicyScheme`) inspects the presented token and forwards it to the right validator by shape, so authorization downstream sees one authenticated principal type regardless of which credential arrived (src/SqlFlow.ControlPlane/Program.cs:123-140,280). PATs are self-managed: any authenticated user creates, lists, and revokes their own through the `/me` endpoints, with each token's scopes capped server-side to the caller's own and the secret shown exactly once at creation and never retrievable again (src/SqlFlow.ControlPlane/Api/Contracts.cs:103-114).
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Code, Copy, FileCode, FileText, Loader2, Maximize, OctagonAlert, PanelRight, SlidersHorizontal, Table2, TriangleAlert,
+  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Code, Copy, FileCode, FileText, Loader2, Maximize, OctagonAlert, SlidersHorizontal, Table2, TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -667,7 +667,6 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       return {
         named: path,
         items: [
-          { id: "details", label: "Details", glyph: <PanelRight />, act: () => openShown(target) },
           { id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } },
           lineage,
           { id: "copy", label: "Copy the path", glyph: <Copy />, act: () => copyName(path, "the path") },
@@ -688,7 +687,6 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         ...(label === null ? [] : [{ id: "preview", label, glyph: card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />, act: () => lookAt(target) }]),
         // SQL reads a flow's table and the partition's cache; OSDU's search is asked, not queried.
         ...(read === "table" || read === "cache" ? [{ id: "sql", label: "Show the SQL", glyph: <Code />, act: () => lookAt(target, true) }] : []),
-        { id: "details", label: "Details", glyph: <PanelRight />, act: () => openShown(target) },
         ...(written ? [{ id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } }] : []),
         lineage,
         ...(traced === null ? [] : [{ id: "explain-lineage", label: "Explain its lineage", glyph: <ExplainIcon />, title: COLUMN_LINEAGE_HINT, act: () => explainLineage(traced) }]),
@@ -871,6 +869,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                     const node = nodeAtLine(outline, line);
                     return node?.line == null || node.endLine == null ? null : { range: { start: node.line, end: node.endLine }, named: outlinePathOf(node.path) };
                   }}
+                  onClose={() => setShowYaml(false)}
                 />
               </ResizablePanel>
             </>

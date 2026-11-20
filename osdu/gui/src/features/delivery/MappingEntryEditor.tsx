@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type {
-  DeliveryCachedType, DeliveryTemplateVariable, MappingDraft, MappingDraftAssertion, MappingDraftEntry, MappingDraftFindAll, MappingDraftInput,
+  DeliveryCachedType, DeliveryTemplateVariable, MappingDraft, MappingDraftAssertion, MappingDraftEntry, MappingDraftFindAll, MappingDraftFindAllContains, MappingDraftInput,
   MappingDraftIssue, MappingDraftModifier,
 } from "../../api/delivery";
 import { MappingAssertionsSection } from "./MappingAssertionEditor";
@@ -256,6 +256,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
   const [allLookup, setAllLookup] = useState(initialAllLookup === "" ? lookups[0]?.name ?? "" : initialAllLookup.split(".")[0]);
   const [allPath, setAllPath] = useState(initialAllLookup.includes(".") ? initialAllLookup.slice(initialAllLookup.indexOf(".") + 1) : "");
   const [allEmpty, setAllEmpty] = useState<string[]>(initialAll?.empty ?? []);
+  const [allContains, setAllContains] = useState<MappingDraftFindAllContains[]>(initialAll?.contains ?? []);
   const [lookupName, setLookupName] = useState(entry?.input === "Lookup" ? entry.lookup ?? "" : lookups[0]?.name ?? "");
   const [lookupField, setLookupField] = useState(entry?.input === "Lookup" ? entry.cacheField ?? "id" : "id");
   const [parentPath, setParentPath] = useState(entry?.parentPath ?? "");
@@ -368,6 +369,9 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
     literal: allMode === "text" ? allValue : null,
     lookup: allMode === "lookup" ? `${allLookup.trim()}.${allPath.trim()}` : null,
     empty: allEmpty.map((field) => field.trim()).filter((field) => field !== ""),
+    contains: allContains
+      .map((line) => ({ field: line.field.trim(), part: line.part.trim() }))
+      .filter((line) => line.field !== "" || line.part !== ""),
   });
 
   /**
@@ -987,7 +991,7 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
         {findsAll && (
           <Section
             title="Rows to read"
-            hint="Every row whose field holds the value is read, ignoring case; a field holding a list is read when any of its values is the value, and a value a lookup's record holds several of keys each. A reference finds the rows naming the record with or without the separator before its version. The rows are then narrowed to those holding nothing under each field listed below."
+            hint="Every row whose field holds the value is read, ignoring case; a field holding a list is read when any of its values is the value, and a value a lookup's record holds several of keys each. A reference finds the rows naming the record with or without the separator before its version. The rows are then narrowed to those holding nothing under each field listed below, and to those whose text under one field holds their text under another, compared by letters and digits alone and ignoring case, so United Kingdom is found in unitedkingdom."
             testId="mapping-builder-entry-findall"
           >
             <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border p-2">
@@ -1066,6 +1070,43 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
             >
               <Plus />
               Add a field that must be empty
+            </Button>
+            {allContains.map((line, index) => (
+              <div key={index} className="flex flex-wrap items-center gap-1.5" data-testid={`mapping-builder-entry-findall-contains-${index}`}>
+                <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">and whose</span>
+                <ChoiceOrText
+                  value={line.field}
+                  options={fieldOptions.filter((option) => option.value !== "id")}
+                  onChange={(value) => setAllContains((current) => current.map((old, i) => (i === index ? { ...old, field: value } : old)))}
+                  placeholder="GroupName"
+                  testId={`mapping-builder-entry-findall-contains-field-${index}`}
+                />
+                <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">contains its</span>
+                <ChoiceOrText
+                  value={line.part}
+                  options={fieldOptions.filter((option) => option.value !== "id")}
+                  onChange={(value) => setAllContains((current) => current.map((old, i) => (i === index ? { ...old, part: value } : old)))}
+                  placeholder="CountryName"
+                  testId={`mapping-builder-entry-findall-contains-part-${index}`}
+                />
+                <IconAction
+                  label="Remove this comparison"
+                  onClick={() => setAllContains((current) => current.filter((_, i) => i !== index))}
+                  testId={`mapping-builder-entry-findall-contains-remove-${index}`}
+                >
+                  <X />
+                </IconAction>
+              </div>
+            ))}
+            <Button
+              variant="ghost"
+              size="xs"
+              className="self-start"
+              onClick={() => setAllContains((current) => [...current, { field: "", part: "" }])}
+              data-testid="mapping-builder-entry-findall-contains-add"
+            >
+              <Plus />
+              Add a field that must contain another
             </Button>
           </Section>
         )}

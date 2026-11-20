@@ -173,6 +173,14 @@ public sealed class CatalogSync
         _moduleDatabases = [.. moduleDatabases];
     }
 
+    /// <summary>
+    /// Whether a run of <paramref name="flowKind"/> keeps its result object on its row (<see cref="CatalogRun.ResultJson"/>)
+    /// when it is recorded from its artifact: a kind a host registered, whose run page and run lists read what it did from
+    /// there, as for a run the queue completed (the control plane's dispatch ledger asks the same of its loader). A
+    /// built-in kind's result is projected into the run's typed columns and detail rows instead.
+    /// </summary>
+    private bool RecordsResult(string flowKind) => _documents.FindKind(flowKind) is not null;
+
     /// <summary>Whether any sync extension is registered, so a caller reports the document tally only when there is one.</summary>
     public bool HasExtensions => _extensions.Count > 0;
 
@@ -276,7 +284,7 @@ public sealed class CatalogSync
             .Select(r => r.SubscriberInputHash)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
 
-        var (runs, runsSkipped, runsFailed) = await PrepareRunsAsync(root, repoId, knownRunIds, warnings, ct).ConfigureAwait(false);
+        var (runs, runsSkipped, runsFailed) = await PrepareRunsAsync(root, repoId, knownRunIds, RecordsResult, warnings, ct).ConfigureAwait(false);
         try
         {
             // The lineage recompute gate: recompute only when an input of the graph could have changed. The
@@ -1010,10 +1018,11 @@ public sealed class CatalogSync
 
     /// <summary>Phase-one scan of the estate's run artifacts: parses each <c>run.json</c> once and keeps ONLY the
     /// runs the catalog does not already know, so nothing is read or parsed twice per pass. Known and duplicate
-    /// runs count as skipped; unreadable, malformed, or over-limit artifacts as failed. The caller owns disposing
-    /// the returned documents once the write phase is done with them.</summary>
+    /// runs count as skipped; unreadable, malformed, or over-limit artifacts as failed. A run of a kind
+    /// <paramref name="recordsResult"/> names keeps its result object on the row (<see cref="RecordsResult"/>). The
+    /// caller owns disposing the returned documents once the write phase is done with them.</summary>
     private static async Task<(List<PreparedRun> Runs, int Skipped, int Failed)> PrepareRunsAsync(
-        string root, Guid repoId, HashSet<Guid> knownRunIds, List<string> warnings, CancellationToken ct)
+        string root, Guid repoId, HashSet<Guid> knownRunIds, Func<string, bool> recordsResult, List<string> warnings, CancellationToken ct)
     {
         var prepared = new List<PreparedRun>();
         var seen = new HashSet<Guid>();
@@ -1049,6 +1058,7 @@ public sealed class CatalogSync
                     continue;
                 }
 
+                run.ResultJson = recordsResult(run.FlowKind) ? CatalogProjection.RunResultJson(document.RootElement) : null;
                 prepared.Add(new PreparedRun(run, document));
                 document = null; // ownership handed to the prepared list.
             }
@@ -1426,6 +1436,7 @@ public sealed class CatalogSync
                     }
                     else if (await context.Runs.FindAsync([run.RunId], ct).ConfigureAwait(false) is null)
                     {
+                        run.ResultJson = RecordsResult(run.FlowKind) ? CatalogProjection.RunResultJson(document.RootElement) : null;
                         context.Runs.Add(run);
                         runRecorded = true;
                         detail = AddRunDetail(

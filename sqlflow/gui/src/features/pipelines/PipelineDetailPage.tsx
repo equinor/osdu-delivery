@@ -38,6 +38,7 @@ import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { isReport, reportPath } from "../../modules/reportKind";
 import { kindContribution } from "../../modules/registry";
 import { projectOf } from "../repos/project";
+import { withKindCounts } from "../runs/runCountColumns";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
 import { hasCensus } from "../../lib/lsp/sqlflowLsp";
 import {
@@ -100,6 +101,9 @@ const runColumns: Column<RunSummary>[] = [
     render: (row) => <Mono>{row.commitSha?.slice(0, 10) ?? "-"}</Mono>,
   },
 ];
+
+/** The run columns that count rows and files, which a kind that counts something else replaces with its own. */
+const RUN_COUNT_COLUMNS: readonly string[] = ["rowsLoaded", "rowsInserted", "rowsUpdated", "rowsDeleted", "fileCount"];
 
 const transformColumns: Column<PipelineColumn>[] = [
   {
@@ -778,8 +782,13 @@ export default function PipelineDetailPage() {
         <TabsContent value="runs">
           <PagedTable
             queryKey={["runs", "by-pipeline", pipelineId]}
-            fetchPage={(page, pageSize) => runApi.list({ pipelineId, page, pageSize })}
-            columns={[...runColumns, ...(kind?.runColumns ?? [])]}
+            fetchPage={(page, pageSize) => runApi.list({
+              pipelineId,
+              page,
+              pageSize,
+              resultCounts: kind?.runCountColumns !== undefined || undefined,
+            })}
+            columns={[...withKindCounts(runColumns, RUN_COUNT_COLUMNS, kind?.runCountColumns), ...(kind?.runColumns ?? [])]}
             rowKey={(row) => row.runId}
             onRowClick={(row) => navigate(`/runs/${row.runId}`)}
             pollMs={5000}

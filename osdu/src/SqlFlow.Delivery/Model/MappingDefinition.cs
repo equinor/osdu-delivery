@@ -651,8 +651,8 @@ public sealed record FindAllOperand(DatasetColumn? Column, string? Literal, Mapp
 /// <summary>
 /// A <c>$findAll</c>: the rows of a cached type a node reads every one of. A row is read when its <see cref="Field"/> holds
 /// one of the values <see cref="Operand"/> gives (without regard to case, since a key names the same thing however it is
-/// written) and every field <see cref="Empty"/> names holds nothing. The node gives the field it reads from each of those
-/// rows, as a list.
+/// written), every field <see cref="Empty"/> names holds nothing, and every line of <see cref="Contains"/> holds. The node
+/// gives the field it reads from each of those rows, as a list.
 /// </summary>
 /// <param name="Type">The cached type whose rows are read.</param>
 /// <param name="Field">The field the key condition compares.</param>
@@ -660,8 +660,27 @@ public sealed record FindAllOperand(DatasetColumn? Column, string? Literal, Mapp
 /// <param name="Empty">The fields a row must hold nothing under, in the order they are written.</param>
 public sealed record FindAllQuery(string Type, string Field, FindAllOperand Operand, IReadOnlyList<string> Empty)
 {
+    /// <summary>The lines comparing two fields of the same row, in the order they are written.</summary>
+    public IReadOnlyList<FindAllContains> Contains { get; init; } = [];
+
     public override string ToString()
-        => string.Join(" and ", Empty.Select(field => $"{field} is empty").Prepend($"{Field} = {Operand}"));
+        => string.Join(" and ", Empty.Select(field => $"{field} is empty").Concat(Contains.Select(line => line.ToString())).Prepend($"{Field} = {Operand}"));
+}
+
+/// <summary>
+/// A <c>$findAll</c> line comparing two fields of the same row, <c>GroupName contains CountryName</c>: a row meets it when a
+/// value under <see cref="Field"/> holds a value under <see cref="Part"/>, both compared by their letters and digits alone
+/// and ignoring case (<c>dataoffice unitedkingdom seismic</c> holds <c>United Kingdom</c>). A row holding nothing under
+/// either field does not meet it, since every text would hold an empty part.
+/// </summary>
+/// <param name="Field">The field whose text must hold the other's.</param>
+/// <param name="Part">The field whose text must be found in it.</param>
+public sealed record FindAllContains(string Field, string Part)
+{
+    /// <summary>The word a line compares its two fields with.</summary>
+    public const string Word = "contains";
+
+    public override string ToString() => $"{Field} {Word} {Part}";
 }
 
 public enum ModifierKind

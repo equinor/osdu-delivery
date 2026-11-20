@@ -6329,8 +6329,6 @@
         "reference data lookup",
         "find record by code",
         "wellbore id by name",
-        "access groups from cache",
-        "acl viewers by field and country",
         "cache miss held record"
       ],
       "yamlPath": "(documentType: mapping) lookups, searches, record.<property>.$cache | $lookup | $search",
@@ -6343,6 +6341,7 @@
         "delivery-concept-change-detection",
         "delivery-concept-preflight",
         "delivery-flow-mapping-lookups-composite",
+        "delivery-flow-mapping-lookups-find-all",
         "delivery-wiki-pattern-catalog"
       ],
       "sourceRefs": [
@@ -6399,6 +6398,48 @@
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-mapping-lookups-find-all",
+      "corpus": "reference",
+      "path": "flow/mapping-lookups-find-all.md",
+      "title": "$findAll: reading every cached row that matches, as a list (access groups by field and country)",
+      "type": "flow-reference",
+      "summary": "A $findAll node reads every cached row a key finds, narrowed by empty fields and by one field containing another, as a list.",
+      "keywords": [
+        "$findAll",
+        "every matching row",
+        "access groups from cache",
+        "acl viewers by field and country",
+        "findAll contains",
+        "field contains field",
+        "group name contains country",
+        "is empty",
+        "country groups",
+        "relisted"
+      ],
+      "yamlPath": "(documentType: mapping) record.<property>.$findAll",
+      "related": [
+        "delivery-flow-mapping-lookups",
+        "delivery-flow-mapping-values",
+        "delivery-flow-cache",
+        "delivery-concept-partition-cache",
+        "delivery-concept-change-detection",
+        "delivery-concept-preflight",
+        "delivery-flow-mapping-lookups-composite"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/AccessListTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/FindAllContainsTests.cs"
       ]
     },
     {

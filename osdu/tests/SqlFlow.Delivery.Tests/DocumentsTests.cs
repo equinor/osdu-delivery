@@ -579,6 +579,63 @@ public class YamlDocumentLoaderTests
     }
 
     [Fact]
+    public void A_refusal_names_the_mistake_the_mapping_made_and_the_fix_that_mends_it()
+    {
+        var loader = new DeliveryDocumentLoader();
+        string Refused(string data) => Assert.Throws<FlowValidationException>(() => loader.ParseMapping(TestSchema.MappingDocument(data), "m.yaml")).Message;
+
+        // An old-form condition joined to another is rewritten clause by clause, never into a comparison with the rest of the line.
+        Assert.Contains(
+            "a condition is an expression now: $when: not empty(a) and b = \"1\"",
+            Refused("Symbol: { $from: a, $when: 'a is not empty and b = \"1\"' }"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$when: empty(a) or b = \"X\"",
+            Refused("Symbol: { $from: a, $when: 'a is empty or b is X' }"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$when: a = \"North and South\"",
+            Refused("Symbol: { $from: a, $when: 'a is \"North and South\"' }"),
+            StringComparison.Ordinal);
+
+        // A modifier that takes no setting, written with an empty one, and a replace's otherwise written as an item of its own.
+        Assert.Contains("trim takes no setting; write it as a name in the list, such as $modifiers: [trim]", Refused("Symbol: { $from: a, $modifiers: [ { trim: ~ } ] }"), StringComparison.Ordinal);
+        Assert.Contains(
+            "otherwise is a setting of replace, written in the same item beside it",
+            Refused("Symbol: { $from: a, $modifiers: [ { replace: { A: B } }, { otherwise: C } ] }"),
+            StringComparison.Ordinal);
+
+        // A parameter written without quotes is a map to YAML; the fix is quoting it, not a property whose name starts with '$'.
+        Assert.Contains(
+            "{$param.dataPartition} is written unquoted, so YAML reads it as a map and not as text; quote it, \"{$param.dataPartition}\"",
+            Refused("Symbol: {$param.dataPartition}"),
+            StringComparison.Ordinal);
+
+        // A findBy or findAll text reads parameters as every literal does, so one the mapping does not declare is refused.
+        Assert.Contains("uses {$param.missing}", Refused("Unit: { $cache: UnitOfMeasure.id, $findBy: \"Code = '{$param.missing}'\" }"), StringComparison.Ordinal);
+
+        // A modifier text YAML would read back as another text is refused with the way to keep it; one it reads back as
+        // written, and one quoted, are taken.
+        Assert.Contains(
+            "the replace value 01 is written without quotes, so YAML reads it as a number, which the modifier reads back as '1', not as written; quote it, '01', to keep the text",
+            Refused("Symbol: { $from: a, $modifiers: [ { replace: { ONSHORE: 01 } } ] }"),
+            StringComparison.Ordinal);
+        Assert.Contains("the otherwise 007 is written without quotes", Refused("Symbol: { $from: a, $modifiers: [ { replace: { A: B }, otherwise: 007 } ] }"), StringComparison.Ordinal);
+        Assert.Contains("the replace key 1.0 is written without quotes", Refused("Symbol: { $from: a, $modifiers: [ { replace: { 1.0: one } } ] }"), StringComparison.Ordinal);
+        Assert.Contains("the equals 1e3 is written without quotes", Refused("IsRegular: { $from: a, $modifiers: [ { equals: 1e3 } ] }"), StringComparison.Ordinal);
+        Assert.Contains("the replace value TRUE is written without quotes, so YAML reads it as a boolean", Refused("Symbol: { $from: a, $modifiers: [ { replace: { Y: TRUE } } ] }"), StringComparison.Ordinal);
+        Assert.StartsWith("m.yaml: line ", Refused("Symbol: { $from: a, $modifiers: [ { replace: { ONSHORE: 01 } } ] }"), StringComparison.Ordinal);
+
+        var taken = loader.ParseMapping(TestSchema.MappingDocument("""
+            Symbol: { $from: a, $modifiers: [ { replace: { ONSHORE: 1, OFFSHORE: 2.5, YES: true, NONE: ~, CODE: '01' }, otherwise: '007' } ] }
+            IsRegular: { $from: b, $modifiers: [ { equals: true } ] }
+            """), "m.yaml");
+        var replace = Assert.Single(taken.Entries.Single(e => e.Target.Text == "osdu.data.Symbol").Modifiers);
+        Assert.Equal(["1", "2.5", "true", null, "01"], replace.Replacements.Values);
+        Assert.Equal("007", replace.Otherwise.Text);
+    }
+
+    [Fact]
     public void The_record_tree_reads_the_mapping_language_by_its_marker_and_everything_else_as_the_record()
     {
         var loader = new DeliveryDocumentLoader();

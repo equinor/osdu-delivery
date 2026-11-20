@@ -818,6 +818,18 @@ public static partial class Preflight
             }
         }
 
+        // A contains line compares two fields of each row: one no row holds would pass no row, and the likelier truth is a
+        // field the cache flow does not capture, or a column written where the line names a field of the row.
+        foreach (var line in findAll.Contains)
+        {
+            foreach (var field in new[] { line.Field, line.Part }.Where(f => cached.Items.Count > 0 && cached.Items.All(item => cached.HoldsNothing(item, f))))
+            {
+                issues.Add(ValidationIssue.Error(
+                    $"{name} reads only the {cached.Name} rows where '{line}', and no row of cache version '{references.Version}' holds a {field}, so no row would pass. "
+                    + $"Both sides of a contains line are fields of the {cached.Name} rows: capture data.{ReferenceField.Normalize(field)} in the cache flow that fills {cached.Name}. Cached: {cachedFields}."));
+            }
+        }
+
         if (findAll.Operand.Lookup is not { } lookup)
         {
             return;

@@ -422,6 +422,10 @@ public sealed class DeliveryDocumentLoader
 
         RefuseFixtures(yaml, source);
         var y = Deserialize<MappingYaml>(_strict, yaml, source) ?? throw new FlowValidationException($"{source}: the document is empty.");
+
+        // A modifier's text written as a number YAML would read back otherwise (01, 1.0) is refused before the mapping is
+        // read, rather than delivered as the number's text.
+        ModifierTexts.Refuse(yaml, Deserialize<object>(_strict, yaml, source), source);
         return MappingMapper.Map(y, source, pins) with { Fingerprint = MappingFingerprint.Of(yaml, source), Location = location };
     }
 

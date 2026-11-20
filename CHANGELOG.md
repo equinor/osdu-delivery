@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A `$findAll` line compares two fields of the same row.** `GroupName contains CountryName` keeps the rows whose text
+  under the first field holds their text under the second, by letters and digits alone and ignoring case, so a rule such
+  as "a country group's name says its country" holds for every country without naming one. A renamed group or a
+  corrected name redelivers the records built from it, and the mapping builder writes the line too
+  ([$findAll](osdu/docs/reference/flow/mapping-lookups-find-all.md#the-lines)).
+- **A delivery flow's runs lead to the records they touched.** Each run on a delivery flow's **Runs** tab, and on the
+  runs board filtered to delivery flows, has a **Records** icon that opens the flow's Records tab narrowed to the records
+  the run delivered, held, failed, passed over or removed; **Records of this run** on a run's page opens them in the
+  interface and partition the run worked in ([a delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
 - **Switch between dev, test and prod from the title bar.** Each deployment's configuration names the environment it is
   and lists every one with the address of its GUI (Terraform's `environments`, Bicep's `environments`, a comment to
   uncomment in the Radix configuration, or `ControlPlane__Environments__*` anywhere else). The title bar then says which
@@ -765,6 +774,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- **The page that approves a sign-in from your editor or terminal looks like a device sign-in, not a second login
+  page.** One card on the brand's navy field shows your editor or terminal linked to the product, the code in a box per
+  character to compare with the one your tool shows (typed or pasted in any case, with or without its dash), the account
+  it signs in as with **Use another account**, and **Deny** and **Approve** side by side
+  ([the device-authorization grant](sqlflow/docs/reference/concepts/authentication-and-identity.md)).
+- **A delivery flow's runs count records.** A delivery flow's **Runs** tab, and the runs board filtered to delivery
+  flows, show what each run **Delivered**, found **Unchanged**, **Held** and **Failed** in place of SQLFlow's Rows
+  loaded, Inserted, Updated, Deleted and Files, which a delivery run never reported and which showed a dash on every row.
+  On a run's page, **Unchanged** now also counts the records OSDU already held when the run came to send them, and a
+  drain's count shows where it showed a dash. A run started from the command line keeps what it reported, so its page
+  and the lists show its counts too, where they showed a dash
+  ([a delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
+- **A `$findBy` or `$findAll` text reads the mapping's parameters.** A quoted text such as
+  `'{$param.dataPartition}:master-data--GeoPoliticalEntity:NO:'` is compared with its parameter's value, as every other
+  literal is, where it was compared with the token itself and matched nothing; a parameter the mapping does not declare
+  in such a text is now refused when the mapping is read ([findBy lines](osdu/docs/reference/flow/mapping-lookups.md#findby-lines)).
+- **A modifier's text written as a number YAML reads back otherwise is refused.** An unquoted `01`, `1.0`, `1e3` or
+  `TRUE` in a replace, `otherwise`, `equals` or split's `separator` was read as `1`, `1`, `1000` or `True` and delivered
+  so; the mapping is now refused naming the line, and quoting the value keeps it. An unquoted value that reads back as
+  written (`1`, `2.5`, `true`) is taken as before
+  ([rules that hold for every modifier](osdu/docs/reference/flow/mapping-modifiers.md#rules-that-hold-for-every-modifier)).
+- **The Records tab says what a link narrowed it to.** A run, a submission, an issue or a set of missing values a link
+  narrowed the list to is a chip at the top of the list, read as a sentence (**Touched by run …1a2b3c**) whose id opens
+  what it names and whose cross drops it, with **Clear all** for several; the status and access pickers show when they
+  are set. The run's chip says its operation, how it ended and when, leads from a part of a split delivery to the whole
+  run, and says when the run worked in another interface or partition, with the way there. A run now keeps narrowing the
+  list when another interface is picked ([a delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
 - **An issue names the property its records are held for.** A property name in brackets (`tags['dra.securityClassification']`)
   is kept in an issue's pattern rather than read as a value (`tags['<value>']`), so records held for two properties are two
   issues, each naming its own. A record blocked before this version keeps the issue it was sorted into until it is blocked
@@ -1280,6 +1316,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A cache refresh reaches the records a `$findAll` read from a lookup table.** A row the table moved to another key,
+  or a row it added under one, left the records built from that key as they were, so a log could keep an access group
+  the table no longer listed for its field. They are now tagged `relisted`, as for a type of OSDU records
+  ([from a cache change to OSDU](osdu/docs/reference/concepts/partition-cache.md#from-a-cache-change-to-osdu)).
+- **A lookup that folds separators away reaches a record written another way.** A value a `$ignoreSeparators` lookup
+  found no record by was noted as written, so a version holding the record written another way (`WB_Z_12` for
+  `WB Z-12`) never reached the records built without it; every version of the type now asks for it again, of a lookup
+  table as of a type of OSDU records ([how a value is matched](osdu/docs/reference/flow/mapping-lookups.md#how-a-value-is-matched)).
+- **A findBy line tried before the one that found the record is recorded.** Where a later line won (a wellbore found by
+  its alias), a version in which an earlier line finds exactly one record (a wellbore of that name) did not reach the
+  record; it is now tagged `listed`, and an earlier line several records answered to notes each of them
+  ([findBy lines](osdu/docs/reference/flow/mapping-lookups.md#findby-lines)).
+- **A blank cached value is no value.** A `$cache` node reading blank text or an empty list wrote it into the record; it
+  now holds the record, leaves the property out or restricts the record, as its `$required` and `$restrictWhenMissing`
+  say, as for a field the record does not hold ([what a cache node gives](osdu/docs/reference/flow/mapping-lookups.md#what-a-cache-node-gives)).
+- **A record built without a record the cache did not hold yet is reached when it arrives.** One held for it, where a
+  cached field written to a relationship or a value that already is an OSDU id named it, is released, where it waited
+  for an operator; one delivered without the property is tagged `found`. So is one whose `id` line looked for a code
+  that differs from the record's `Code`, and one a `replace: $cache.<Type>` reading OSDU records found no record for
+  is tagged `listed`. An id whose code holds colons (`...:Projected:EPSG::23031:`) is now found by its id
+  ([a record held for a reference waits for it](osdu/docs/reference/concepts/partition-cache.md#a-record-held-for-a-reference-waits-for-it)).
+- **An OSDU id that names a version is written as it is.** A value such as
+  `dev:master-data--Wellbore:1234:1700000000000`, given to a `$cache: <Type>.id` node the cache does not hold it for, a
+  `$search` node or an id modifier, was written with a `:` after the version, a reference to a record whose code is
+  `1234:1700000000000`; an id modifier then held the record although the cache held record `1234`
+  ([special values](osdu/docs/reference/flow/mapping-lookups.md#special-values)).
+- **A hold or a refusal names the real cause.** A findBy value the node's modifiers turn into nothing says what the
+  column held rather than that it is empty; an old-form condition joined by `and` or `or` is rewritten clause by clause;
+  `- trim:` with an empty setting, an `otherwise` written as an item of its own, an unquoted `{$param.<name>}` and a
+  legal list with `$value` items each say how to write them, and two keys of a literal object that name one property
+  (`"a "` and `a`, `1.0` and `"1"`) are refused rather than failing the load with an internal error
+  ([what a cache node gives](osdu/docs/reference/flow/mapping-lookups.md#what-a-cache-node-gives)).
+- **A run's records include what its parts delivered.** A delivery split over several nodes writes its records under each
+  part's run, so the Records tab narrowed to the run that split it, **Records of this run** on its page, the export of
+  them and a removal of every record matching them found only what that run sent itself. They now find every record its
+  parts touched too; a part's records are still its own alone
+  ([records of a split run](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **Removing every record that matches the Records tab's filter keeps its Step held and Access filters.** With **Step
+  held**, an **Access** choice or a set of missing values narrowing the list, **Select all N matching** and **Remove**
+  queued a run that left those filters out, and so removed records the list had not shown. The run now removes exactly
+  the records counted and confirmed ([a delivery flow's payload](osdu/docs/reference/cli/run.md)).
 - **Picking several values in the run form keeps the list under the pointer.** A pick that wrapped the chips onto
   another line moved the list away from the pointer, so the next click dropped a value already picked or closed the
   list; the list now holds still while the pointer is on it, and a pick no longer scrolls the form

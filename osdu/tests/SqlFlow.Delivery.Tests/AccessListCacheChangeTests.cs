@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
+using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
 using Xunit;
 using static SqlFlow.Delivery.Tests.AccessListTests;
@@ -34,9 +35,9 @@ public sealed class AccessListCacheChangeTests : IAsyncLifetime, IDisposable
     public void Dispose() => _db.Dispose();
 
     /// <summary>Renders a log of the wellbore named <paramref name="uwi"/> and delivers <paramref name="count"/> records built from what it read.</summary>
-    private async Task<IReadOnlyList<CacheUsage>> DeliveredAsync(string uwi, int count, bool optionalWellbore = false, ReferenceSnapshot? cache = null)
+    private async Task<IReadOnlyList<CacheUsage>> DeliveredAsync(string uwi, int count, bool optionalWellbore = false, ReferenceSnapshot? cache = null, MappingDefinition? mapping = null)
     {
-        var mapping = optionalWellbore ? Mapping(data: "WellboreID: { $lookup: wellbore.id, $required: false }") : Mapping();
+        mapping ??= optionalWellbore ? Mapping(data: "WellboreID: { $lookup: wellbore.id, $required: false }") : Mapping();
         var usages = Renderer(mapping, cache).Render(Record(uwi)).CacheUsages;
         var submission = Guid.NewGuid();
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -124,6 +125,23 @@ public sealed class AccessListCacheChangeTests : IAsyncLifetime, IDisposable
         Assert.Equal("dev:reference-data--AccessGroup:us-contractors", tag.ItemId);
         Assert.Equal("FieldList", tag.Path);
         Assert.Equal("FIELD D", tag.NewValue);
+    }
+
+    [Fact]
+    public async Task A_group_renamed_to_say_its_country_reaches_the_logs_its_old_name_kept_it_from()
+    {
+        var mapping = Mapping(record: FindAllContainsTests.CountryGroups);
+        await DeliveredAsync("WELLBORE X-1", 2, cache: Cache(groups: FindAllContainsTests.NamedGroups()), mapping: mapping);
+
+        var renamed = FindAllContainsTests.NamedGroups(item => item.Id.EndsWith(":us-gulf", StringComparison.Ordinal)
+            ? FindAllContainsTests.Group(item.Id, "dataoffice united states gulf", "data.office.gulf.viewers@x")
+            : item);
+        var impact = await AnalyzeAsync(FindAllContainsTests.NamedGroups(), renamed);
+
+        Assert.Equal(2, impact.AffectedRecords);
+        var tag = await OnlyTagAsync();
+        Assert.Equal(("changed", "dev:reference-data--AccessGroup:us-gulf", "GroupName"), (tag.Change, tag.ItemId, tag.Path));
+        Assert.Equal("dataoffice united states gulf", tag.NewValue);
     }
 
     [Fact]

@@ -1010,7 +1010,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true));
+        var (query, invalid) = await BuildQueryAsync(db, new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true), ct).ConfigureAwait(false);
         if (query is null)
         {
             return invalid!;
@@ -1037,6 +1037,31 @@ public static class DeliveryEndpoints
         {
             return TooBroad(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The listing filter of a request that may name a run, with the parts the run split its delivery into when it spread one
+    /// over several nodes: each part writes its records' attempts under its own id, so a run's records are its own attempts'
+    /// and its parts' (osdu/docs/reference/concepts/submissions.md, Many nodes). The parts are the platform's runs, read here
+    /// because the ledger keeps none of its own.
+    /// </summary>
+    private static async Task<(RecordQuery? Query, ProblemHttpResult? Problem)> BuildQueryAsync(CatalogDbContext db, DeliveryRecordFilterDto filter, CancellationToken ct)
+    {
+        var (query, invalid) = BuildQuery(filter);
+        if (query?.RunId is not { } runId)
+        {
+            return (query, invalid);
+        }
+
+        // A part names the run that split the delivery as its root (a seek of the runs' FanOutRoot index). A run of a source
+        // splits each interface it delivers, at most FlowParallelism.MaxNodes parts each, so every part is read: the parts of
+        // the other interfaces hold no attempt of this ledger and narrow nothing.
+        var parts = await db.Runs.AsNoTracking()
+            .Where(r => r.FanOutRoot == runId)
+            .Select(r => r.RunId)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return (query with { RunParts = parts }, null);
     }
 
     /// <summary>The listing filter of a request, or the problem to answer with when it names something unknown.</summary>
@@ -1170,7 +1195,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true));
+        var (query, invalid) = await BuildQueryAsync(db, new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true), ct).ConfigureAwait(false);
         if (query is null)
         {
             return invalid!;
@@ -2249,7 +2274,7 @@ public static class DeliveryEndpoints
             return Invalid($"scope: {ex.Message}");
         }
 
-        var (keys, unselected) = await SelectedAsync(flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Redelivery, ledger, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Redelivery, ledger, ct).ConfigureAwait(false);
         if (unselected is not null)
         {
             return unselected;
@@ -2298,7 +2323,7 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        var (keys, unselected) = await SelectedAsync(flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
         if (unselected is not null)
         {
             return unselected;
@@ -2363,7 +2388,7 @@ public static class DeliveryEndpoints
         }
         else
         {
-            var (keys, unselected) = await SelectedAsync(flow, request.Keys, request.Filter, request.Expected, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
+            var (keys, unselected) = await SelectedAsync(db, flow, request.Keys, request.Filter, request.Expected, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
             if (unselected is not null)
             {
                 return unselected;
@@ -2452,7 +2477,7 @@ public static class DeliveryEndpoints
         List<DeliveryKey>? keys = null;
         if (selects)
         {
-            var (selected, unselected) = await SelectedAsync(ledgers[0], request?.Keys, request?.Filter, request?.Expected, Intervention.Adoption, ledger, ct).ConfigureAwait(false);
+            var (selected, unselected) = await SelectedAsync(db, ledgers[0], request?.Keys, request?.Filter, request?.Expected, Intervention.Adoption, ledger, ct).ConfigureAwait(false);
             if (unselected is not null)
             {
                 return unselected;
@@ -2545,7 +2570,7 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        var (keys, unselected) = await SelectedAsync(flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Purge, ledger, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Purge, ledger, ct).ConfigureAwait(false);
         if (unselected is not null)
         {
             return unselected;
@@ -2614,7 +2639,7 @@ public static class DeliveryEndpoints
     /// <see cref="RemovalLimits.MaxSelection"/> either way. With neither, null keys: every record the intervention reaches.
     /// </summary>
     private static async Task<(List<DeliveryKey>? Keys, ProblemHttpResult? Problem)> SelectedAsync(
-        FlowContext flow, IReadOnlyList<Guid>? keys, DeliveryRecordFilterDto? filter, int? expected, Intervention intervention, ILedger ledger, CancellationToken ct)
+        CatalogDbContext db, FlowContext flow, IReadOnlyList<Guid>? keys, DeliveryRecordFilterDto? filter, int? expected, Intervention intervention, ILedger ledger, CancellationToken ct)
     {
         if (keys is { Count: > 0 })
         {
@@ -2639,7 +2664,7 @@ public static class DeliveryEndpoints
             return (null, null);
         }
 
-        var (query, invalid) = BuildQuery(filter);
+        var (query, invalid) = await BuildQueryAsync(db, filter, ct).ConfigureAwait(false);
         if (query is null)
         {
             return (null, invalid!);
@@ -3035,7 +3060,7 @@ public static class DeliveryEndpoints
         }
         else if (request?.Filter is { } filter)
         {
-            var (query, invalid) = BuildQuery(filter);
+            var (query, invalid) = await BuildQueryAsync(db, filter, ct).ConfigureAwait(false);
             if (query is null)
             {
                 return invalid!;
@@ -3388,7 +3413,7 @@ public static class DeliveryEndpoints
                 statusCode: StatusCodes.Status400BadRequest, title: "Invalid request");
         }
 
-        var (query, invalid) = BuildQuery(request.Filter);
+        var (query, invalid) = await BuildQueryAsync(db, request.Filter, ct).ConfigureAwait(false);
         if (query is null)
         {
             return invalid!;
@@ -3468,7 +3493,7 @@ public static class DeliveryEndpoints
                     statusCode: StatusCodes.Status400BadRequest, title: "Invalid request");
             }
 
-            var (query, invalid) = BuildQuery(request.Filter);
+            var (query, invalid) = await BuildQueryAsync(db, request.Filter, ct).ConfigureAwait(false);
             if (query is null)
             {
                 return invalid!;
