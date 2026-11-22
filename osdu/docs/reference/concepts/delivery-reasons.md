@@ -97,15 +97,29 @@ A record keeps about 25 bytes a path, about 1 KB for a document of forty propert
 one pass over the text the render has already written, a small part of what rendering it costs, and only a record that is
 sent, or that has no paths yet, is hashed.
 
+## When nothing is sent
+
+A record rendered because something the ledger compares moved, and found rendering exactly what OSDU holds, is on its
+history too: a **Nothing to send** attempt (phase `identical`) whose reason names what moved, with `action` `none`, no
+paths, and a line ending `renders what OSDU holds` (`mapping WellLog@1.4.0 changed (852db64); renders what OSDU holds`).
+So a mapping edit, a cache change or a rerender that changed nothing for a record still says it reached it. Such an
+attempt is written once for each move: the next run finds the record as it left it and renders nothing. A render where
+nothing compared moved (a replan of unchanged rules) writes nothing, as before. Work that OSDU already held when its turn
+came to be sent keeps the reason it was planned for (phase `unchanged`). Records skipped without rendering, because
+nothing moved at all, are counted on their submission only.
+
 ## Where to read it
 
 | Where | What it shows |
 | --- | --- |
-| A record's **Timeline** | Each **Delivered** row titled with the reason's line; opened, every trigger with what it was and is now (its explanation behind a note mark) and the paths that changed |
-| A submission's page | Its delivered records counted by what sent them, `11,768 delivered: mapping changed 11,768; cache changed 2,104` (a record under every kind its reason names), and each delivered attempt's line in its **Attempts** tab |
+| A record's **Timeline** | Each **Delivered** row titled with the reason's line; opened, every trigger with what it was and is now (its explanation behind a note mark) and the paths that changed. A **Nothing to send** row titled with what moved, opened to the same list under **What moved** (or **Why it was planned** for work OSDU already held) |
+| A record's header | Under **Delivered**, the version OSDU holds and the line of the delivery that sent it, whole on hover |
+| A submission's page | Its delivered records counted by what sent them, `11,768 delivered: mapping changed 11,768; cache changed 2,104` (a record under every kind its reason names), each cause opening the flow's Records tab narrowed to the records it delivered for it; each attempt's line in its **Attempts** tab |
+| A run's page and a flow's **Runs** tab | On the run's page, **Delivered for**: the same breakdown for every record the run and the parts it split its delivery into delivered, each cause opening those records; on the Runs tab, the same on hover over a run's **Delivered** count, read when the hover opens |
+| A flow's **Records** tab | `?trigger=<kind>` beside `?delivered=` or `?run=`, a chip **Delivered for** the cause, which goes with the submission or run it narrows |
 | `sqlflow records show` | A `why` line under each delivered attempt ([records](../cli/records.md)) |
-| The API | `reason` on each delivered attempt of `GET /api/v1/delivery/records/{flowId}/{key}/attempts` and of a submission's attempts; `deliveredBy` on `GET /api/v1/delivery/submissions/{id}` ([the API](api.md)) |
-| The MCP server | `delivery_record` (each attempt's `reason`) and `delivery_submissions` with a submission id (`deliveredBy`) |
+| The API | `reason` on each attempt that keeps one, of `GET /api/v1/delivery/records/{flowId}/{key}/attempts` and of a submission's attempts; `deliveredBy` on `GET /api/v1/delivery/submissions/{id}` and on `GET /api/v1/delivery/runs/lookup`; `trigger` on a flow's records listing and export ([the API](api.md)) |
+| The MCP server | `delivery_record` (each attempt's `reason`), `delivery_submissions` with a submission id and `delivery_run` (`deliveredBy`), and `delivery_flow_records` (`trigger` with `deliveredBy` or `runId`) |
 
 A delivery made before the ledger kept reasons says `reason not recorded`, and nothing else about why it was sent.
 

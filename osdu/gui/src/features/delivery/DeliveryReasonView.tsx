@@ -1,5 +1,6 @@
+import { Link as RouterLink } from "react-router-dom";
 import { RelativeTime } from "@/components/RelativeTime";
-import type { DeliveryAttemptReason } from "../../api/delivery";
+import type { DeliveryAttemptReason, DeliverySubmissionTriggers } from "../../api/delivery";
 import { NoteMark } from "./RecordArtifacts";
 import { NOT_RECORDED, pathsHeading, recordedReason, triggerLabel, triggerNames, triggerSides } from "./deliveryReason";
 
@@ -8,17 +9,17 @@ import { NOT_RECORDED, pathsHeading, recordedReason, triggerLabel, triggerNames,
  * input that moved, one line each with what it was and is now, its explanation behind a note mark, and the paths of the
  * document that changed. A try delivered before the ledger kept reasons says so, and nothing more.
  */
-export function DeliveryReasonView({ reason }: { reason: DeliveryAttemptReason | null | undefined }) {
+export function DeliveryReasonView({ reason, heading = "Why it was sent" }: { reason: DeliveryAttemptReason | null | undefined; heading?: string }) {
   const recorded = recordedReason(reason);
   if (recorded === null) {
-    return <span className="text-[12px] text-muted-foreground" data-testid="journey-reason-not-recorded">{`Why it was sent: ${NOT_RECORDED}`}</span>;
+    return <span className="text-[12px] text-muted-foreground" data-testid="journey-reason-not-recorded">{`${heading}: ${NOT_RECORDED}`}</span>;
   }
 
   const paths = recorded.paths;
   const listed = paths?.listed ?? [];
   return (
     <div className="flex flex-col gap-1.5" data-testid="journey-reason">
-      <span className="text-[12px] font-medium">Why it was sent</span>
+      <span className="text-[12px] font-medium">{heading}</span>
       <ul className="flex flex-col gap-1 text-[12px]">
         {recorded.triggers.map((trigger, index) => {
           const { was, now } = triggerSides(trigger);
@@ -62,5 +63,40 @@ export function DeliveryReasonView({ reason }: { reason: DeliveryAttemptReason |
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What sent the records a submission or a run delivered, in one line, each cause opening the records it was the cause for
+ * (`linkFor`, null where there is no flow page to open): `11,768 delivered: mapping changed 11,768; cache changed 2,104`. A
+ * record counts under every cause its reason names. Nothing for a run or a submission that delivered nothing.
+ */
+export function DeliveredByLine({ deliveredBy, linkFor, testId }: {
+  deliveredBy: DeliverySubmissionTriggers | null | undefined;
+  linkFor: ((kind: string) => string) | null;
+  testId: string;
+}) {
+  if (deliveredBy == null || deliveredBy.delivered === 0) {
+    return null;
+  }
+
+  const n = (count: number) => count.toLocaleString("en-US");
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1 text-[12.5px] text-muted-foreground" data-testid={testId}>
+      <span>{`${n(deliveredBy.delivered)} delivered${deliveredBy.triggers.length > 0 || deliveredBy.notRecorded > 0 ? ":" : ""}`}</span>
+      {deliveredBy.triggers.map((t, index) => {
+        const words = `${triggerLabel(t.kind).toLowerCase()} ${n(t.records)}`;
+        const last = index === deliveredBy.triggers.length - 1 && deliveredBy.notRecorded === 0;
+        return (
+          <span key={t.kind} data-testid={`${testId}-${t.kind}`}>
+            {linkFor !== null
+              ? <RouterLink to={linkFor(t.kind)} className="text-primary hover:underline" title={`Open the records delivered for: ${triggerLabel(t.kind).toLowerCase()}`}>{words}</RouterLink>
+              : words}
+            {last ? "" : ";"}
+          </span>
+        );
+      })}
+      {deliveredBy.notRecorded > 0 && <span>{`${NOT_RECORDED} ${n(deliveredBy.notRecorded)}`}</span>}
+    </span>
   );
 }

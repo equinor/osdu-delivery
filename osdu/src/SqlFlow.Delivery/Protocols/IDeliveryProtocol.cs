@@ -67,10 +67,10 @@ public sealed record DeliveryWork
     public Planning.DeliveryReason? Reason { get; init; }
 
     /// <summary>
-    /// The paths of <see cref="Document"/> and a hash of each value, encoded (<see cref="Planning.RenderPaths"/>): what the ledger
-    /// keeps of the document once it lands. Null for work queued before the ledger kept them. A route never reads it.
+    /// The paths of <see cref="Document"/> and a hash of each value (<see cref="Planning.RenderPaths.EncodeText"/>): what the
+    /// ledger keeps of the document once it lands. Null for work queued before the ledger kept them. A route never reads it.
     /// </summary>
-    public byte[]? RenderPaths { get; init; }
+    public string? RenderPaths { get; init; }
 
     /// <summary>The estate commit the plan's run executed, when it knew it, which the ledger keeps with the render context the try promotes.</summary>
     public string? Commit { get; init; }

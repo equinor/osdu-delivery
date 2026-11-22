@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  deliveredByText, deliveredTitle, NOT_RECORDED, pathsHeading, triggerLabel, triggerNames, triggerSides, type AttemptReason,
+  deliveredByText, deliveredTitle, NOT_RECORDED, pathsHeading, triggerLabel, triggerNames, triggerSides, unchangedTitle, type AttemptReason,
 } from "../src/features/delivery/deliveryReason.ts";
 
 const mappingChanged: AttemptReason = {
@@ -31,6 +31,20 @@ describe("deliveredTitle", () => {
     assert.equal(deliveredTitle({ recorded: false, summary: NOT_RECORDED }), "Delivered");
     assert.equal(deliveredTitle(undefined), "Delivered");
     assert.equal(deliveredTitle(null), "Delivered");
+  });
+});
+
+describe("unchangedTitle", () => {
+  it("titles a render that sent nothing with what moved to render it", () => {
+    const moved: AttemptReason = {
+      recorded: true, action: "none", summary: "mapping WellLog@1.4.0 changed (852db64); renders what OSDU holds",
+      triggers: [{ kind: "mapping-changed", from: "WellLog@1.4.0", to: "WellLog@1.4.0" }],
+    };
+    assert.equal(unchangedTitle(moved, "Nothing to send"), "Nothing to send: mapping WellLog@1.4.0 changed (852db64); renders what OSDU holds");
+  });
+
+  it("keeps the title it has when the attempt says nothing of what moved", () => {
+    assert.equal(unchangedTitle(undefined, "Nothing to send: the row renders what was delivered"), "Nothing to send: the row renders what was delivered");
   });
 });
 

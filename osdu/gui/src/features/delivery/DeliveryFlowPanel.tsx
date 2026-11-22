@@ -130,11 +130,15 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const issueFilter = searchParams.get("issue");
   // A record restricted until complete links here to every record missing the same values.
   const missingFilter = searchParams.get("missing");
+  // A submission's or a run's count of one cause links here to the records it delivered for it; it narrows only what one of
+  // them delivered, so it stands only beside one.
+  const triggerFilter = deliveredFilter !== null || runFilter !== null ? searchParams.get("trigger") : null;
   // What the strip above the list says the records are narrowed to, each dropped on its own.
   const narrowed: Partial<Record<NarrowingKey, string>> = {
     run: runFilter ?? undefined,
     submission: submissionFilter ?? undefined,
     delivered: deliveredFilter ?? undefined,
+    trigger: triggerFilter ?? undefined,
     issue: issueFilter ?? undefined,
     missing: missingFilter ?? undefined,
   };
@@ -183,8 +187,9 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     submissionId: submissionFilter ?? undefined,
     deliveredBy: deliveredFilter ?? undefined,
     runId: runFilter ?? undefined,
+    trigger: (triggerFilter ?? undefined) as DeliveryRecordFilter["trigger"],
     issue: issueFilter ?? undefined,
-  }), [search, contains, status, access, drifted, stepHeld, missingFilter, submissionFilter, deliveredFilter, runFilter, issueFilter]);
+  }), [search, contains, status, access, drifted, stepHeld, missingFilter, submissionFilter, deliveredFilter, runFilter, triggerFilter, issueFilter]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -546,6 +551,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                   const next = new URLSearchParams(current);
                   for (const key of keys) {
                     next.delete(key);
+                  }
+
+                  // A cause narrows what a run or a submission delivered: without either it narrows nothing, so it goes too.
+                  if (!next.has("run") && !next.has("delivered")) {
+                    next.delete("trigger");
                   }
 
                   return next;

@@ -9,8 +9,9 @@ import { NOT_RECORDED, recordedReason } from "./deliveryReason";
 export function AttemptDetail({ attempt }: { attempt: DeliveryAttempt }) {
   const text = attempt.error ?? attempt.result?.detail ?? null;
   const correlationId = attempt.result?.correlationId;
-  // A delivered try says what sent it first (osdu/docs/reference/concepts/delivery-reasons.md).
-  const why = attempt.outcome === "delivered" ? (recordedReason(attempt.reason)?.summary ?? NOT_RECORDED) : null;
+  // A delivered try says what sent it first, and a render that sent nothing what moved to render it
+  // (osdu/docs/reference/concepts/delivery-reasons.md).
+  const why = recordedReason(attempt.reason)?.summary ?? (attempt.outcome === "delivered" ? NOT_RECORDED : null);
   return (
     <div className="flex flex-col gap-0.5">
       {why !== null && <TruncatedText text={why} maxWidth={360} className={recordedReason(attempt.reason) === null ? "text-muted-foreground" : undefined} />}

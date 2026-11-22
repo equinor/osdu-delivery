@@ -511,11 +511,12 @@ public sealed record DeliveryTargetDto(
 /// holds restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md), and <c>Missing</c> those of them
 /// restricted for one set of missing values: the sixteen characters a record's <c>incompleteGroup</c> gives it.
 /// <c>AccessRestricted</c> keeps the records whose access in OSDU is restricted either way, by an operator or until complete:
-/// the records a flow's Restricted figure counts.
+/// the records a flow's Restricted figure counts. <c>Trigger</c>, with <c>DeliveredBy</c> or <c>RunId</c>, keeps the records it
+/// delivered for one kind of trigger (osdu/docs/reference/concepts/delivery-reasons.md).
 /// </summary>
 public sealed record DeliveryRecordFilterDto(
     string? Status, string? Search, string? Mode, Guid? SubmissionId, Guid? RunId, bool Drifted = false, Guid? DeliveredBy = null, string? Issue = null,
-    bool StepHeld = false, bool Restricted = false, bool Incomplete = false, string? Missing = null, bool AccessRestricted = false);
+    bool StepHeld = false, bool Restricted = false, bool Incomplete = false, string? Missing = null, bool AccessRestricted = false, string? Trigger = null);
 
 /// <summary>
 /// A removal of one or many records. <c>scope</c> is record, previous, history or everything, or restrict or unrestrict their
@@ -1022,7 +1023,7 @@ public static class DeliveryEndpoints
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryRecordDto>>, ProblemHttpResult>> ListRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, int? page, int? pageSize,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, string? trigger, int? page, int? pageSize,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, CancellationToken ct)
     {
         var (flow, unresolved) = await ResolveKeptAsync(db, documents, partitions, ledger, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -1031,7 +1032,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = await BuildQueryAsync(db, new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true), ct).ConfigureAwait(false);
+        var (query, invalid) = await BuildQueryAsync(db, new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true, trigger), ct).ConfigureAwait(false);
         if (query is null)
         {
             return invalid!;
@@ -1127,6 +1128,27 @@ public static class DeliveryEndpoints
             missing = parsed;
         }
 
+        Planning.TriggerKinds? deliveredFor = null;
+        if (!string.IsNullOrWhiteSpace(filter.Trigger))
+        {
+            var kind = Planning.ReasonKinds.Flag(filter.Trigger.Trim().ToLowerInvariant());
+            if (kind == Planning.TriggerKinds.None)
+            {
+                return (null, TypedResults.Problem(
+                    detail: $"trigger '{filter.Trigger}' is not a kind of trigger: it is one of {string.Join(", ", Planning.ReasonKinds.All.Select(k => k.Kind))}.",
+                    statusCode: StatusCodes.Status400BadRequest, title: "Invalid request"));
+            }
+
+            if (filter.DeliveredBy is null && filter.RunId is null)
+            {
+                return (null, TypedResults.Problem(
+                    detail: "trigger narrows what a submission delivered (deliveredBy) or a run delivered (runId): name one of them with it.",
+                    statusCode: StatusCodes.Status400BadRequest, title: "Invalid request"));
+            }
+
+            deliveredFor = kind;
+        }
+
         return (new RecordQuery
         {
             Status = status,
@@ -1135,6 +1157,7 @@ public static class DeliveryEndpoints
             Mode = string.Equals(filter.Mode, "contains", StringComparison.OrdinalIgnoreCase) ? SearchMode.Contains : SearchMode.Prefix,
             SubmissionId = filter.SubmissionId,
             DeliveredBySubmissionId = filter.DeliveredBy,
+            DeliveredFor = deliveredFor,
             RunId = filter.RunId,
             Drifted = filter.Drifted,
             StepHeld = filter.StepHeld,
@@ -1206,7 +1229,7 @@ public static class DeliveryEndpoints
     /// starts, so a refusal or a failure is answered as a problem, never as half a file.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, string? trigger,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
         IPartitionRegistry partitions, ILedger ledger, TimeProvider clock, HttpResponse response, CancellationToken ct)
     {
@@ -1216,7 +1239,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = await BuildQueryAsync(db, new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true), ct).ConfigureAwait(false);
+        var (query, invalid) = await BuildQueryAsync(db, new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true, restricted == true, incomplete == true, missing, accessRestricted == true, trigger), ct).ConfigureAwait(false);
         if (query is null)
         {
             return invalid!;
@@ -4231,23 +4254,20 @@ public static class DeliveryEndpoints
     }
 
     /// <summary>
-    /// An attempt's result, and for a delivered try why it was sent, lifted out of the result so it is read in one place: the
-    /// reason its result keeps, marked recorded, or for a delivery made before the ledger kept reasons, that it was not
-    /// recorded. Null for every other try.
+    /// An attempt's result, and the reason it keeps, lifted out of the result so it is read in one place: why a delivered try
+    /// was sent, or what moved to render a record found identical to what OSDU holds, marked recorded; for a delivery made
+    /// before the ledger kept reasons, that it was not recorded. Null for a try that keeps none and delivered nothing.
     /// </summary>
     internal static (JsonElement? Result, JsonElement? Reason) AttemptReason(AttemptRecord attempt)
     {
         ArgumentNullException.ThrowIfNull(attempt);
         var result = ParseJsonOrNull(attempt.ResultJson);
-        if (attempt.Outcome != AttemptOutcome.Delivered)
-        {
-            return (result, null);
-        }
-
         var node = result is { ValueKind: JsonValueKind.Object } parsed ? System.Text.Json.Nodes.JsonObject.Create(parsed) : null;
         if (node?["reason"] is not System.Text.Json.Nodes.JsonObject kept || SqlFlow.Delivery.Planning.DeliveryReason.FromJson(kept) is null)
         {
-            return (result, JsonSerializer.SerializeToElement(new { recorded = false, summary = "reason not recorded" }));
+            return attempt.Outcome == AttemptOutcome.Delivered
+                ? (result, JsonSerializer.SerializeToElement(new { recorded = false, summary = "reason not recorded" }))
+                : (result, null);
         }
 
         node.Remove("reason");

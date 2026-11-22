@@ -80,8 +80,9 @@ public sealed record PlanEntry
     public bool DeliverPayload { get; init; }
 
     /// <summary>
-    /// For a delivery: why it is sent (osdu/docs/reference/concepts/delivery-reasons.md), which the
-    /// work batch carries to the attempt that delivers it. Null for every entry that sends nothing.
+    /// For a delivery: why it is sent (osdu/docs/reference/concepts/delivery-reasons.md), which the work batch carries to the
+    /// attempt that delivers it. For a render identical to what OSDU holds: what moved to render it, which the skip's attempt
+    /// keeps. Null for every other entry.
     /// </summary>
     public DeliveryReason? Why { get; init; }
 
@@ -1288,6 +1289,7 @@ public sealed class Planner
             }
         }
 
+        var row = new ReasonSource(new SourceVersion(basis.SourceFingerprint, basis.SourceModifiedUtc), basis.Origin.UpdatedUtc, payloadHash);
         if (decision.Action == PlannedAction.Skip)
         {
             entries.Add(basis with
@@ -1300,6 +1302,12 @@ public sealed class Planner
                 PayloadHash = payloadHash,
                 PayloadModifiedUtc = payloadModified,
                 Paths = KeptPathsOf(state, decision, render),
+
+                // A render identical to what OSDU holds says what moved to render it, so the record's history shows that a
+                // mapping, a cache or a request reached it although nothing was sent. One identical to queued work says nothing.
+                Why = decision.SkipTier == SkipTier.ContentHash && decision.Basis.Queue == QueueComparison.None
+                    ? header.Reasons.ForUnchanged(state, decision, row)
+                    : null,
             });
             return null;
         }
@@ -1365,8 +1373,7 @@ public sealed class Planner
         // Why it is sent, from what the plan already holds: the record's ledger state, the row and the run's rules; and the
         // paths of the document it sends, which name what changed and which the ledger keeps once it lands.
         var paths = decision.DeliverMetadata ? RenderPaths.Of(render.Canonical) : null;
-        var reason = header.Reasons.For(
-            state, decision, new ReasonSource(new SourceVersion(basis.SourceFingerprint, basis.SourceModifiedUtc), basis.Origin.UpdatedUtc, payloadHash), paths);
+        var reason = header.Reasons.For(state, decision, row with { PayloadHash = payloadHash }, paths);
         entries.Add(basis with
         {
             TargetId = render.TargetId,

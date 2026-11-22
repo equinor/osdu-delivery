@@ -24,7 +24,7 @@ import { TruncatedText } from "@/components/TruncatedText";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
 import { SubmissionStatusBadge } from "./DeliveryBadges";
 import { SubmissionCounts } from "./DeliveryFlowPanel";
-import { deliveredByText } from "./deliveryReason";
+import { DeliveredByLine } from "./DeliveryReasonView";
 import { prettyJson } from "./prettyJson";
 import { ReversalCard } from "./ReversalCard";
 import { ReverseButton } from "./ReverseButton";
@@ -42,11 +42,13 @@ export default function DeliverySubmissionPage() {
 }
 
 /** The flow's Records tab, scoped to one of this submission's sets, in the ledger (interface and partition) the submission belongs to. */
-function recordsLink(detail: DeliverySubmissionDetail, param: "submission" | "delivered"): string {
+function recordsLink(detail: DeliverySubmissionDetail, param: "submission" | "delivered", trigger?: string): string {
   return flowLedgerRoute(
     detail.pipelineId!,
     { interfaceName: detail.interface ?? null, partition: detail.partition ?? null },
-    { tab: "records", [param]: detail.submission.submissionId });
+    trigger === undefined
+      ? { tab: "records", [param]: detail.submission.submissionId }
+      : { tab: "records", [param]: detail.submission.submissionId, trigger });
 }
 
 /**
@@ -294,10 +296,13 @@ function SubmissionContent({ submissionId }: { submissionId: string }) {
       <Card className="gap-2 rounded-lg p-3">
         <h2 className="text-[13px] font-medium">Outcome</h2>
         <SubmissionCounts submission={s} />
-        {/* What sent the records it delivered, counted from their attempts' reasons: a record under every kind its reason names. */}
-        {detail.deliveredBy != null && detail.deliveredBy.delivered > 0 && (
-          <span className="text-[12.5px] text-muted-foreground" data-testid="submission-delivered-by">{deliveredByText(detail.deliveredBy)}</span>
-        )}
+        {/* What sent the records it delivered, counted from their attempts' reasons: a record under every kind its reason names;
+          * each cause opens the records it delivered for it. */}
+        <DeliveredByLine
+          deliveredBy={detail.deliveredBy}
+          linkFor={detail.pipelineId !== null ? (kind) => recordsLink(detail, "delivered", kind) : null}
+          testId="submission-delivered-by"
+        />
       </Card>
 
       {reversalId !== null

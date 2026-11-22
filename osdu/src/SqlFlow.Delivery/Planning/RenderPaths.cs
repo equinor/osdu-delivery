@@ -209,6 +209,30 @@ public sealed class RenderPaths
     }
 
     /// <summary>
+    /// The compact form in base64: how a work item carries it, and how the ledger's records hold it, as text, so two reads of
+    /// the same record compare equal (a record's equality compares an array by reference, a text by its characters).
+    /// </summary>
+    public string EncodeText() => Convert.ToBase64String(Encode());
+
+    /// <summary>The paths <see cref="EncodeText"/> wrote, or null with why when <paramref name="text"/> is not base64 of them.</summary>
+    public static RenderPaths? DecodeText(string text, out string? problem)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        byte[] stored;
+        try
+        {
+            stored = Convert.FromBase64String(text);
+        }
+        catch (FormatException ex)
+        {
+            problem = $"the path hashes the ledger keeps cannot be read: they are not base64 ({ex.Message})";
+            return null;
+        }
+
+        return Decode(stored, out problem);
+    }
+
+    /// <summary>
     /// The paths <see cref="Encode"/> wrote, or null with why when <paramref name="stored"/> cannot be read as them: written in
     /// another format, cut short, or not in path order.
     /// </summary>

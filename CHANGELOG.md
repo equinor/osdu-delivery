@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   submission counts its deliveries by what sent them, and `sqlflow records show`, the attempts and submission routes and
   the MCP server's `delivery_record` and `delivery_submissions` return it; a delivery made before says its reason was not
   recorded ([delivery reasons](osdu/docs/reference/concepts/delivery-reasons.md)).
+- **What sent a run's or a submission's records opens them, and a record says why it was not sent.** A submission's
+  counts by cause, a run's **Delivered for** on its page and the hover over a run's **Delivered** count on a flow's
+  **Runs** tab each open the flow's Records tab narrowed to the records sent for that cause (`?trigger=`, the records
+  listing's `trigger`, the MCP server's `delivery_flow_records`); `GET /delivery/runs/lookup` and `delivery_run` count a
+  run's deliveries by cause. A record's header says why its last delivery was sent. A record rendered because its mapping,
+  the cache, a request or a row it reads moved, and found rendering what OSDU already holds, gets a **Nothing to send**
+  entry naming what moved ([when nothing is sent](osdu/docs/reference/concepts/delivery-reasons.md#when-nothing-is-sent)).
 - **A `$findAll` line compares two fields of the same row.** `GroupName contains CountryName` keeps the rows whose text
   under the first field holds their text under the second, by letters and digits alone and ignoring case, so a rule such
   as "a country group's name says its country" holds for every country without naming one. A renamed group or a

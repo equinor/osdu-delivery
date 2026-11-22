@@ -110,6 +110,11 @@ public sealed class DeliveryReasonApiTests
             Assert.Equal(
                 [("mapping-changed", 1L), ("cache-changed", 1L)],
                 deliveredBy.GetProperty("triggers").EnumerateArray().Select(t => (t.GetProperty("kind").GetString()!, t.GetProperty("records").GetInt64())).ToList());
+
+            // A cause narrows what the submission delivered to the records its reason names it for; the flow is the ledger's,
+            // which no pipeline of the catalog names, so the listing is read through the ledger as the API's own reads are.
+            Assert.Equal(1, (await ledger.CountAsync(flowId, new RecordQuery { DeliveredBySubmissionId = submission.SubmissionId, DeliveredFor = TriggerKinds.MappingChanged }, 100)).Count);
+            Assert.Equal(0, (await ledger.CountAsync(flowId, new RecordQuery { DeliveredBySubmissionId = submission.SubmissionId, DeliveredFor = TriggerKinds.Drift }, 100)).Count);
         }
         finally
         {

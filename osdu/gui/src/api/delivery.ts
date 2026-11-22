@@ -204,6 +204,15 @@ export interface DeliverySubmissionDetail {
   deliveredBy?: DeliverySubmissionTriggers | null;
 }
 
+/**
+ * What a run id or a correlation id leads to, as far as the GUI reads it: the records the run's execution (the run, and the
+ * parts it split its delivery into) delivered, counted by what sent them.
+ */
+export interface DeliveryRunLookup {
+  id: string;
+  deliveredBy?: DeliverySubmissionTriggers | null;
+}
+
 /** A submission's delivered records counted by trigger kind. */
 export interface DeliverySubmissionTriggers {
   delivered: number;
@@ -659,10 +668,11 @@ export interface DeliveryReasonPaths {
 
 /**
  * Why a delivered try was sent: what it sent, its one line, every input that moved, and the paths of the document that
- * changed. A delivery made before the ledger kept reasons says only that it was not recorded.
+ * changed. A delivery made before the ledger kept reasons says only that it was not recorded. A render found identical to
+ * what OSDU holds (action `none`) says what moved to render it, with nothing sent.
  */
 export type DeliveryAttemptReason =
-  | { recorded: true; action: "create" | "update-metadata" | "update-payload" | "update-both"; summary: string; triggers: DeliveryReasonTrigger[]; paths?: DeliveryReasonPaths }
+  | { recorded: true; action: "create" | "update-metadata" | "update-payload" | "update-both" | "none"; summary: string; triggers: DeliveryReasonTrigger[]; paths?: DeliveryReasonPaths }
   | { recorded: false; summary: string };
 
 /** One delivery try, as the append-only history holds it. */
@@ -1311,6 +1321,11 @@ export interface DeliveryRecordListQuery extends PageQuery {
   missing?: string;
   /** Only records whose access in OSDU is restricted either way, until complete or by an operator. */
   accessRestricted?: boolean;
+  /**
+   * With `deliveredBy` or `runId`: only the records it delivered for one kind of trigger, as its count of that cause stands
+   * for them (osdu/docs/reference/concepts/delivery-reasons.md).
+   */
+  trigger?: DeliveryTriggerKind;
 }
 
 /**
@@ -2296,6 +2311,11 @@ export interface DeliveryRecordFilter {
   missing?: string;
   /** The records whose access in OSDU is restricted either way, until complete or by an operator: what the Restricted figure counts. */
   accessRestricted?: boolean;
+  /**
+   * With `deliveredBy` or `runId`: only the records it delivered for one kind of trigger, as its count of that cause stands
+   * for them (osdu/docs/reference/concepts/delivery-reasons.md).
+   */
+  trigger?: DeliveryTriggerKind;
 }
 
 /**
@@ -3399,8 +3419,13 @@ export const deliveryRecordRoute = ({ flowId, deliveryKey }: DeliveryRecordRef) 
  */
 export function deliveryRunRecordsRoute(
   pipelineId: string, runId: string, scope: { interfaceName: string | null; partition: string | null } = { interfaceName: null, partition: null },
+  trigger?: string,
 ): string {
   const params = new URLSearchParams({ tab: "records", run: runId });
+  if (trigger !== undefined) {
+    params.set("trigger", trigger);
+  }
+
   if (scope.interfaceName !== null) {
     params.set("interface", scope.interfaceName);
   }
@@ -4682,6 +4707,8 @@ export const deliveryApi = {
     get<DeliveryInterface[]>(`/api/v1/delivery/flows/${pipelineId}/interfaces`, partition ? { partition } : {}),
   records: (pipelineId: string, query: DeliveryRecordListQuery = {}) =>
     get<PagedResult<DeliveryRecord>>(`/api/v1/delivery/flows/${pipelineId}/records`, query as QueryParams),
+  /** What a run id leads to: the run's execution, and what the records it delivered were sent for. */
+  runLookup: (id: string) => get<DeliveryRunLookup>("/api/v1/delivery/runs/lookup", { id }),
   /**
    * Every record the listing's filter matches (paging aside) as an Excel workbook: at most the listing's count limit, a
    * broader filter refused as too broad.

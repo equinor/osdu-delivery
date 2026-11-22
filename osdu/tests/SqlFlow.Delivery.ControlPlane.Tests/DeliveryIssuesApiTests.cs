@@ -99,6 +99,13 @@ public sealed class DeliveryIssuesApiTests
             Assert.All(records.GetProperty("items").EnumerateArray(), r => Assert.Equal(missing, r.GetProperty("issue").GetString()));
             await StatusAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/records?issue=xyz", HttpStatusCode.BadRequest);
 
+            // A cause of delivery narrows what a submission or a run delivered: one the ledger does not know is refused, and so is
+            // one with neither to narrow (osdu/docs/reference/concepts/delivery-reasons.md).
+            await StatusAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/records?deliveredBy={Guid.NewGuid():D}&trigger=moon-phase", HttpStatusCode.BadRequest);
+            await StatusAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/records?trigger=mapping-changed", HttpStatusCode.BadRequest);
+            var none = await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/records?deliveredBy={Guid.NewGuid():D}&trigger=mapping-changed");
+            Assert.Equal(0, none.GetProperty("total").GetInt64());
+
             // Released together: every record of the issue, the other issue's left blocked.
             var released = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/issues/{missing}/release", "{}");
             Assert.Equal((missing, 3, JsonValueKind.Null), (released.GetProperty("issue").GetString(), released.GetProperty("released").GetInt32(), released.GetProperty("runId").ValueKind));

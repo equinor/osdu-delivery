@@ -70,10 +70,40 @@ public sealed class DeliveryReasons
         };
     }
 
+    /// <summary>
+    /// Why a record whose render is identical to the document OSDU holds was rendered at all: every input the ledger compares
+    /// that moved (a request, its rules, the cache, its rows), with nothing sent. Null when none moved (a plan that renders
+    /// every record it reads, such as a replan), which leaves nothing to say about the record.
+    /// </summary>
+    public DeliveryReason? ForUnchanged(RecordState? state, ChangeDecision decision, ReasonSource row)
+    {
+        ArgumentNullException.ThrowIfNull(decision);
+        var moved = Moved(state, decision, row);
+        return moved.Count == 0 ? null : new DeliveryReason { Action = DeliveryReason.NoneAction, Triggers = moved };
+    }
+
     /// <summary>Every input that moved since the version the ledger holds, in <see cref="ReasonKinds.All"/>'s order; never empty.</summary>
     public IReadOnlyList<ReasonTrigger> Triggers(RecordState? state, ChangeDecision decision, ReasonSource row)
     {
         ArgumentNullException.ThrowIfNull(decision);
+        var found = Moved(state, decision, row);
+        if (found.Count == 0)
+        {
+            found.Add(new ReasonTrigger
+            {
+                Kind = ReasonKinds.OtherInputChanged,
+                Detail = decision.Basis.Queue == QueueComparison.ReplacesQueued
+                    ? "nothing the ledger compares moved since the version OSDU holds; the render replaces work already queued for the record, which differed from it"
+                    : "nothing the ledger compares moved since the version OSDU holds, and the document renders differently: the render reads something those inputs do not cover, such as a record it searches for in OSDU, its parent, or a child it links",
+            });
+        }
+
+        return found;
+    }
+
+    /// <summary>The inputs the ledger compares that moved, in <see cref="ReasonKinds.All"/>'s order; empty when none did.</summary>
+    private List<ReasonTrigger> Moved(RecordState? state, ChangeDecision decision, ReasonSource row)
+    {
         var found = new List<ReasonTrigger>();
         if (state is null)
         {
@@ -99,17 +129,6 @@ public sealed class DeliveryReasons
         }
 
         Forced(decision, found);
-        if (found.Count == 0)
-        {
-            found.Add(new ReasonTrigger
-            {
-                Kind = ReasonKinds.OtherInputChanged,
-                Detail = decision.Basis.Queue == QueueComparison.ReplacesQueued
-                    ? "nothing the ledger compares moved since the version OSDU holds; the render replaces work already queued for the record, which differed from it"
-                    : "nothing the ledger compares moved since the version OSDU holds, and the document renders differently: the render reads something those inputs do not cover, such as a record it searches for in OSDU, its parent, or a child it links",
-            });
-        }
-
         found.Sort((a, b) => ReasonKinds.Order(a.Kind).CompareTo(ReasonKinds.Order(b.Kind)));
         return found;
     }
@@ -136,7 +155,7 @@ public sealed class DeliveryReasons
             return PathChanges.Without("the ledger keeps no path hashes of the version OSDU holds: it was delivered before the ledger kept them, or a reversal or a step back put an earlier version in its place");
         }
 
-        return RenderPaths.Decode(kept, out var problem) is { } before
+        return RenderPaths.DecodeText(kept, out var problem) is { } before
             ? RenderPaths.Compare(before, rendered)
             : PathChanges.Without(problem!);
     }

@@ -176,7 +176,9 @@ interface picker whose choice is in the address; a flow that names its partition
   status marks each restricted record, and one restricted until complete lists what it goes without on hover. Links from
   elsewhere narrow it to the records one run touched (`?run=`: those an attempt of the run names, and of the parts it
   split its delivery into, [Many nodes](submissions.md#many-nodes)), what a submission last planned (`?submission=`) or
-  delivered (`?delivered=`), one issue (`?issue=`), or one group of missing values (`?missing=`). Each is a chip at the
+  delivered (`?delivered=`), what either delivered for one cause (`?trigger=` beside `?delivered=` or `?run=`, chip
+  **Delivered for**, [delivery reasons](delivery-reasons.md)), one issue (`?issue=`), or one group of missing values
+  (`?missing=`). Each is a chip at the
   top of the list, read as a sentence (**Touched by run …1a2b3c**, **Last planned by submission …**, **Kept blocked by
   issue …**) whose id opens what it names and whose cross drops it, with what it means on hover and **Clear all** when
   there are several. The run's chip says its operation, how it ended and when; a part of a split delivery says which part
@@ -204,7 +206,8 @@ interface picker whose choice is in the address; a flow that names its partition
   record OSDU holds once the partition is typed back, and can queue a deliver run straight after.
 - **Runs**: SQLFlow's list of the flow's runs, a row opening its run. A delivery run counts records, not rows, so in
   place of SQLFlow's **Rows loaded**, **Inserted**, **Updated**, **Deleted** and **Files** each run shows the records it
-  **Delivered**, found **Unchanged** (rows read and found as they were, and records OSDU already held when it came to
+  **Delivered** (on hover, what sent them, each cause opening its records), found **Unchanged** (rows read and found as
+  they were, and records OSDU already held when it came to
   send them), **Held** and **Failed**, as its page counts them, with a dash for a count it does not report (a `plan`
   sends nothing; an `intake` plans what its `drain` delivers). A delivery split over nodes counts the whole submission on
   the run that split it and each part's own share on the part ([Many nodes](submissions.md#many-nodes)). After them come

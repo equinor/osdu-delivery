@@ -218,6 +218,13 @@ test.describe.serial("record trace", () => {
             paths: { compared: true, added: 0, removed: 0, changed: 1, listed: [{ path: "acl.viewers", change: "changed" }] },
           }),
           delivered(key, 900001, "2026-11-17T08:00:00Z", 1, { recorded: false, summary: "reason not recorded" }),
+          {
+            ...delivered(key, 900003, "2026-11-22T08:00:00Z", 3, {
+              recorded: true, action: "none", summary: "cache moved to 20261122T020000Z; renders what OSDU holds",
+              triggers: [{ kind: "cache-changed", from: "20261121T020000Z", to: "20261122T020000Z" }],
+            }),
+            outcome: "skipped", phase: "identical", worker: "intake", targetVersion: null,
+          },
           ...attempts,
         ],
       });
@@ -252,6 +259,12 @@ test.describe.serial("record trace", () => {
 
     await older.getByTestId("journey-event-toggle").click();
     await expect(older.getByTestId("journey-reason-not-recorded")).toHaveText("Why it was sent: reason not recorded");
+    // A render that sent nothing says what moved to render it: the cache reached the record and changed nothing.
+    const unchanged = journey.getByTestId("journey-attempt-skipped").filter({ hasText: "renders what OSDU holds" });
+    await expect(unchanged).toContainText("Nothing to send: cache moved to 20261122T020000Z; renders what OSDU holds");
+    await unchanged.getByTestId("journey-event-toggle").click();
+    await expect(unchanged.getByTestId("journey-reason")).toContainText("What moved");
+    await expect(unchanged.getByTestId("journey-reason-trigger")).toHaveAttribute("data-kind", "cache-changed");
     await adminPage.unroute(`${E2E.apiBaseUrl}/api/v1/delivery/records/*/*/attempts**`);
   });
 });

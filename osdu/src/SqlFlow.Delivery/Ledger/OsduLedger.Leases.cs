@@ -982,7 +982,7 @@ public sealed partial class OsduLedger
             IncompleteMissing = access?.MissingText(),
             IncompleteHash = access?.MissingHash(),
             // The paths of the document a promotion sent, and the commit of the render context it promotes.
-            RenderPaths = completion.Promote ? completion.RenderPaths : null,
+            RenderPaths = completion is { Promote: true, RenderPaths: { } paths } ? Convert.FromBase64String(paths) : null,
             RenderCommit = completion.Promote ? Truncate(completion.RenderCommit, DeliveryModel.MaxCommitLength) : null,
             ClaimSubmissionId = claim?.SubmissionId,
             ClaimDocumentRef = claim?.DocumentRef,

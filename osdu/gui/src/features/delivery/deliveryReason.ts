@@ -88,6 +88,15 @@ export function deliveredTitle(reason: AttemptReason | null | undefined): string
   return recorded !== null ? `Delivered: ${recorded.summary}` : "Delivered";
 }
 
+/**
+ * The title of a render found identical to what OSDU holds: what moved to render it, when its attempt says, or the title
+ * the timeline gives it without.
+ */
+export function unchangedTitle(reason: AttemptReason | null | undefined, otherwise: string): string {
+  const recorded = recordedReason(reason);
+  return recorded !== null ? `Nothing to send: ${recorded.summary}` : otherwise;
+}
+
 /** A fingerprint, hash or commit as a fact shows it: its first twelve characters, or seven for a commit. */
 export function shortened(value: string, length = 12): string {
   return value.length > length ? value.slice(0, length) : value;

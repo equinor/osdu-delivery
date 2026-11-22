@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, CirclePlay, Inbox, PackageCheck, ShieldAlert, X, type LucideIcon } from "lucide-react";
+import { CircleAlert, CirclePlay, FileDiff, Inbox, PackageCheck, ShieldAlert, X, type LucideIcon } from "lucide-react";
 import { runApi } from "@/api/endpoints";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RunStatusBadge } from "@/components/StatusBadge";
 import { runScope } from "./runOutcome";
 import { shortId } from "./idTail";
+import { triggerLabel } from "./deliveryReason";
 
 /** The address parameters a link narrows a flow's Records tab by, in the order the strip says them. */
-const NARROWING_KEYS = ["run", "submission", "delivered", "issue", "missing"] as const;
+const NARROWING_KEYS = ["run", "submission", "delivered", "trigger", "issue", "missing"] as const;
 
 export type NarrowingKey = (typeof NARROWING_KEYS)[number];
 
@@ -62,6 +63,13 @@ export function RecordsNarrowing({ narrowed, view, issueLink, onDrop, onRun, onS
           explain="The records this submission delivered, which stay its own however many submissions plan them afterwards.">
           <Caption>Delivered by submission</Caption>
           <IdLink id={narrowed.delivered} to={`/delivery/submissions/${narrowed.delivered}`} />
+        </Chip>
+      )}
+      {narrowed.trigger !== undefined && (
+        <Chip icon={FileDiff} kind="trigger" dropLabel="Stop narrowing to this cause" onDrop={() => onDrop(["trigger"])}
+          explain="Of the records the run or submission delivered, those its reason names this cause for: a record counts under every cause its reason names.">
+          <Caption>Delivered for</Caption>
+          <span className="text-[12px]" data-testid="delivery-records-trigger">{triggerLabel(narrowed.trigger).toLowerCase()}</span>
         </Chip>
       )}
       {narrowed.issue !== undefined && (

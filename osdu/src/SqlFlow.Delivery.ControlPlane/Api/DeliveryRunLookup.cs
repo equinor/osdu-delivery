@@ -21,11 +21,13 @@ public sealed record DeliveryRunLookupRunDto(
 /// <summary>
 /// What a run id or a correlation id leads to (osdu/docs/reference/concepts/request-correlation.md): the id it holds and the
 /// repository's and the operation's codes it carries; the run with that id, or the reason there is none; every run of its
-/// execution, the coordinating run first, then the parts; and the plans the execution registered, with their counts.
+/// execution, the coordinating run first, then the parts; the plans the execution registered, with their counts; and the
+/// records the execution delivered, counted by what sent them (<c>DeliveredBy</c>,
+/// osdu/docs/reference/concepts/delivery-reasons.md).
 /// </summary>
 public sealed record DeliveryRunLookupDto(
     Guid Id, string? Repository, string? Operation, DeliveryRunLookupRunDto? Run, IReadOnlyList<DeliveryRunLookupRunDto> Execution,
-    IReadOnlyList<DeliverySubmissionDto> Submissions, string? Reason);
+    IReadOnlyList<DeliverySubmissionDto> Submissions, string? Reason, DeliverySubmissionTriggersDto? DeliveredBy = null);
 
 /// <summary>
 /// A run found by what an operator holds, which is usually a value copied from a platform's log: the correlation id of the
@@ -85,6 +87,10 @@ public static class DeliveryRunLookup
             .ConfigureAwait(false);
         var described = describers as IReadOnlyCollection<IRunOutcomeDescriber> ?? describers.ToList();
         var submissions = await ledger.ListSubmissionsOfRunAsync(root, ct).ConfigureAwait(false);
+
+        // What the execution delivered, whichever of its runs was asked for: every part writes its records' attempts under its
+        // own run id, so the coordinating run's count is its parts' together.
+        var counted = await ledger.CountRunDeliveredTriggersAsync([.. execution.Select(r => r.RunId)], ct).ConfigureAwait(false);
         return new DeliveryRunLookupDto(
             value.Id,
             value.Repository,
@@ -92,7 +98,8 @@ public static class DeliveryRunLookup
             Row(run, described, log),
             execution.Select(r => Row(r, described, log)).ToList(),
             submissions.Select(DeliveryEndpoints.ToDto).ToList(),
-            null);
+            null,
+            new DeliverySubmissionTriggersDto(counted.Delivered, counted.NotRecorded, [.. counted.ByTrigger.Select(t => new DeliveryTriggerCountDto(t.Kind, t.Records))]));
     }
 
     private static DeliveryRunLookupRunDto Row(CatalogRun run, IEnumerable<IRunOutcomeDescriber> describers, ILogger log) => new(

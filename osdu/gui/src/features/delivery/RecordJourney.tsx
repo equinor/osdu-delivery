@@ -32,7 +32,7 @@ import { ValidationVerdictView } from "./ValidationVerdictView";
 import { outcomeWord } from "./validationModel";
 import { NoteMark } from "./RecordArtifacts";
 import { DeliveryReasonView } from "./DeliveryReasonView";
-import { deliveredTitle, NOT_RECORDED, recordedReason } from "./deliveryReason";
+import { deliveredTitle, NOT_RECORDED, recordedReason, unchangedTitle } from "./deliveryReason";
 
 type Tone = "success" | "destructive" | "warning" | "info" | "muted";
 
@@ -794,9 +794,10 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
         case "source-missing":
           return { title: "Not found in the ingestion table", tone: "warning", icon: FileQuestion, then: { text: "The row is gone; the record keeps its status.", tone: "muted" }, outcome: null };
         case "identical":
-          return { title: "Nothing to send: the row renders what was delivered", tone: "muted", icon: CircleDashed, then: null, outcome: { text: "Nothing to send", tone: "muted" } };
+          // What moved to render it, when its attempt says (a mapping, a cache, a request): the record saw the change.
+          return { title: unchangedTitle(attempt.reason, "Nothing to send: the row renders what was delivered"), tone: "muted", icon: CircleDashed, then: null, outcome: { text: "Nothing to send", tone: "muted" } };
         case "unchanged":
-          return { title: "Nothing to send: already delivered", tone: "muted", icon: CircleDashed, then: null, outcome: { text: "Nothing to send", tone: "muted" } };
+          return { title: "Nothing to send: already delivered", tone: "muted", icon: CircleDashed, then: { text: "OSDU already held this version when it was its turn to be sent.", tone: "muted" }, outcome: { text: "Nothing to send", tone: "muted" } };
         case "stale":
           return { title: "Skipped: an older version of the row", tone: "muted", icon: CircleDashed, then: null, outcome: { text: "Skipped: older version", tone: "muted" } };
         default:
@@ -886,6 +887,9 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
     more: (
       <div className="flex flex-col gap-2.5">
         {attempt.outcome === "delivered" && <DeliveryReasonView reason={attempt.reason} />}
+        {attempt.outcome !== "delivered" && recordedReason(attempt.reason) !== null && (
+          <DeliveryReasonView reason={attempt.reason} heading={attempt.phase === "unchanged" ? "Why it was planned" : "What moved"} />
+        )}
         {steps.length > 0 && <StepList steps={steps} />}
         {undo?.artifacts !== undefined && undo.artifacts.length > 0 && <UndoList artifacts={undo.artifacts} keptRecord={undo.keptRecord === true} />}
         {verdict !== null && <ValidationVerdictView verdict={verdict} />}
@@ -1455,6 +1459,22 @@ function buildStory(
  * reached the ingestion table, when the row last changed, when it was delivered, when it was last verified, and whether
  * it was removed.
  */
+/**
+ * Under a delivered record's Delivered milestone: the version OSDU holds and why its last delivery was sent, the reason's one
+ * line clipped to the cell and whole on hover, so why it was delivered is read without opening the timeline. A delivery made
+ * before the ledger kept reasons leaves the version alone.
+ */
+function deliveredCaption(record: DeliveryRecord, attempts: DeliveryAttempt[]): ReactNode {
+  const version = record.targetVersion !== null ? `version ${record.targetVersion}` : null;
+  const why = recordedReason(attempts.find((a) => a.outcome === "delivered")?.reason)?.summary ?? null;
+  if (why === null) {
+    return version ?? undefined;
+  }
+
+  const line = version === null ? why : `${version} · ${why}`;
+  return <span className="block max-w-[360px] truncate" title={line} data-testid="milestone-landed-why">{line}</span>;
+}
+
 function milestones(record: DeliveryRecord, attempts: DeliveryAttempt[], chain: DeliveryRecordChain | undefined): SummaryCell[] {
   const dispatched = attempts.filter((a) => a.outcome === "delivered" || a.outcome === "failed" || (a.outcome === "held" && reachedTarget(a)));
   const failed = dispatched.filter((a) => a.outcome === "failed").length;
@@ -1503,7 +1523,7 @@ function milestones(record: DeliveryRecord, attempts: DeliveryAttempt[], chain: 
         ? (dispatched.length === 0
           ? (record.status === "pending" || record.status === "delivering" ? "queued" : record.status === "waiting" ? "waiting" : undefined)
           : `${dispatched.length} ${dispatched.length === 1 ? "try" : "tries"}${failed > 0 ? `, ${failed} failed` : ""}`)
-        : record.targetVersion !== null ? `version ${record.targetVersion}` : undefined,
+        : deliveredCaption(record, attempts),
       tone: record.lastDeliveredUtc === null ? undefined : "success",
       testId: "milestone-landed",
     },

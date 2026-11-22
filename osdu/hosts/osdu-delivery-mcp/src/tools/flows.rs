@@ -63,6 +63,9 @@ pub struct FlowRecordsInput {
     /// once: what the flow's Restricted count (stats accessRestricted) counts.
     #[serde(rename = "accessRestricted")]
     pub access_restricted: Option<bool>,
+    /// With deliveredBy or runId: only the records it delivered for one cause, a trigger kind (mapping-changed,
+    /// cache-changed, requested, source-changed, ...), as its deliveredBy counts name them.
+    pub trigger: Option<String>,
     pub page: Option<i64>,
     /// Default 25, max 200.
     #[serde(rename = "pageSize")]
@@ -245,7 +248,8 @@ delivered them, by run, by drift, by restricted access, or by a search term. Eac
 version, attempt count, next attempt time, last error, and source file and row. Use it for 'which records failed and \
 why' (status=failed, read lastError), 'what is held', 'what did last night's run deliver' (deliveredBy or runId), 'what \
 drifted', 'what is restricted' (accessRestricted=true for either kind, restricted=true for those restricted by an \
-operator), 'what is restricted until complete and what is missing' (incomplete=true, read incompleteMissing). \
+operator), 'what is restricted until complete and what is missing' (incomplete=true, read incompleteMissing), 'which \
+records did that run send because the mapping changed' (runId or deliveredBy with trigger=mapping-changed). \
 totalCapped=true means more match than were counted: narrow the filter. When the flow is unknown use \
 delivery_find_records; for one record's full history use delivery_record."
     )]
@@ -268,7 +272,8 @@ delivery_find_records; for one record's full history use delivery_record."
         let (interface, partition, missing) = (text(i.interface), text(i.partition), text(i.missing));
         let incomplete = i.incomplete.filter(|on| *on);
         let mut narrowed = vec![("tab", "records")];
-        for (name, value) in [("submission", &submission), ("delivered", &delivered_by), ("run", &run), ("missing", &missing)] {
+        let trigger = text(i.trigger);
+        for (name, value) in [("submission", &submission), ("delivered", &delivered_by), ("run", &run), ("trigger", &trigger), ("missing", &missing)] {
             if let Some(value) = value {
                 narrowed.push((name, value.as_str()));
             }
@@ -300,6 +305,7 @@ delivery_find_records; for one record's full history use delivery_record."
             .value("incomplete", incomplete)
             .text("missing", missing)
             .value("accessRestricted", access_restricted)
+            .text("trigger", trigger)
             .text("interface", interface)
             .text("partition", partition)
             .page(i.page, i.page_size);
@@ -316,8 +322,10 @@ delivery_find_records; for one record's full history use delivery_record."
     #[tool(
         description = "One run from the id you hold: a run id, or the correlation-id in a platform's log. Returns the run, \
 every run of its execution (a split delivery's coordinating run and its parts, each with its own id), the plans it \
-registered with their counts, and, when no run has the id, why. Use it for 'what is this id in the logs', 'which run \
-sent this request'. get_run has a run's scope and failed statement; delivery_flow_records(runId) its records."
+registered with their counts, `deliveredBy` (the records the execution delivered, counted by what sent them: \
+mapping-changed, cache-changed, requested, ...; a record under every cause its reason names), and, when no run has the \
+id, why. Use it for 'what is this id in the logs', 'which run sent this request', 'why did this run send so many \
+records'. get_run has a run's scope and failed statement; delivery_flow_records(runId, trigger) the records it sent for a cause."
     )]
     async fn delivery_run(&self, Parameters(i): Parameters<RunLookupInput>) -> String {
         let query = Query::new().text("id", Some(i.id));

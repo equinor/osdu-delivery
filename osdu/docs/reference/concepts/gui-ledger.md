@@ -220,8 +220,9 @@ for a record that was.
   and every request with who made it. Each **Delivered** row is titled with what sent it (`Delivered: mapping
   WellLog@1.4.0 changed (852db64); acl.viewers changed`), and opens to every input that moved, with what it was and is
   now and its explanation behind a note mark, and the paths of the document that changed; one delivered before the ledger
-  kept reasons says `reason not recorded` ([delivery reasons](delivery-reasons.md)). It narrows to one lane or to the
-  requests people made.
+  kept reasons says `reason not recorded` ([delivery reasons](delivery-reasons.md)). A **Nothing to send** row says what
+  moved to render the record (a mapping, a cache, a request) when something did. The header's **Delivered** says the
+  version OSDU holds and the line of the delivery that sent it. It narrows to one lane or to the requests people made.
 - **Source**: where the row came from (ingestion file and row, when received, source key, delivery key, mapping, key
   columns with a copy of the key as the ledger holds it), a newer row a waiting document is built from, and a read of the
   rows as the ingestion tables hold them now, with the flow's own connection.

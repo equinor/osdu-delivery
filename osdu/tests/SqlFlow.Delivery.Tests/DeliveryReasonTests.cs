@@ -98,6 +98,17 @@ public sealed class DeliveryReasonTests
     }
 
     [Fact]
+    public void Two_reads_of_the_same_record_compare_equal_with_its_paths_kept_as_text()
+    {
+        // A record's equality compares an array by reference: the paths are text in the ledger's records, so a state read
+        // twice is equal, as the checks that a dry run leaves the ledger as it was rely on.
+        var text = RenderPaths.Of(Doc()).EncodeText();
+        Assert.Equal(Delivered() with { DeliveryKey = new DeliveryKey(Guid.Empty), FlowId = Guid.Empty, RenderPaths = text },
+            Delivered() with { DeliveryKey = new DeliveryKey(Guid.Empty), FlowId = Guid.Empty, RenderPaths = new string(text.AsSpan()) });
+        Assert.Contains("not base64", DeliveryReasons.Paths(Delivered() with { RenderPaths = "not base64!" }, RenderPaths.Of(Doc())).NotCompared, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_typical_record_keeps_about_twenty_five_bytes_a_path()
     {
         var document = Canonical(Object(Enumerable.Range(0, 60).Select(i => ($"Property{i:D2}", $"\"value {i}\""))));
@@ -116,7 +127,7 @@ public sealed class DeliveryReasonTests
         Assert.Contains("new to the ledger", DeliveryReasons.Paths(null, rendered).NotCompared, StringComparison.Ordinal);
         Assert.Contains("holds no version", DeliveryReasons.Paths(Delivered() with { Status = RecordStatus.Deleted, TargetVersion = null }, rendered).NotCompared, StringComparison.Ordinal);
         Assert.Contains("delivered before the ledger kept them", DeliveryReasons.Paths(Delivered() with { RenderPaths = null }, rendered).NotCompared, StringComparison.Ordinal);
-        Assert.Contains("cannot be read", DeliveryReasons.Paths(Delivered() with { RenderPaths = [1, 5, 0] }, rendered).NotCompared, StringComparison.Ordinal);
+        Assert.Contains("cannot be read", DeliveryReasons.Paths(Delivered() with { RenderPaths = Convert.ToBase64String(new byte[] { 1, 5, 0 }) }, rendered).NotCompared, StringComparison.Ordinal);
     }
 
     // --- Each trigger kind ------------------------------------------------------------------------------------------
@@ -326,6 +337,31 @@ public sealed class DeliveryReasonTests
         Assert.Contains("a record it searches for in OSDU, its parent, or a child it links", other.Detail, StringComparison.Ordinal);
     }
 
+    // --- A render that sends nothing ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void A_render_identical_to_what_OSDU_holds_says_what_moved_to_render_it_and_that_nothing_was_sent()
+    {
+        var unchanged = ChangeDetector.Decide(Delivered(), "m1", "p1", true, new FlowChange());
+
+        var reason = Reasons(Context(fingerprint: NewFingerprint), NewCommit).ForUnchanged(Delivered(), unchanged, Row());
+
+        Assert.NotNull(reason);
+        Assert.Equal(DeliveryReason.NoneAction, reason!.Action);
+        Assert.Equal([ReasonKinds.MappingChanged], Kinds(reason));
+        Assert.Null(reason.Paths);
+        Assert.Equal("mapping WellLog@1.4.0 changed (852db64); renders what OSDU holds", reason.Summary());
+        Assert.Equal(reason.Summary(), DeliveryReason.FromJson(JsonNode.Parse(reason.ToJson().ToJsonString()))!.Summary());
+    }
+
+    [Fact]
+    public void A_render_identical_to_what_OSDU_holds_with_nothing_moved_says_nothing()
+    {
+        var unchanged = ChangeDetector.Decide(Delivered(), "m1", "p1", true, new FlowChange());
+
+        Assert.Null(Reasons().ForUnchanged(Delivered(), unchanged, Row()));
+    }
+
     // --- Several at once, and the real case --------------------------------------------------------------------------
 
     [Fact]
@@ -356,7 +392,7 @@ public sealed class DeliveryReasonTests
         // changed the acl.viewers country-group rule of WellLog@1.4.0, and nothing else.
         var before = Doc("""["data.default.viewers@dev.example.com","data.country-no.viewers@dev.example.com"]""");
         var after = Doc("""["data.default.viewers@dev.example.com","data.country-no-restricted.viewers@dev.example.com"]""");
-        var state = Delivered() with { RenderPaths = RenderPaths.Of(before).Encode() };
+        var state = Delivered() with { RenderPaths = RenderPaths.Of(before).EncodeText() };
 
         var reason = Reasons(Context(fingerprint: NewFingerprint), NewCommit).For(state, Update(), Row(), RenderPaths.Of(after));
 
@@ -386,7 +422,7 @@ public sealed class DeliveryReasonTests
     [Fact]
     public void A_reason_reads_back_from_the_json_its_attempt_keeps()
     {
-        var state = Delivered() with { RenderPaths = RenderPaths.Of(Doc()).Encode(), PlanRequestedUtc = At };
+        var state = Delivered() with { RenderPaths = RenderPaths.Of(Doc()).EncodeText(), PlanRequestedUtc = At };
         var reason = Reasons(Context(fingerprint: NewFingerprint, cache: "20261121T020000Z"), NewCommit)
             .For(state, Update(), Row(), RenderPaths.Of(Doc("""["x@x"]""")));
 
@@ -406,7 +442,7 @@ public sealed class DeliveryReasonTests
     public void A_work_item_carries_the_reason_the_paths_and_the_commit_and_an_older_line_carries_none()
     {
         var reason = Reasons().For(null, Create(), Row(), Paths(Doc()));
-        var paths = Convert.ToBase64String(RenderPaths.Of(Doc()).Encode());
+        var paths = RenderPaths.Of(Doc()).EncodeText();
         var item = new WorkItem(Guid.NewGuid(), "dev:wpc--WellLog:1", Doc(), Reason: reason.ToJson().ToJsonString(), Paths: paths, Commit: NewCommit);
 
         var read = WorkBatchFile.Decode(WorkBatchFile.Encode(item));
@@ -478,7 +514,7 @@ public sealed class DeliveryReasonTests
         PayloadHash = payload,
         RenderContext = context ?? Context().Canonical(),
         RenderCommit = OldCommit,
-        RenderPaths = RenderPaths.Of(Doc()).Encode(),
+        RenderPaths = RenderPaths.Of(Doc()).EncodeText(),
         TargetVersion = 3,
         LastDeliveredUtc = At,
     };

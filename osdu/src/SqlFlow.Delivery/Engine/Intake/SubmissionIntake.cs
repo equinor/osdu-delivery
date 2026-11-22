@@ -563,7 +563,7 @@ public sealed class SubmissionIntake
                                 entry.Key.Value.Value, entry.TargetId!, entry.Render!.Canonical, entry.Render.Assertions?.ToText(), EnrichParts.Encode(entry.Render.StepWork),
                                 DocumentAccess.Of(entry.Render).Encode(),
                                 entry.Why?.ToJson().ToJsonString(),
-                                entry.Paths is { } paths ? Convert.ToBase64String(paths.Encode()) : null,
+                                entry.Paths?.EncodeText(),
                                 header.Reasons.Commit),
                             ct).ConfigureAwait(false);
                         // The values this document was built from become one set id on the record: no row per
@@ -672,7 +672,8 @@ public sealed class SubmissionIntake
         PayloadModifiedUtc = entry.PayloadModifiedUtc,
         RenderContext = entry.SkipTier == SkipTier.ContentHash ? renderContext : null,
         RenderCommit = entry.SkipTier == SkipTier.ContentHash ? commit : null,
-        RenderPaths = entry.Paths?.Encode(),
+        RenderPaths = entry.Paths?.EncodeText(),
+        Why = entry.SkipTier == SkipTier.ContentHash ? entry.Why : null,
         ChildLinkKey = entry.SkipTier == SkipTier.ContentHash ? entry.Render?.ChildLinkKey : null,
         HeldSteps = entry.SkipTier == SkipTier.ContentHash ? HeldStepsOf(entry.Render) : null,
         RunId = RunId,

@@ -266,8 +266,14 @@ public sealed record ReasonTrigger
 /// </summary>
 public sealed record DeliveryReason
 {
-    /// <summary>What the try sends: <c>create</c>, <c>update-metadata</c>, <c>update-payload</c> or <c>update-both</c>.</summary>
+    /// <summary>
+    /// What the try sends: <c>create</c>, <c>update-metadata</c>, <c>update-payload</c> or <c>update-both</c>; or
+    /// <see cref="NoneAction"/> for a render identical to what OSDU holds, which sends nothing.
+    /// </summary>
     public required string Action { get; init; }
+
+    /// <summary>The action of a render that sends nothing: it is what OSDU already holds.</summary>
+    public const string NoneAction = "none";
 
     /// <summary>Every input that moved, in <see cref="ReasonKinds.All"/>'s order; never empty.</summary>
     public required IReadOnlyList<ReasonTrigger> Triggers { get; init; }
@@ -288,6 +294,11 @@ public sealed record DeliveryReason
     public string Summary()
     {
         var line = string.Join(", ", Triggers.Select(t => t.Describe()));
+        if (string.Equals(Action, NoneAction, StringComparison.Ordinal))
+        {
+            return $"{line}; renders what OSDU holds";
+        }
+
         if (Paths is not { Compared: true } paths)
         {
             return line;

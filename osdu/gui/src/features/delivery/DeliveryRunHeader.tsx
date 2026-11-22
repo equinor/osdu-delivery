@@ -1,11 +1,14 @@
+import { useState, type ReactNode } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { DatabaseZap, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { RunDetail, RunSummary } from "@/api/types";
 import { DetailPair } from "@/components/DetailPair";
 import { IdChip } from "@/components/IdChip";
-import { deliveryRunRecordsRoute, ledgerLabel } from "../../api/delivery";
+import { deliveryApi, deliveryRunRecordsRoute, ledgerLabel } from "../../api/delivery";
+import { DeliveredByLine } from "./DeliveryReasonView";
 import {
   DELIVERING_OPERATIONS, listedRunCounts, runRecordCounts, runRemovalCounts, runRequest, runResult, runScope, runSubmissionId,
   type RunRecordCounts, type RunRemovalCounts,
@@ -99,11 +102,72 @@ export function DeliveryRunRecordsLink({ run }: { run: Pick<RunSummary, "runId" 
  * flows), in place of the row counts SQLFlow's own runs carry: what its result reports, as its page shows it, and a muted
  * dash for a count the run does not report (a plan delivers nothing; an intake plans, and its drain delivers).
  */
-export function DeliveryRunListCount({ run, count }: { run: Pick<RunSummary, "operation" | "resultCounts">; count: keyof RunRecordCounts }) {
+export function DeliveryRunListCount({ run, count }: { run: Pick<RunSummary, "runId" | "pipelineId" | "operation" | "resultCounts">; count: keyof RunRecordCounts }) {
   const value = listedRunCounts(run)[count];
-  return value === null
-    ? <span className="text-muted-foreground">-</span>
-    : <span className="font-mono tabular-nums" data-testid={`run-list-${count}`}>{value}</span>;
+  if (value === null) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+
+  const shown = <span className="font-mono tabular-nums" data-testid={`run-list-${count}`}>{value}</span>;
+  return count === "delivered" && value > 0 ? <DeliveredWhy run={run}>{shown}</DeliveredWhy> : shown;
+}
+
+/**
+ * A run's delivered count on a list of runs, which on hover says what sent the records it delivered, each cause opening
+ * them: read from the ledger when the hover opens, so a list of runs asks for nothing it is not shown.
+ */
+function DeliveredWhy({ run, children }: { run: Pick<RunSummary, "runId" | "pipelineId">; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const why = useQuery({
+    queryKey: ["delivery", "run-lookup", run.runId],
+    queryFn: () => deliveryApi.runLookup(run.runId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild>
+        <span className="cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-4">{children}</span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[420px]" onClick={(event) => event.stopPropagation()}>
+        {why.data === undefined
+          ? <span>{why.isError ? "What sent them could not be read." : "Reading what sent them..."}</span>
+          : (
+            <DeliveredByLine
+              deliveredBy={why.data.deliveredBy}
+              linkFor={(kind) => deliveryRunRecordsRoute(run.pipelineId, run.runId, undefined, kind)}
+              testId="run-list-delivered-by"
+            />
+          )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * What sent the records a delivery run delivered, the run and the parts it split its delivery into together, each cause
+ * opening the records it delivered for it in the interface and partition the run worked in.
+ */
+function RunDeliveredBy({ run }: { run: RunDetail }) {
+  const why = useQuery({
+    queryKey: ["delivery", "run-lookup", run.runId],
+    queryFn: () => deliveryApi.runLookup(run.runId),
+    enabled: DELIVERING_OPERATIONS.includes(run.operation ?? "deliver"),
+    staleTime: 30_000,
+  });
+  if (why.data?.deliveredBy == null || why.data.deliveredBy.delivered === 0) {
+    return null;
+  }
+
+  return (
+    <DetailPair label="Delivered for">
+      <DeliveredByLine
+        deliveredBy={why.data.deliveredBy}
+        linkFor={(kind) => deliveryRunRecordsRoute(run.pipelineId, run.runId, runScope(run), kind)}
+        testId="run-delivered-by"
+      />
+    </DetailPair>
+  );
 }
 
 /** The cache run's way to the cache it refreshed. */
@@ -194,6 +258,7 @@ export function DeliveryRunCounts({ run }: { run: RunDetail }) {
       <DetailPair label="Failed"><RecordCount value={counts.failed} testId="run-records-failed" /></DetailPair>
       <DetailPair label="Unchanged"><RecordCount value={counts.unchanged} testId="run-records-unchanged" /></DetailPair>
       <DetailPair label="Waiting"><RecordCount value={counts.waiting} testId="run-records-waiting" /></DetailPair>
+      <RunDeliveredBy run={run} />
     </>
   );
 }

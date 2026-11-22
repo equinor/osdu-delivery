@@ -13,6 +13,11 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   its deliveries by what sent them, and the MCP server the extension carries returns the reason in `delivery_record` and
   the counts in `delivery_submissions`
   ([delivery reasons](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/delivery-reasons.md)).
+- Each cause in a submission's counts, a run's **Delivered for** and the hover over a run's **Delivered** count on a
+  flow's **Runs** tab opens the records sent for it, under a **Delivered for** chip on the Records tab. A record's header
+  says why its last delivery was sent, and a **Nothing to send** entry says what moved when a mapping, the cache or a
+  request reached a record without changing it. The MCP server's `delivery_run` counts a run's deliveries by cause, and
+  `delivery_flow_records` takes `trigger`.
 
 ### A run's records
 

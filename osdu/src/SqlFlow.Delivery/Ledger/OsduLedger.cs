@@ -682,7 +682,10 @@ public sealed partial class OsduLedger : ILedger
                 var changed = skip.Origin.UpdatedUtc is { } stamp
                     && !(entity.SourceUpdatedUtc >= stamp)
                     && (settles || !(entity.PendingSourceUpdatedUtc >= stamp));
-                if (changed || settles)
+
+                // A render something moved for (a request, the mapping, the cache, a child or lookup row) is on the record's
+                // history too, saying what moved, so whether a change reached the record is read from the record itself.
+                if (changed || settles || skip.Why is not null)
                 {
                     db.DeliveryAttempts.Add(new DeliveryAttempt
                     {
@@ -696,9 +699,12 @@ public sealed partial class OsduLedger : ILedger
                         CompletedUtc = now,
                         Outcome = StatusText.Of(AttemptOutcome.Skipped),
                         Phase = AttemptPhases.Identical,
-                        ResultJson = settles
-                            ? AttemptResult.Settled(Truncate(Http.HeaderRedaction.RedactMessage(Settled(skip.Reason, was, stale: false)), 2000)!)
-                            : AttemptResult.WithDetail(null, Truncate(Http.HeaderRedaction.RedactMessage(skip.Reason), 2000)),
+                        ResultJson = AttemptResult.WithReason(
+                            settles
+                                ? AttemptResult.Settled(Truncate(Http.HeaderRedaction.RedactMessage(Settled(skip.Reason, was, stale: false)), 2000)!)
+                                : AttemptResult.WithDetail(null, Truncate(Http.HeaderRedaction.RedactMessage(skip.Reason), 2000)),
+                            skip.Why),
+                        Triggers = skip.Why?.Kinds is { } moved ? (int)moved : null,
                         SourceFileName = Truncate(skip.Origin.FileName, DeliveryModel.MaxSourceFileNameLength),
                         SourceRowNumber = skip.Origin.RowNumber,
                         SourceUpdatedUtc = skip.Origin.UpdatedUtc,
@@ -748,7 +754,7 @@ public sealed partial class OsduLedger : ILedger
 
                     // A record delivered before the ledger kept its document's paths keeps them from the render found
                     // identical to what OSDU holds, so its next delivery can name what it changes.
-                    entity.RenderPaths ??= skip.RenderPaths;
+                    entity.RenderPaths ??= skip.RenderPaths is { } kept ? Convert.FromBase64String(kept) : null;
                     if (changed)
                     {
                         entity.SourceFileName = Truncate(skip.Origin.FileName, DeliveryModel.MaxSourceFileNameLength);
@@ -1050,17 +1056,40 @@ public sealed partial class OsduLedger : ILedger
     public async Task<SubmissionTriggerCounts> CountDeliveredTriggersAsync(Guid submissionId, CancellationToken ct = default)
     {
         var delivered = StatusText.Of(AttemptOutcome.Delivered);
+        var total = await CountAttemptsAsync(submissionId, AttemptOutcome.Delivered, null, ct).ConfigureAwait(false);
+        return await CountTriggersAsync(db => db.DeliveryAttempts.AsNoTracking().Where(a => a.SubmissionId == submissionId && a.Outcome == delivered), total, ct)
+            .ConfigureAwait(false);
+    }
 
-        // The submission's delivered attempts grouped by the set of kinds each names: a few groups however many records, each
-        // counting its distinct records, then spread over the kinds in memory.
+    public async Task<SubmissionTriggerCounts> CountRunDeliveredTriggersAsync(IReadOnlyCollection<Guid> runIds, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(runIds);
+        List<Guid?> runs = [.. runIds.Distinct().Select(r => (Guid?)r)];
+        if (runs.Count == 0)
+        {
+            return new SubmissionTriggerCounts(0, 0, []);
+        }
+
+        var delivered = StatusText.Of(AttemptOutcome.Delivered);
+        IQueryable<DeliveryAttempt> Sent(OsduDbContext db) => db.DeliveryAttempts.AsNoTracking().Where(a => runs.Contains(a.RunId) && a.Outcome == delivered);
+
+        // A record a run delivered in two of its ledgers is two records, as a run's own count has it: keys are per flow.
+        var total = await ReadAsync(db => Sent(db).Select(a => new { a.FlowId, a.DeliveryKey }).Distinct().LongCountAsync(ct), ct).ConfigureAwait(false);
+        return await CountTriggersAsync(Sent, total, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The delivered attempts <paramref name="sent"/> selects, grouped by the set of kinds each names: a few groups however
+    /// many records, each counting its distinct records, then spread over the kinds in memory.
+    /// </summary>
+    private async Task<SubmissionTriggerCounts> CountTriggersAsync(Func<OsduDbContext, IQueryable<DeliveryAttempt>> sent, long total, CancellationToken ct)
+    {
         var groups = await ReadAsync(
-            db => db.DeliveryAttempts.AsNoTracking()
-                .Where(a => a.SubmissionId == submissionId && a.Outcome == delivered)
+            db => sent(db)
                 .GroupBy(a => a.Triggers)
                 .Select(g => new { Triggers = g.Key, Records = g.Select(a => a.DeliveryKey).Distinct().LongCount() })
                 .ToListAsync(ct),
             ct).ConfigureAwait(false);
-        var total = await CountAttemptsAsync(submissionId, AttemptOutcome.Delivered, null, ct).ConfigureAwait(false);
         var byKind = Planning.ReasonKinds.All
             .Select(k => (k.Kind, Records: groups.Where(g => g.Triggers is { } set && (set & (int)k.Flag) != 0).Sum(g => g.Records)))
             .Where(k => k.Records > 0)
@@ -1990,6 +2019,14 @@ public sealed partial class OsduLedger : ILedger
             // The attempt table is indexed on (RunId, PartitionId, FlowId, DeliveryKey), so this is a semi-join over that index
             // rather than a scan: one seek for the run, and one for each part of a delivery it split over nodes.
             var attempts = db.DeliveryAttempts.AsNoTracking().Where(a => a.PartitionId == partition && a.FlowId == flowId);
+            if (query.DeliveredFor is { } cause)
+            {
+                // The records the run delivered for one cause: its delivered attempts naming the kind.
+                var sentFor = StatusText.Of(AttemptOutcome.Delivered);
+                var flag = (int)cause;
+                attempts = attempts.Where(a => a.Outcome == sentFor && a.Triggers != null && (a.Triggers.Value & flag) != 0);
+            }
+
             List<Guid?> runs = [runId, .. query.RunParts.Where(part => part != runId).Distinct().Select(part => (Guid?)part)];
             var touched = (runs.Count == 1 ? attempts.Where(a => a.RunId == runId) : attempts.Where(a => runs.Contains(a.RunId))).Select(a => a.DeliveryKey);
             rows = rows.Where(r => touched.Contains(r.DeliveryKey));
@@ -2000,9 +2037,16 @@ public sealed partial class OsduLedger : ILedger
             // The attempt table is indexed on (SubmissionId, Outcome, Phase) with the key included, so the records a
             // submission delivered are a seek of that index whatever the submission was: a semi-join, not a scan.
             var delivered = StatusText.Of(AttemptOutcome.Delivered);
-            var sent = db.DeliveryAttempts.AsNoTracking()
-                .Where(a => a.SubmissionId == deliveredBy && a.Outcome == delivered && a.PartitionId == partition && a.FlowId == flowId)
-                .Select(a => a.DeliveryKey);
+            var sending = db.DeliveryAttempts.AsNoTracking()
+                .Where(a => a.SubmissionId == deliveredBy && a.Outcome == delivered && a.PartitionId == partition && a.FlowId == flowId);
+            if (query.DeliveredFor is { } cause)
+            {
+                // One cause of the submission's deliveries: the kind is read from the attempt each record's key leads to.
+                var flag = (int)cause;
+                sending = sending.Where(a => a.Triggers != null && (a.Triggers.Value & flag) != 0);
+            }
+
+            var sent = sending.Select(a => a.DeliveryKey);
             rows = rows.Where(r => sent.Contains(r.DeliveryKey));
         }
 
@@ -4622,7 +4666,7 @@ public sealed partial class OsduLedger : ILedger
         MappingName = r.MappingName,
         RenderContext = r.RenderContext,
         RenderCommit = r.RenderCommit,
-        RenderPaths = r.RenderPaths,
+        RenderPaths = r.RenderPaths is { } paths ? Convert.ToBase64String(paths) : null,
         SourceFingerprint = r.SourceFingerprint,
         SourceModifiedUtc = r.SourceModifiedUtc,
         SourceFileName = r.SourceFileName,

@@ -94,6 +94,55 @@ public sealed class DeliveryReasonRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_mapping_edit_that_changes_no_record_says_on_each_that_it_reached_it_and_a_run_is_counted_and_narrowed_by_cause()
+    {
+        var original = (await File.ReadAllTextAsync(Path.Combine(Samples.Mappings, "WellLog@1.4.0.yaml"))).Replace("\r\n", "\n", StringComparison.Ordinal);
+        using var estate = await EstateAsync(original);
+        var logs = SampleEstate.Logs().Count;
+        var key = SampleEstate.Key(0);
+        Assert.Equal(logs, (await estate.RunAsync(FirstCommit)).Delivered);
+
+        // A parameter's description moves the mapping's fingerprint and changes no document: nothing is sent, and each record
+        // says the mapping reached it and rendered what OSDU holds.
+        const string description = "description: The legal tag every record this mapping renders carries (legal.legaltags).";
+        Assert.Contains(description, original, StringComparison.Ordinal);
+        var described = original.Replace(description, "description: The legal tag on every record this mapping renders (legal.legaltags).", StringComparison.Ordinal);
+        await estate.WriteMappingAsync(described);
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        Assert.Equal(0, (await estate.RunAsync(SecondCommit)).Delivered);
+
+        var identical = Assert.Single(
+            await estate.Ledger.ListAttemptsAsync(estate.FlowId, key, 50),
+            a => a is { Outcome: AttemptOutcome.Skipped, Phase: AttemptPhases.Identical });
+        Assert.Equal(TriggerKinds.MappingChanged, identical.Triggers);
+        var reached = DeliveryReason.OfResult(identical.ResultJson)!;
+        Assert.Equal(DeliveryReason.NoneAction, reached.Action);
+        Assert.Equal("mapping WellLog@1.4.0 changed (852db64); renders what OSDU holds", reached.Summary());
+        Assert.Equal((FirstCommit, SecondCommit), (reached.Triggers[0].FromCommit, reached.Triggers[0].ToCommit));
+
+        // Nothing moved since: the next run renders nothing, and writes no attempt.
+        Assert.Equal(0, (await estate.RunAsync(SecondCommit)).RecordCount);
+        Assert.Single(await estate.Ledger.ListAttemptsAsync(estate.FlowId, key, 50), a => a.Phase == AttemptPhases.Identical);
+
+        // An edit that changes every record: the run that delivers them counts them by what sent them, and its records narrow
+        // by that cause and by no other.
+        const string viewers = "    viewers: [\"{$param.aclViewer}\"]\n";
+        await estate.WriteMappingAsync(described.Replace(viewers, "    viewers: [\"{$param.aclViewer}\", \"data.country-no.viewers@{$param.dataPartition}.example.com\"]\n", StringComparison.Ordinal));
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        Assert.Equal(logs, (await estate.RunAsync(SecondCommit)).Delivered);
+        var runId = estate.LastRunId;
+
+        var counted = await estate.Ledger.CountRunDeliveredTriggersAsync([runId]);
+        Assert.Equal((logs, 0L), (counted.Delivered, counted.NotRecorded));
+        Assert.Equal([(ReasonKinds.MappingChanged, (long)logs)], counted.ByTrigger);
+        Assert.Equal(logs, (await estate.Ledger.CountAsync(estate.FlowId, new RecordQuery { RunId = runId, DeliveredFor = TriggerKinds.MappingChanged }, 1000)).Count);
+        Assert.Equal(0, (await estate.Ledger.CountAsync(estate.FlowId, new RecordQuery { RunId = runId, DeliveredFor = TriggerKinds.CacheChanged }, 1000)).Count);
+        var submission = (await estate.DeliveredAsync(key))[0].SubmissionId!.Value;
+        Assert.Equal(logs, (await estate.Ledger.CountAsync(
+            estate.FlowId, new RecordQuery { DeliveredBySubmissionId = submission, DeliveredFor = TriggerKinds.MappingChanged }, 1000)).Count);
+    }
+
+    [Fact]
     public async Task A_redelivery_an_operator_asked_for_names_the_intervention_and_who_asked()
     {
         var original = await File.ReadAllTextAsync(Path.Combine(Samples.Mappings, "WellLog@1.4.0.yaml"));
@@ -154,6 +203,9 @@ public sealed class DeliveryReasonRunTests : IDisposable
 
         public OsduLedger Ledger => ledger;
 
+        /// <summary>The platform run the last <see cref="RunAsync"/> was, whose attempts carry its id.</summary>
+        public Guid LastRunId { get; private set; }
+
         public Guid FlowId => _flowId ?? throw new InvalidOperationException("The flow has not run yet, so no ledger holds it.");
 
         public Task WriteMappingAsync(string yaml) => File.WriteAllTextAsync(mappingFile, yaml);
@@ -171,6 +223,7 @@ public sealed class DeliveryReasonRunTests : IDisposable
                 CancellationToken.None);
             Assert.True(result.Success, result.Error);
             _flowId ??= Assert.Single(await ledger.ListLedgersAsync(null), l => string.Equals(l.FlowName, flow.Name, StringComparison.Ordinal)).FlowId;
+            LastRunId = result.RunId;
             return Assert.IsType<DeliverOutcome>(result.Result);
         }
 
