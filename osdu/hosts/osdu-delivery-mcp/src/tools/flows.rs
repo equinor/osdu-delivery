@@ -328,9 +328,11 @@ sent this request'. get_run has a run's scope and failed statement; delivery_flo
         description = "Submissions: each plan a delivery flow made over its ingestion tables, and what became of it. \
 With pipelineId, lists them newest first: what was selected (incremental, full or keys, the source window, the run \
 parameters), the counts (planned, delivered, held, failed, skipped unchanged, awaiting approval, waiting), status, \
-run and error. With submissionId, reads one with every run that worked on it; add include=[\"batches\"] for its work \
-batches or [\"attempts\"] for its delivery tries. Use it for 'what did the last run do', 'why is this submission \
-still running', 'which batch is stuck'. For the records of a submission use \
+run and error. With submissionId, reads one with every run that worked on it and `deliveredBy`, its delivered records \
+counted by what sent them (mapping-changed, cache-changed, requested, ...; a record counts under each kind its reason \
+names); add include=[\"batches\"] for its work batches or [\"attempts\"] for its delivery tries. Use it for \
+'what did the last run do', 'why did this run send so many records', 'why is this submission still running', 'which \
+batch is stuck'. For the records of a submission use \
 delivery_flow_records(submissionId or deliveredBy)."
     )]
     async fn delivery_submissions(&self, Parameters(i): Parameters<SubmissionsInput>) -> String {

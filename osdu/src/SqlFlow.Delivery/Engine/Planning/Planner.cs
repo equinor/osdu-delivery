@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
@@ -78,6 +79,19 @@ public sealed record PlanEntry
 
     public bool DeliverPayload { get; init; }
 
+    /// <summary>
+    /// For a delivery: why it is sent (osdu/docs/reference/concepts/delivery-reasons.md), which the
+    /// work batch carries to the attempt that delivers it. Null for every entry that sends nothing.
+    /// </summary>
+    public DeliveryReason? Why { get; init; }
+
+    /// <summary>
+    /// The paths of the rendered document and a hash of each value: for a delivery that sends the document, what the ledger
+    /// keeps of it once it lands; for a skip of a record whose paths the ledger never kept, what it keeps now, since OSDU holds
+    /// that very document. Null otherwise.
+    /// </summary>
+    public RenderPaths? Paths { get; init; }
+
     public bool IsDelivery => DeliverMetadata || DeliverPayload;
 }
 
@@ -128,6 +142,21 @@ public sealed record PlanHeader
     /// every record the plan renders carries among its assertion findings.
     /// </summary>
     public RunRowsFindings RunRows { get; init; } = RunRowsFindings.None;
+
+    private DeliveryReasons? _reasons;
+
+    /// <summary>
+    /// Builds the reason of each delivery the plan makes, from the run's render context and commit. A header built without
+    /// one (a test's) builds one of the mapping's context, knowing no commit, the first time it is asked.
+    /// </summary>
+    public DeliveryReasons Reasons
+    {
+        get => _reasons ?? Interlocked.CompareExchange(ref _reasons, new DeliveryReasons(Mapping.Context, null, Flow.Change), null) ?? _reasons!;
+        init => _reasons = value;
+    }
+
+    /// <summary>The cache changes a plan has read to name in its reasons, by the version a record was last rendered against.</summary>
+    internal ConcurrentDictionary<string, Task<IReadOnlyList<UpdateTag>>> CacheChanges { get; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>Running totals of a plan, safe to add to from the parallel renderers.</summary>
@@ -336,6 +365,12 @@ public sealed class Planner
     public IIngestionSource Source => _source;
 
     /// <summary>
+    /// The estate commit the run executes, when its run is pinned to one: what the reasons of the plan's deliveries quote
+    /// beside the mapping they were rendered with, and what the ledger keeps with each record's render context.
+    /// </summary>
+    public string? Commit { get; init; }
+
+    /// <summary>
     /// Opens the read, checks the flow and the mapping against the tables, and applies the tier-0 gate.
     /// </summary>
     /// <param name="flow">The flow being planned.</param>
@@ -390,6 +425,7 @@ public sealed class Planner
             GatedCacheSets = gatedSets,
             References = ReferenceReader.Of(Templates.OsduTemplate.From(resolved.Schema)),
             RenderEvery = renderEvery,
+            Reasons = new DeliveryReasons(resolved.Context, Commit, flow.Change),
         };
 
         foreach (var missing in source.MissingKeys)
@@ -937,6 +973,94 @@ public sealed class Planner
 
             deferred = waiting;
         }
+
+        await NameReasonsAsync(header, entries, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The most cache changes a plan reads for one version its records were last rendered against.</summary>
+    internal const int MaxCacheChangesRead = 2000;
+
+    /// <summary>
+    /// Names what the batch's deliveries were asked and reached by, from the ledger: who asked a record asked to be planned
+    /// again (one read of the audit trail for the batch's requested deliveries), and which cache changes reached a record whose
+    /// cache moved (read once a plan for each version its records were last rendered against). Only deliveries are named, so a
+    /// plan that sends nothing reads nothing more.
+    /// </summary>
+    private async Task NameReasonsAsync(PlanHeader header, List<PlanEntry> entries, CancellationToken ct)
+    {
+        if (_ledger is null)
+        {
+            return;
+        }
+
+        var asked = new List<(DeliveryKey Key, DateTime AskedUtc)>();
+        var cached = false;
+        foreach (var entry in entries)
+        {
+            if (entry is not { Why: { } why, Key: { } key })
+            {
+                continue;
+            }
+
+            if (why.Triggers.FirstOrDefault(t => t.Kind == ReasonKinds.Requested) is { At: { } at })
+            {
+                asked.Add((key, at));
+            }
+
+            cached |= why.Triggers.Any(t => t is { Kind: ReasonKinds.CacheChanged, From: not null }) && entry.Existing?.CacheSetId is not null;
+        }
+
+        if (asked.Count == 0 && !cached)
+        {
+            return;
+        }
+
+        var origins = asked.Count == 0
+            ? new Dictionary<DeliveryKey, PlanRequestOrigin>()
+            : await _ledger.PlanRequestOriginsAsync(header.Flow.Id, asked, ct).ConfigureAwait(false);
+        var scope = header.Mapping.Context.CacheScope;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            if (entries[i] is not { Why: { } why, Key: { } key } entry)
+            {
+                continue;
+            }
+
+            var named = new List<ReasonTrigger>(why.Triggers.Count);
+            foreach (var trigger in why.Triggers)
+            {
+                if (trigger.Kind == ReasonKinds.Requested && origins.TryGetValue(key, out var origin))
+                {
+                    named.Add(trigger with { ActivityId = origin.ActivityId, Activity = origin.Kind, Actor = origin.Actor, Detail = null });
+                }
+                else if (trigger is { Kind: ReasonKinds.CacheChanged, From: { } from } && scope is not null && entry.Existing?.CacheSetId is { } set)
+                {
+                    var changes = await header.CacheChanges
+                        .GetOrAdd(from, v => _ledger.CacheChangesBetweenAsync(scope, v, header.Reasons.CacheVersion, MaxCacheChangesRead, ct))
+                        .ConfigureAwait(false);
+                    var reaching = changes.Where(c => c.SetIds.Contains(set)).ToList();
+                    named.Add(reaching.Count == 0
+                        ? trigger
+                        : trigger with
+                        {
+                            Names = [.. reaching.Take(DeliveryReasons.MaxNames).Select(c => $"change {c.TagId.ToString(CultureInfo.InvariantCulture)}: {c.TypeName} '{c.ItemId}', {c.Path} {c.Change}")],
+                            More = Math.Max(0, reaching.Count - DeliveryReasons.MaxNames),
+                        });
+                }
+                else
+                {
+                    named.Add(trigger);
+                }
+            }
+
+            var told = why with { Triggers = named };
+            var said = why.Summary();
+            entries[i] = entry with
+            {
+                Why = told,
+                Reason = entry.Reason.EndsWith(said, StringComparison.Ordinal) ? entry.Reason[..^said.Length] + told.Summary() : entry.Reason,
+            };
+        }
     }
 
     /// <summary>
@@ -1160,7 +1284,7 @@ public sealed class Planner
             }
             else
             {
-                decision = new ChangeDecision(PlannedAction.Skip, SkipTier.Stale, false, false, $"{why}; OSDU keeps the newer payload");
+                decision = new ChangeDecision(PlannedAction.Skip, SkipTier.Stale, false, false, decision.Basis) { Reason = $"{why}; OSDU keeps the newer payload" };
             }
         }
 
@@ -1175,6 +1299,7 @@ public sealed class Planner
                 Render = render,
                 PayloadHash = payloadHash,
                 PayloadModifiedUtc = payloadModified,
+                Paths = KeptPathsOf(state, decision, render),
             });
             return null;
         }
@@ -1237,12 +1362,17 @@ public sealed class Planner
             }
         }
 
+        // Why it is sent, from what the plan already holds: the record's ledger state, the row and the run's rules; and the
+        // paths of the document it sends, which name what changed and which the ledger keeps once it lands.
+        var paths = decision.DeliverMetadata ? RenderPaths.Of(render.Canonical) : null;
+        var reason = header.Reasons.For(
+            state, decision, new ReasonSource(new SourceVersion(basis.SourceFingerprint, basis.SourceModifiedUtc), basis.Origin.UpdatedUtc, payloadHash), paths);
         entries.Add(basis with
         {
             TargetId = render.TargetId,
             Action = decision.Action,
             SkipTier = decision.SkipTier,
-            Reason = decision.Reason,
+            Reason = $"{decision.Reason}: {reason.Summary()}",
             Render = render,
             PayloadHash = payloadHash,
             PayloadModifiedUtc = payloadModified,
@@ -1250,6 +1380,8 @@ public sealed class Planner
             ChunkCount = decision.DeliverPayload ? chunkCount : null,
             DeliverMetadata = decision.DeliverMetadata,
             DeliverPayload = decision.DeliverPayload,
+            Why = reason,
+            Paths = paths,
 
             // Only a document that is sent can point at a record that is not there yet; a payload alone changes no reference.
             References = decision.DeliverMetadata ? header.References.Read(render.Document, render.TargetId) : [],
@@ -1257,6 +1389,18 @@ public sealed class Planner
 
         return null;
     }
+
+    /// <summary>
+    /// The paths of a document a skip found identical to the one OSDU holds, for a record the ledger keeps none of (delivered
+    /// before it kept them): OSDU holds this very document, so its paths are the record's from now on, and its next delivery
+    /// can name what it changes. Null for every other skip, so a plan computes paths for a record once.
+    /// </summary>
+    private static RenderPaths? KeptPathsOf(RecordState? state, ChangeDecision decision, RenderResult render)
+        => decision.SkipTier == SkipTier.ContentHash && decision.Basis.Queue == QueueComparison.None
+            && state is { Status: RecordStatus.Delivered, RenderPaths: null, HasPendingWork: false, MetadataHash: not null }
+            && string.Equals(state.MetadataHash, render.MetadataHash, StringComparison.Ordinal)
+                ? RenderPaths.Of(render.Canonical)
+                : null;
 
     /// <summary>
     /// The version the record carries: the ingestion fingerprint the source computed, completed with the business

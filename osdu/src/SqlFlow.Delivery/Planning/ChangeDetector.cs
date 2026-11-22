@@ -58,9 +58,93 @@ public enum SkipTier
     SourceRemoved,
 }
 
-public sealed record ChangeDecision(PlannedAction Action, SkipTier SkipTier, bool DeliverMetadata, bool DeliverPayload, string Reason)
+/// <summary>What tier 2 found when it compared a render's hashes with what the ledger holds.</summary>
+public enum ChangeBasisKind
 {
+    /// <summary>The ledger holds no record for the key.</summary>
+    NotInLedger,
+
+    /// <summary>The ledger holds the record, and OSDU has never held a version of it.</summary>
+    NeverDelivered,
+
+    /// <summary>Neither the document hash nor the payload hash moved.</summary>
+    Unchanged,
+
+    /// <summary>The document hash, the payload hash or both moved, or a change key sends them whatever they say.</summary>
+    Changed,
+}
+
+/// <summary>Whether tier 2 compared a render with the work already queued for the record, and what it found there.</summary>
+public enum QueueComparison
+{
+    /// <summary>Nothing is queued, or the queue did not change the decision.</summary>
+    None,
+
+    /// <summary>The render is what is queued: a skip, since that work lands it.</summary>
+    EqualsQueued,
+
+    /// <summary>The render differs from what is queued and replaces it.</summary>
+    ReplacesQueued,
+}
+
+/// <summary>
+/// What tier 2 decided a record on, as the structure a delivery's reason (<see cref="DeliveryReason"/>) is built from and the
+/// words a plan says it in (<see cref="Describe"/>).
+/// </summary>
+public sealed record ChangeBasis
+{
+    public required ChangeBasisKind Kind { get; init; }
+
+    /// <summary>For <see cref="ChangeBasisKind.NeverDelivered"/>: the status the ledger holds the record in.</summary>
+    public RecordStatus? Status { get; init; }
+
+    /// <summary>The document is sent: its hash moved, or a change key sends it.</summary>
+    public bool MetadataChanged { get; init; }
+
+    /// <summary>The payload is sent: its hash moved, or a change key sends it.</summary>
+    public bool PayloadChanged { get; init; }
+
+    public QueueComparison Queue { get; init; }
+
+    /// <summary>For <see cref="QueueComparison.ReplacesQueued"/>: what the comparison with the queued work found.</summary>
+    public ChangeBasis? Queued { get; init; }
+
+    public static ChangeBasis NotInLedger { get; } = new() { Kind = ChangeBasisKind.NotInLedger, MetadataChanged = true };
+
+    /// <summary>The basis in the words a plan's entry says it in.</summary>
+    public string Describe() => (Kind, Queue) switch
+    {
+        (_, QueueComparison.EqualsQueued) => "metadata and payload hashes equal the version already queued",
+        (_, QueueComparison.ReplacesQueued) => $"{Queued?.Describe() ?? "it differs"} against the version already queued, which this one replaces",
+        (ChangeBasisKind.NotInLedger, _) => "not in ledger",
+        (ChangeBasisKind.NeverDelivered, _) => $"ledger status {Status?.ToString().ToLowerInvariant() ?? "unknown"}, never delivered",
+        (ChangeBasisKind.Unchanged, _) => "metadata and payload hashes unchanged",
+        _ => (MetadataChanged, PayloadChanged) switch
+        {
+            (true, true) => "metadata and payload changed",
+            (true, false) => "metadata changed, payload unchanged",
+            _ => "payload changed, metadata unchanged",
+        },
+    };
+}
+
+/// <summary>
+/// What a plan decides for a record: the action, which halves it sends, and the structured basis it decided on. Its
+/// <see cref="Reason"/> is the basis in words unless the plan said something in its place (a payload older than the one
+/// delivered, a newer payload kept from the queue).
+/// </summary>
+public sealed record ChangeDecision(PlannedAction Action, SkipTier SkipTier, bool DeliverMetadata, bool DeliverPayload, ChangeBasis Basis)
+{
+    private readonly string? _reason;
+
     public bool IsDelivery => DeliverMetadata || DeliverPayload;
+
+    /// <summary>The decision in words: the basis's (<see cref="ChangeBasis.Describe"/>), or what the plan set in its place.</summary>
+    public string Reason
+    {
+        get => _reason ?? Basis.Describe();
+        init => _reason = value;
+    }
 }
 
 /// <summary>
@@ -135,7 +219,11 @@ public static class ChangeDetector
         var delivered = existing is { Status: RecordStatus.Delivered } || existing?.TargetVersion is not null;
         if (!delivered)
         {
-            return new ChangeDecision(PlannedAction.Create, SkipTier.None, true, hasPayload, existing is null ? "not in ledger" : $"ledger status {existing.Status.ToString().ToLowerInvariant()}, never delivered");
+            return new ChangeDecision(
+                PlannedAction.Create, SkipTier.None, true, hasPayload,
+                existing is null
+                    ? ChangeBasis.NotInLedger with { PayloadChanged = hasPayload }
+                    : new ChangeBasis { Kind = ChangeBasisKind.NeverDelivered, Status = existing.Status, MetadataChanged = true, PayloadChanged = hasPayload });
         }
 
         var metadataChanged = change.Detect == ChangeDetection.Always
@@ -148,17 +236,18 @@ public static class ChangeDetector
 
         if (!metadataChanged && !payloadChanged)
         {
-            return new ChangeDecision(PlannedAction.Skip, SkipTier.ContentHash, false, false, "metadata and payload hashes unchanged");
+            return new ChangeDecision(PlannedAction.Skip, SkipTier.ContentHash, false, false, new ChangeBasis { Kind = ChangeBasisKind.Unchanged });
         }
 
+        var basis = new ChangeBasis { Kind = ChangeBasisKind.Changed, MetadataChanged = metadataChanged, PayloadChanged = payloadChanged };
         if (metadataChanged && payloadChanged)
         {
-            return new ChangeDecision(PlannedAction.UpdateBoth, SkipTier.None, true, true, "metadata and payload changed");
+            return new ChangeDecision(PlannedAction.UpdateBoth, SkipTier.None, true, true, basis);
         }
 
         return metadataChanged
-            ? new ChangeDecision(PlannedAction.UpdateMetadata, SkipTier.None, true, false, "metadata changed, payload unchanged")
-            : new ChangeDecision(PlannedAction.UpdatePayload, SkipTier.None, false, true, "payload changed, metadata unchanged");
+            ? new ChangeDecision(PlannedAction.UpdateMetadata, SkipTier.None, true, false, basis)
+            : new ChangeDecision(PlannedAction.UpdatePayload, SkipTier.None, false, true, basis);
     }
 
     /// <summary>
@@ -178,7 +267,7 @@ public static class ChangeDetector
         var queued = Decide(Expected(existing), metadataHash, payloadHash, hasPayload, change);
         if (queued.Action == PlannedAction.Skip)
         {
-            return queued with { Reason = "metadata and payload hashes equal the version already queued" };
+            return queued with { Basis = queued.Basis with { Queue = QueueComparison.EqualsQueued } };
         }
 
         var metadata = delivered.DeliverMetadata || queued.DeliverMetadata;
@@ -191,7 +280,17 @@ public static class ChangeDetector
                 (true, false) => PlannedAction.UpdateMetadata,
                 _ => PlannedAction.UpdatePayload,
             };
-        return new ChangeDecision(action, SkipTier.None, metadata, payload, $"{queued.Reason} against the version already queued, which this one replaces");
+        // Against the version OSDU holds, the render is a create, or sends what moved from it; the queue adds the halves it
+        // differs from, and the basis keeps both so a reason can say the render replaces queued work.
+        var basis = delivered.Basis with
+        {
+            Kind = delivered.Basis.Kind == ChangeBasisKind.Unchanged ? ChangeBasisKind.Changed : delivered.Basis.Kind,
+            MetadataChanged = metadata,
+            PayloadChanged = payload,
+            Queue = QueueComparison.ReplacesQueued,
+            Queued = queued.Basis,
+        };
+        return new ChangeDecision(action, SkipTier.None, metadata, payload, basis);
     }
 
     /// <summary>

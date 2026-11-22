@@ -9,6 +9,7 @@ using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Planning;
 
 namespace SqlFlow.Delivery.Cli;
 
@@ -282,6 +283,13 @@ internal static class DeliveryRecordVerbs
             if (attempt.TargetVersion is { } version)
             {
                 context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"        version {version}"));
+            }
+
+            // Why a delivered try was sent (osdu/docs/reference/concepts/delivery-reasons.md); a
+            // delivery made before the ledger kept reasons says so rather than guessing.
+            if (attempt.Outcome == AttemptOutcome.Delivered)
+            {
+                context.Out.WriteLine("        why " + (DeliveryReason.OfResult(attempt.ResultJson)?.Summary() ?? "reason not recorded"));
             }
 
             foreach (var step in Steps(attempt))

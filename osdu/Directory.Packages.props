@@ -15,6 +15,10 @@
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.20.1" />
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.10.0" />
+    <!-- The 64-bit hash of each value of a rendered document the ledger keeps for the record (osdu.Record.RenderPaths): Microsoft's
+         (MIT), already loaded through the Azure storage clients at this version, and referenced here so the module does not
+         rest on another package's dependency. -->
+    <PackageVersion Include="System.IO.Hashing" Version="10.0.9" />
   </ItemGroup>
 
 </Project>

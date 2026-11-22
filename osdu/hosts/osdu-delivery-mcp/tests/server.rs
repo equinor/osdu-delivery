@@ -798,6 +798,44 @@ async fn a_landed_records_trace_opens_it_in_the_explorer() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_delivered_attempt_says_why_it_was_sent_and_an_older_one_that_its_reason_was_not_recorded() {
+    let base = format!("/api/v1/delivery/records/{FLOW}/{KEY}");
+    let reason = json!({
+        "recorded": true,
+        "action": "update-metadata",
+        "summary": "mapping WellLog@1.4.0 changed (852db64); acl.viewers changed",
+        "triggers": [{ "kind": "mapping-changed", "from": "WellLog@1.4.0", "to": "WellLog@1.4.0",
+                       "fromFingerprint": "1f0c", "toFingerprint": "9a8b", "fromCommit": "268b252", "toCommit": "852db64" }],
+        "paths": { "compared": true, "added": 0, "removed": 0, "changed": 1, "listed": [{ "path": "acl.viewers", "change": "changed" }] }
+    });
+    let estate = Estate::start(vec![
+        (
+            route(format!("GET {base}")),
+            200,
+            json!({ "record": { "deliveryKey": KEY, "flowId": FLOW, "status": "delivered" }, "pipelineId": PIPELINE, "flowName": "wells" }),
+        ),
+        (
+            route(format!("GET {base}/attempts")),
+            200,
+            json!([
+                { "attemptId": 12, "deliveryKey": KEY, "outcome": "delivered", "phase": "metadata", "targetVersion": 4, "reason": reason },
+                { "attemptId": 7, "deliveryKey": KEY, "outcome": "delivered", "phase": "metadata", "targetVersion": 3,
+                  "reason": { "recorded": false, "summary": "reason not recorded" } }
+            ]),
+        ),
+    ])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let trace = session.json("delivery_record", json!({ "flowId": FLOW, "deliveryKey": KEY, "include": ["attempts"] })).await;
+
+    // The reason reaches the assistant whole, the old and new mapping fingerprint and commit and the path that changed.
+    assert_eq!(trace["attempts"][0]["reason"], reason);
+    assert_eq!(trace["attempts"][1]["reason"]["recorded"], json!(false));
+    assert_eq!(trace["attempts"][1]["reason"]["summary"], json!("reason not recorded"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_records_whole_trace_is_one_call_and_carries_no_content() {
     let base = format!("/api/v1/delivery/records/{FLOW}/{KEY}");
     let estate = Estate::start(vec![

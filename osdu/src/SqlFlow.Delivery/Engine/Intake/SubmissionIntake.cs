@@ -508,7 +508,7 @@ public sealed class SubmissionIntake
                 switch (entry.Action)
                 {
                     case PlannedAction.Skip:
-                        skipped.Add(Skipped(entry, context));
+                        skipped.Add(Skipped(entry, context, header.Reasons.Commit));
                         if (skipped.Count >= Planner.RenderBatch)
                         {
                             await _ledger.MarkSkippedAsync(flow.Id, skipped, submission.SubmissionId, ct).ConfigureAwait(false);
@@ -555,11 +555,16 @@ public sealed class SubmissionIntake
 
                         writer ??= await WorkBatchWriter.OpenAsync(_stores, workRoot, submission.SubmissionId, nextBatch, ct).ConfigureAwait(false);
                         // The access the document goes out under travels with it, so the try that sends it tells the ledger
-                        // whether OSDU now holds the record restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md).
+                        // whether OSDU now holds the record restricted until complete (osdu/docs/reference/flow/mapping-restricted-access.md);
+                        // so do why it is sent, the paths of its document and the run's commit, which the attempt that delivers
+                        // it keeps (osdu/docs/reference/concepts/delivery-reasons.md).
                         var reference = await writer.WriteAsync(
                             new WorkItem(
                                 entry.Key.Value.Value, entry.TargetId!, entry.Render!.Canonical, entry.Render.Assertions?.ToText(), EnrichParts.Encode(entry.Render.StepWork),
-                                DocumentAccess.Of(entry.Render).Encode()),
+                                DocumentAccess.Of(entry.Render).Encode(),
+                                entry.Why?.ToJson().ToJsonString(),
+                                entry.Paths is { } paths ? Convert.ToBase64String(paths.Encode()) : null,
+                                header.Reasons.Commit),
                             ct).ConfigureAwait(false);
                         // The values this document was built from become one set id on the record: no row per
                         // dependency, and the id is resolved once per distinct combination for the whole run.
@@ -642,8 +647,11 @@ public sealed class SubmissionIntake
     /// </summary>
     private bool Describes(DeliveryKey key) => Trace?.Describes(key, _logger) == true;
 
-    /// <summary>What the ledger is told about one skipped plan entry.</summary>
-    private SkippedRecord Skipped(PlanEntry entry, string renderContext) => new()
+    /// <summary>
+    /// What the ledger is told about one skipped plan entry. A rendered skip moves the record on to the run's render context,
+    /// and to the commit it was planned at with it.
+    /// </summary>
+    private SkippedRecord Skipped(PlanEntry entry, string renderContext, string? commit) => new()
     {
         DeliveryKey = entry.Key!.Value,
         Kind = entry.SkipTier switch
@@ -663,6 +671,8 @@ public sealed class SubmissionIntake
         SourceInsertedUtc = entry.Origin.InsertedUtc,
         PayloadModifiedUtc = entry.PayloadModifiedUtc,
         RenderContext = entry.SkipTier == SkipTier.ContentHash ? renderContext : null,
+        RenderCommit = entry.SkipTier == SkipTier.ContentHash ? commit : null,
+        RenderPaths = entry.Paths?.Encode(),
         ChildLinkKey = entry.SkipTier == SkipTier.ContentHash ? entry.Render?.ChildLinkKey : null,
         HeldSteps = entry.SkipTier == SkipTier.ContentHash ? HeldStepsOf(entry.Render) : null,
         RunId = RunId,

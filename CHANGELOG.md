@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every delivery says why it was sent.** A delivered attempt keeps every input that moved since the version the ledger
+  holds (the source row, a child or lookup row, the mapping with its old and new fingerprint and estate commit, the
+  template, the parameters, an enrichment, the cache and the changes that reached the record, a request and who made it,
+  drift, a change key, the payload) and the paths of the document that changed, never their values. The record's timeline
+  titles each **Delivered** row with it (`Delivered: mapping WellLog@1.4.0 changed (852db64); acl.viewers changed`), a
+  submission counts its deliveries by what sent them, and `sqlflow records show`, the attempts and submission routes and
+  the MCP server's `delivery_record` and `delivery_submissions` return it; a delivery made before says its reason was not
+  recorded ([delivery reasons](osdu/docs/reference/concepts/delivery-reasons.md)).
 - **A `$findAll` line compares two fields of the same row.** `GroupName contains CountryName` keeps the rows whose text
   under the first field holds their text under the second, by letters and digits alone and ignoring case, so a rule such
   as "a country group's name says its country" holds for every country without naming one. A renamed group or a

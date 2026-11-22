@@ -129,6 +129,23 @@ public sealed class DeliveryRecord
 
     public string? RenderContext { get; set; }
 
+    /// <summary>
+    /// The estate commit the run that planned <see cref="RenderContext"/> executed, when it was pinned to one: what a delivery's
+    /// reason quotes beside the mapping fingerprint the record's document was rendered with
+    /// (osdu/docs/reference/concepts/delivery-reasons.md). Written with the render context,
+    /// cleared with it; null when that run knew no commit.
+    /// </summary>
+    public string? RenderCommit { get; set; }
+
+    /// <summary>
+    /// The paths of the document OSDU holds of the record, each with a 64-bit hash of its value, in the compact binary form
+    /// <c>RenderPaths.Encode</c> writes (about 25 bytes a path; an array is one path): what the next delivery compares its
+    /// render with to name the paths it changes, without the ledger keeping a value. Written when a try that sends the
+    /// document lands, or when a plan finds a record whose paths were never kept rendering exactly what OSDU holds; cleared
+    /// when OSDU no longer holds that version (a removal, a reversal, a step back). Null for a record delivered before.
+    /// </summary>
+    public byte[]? RenderPaths { get; set; }
+
     /// <summary>The ingestion fingerprint of the rows OSDU's document was built from.</summary>
     public string? SourceFingerprint { get; set; }
 
@@ -458,6 +475,14 @@ public sealed class DeliveryAttempt
     /// <summary>The steps of the try and what the target answered, as JSON.</summary>
     public string? ResultJson { get; set; }
 
+    /// <summary>
+    /// For a delivered try: the inputs whose move made the record render and be sent, as the flags of <c>TriggerKinds</c>
+    /// (osdu/docs/reference/concepts/delivery-reasons.md), so a submission's deliveries are counted
+    /// by them without reading their results. The reason itself is the result's <c>reason</c>. Null for every other attempt,
+    /// and for a delivery made before the ledger kept reasons.
+    /// </summary>
+    public int? Triggers { get; set; }
+
     /// <summary>The work batch the try belonged to, when it ran from one.</summary>
     public int? WorkBatch { get; set; }
 
@@ -679,6 +704,15 @@ public sealed class DeliveryRecordEvent
 
     /// <summary>With <see cref="AccessSent"/>: the issue signature of <see cref="IncompleteMissing"/>; null for its own access.</summary>
     public long? IncompleteHash { get; set; }
+
+    /// <summary>
+    /// A completion that promotes the try's work: the paths of the document it sent (<see cref="DeliveryRecord.RenderPaths"/>),
+    /// which the record keeps from now on; null for a try that sent no document, or whose work carried none.
+    /// </summary>
+    public byte[]? RenderPaths { get; set; }
+
+    /// <summary>A completion that promotes the try's work: the estate commit its render context was planned at, which the record keeps with it.</summary>
+    public string? RenderCommit { get; set; }
 
     // The pending work the try carried, as it stood when the record was claimed: a step belongs to it, and a completion
     // promotes it when newer work was queued behind the try. A null document reference means the try carried none.
@@ -4294,6 +4328,12 @@ public static class DeliveryModel
     public const int MaxIncompleteMissingLength = 2000;
 
     /// <summary>
+    /// The most characters of an estate commit the ledger keeps (<see cref="DeliveryRecord.RenderCommit"/>): a git object id,
+    /// 40 hexadecimal characters under SHA-1 and 64 under SHA-256.
+    /// </summary>
+    public const int MaxCommitLength = 64;
+
+    /// <summary>
     /// The index of a flow's records restricted until complete, by what they go without: the Records tab's filter, the flow's
     /// count, and the records one set of missing values restricts, the few such records and no others.
     /// </summary>
@@ -4463,6 +4503,7 @@ public static class DeliveryModel
             e.Property(r => r.MetadataHash).HasMaxLength(64);
             e.Property(r => r.PayloadHash).HasMaxLength(64);
             e.Property(r => r.HeldRulesHash).HasMaxLength(64);
+            e.Property(r => r.RenderCommit).HasMaxLength(MaxCommitLength);
             e.Property(r => r.TargetId).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.ClaimedTargetId)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.WaitingFor)).HasMaxLength(MaxTargetIdLength);
@@ -4688,6 +4729,7 @@ public static class DeliveryModel
             e.Property(v => v.ClaimMetadataHash).HasMaxLength(64);
             e.Property(v => v.ClaimPayloadHash).HasMaxLength(64);
             e.Property(v => v.IncompleteMissing).HasMaxLength(MaxIncompleteMissingLength);
+            e.Property(v => v.RenderCommit).HasMaxLength(MaxCommitLength);
             // What a lease applies: its events, record by record, the latest last.
             e.HasIndex(v => new { v.LeaseToken, v.FlowId, v.DeliveryKey, v.EventId });
             // A flow's recovery: its events old enough that only a lease that is gone can have left them.

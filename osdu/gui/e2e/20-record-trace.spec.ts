@@ -1,3 +1,4 @@
+import { E2E } from "../playwright.config";
 import { DELIVERY_FLOW } from "./global-setup";
 import { stageWellLogRecords } from "./delivery-cli";
 import { expect, expectRecordsWorkbook, test } from "./helpers";
@@ -187,5 +188,70 @@ test.describe.serial("record trace", () => {
     await expect(adminPage.getByTestId("page-delivery-record")).toBeVisible();
     await expect(adminPage.getByTestId("record-journey")).toBeVisible();
     await expect(adminPage.getByTestId("record-milestones")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("a delivered try says why it was sent, and one delivered before the ledger kept reasons says it was not recorded", async ({ adminPage }) => {
+    // The e2e estate sends nothing to an OSDU, so the record's tries are given the two deliveries the ledger writes: the one
+    // a mapping edit of acl.viewers sent with the source unchanged, and an older one delivered before the ledger kept reasons.
+    const delivered = (deliveryKey: string, attemptId: number, at: string, targetVersion: number, reason: object) => ({
+      attemptId, deliveryKey, submissionId: null, runId: null, worker: "node-1", startedUtc: at, completedUtc: at, outcome: "delivered",
+      phase: "metadata", metadataHash: null, payloadHash: null, targetVersion, error: null, result: { steps: [] }, workBatch: 0,
+      sourceFileName: null, sourceRowNumber: null, sourceUpdatedUtc: null, reason,
+    });
+    await adminPage.route(`${E2E.apiBaseUrl}/api/v1/delivery/records/*/*/attempts**`, async (route) => {
+      const response = await route.fetch();
+      const attempts = await response.json() as { deliveryKey: string }[];
+      const key = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+      await route.fulfill({
+        response,
+        json: [
+          delivered(key, 900002, "2026-11-21T08:00:00Z", 3, {
+            recorded: true,
+            action: "update-metadata",
+            summary: "mapping WellLog@1.4.0 changed (852db64); acl.viewers changed",
+            triggers: [{
+              kind: "mapping-changed", from: "WellLog@1.4.0", to: "WellLog@1.4.0",
+              fromFingerprint: "1f0c8b2e44d9a7c6b5e3f2a1908d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291807",
+              toFingerprint: "9a8b7c6d5e4f30211f0e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a6978",
+              fromCommit: "268b2527d1c04e2fa3b9c8d7e6f5a4b3c2d1e0f9", toCommit: "852db64a9c0e4f7b8d1e2a3b4c5d6e7f80912345",
+            }],
+            paths: { compared: true, added: 0, removed: 0, changed: 1, listed: [{ path: "acl.viewers", change: "changed" }] },
+          }),
+          delivered(key, 900001, "2026-11-17T08:00:00Z", 1, { recorded: false, summary: "reason not recorded" }),
+          ...attempts,
+        ],
+      });
+    });
+
+    await adminPage.getByTestId("nav-delivery-records").click();
+    await expect(adminPage.getByTestId("page-delivery-records")).toBeVisible();
+    const latest = adminPage.getByTestId("delivery-lookup-table").getByTestId("table-row");
+    await expect(latest.first()).toBeVisible({ timeout: 30_000 });
+    await latest.first().click();
+    const journey = adminPage.getByTestId("record-journey");
+    await expect(journey).toBeVisible();
+
+    // The delivery is titled with what sent it; the older one says no more than the ledger knows.
+    const tries = journey.getByTestId("journey-attempt-delivered");
+    await expect(tries).toHaveCount(2, { timeout: 30_000 });
+    const sent = tries.filter({ hasText: "acl.viewers changed" });
+    await expect(sent).toContainText("Delivered: mapping WellLog@1.4.0 changed (852db64); acl.viewers changed");
+    const older = tries.filter({ hasNotText: "acl.viewers" });
+    await expect(older.getByTestId("journey-reason-missing")).toHaveText("reason not recorded");
+
+    // Opened, it names what moved, the mapping's fingerprint and estate commit on each side, and the path that changed.
+    await sent.getByTestId("journey-event-toggle").click();
+    const reason = sent.getByTestId("journey-reason");
+    await expect(reason.getByTestId("journey-reason-trigger")).toHaveAttribute("data-kind", "mapping-changed");
+    await expect(reason.getByTestId("journey-reason-trigger")).toContainText("Mapping changed");
+    await expect(reason.getByTestId("journey-reason-was")).toHaveText("WellLog@1.4.0 · 1f0c8b2e44d9 · commit 268b252");
+    await expect(reason.getByTestId("journey-reason-now")).toHaveText("WellLog@1.4.0 · 9a8b7c6d5e4f · commit 852db64");
+    await expect(reason.getByTestId("journey-reason-paths")).toContainText("Paths: 1 changed");
+    await expect(reason.getByTestId("journey-reason-path")).toHaveAttribute("data-change", "changed");
+    await expect(reason.getByTestId("journey-reason-path")).toContainText("acl.viewers");
+
+    await older.getByTestId("journey-event-toggle").click();
+    await expect(older.getByTestId("journey-reason-not-recorded")).toHaveText("Why it was sent: reason not recorded");
+    await adminPage.unroute(`${E2E.apiBaseUrl}/api/v1/delivery/records/*/*/attempts**`);
   });
 });

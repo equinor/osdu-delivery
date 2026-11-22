@@ -236,6 +236,9 @@ public sealed class SourceRuntime
     /// <summary>The platform run this is.</summary>
     public Guid? RunId { get; init; }
 
+    /// <summary>The estate commit the run executes, when it is pinned to one: what each interface's deliveries record their rules came from.</summary>
+    public string? Commit { get; init; }
+
     /// <summary>Supplies the run's captured log for the activities being completed.</summary>
     public Func<string?>? ActivityLog { get; init; }
 
@@ -342,6 +345,7 @@ public sealed class SourceRuntime
                         : FlowRuntime.ForTarget(context, flow, Values);
                     runtime.Actor = Actor;
                     runtime.RunId = RunId;
+                    runtime.Commit = Commit;
                     runtime.ActivityLog = ActivityLog;
                     runtime.SourceDocument = _source;
                     runtimes[name] = runtime;

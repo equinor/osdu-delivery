@@ -59,6 +59,22 @@ public sealed record DeliveryWork
     /// </summary>
     public Ledger.DocumentAccess Access { get; init; } = Ledger.DocumentAccess.Own;
 
+    /// <summary>
+    /// Why the plan sent the record (osdu/docs/reference/concepts/delivery-reasons.md), as the
+    /// work batch carried it: the attempt that delivers it keeps it. Null for work queued before the ledger kept reasons.
+    /// Ledger bookkeeping only; a route never reads it.
+    /// </summary>
+    public Planning.DeliveryReason? Reason { get; init; }
+
+    /// <summary>
+    /// The paths of <see cref="Document"/> and a hash of each value, encoded (<see cref="Planning.RenderPaths"/>): what the ledger
+    /// keeps of the document once it lands. Null for work queued before the ledger kept them. A route never reads it.
+    /// </summary>
+    public byte[]? RenderPaths { get; init; }
+
+    /// <summary>The estate commit the plan's run executed, when it knew it, which the ledger keeps with the render context the try promotes.</summary>
+    public string? Commit { get; init; }
+
     public required bool DeliverMetadata { get; init; }
 
     public required bool DeliverPayload { get; init; }

@@ -99,10 +99,15 @@ totalCapped=true means more match than were counted: narrow with status, flowId 
     #[tool(
         description = "Everything the ledger holds about one record. `record` is its state: custody state, the OSDU id and version it \
 landed as, pending work, attempt count, last error, what it waits for. Its trace: `attempts` (each delivery try with \
-outcome, phase, run and error), `chain` (the ingestion file and row it came from, and the run behind each change of \
-the row) and `activities` (who did what to it and when). Use it for 'why did this record fail', 'who deleted it', \
-'which file is it from', 'when was it delivered and as which version'. Takes flowId AND deliveryKey from \
-delivery_find_records or delivery_flow_records. Ledger bookkeeping only: the record's content is never returned."
+outcome, phase, run and error; a delivered one with `reason`: why it was sent, as `summary`, its `triggers` (what moved: \
+first-delivery, source-changed, child-or-lookup-changed, mapping-changed with the old and new fingerprint and estate \
+commit, template-changed, parameters-changed, enrichment-changed, cache-changed, requested with who asked, drift, forced, \
+payload-changed) and `paths` (which paths of the document were added, removed or changed, never their values); a delivery \
+made before the ledger kept reasons says `recorded: false`), `chain` (the ingestion file and row it came from, and the run \
+behind each change of the row) and `activities` (who did what to it and when). Use it for 'why did this record fail', \
+'why was it delivered again', 'who deleted it', 'which file is it from', 'when was it delivered and as which version'. \
+Takes flowId AND deliveryKey from delivery_find_records or delivery_flow_records. Ledger bookkeeping only: the record's \
+content is never returned."
     )]
     async fn delivery_record(&self, Parameters(i): Parameters<RecordInput>) -> String {
         let (flow_id, key) = match (

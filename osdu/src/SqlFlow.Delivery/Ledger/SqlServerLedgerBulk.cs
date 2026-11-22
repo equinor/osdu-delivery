@@ -295,7 +295,9 @@ internal static partial class SqlServerLedgerBulk
     // (AccessSent) says the access OSDU holds the record under now: restricted until complete under the restriction it names,
     // since the first delivery that restricted it, or its own (osdu/docs/reference/flow/mapping-restricted-access.md); the
     // document it sent is the claim's whether or not newer work was queued behind it, so that holds superseded or not. Any
-    // other completion leaves the record's access as it was, since OSDU's changes only when a document is sent.
+    // other completion leaves the record's access as it was, since OSDU's changes only when a document is sent. So too with
+    // the paths of the document (RenderPaths), which a promotion that sent one carries: the record keeps them as those of
+    // the document OSDU holds. The commit its render context was planned at (RenderCommit) goes with the context promoted.
     private const string CompletionUpdateSql = $$"""
         UPDATE r SET
             [Status] = CASE WHEN x.[Superseded] = 1 THEN N'pending' ELSE s.[Status] END,
@@ -315,6 +317,11 @@ internal static partial class SqlServerLedgerBulk
             [RenderContext] = CASE WHEN s.[Promote] = 0 THEN r.[RenderContext]
                 WHEN x.[Superseded] = 1 THEN COALESCE(s.[ClaimRenderContext], r.[RenderContext])
                 ELSE COALESCE(r.[PendingRenderContext], r.[RenderContext]) END,
+            [RenderCommit] = CASE WHEN s.[Promote] = 0 THEN r.[RenderCommit]
+                WHEN x.[Superseded] = 1 THEN CASE WHEN s.[ClaimRenderContext] IS NULL THEN r.[RenderCommit] ELSE s.[RenderCommit] END
+                WHEN r.[PendingRenderContext] IS NULL THEN r.[RenderCommit]
+                ELSE s.[RenderCommit] END,
+            [RenderPaths] = CASE WHEN s.[Promote] = 1 AND s.[RenderPaths] IS NOT NULL THEN s.[RenderPaths] ELSE r.[RenderPaths] END,
             [SourceFingerprint] = CASE WHEN s.[Promote] = 0 THEN r.[SourceFingerprint]
                 WHEN x.[Superseded] = 1 THEN COALESCE(s.[ClaimSourceFingerprint], r.[SourceFingerprint])
                 ELSE COALESCE(r.[PendingSourceFingerprint], r.[SourceFingerprint]) END,
@@ -958,13 +965,15 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("SourceUpdatedUtc", typeof(DateTime));
         table.Columns.Add("SourceDeletedUtc", typeof(DateTime));
         table.Columns.Add("ParentVersion", typeof(long));
+        table.Columns.Add("Triggers", typeof(int));
         foreach (var a in attempts)
         {
             table.Rows.Add(
                 a.PartitionId, a.FlowId, a.DeliveryKey, Value(a.SubmissionId), Value(a.RunId), a.Worker, a.StartedUtc, a.CompletedUtc,
                 a.Outcome, a.Phase, Value(a.MetadataHash), Value(a.PayloadHash), Value(a.TargetVersion),
                 Value(a.Error), Value(a.ResultJson), Value(a.WorkBatch),
-                Value(a.SourceFileName), Value(a.SourceRowNumber), Value(a.SourceUpdatedUtc), Value(a.SourceDeletedUtc), Value(a.ParentVersion));
+                Value(a.SourceFileName), Value(a.SourceRowNumber), Value(a.SourceUpdatedUtc), Value(a.SourceDeletedUtc), Value(a.ParentVersion),
+                Value(a.Triggers));
         }
 
         return table;
@@ -1014,6 +1023,8 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("IncompleteRestrictionId", typeof(int));
         table.Columns.Add("IncompleteMissing", typeof(string));
         table.Columns.Add("IncompleteHash", typeof(long));
+        table.Columns.Add("RenderPaths", typeof(byte[]));
+        table.Columns.Add("RenderCommit", typeof(string));
         foreach (var e in events)
         {
             table.Rows.Add(
@@ -1024,7 +1035,8 @@ internal static partial class SqlServerLedgerBulk
                 Value(e.ClaimSubmissionId), Value(e.ClaimDocumentRef), Value(e.ClaimAttemptCount), Value(e.ClaimRenderContext), Value(e.ClaimSourceFingerprint),
                 Value(e.ClaimSourceModifiedUtc), Value(e.ClaimSourceFileName), Value(e.ClaimSourceRowNumber), Value(e.ClaimSourceUpdatedUtc),
                 Value(e.ClaimMetadataHash), Value(e.ClaimParentVersion), Value(e.ClaimPayloadHash), Value(e.ClaimPayloadModifiedUtc), e.ClaimMetadata, e.ClaimPayload,
-                e.AccessSent, Value(e.IncompleteRestrictionId), Value(e.IncompleteMissing), Value(e.IncompleteHash));
+                e.AccessSent, Value(e.IncompleteRestrictionId), Value(e.IncompleteMissing), Value(e.IncompleteHash),
+                e.RenderPaths is { } paths ? paths : DBNull.Value, Value(e.RenderCommit));
         }
 
         return table;

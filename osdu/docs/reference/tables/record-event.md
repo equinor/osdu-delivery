@@ -73,6 +73,8 @@ Self-clearing: the table holds in-flight work only. Its primary key grows at its
 | `IncompleteRestrictionId` | `int` | yes | With `AccessSent`: the access restriction the sent document went out under, restricted until complete; null for its own access. |
 | `IncompleteMissing` | `nvarchar(2000)` | yes | With `AccessSent`: what the sent document goes without, as the record keeps it; null for its own access. |
 | `IncompleteHash` | `bigint` | yes | With `AccessSent`: the group of missing values, as the record keeps it; null for its own access. |
+| `RenderPaths` | `varbinary(max)` | yes | A completion that promotes the try's work: the paths of the document it sent, with a hash of each value, which the record keeps as [`osdu.Record.RenderPaths`](record.md); null for a try that sent no document, or whose work batch carried none. Added by migration `DeliveryReasons`. |
+| `RenderCommit` | `nvarchar(64)` | yes | A completion that promotes the try's work: the estate commit its render context was planned at, which the record keeps as `RenderCommit` with the context it promotes. Added by migration `DeliveryReasons`. |
 | `ClaimSubmissionId` | `uniqueidentifier` | yes | The submission of the pending work the try carried. |
 | `ClaimDocumentRef` | `nvarchar(64)` | yes | Where that work's document sits in its work batches; null when the try carried none. |
 | `ClaimAttemptCount` | `int` | yes | A completion: the record's try count as the claim left it. A completion that reaches a record no lease holds is applied only while the count is still that one: a later claim, release, removal or delivery moved it, and is newer than the try. |

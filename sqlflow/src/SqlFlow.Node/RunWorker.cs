@@ -1035,6 +1035,8 @@ public sealed partial class RunWorker : IDisposable
                     RunId = runId, Echo = null, Parameters = parameters, StatementSink = trace,
                     EventSink = trace, WatermarkSourceTable = watermarkSourceTable, LandingReset = landingReset,
                     Origin = origin,
+                    // The commit the run is pinned to, which both the snapshot and the checkout above are that commit's.
+                    Commit = string.IsNullOrWhiteSpace(run.CommitSha) ? null : run.CommitSha,
                     // The handed-out run's flow name selects WHICH flow of the document executes: for an ingestion
                     // document with an embedded healthCheck: block, the derived hc pipeline runs from the same file.
                     FlowName = run.FlowName,

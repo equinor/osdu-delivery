@@ -212,11 +212,17 @@ welldb-wellbore-03-delivery: welldb:WB-0002
   <n> attempt(s) shown, <n> on the work pending now; newest first:
     <completed>  <outcome>  <phase>  <seconds>s  <worker>
         version <n>
+        why <what sent a delivered attempt, or: reason not recorded>
         <step> <HTTP status> <returned values>
         checked <the verdict of the check before sending>
           <where> fails "<assertion>" (<stage>, <onFail>): <why>
         <the attempt's error>
 ```
+
+A delivered attempt's `why` line is the one line of its reason (`mapping WellLog@1.4.0 changed (852db64); acl.viewers
+changed`): every input that moved since the version the ledger held and the paths of the document that changed; a
+delivery made before the ledger kept reasons says `reason not recorded`. `--json` keeps the whole reason under the
+attempt's `result`, as `reason` ([delivery reasons](../concepts/delivery-reasons.md)).
 
 The record's `checked` line is what the last check before sending found: the outcome against the template and, when its
 mapping states assertions, how many judgements of them failed ([mapping assertions](../flow/mapping-assertions.md)).

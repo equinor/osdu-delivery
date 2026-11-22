@@ -26,7 +26,20 @@ namespace SqlFlow.Delivery.Storage;
 /// give are missing, with what is missing (<see cref="Ledger.DocumentAccess.Encode"/>), as compact JSON; null for a document
 /// with the access its mapping gives. A delivery that sends the document hands it to the ledger as the access OSDU holds.
 /// </param>
-public sealed record WorkItem(Guid Key, string TargetId, string Document, string? Assertions = null, string? Enrich = null, string? Restricted = null);
+/// <param name="Reason">
+/// Why the plan sends the record (<see cref="Planning.DeliveryReason"/>), as compact JSON: what the attempt that delivers it
+/// keeps under <c>reason</c> (osdu/docs/reference/concepts/delivery-reasons.md). Null for a line
+/// written before the ledger kept reasons, whose attempt says the reason was not recorded.
+/// </param>
+/// <param name="Paths">
+/// The paths of the document and a hash of each value (<see cref="Planning.RenderPaths"/>), encoded and in base64: what the
+/// ledger keeps of the document once a delivery sends it, so the record's next delivery can name what it changes. Null for a
+/// delivery that sends no document, and for a line written before the ledger kept them.
+/// </param>
+/// <param name="Commit">The estate commit the plan's run executed, when it knew it, which the ledger keeps with the render context it promotes.</param>
+public sealed record WorkItem(
+    Guid Key, string TargetId, string Document, string? Assertions = null, string? Enrich = null, string? Restricted = null,
+    string? Reason = null, string? Paths = null, string? Commit = null);
 
 /// <summary>Where one document sits inside a work batch: the batch index and the byte range of its line.</summary>
 public readonly record struct DocumentRef(int Batch, long Offset, int Length)
@@ -112,6 +125,21 @@ public static class WorkBatchFile
             builder.Append(",\"restricted\":").Append(restricted);
         }
 
+        if (item.Reason is { Length: > 0 } reason)
+        {
+            builder.Append(",\"reason\":").Append(reason);
+        }
+
+        if (item.Paths is { Length: > 0 } paths)
+        {
+            builder.Append(",\"paths\":").Append(JsonSerializer.Serialize(paths));
+        }
+
+        if (item.Commit is { Length: > 0 } commit)
+        {
+            builder.Append(",\"commit\":").Append(JsonSerializer.Serialize(commit));
+        }
+
         builder.Append('}');
         return Utf8.GetBytes(builder.ToString());
     }
@@ -142,7 +170,12 @@ public static class WorkBatchFile
             restricted = access.GetRawText();
         }
 
-        return new WorkItem(parsedKey, targetId, doc.GetRawText(), assertions, enrich, restricted);
+        // A line written before the ledger kept why a record is sent, the paths of its document or the run's commit carries
+        // none of them: its attempt says its reason was not recorded, and the record keeps no paths of the document it sends.
+        var reason = root.TryGetProperty("reason", out var why) && why.ValueKind == JsonValueKind.Object ? why.GetRawText() : null;
+        var paths = root.TryGetProperty("paths", out var kept) && kept.ValueKind == JsonValueKind.String ? kept.GetString() : null;
+        var commit = root.TryGetProperty("commit", out var at) && at.ValueKind == JsonValueKind.String ? at.GetString() : null;
+        return new WorkItem(parsedKey, targetId, doc.GetRawText(), assertions, enrich, restricted, reason, paths, commit);
     }
 
     /// <summary>

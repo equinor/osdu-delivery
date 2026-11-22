@@ -755,6 +755,10 @@ public sealed class DeliveryWorker
                 var held = $"the final hash check found OSDU already holding this version (metadata hash {state.PendingMetadataHash ?? "none"}"
                     + (state.PendingPayload ? $", payload hash {state.PendingPayloadHash ?? "none"}" : string.Empty) + "); nothing was sent";
                 var (completion, evt, summary) = Settle(state, batch, started, RecordStatus.Delivered, AttemptOutcome.Skipped, AttemptPhases.Unchanged, null, held, null, null, null, promote: true, nothingSent: true);
+
+                // OSDU holds the very document the work carries, so its paths are those of the document OSDU holds, and the
+                // render context promoted is the work's, planned at the work's commit.
+                completion = completion with { RenderPaths = state.PendingMetadata ? ReadPaths(item, state) : null, RenderCommit = item.Commit };
                 await record(index, completion, evt, summary, null, []).ConfigureAwait(false);
                 settledEarly.Add(state);
                 continue;
@@ -854,6 +858,9 @@ public sealed class DeliveryWorker
                 Document = document,
                 Assertions = AssertionFindings.FromText(item.Assertions),
                 Access = access,
+                Reason = ReadReason(item, state),
+                RenderPaths = ReadPaths(item, state),
+                Commit = item.Commit,
                 DeliverMetadata = sendMetadata,
                 DeliverPayload = sendPayload,
                 Payload = single,
@@ -1342,7 +1349,19 @@ public sealed class DeliveryWorker
             var sent = outcome.MetadataDelivered ? work.Access : null;
             var replaced = AttemptResult.WithAccess(AttemptResult.WithReplaced(resultJson, work.ExistingVersion), sent, record.IncompleteRestrictionId);
             var detail = AccessDetail(record, sent) is { } access ? (outcome.Detail is { Length: > 0 } said ? $"{said}; {access}" : access) : outcome.Detail;
-            return Settle(record, batch, started, RecordStatus.Delivered, AttemptOutcome.Delivered, phase, outcome.TargetVersion, detail, null, replaced, targetState, promote: true, access: sent);
+
+            // Why the record was sent, as the plan found it, stays with the attempt that delivered it; the document's paths, when
+            // the try sent it, become those of the document OSDU holds (osdu/docs/reference/concepts/change-detection.md, Why a
+            // record was delivered).
+            var (completion, evt, summary) = Settle(
+                record, batch, started, RecordStatus.Delivered, AttemptOutcome.Delivered, phase, outcome.TargetVersion, detail, null,
+                AttemptResult.WithReason(replaced, work.Reason), targetState, promote: true, access: sent);
+            return (completion with
+            {
+                Attempt = completion.Attempt with { Triggers = work.Reason?.Kinds },
+                RenderPaths = outcome.MetadataDelivered ? work.RenderPaths : null,
+                RenderCommit = work.Commit,
+            }, evt, summary);
         }
 
         var failure = outcome.Failure!;
@@ -1376,6 +1395,64 @@ public sealed class DeliveryWorker
             default:
                 return Settle(record, batch, started, RecordStatus.Failed, AttemptOutcome.Failed, "none", null, null, $"unexpected failure: {failure.GetType().Name}: {failure.Message}", resultJson, null, keepSteps: true);
         }
+    }
+
+    /// <summary>
+    /// The reason a work item carries for its delivery, or null for one queued before the ledger kept reasons. A reason the
+    /// line holds but this version cannot read is said on the run's trace and left out: the attempt then says its reason was
+    /// not recorded, and the record is sent as planned, since why it was planned changes nothing about what is sent.
+    /// </summary>
+    private DeliveryReason? ReadReason(WorkItem item, RecordState state)
+    {
+        if (item.Reason is not { Length: > 0 } text)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (DeliveryReason.FromJson(JsonNode.Parse(text)) is { } reason)
+            {
+                return reason;
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning("The reason queued for record {Key} is not JSON ({Error}); its attempt says its reason was not recorded.", state.DeliveryKey, ex.Message);
+            return null;
+        }
+
+        _logger.LogWarning("The reason queued for record {Key} is not a delivery reason; its attempt says its reason was not recorded.", state.DeliveryKey);
+        return null;
+    }
+
+    /// <summary>
+    /// The paths of the document a work item carries, decoded from base64, or null for one queued before the ledger kept them.
+    /// Paths the line holds unreadably are said on the trace and left out, so the record keeps none rather than wrong ones.
+    /// </summary>
+    private byte[]? ReadPaths(WorkItem item, RecordState state)
+    {
+        if (item.Paths is not { Length: > 0 } text)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = Convert.FromBase64String(text);
+            if (RenderPaths.Decode(bytes, out var problem) is not null)
+            {
+                return bytes;
+            }
+
+            _logger.LogWarning("The paths queued for record {Key} cannot be read ({Problem}); the record keeps none of the document it sends.", state.DeliveryKey, problem);
+        }
+        catch (FormatException ex)
+        {
+            _logger.LogWarning("The paths queued for record {Key} are not base64 ({Error}); the record keeps none of the document it sends.", state.DeliveryKey, ex.Message);
+        }
+
+        return null;
     }
 
     /// <summary>

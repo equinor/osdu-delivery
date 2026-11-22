@@ -120,7 +120,7 @@ to follow. The control plane never delivers.
 | `GET /flows/{pipelineId}/submissions` | read | `max` (100, at most 1,000), `interface`, `partition` | The interface's submissions, newest first. |
 | `GET /flows/{pipelineId}/retrievals` | read | `max` (100, at most 1,000) | A retrieval flow's runs, newest first; 409 for another kind. |
 | `GET /records/{flowId}/{key}` | read | | One record: custody state, OSDU id and version, hashes, source key and label, last error, its pipeline, interface and partition, the record it waits for and those waiting for it. A record deleted from the ledger is 404 `Deleted from the ledger`, naming who deleted it and when. |
-| `GET /records/{flowId}/{key}/attempts` | read | `max` (100, at most 500) | Every delivery attempt with its outcome, steps and error. |
+| `GET /records/{flowId}/{key}/attempts` | read | `max` (100, at most 500) | Every delivery attempt with its outcome, steps and error; a delivered one with `reason`, why it was sent (`recorded`, `action`, `summary`, `triggers`, `paths`), or `{"recorded": false, "summary": "reason not recorded"}` for one delivered before the ledger kept reasons ([delivery reasons](delivery-reasons.md)). |
 | `GET /records/{flowId}/{key}/activities` | read | `max` (100, at most 500) | The interventions and runs that named the record. |
 | `GET /records/{flowId}/{key}/chain` | read | | The record's row through its ingestion table: when it arrived and every recorded change, each with the ingestion run and the landing of its file. |
 | `GET /records/{flowId}/{key}/cache` | read | | What the record read out of the partition cache when it was rendered. |
@@ -133,7 +133,7 @@ to follow. The control plane never delivers.
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
 | `GET /runs/lookup` | read | `id`: a run id, a correlation id, or a log line holding one | The run, every run of its execution (the coordinating run, then the parts) and the plans it registered. `run` is null and `reason` says why when no run has the id; 400 when `id` holds none ([from a log line to the run](request-correlation.md#from-a-log-line-to-the-run)). |
-| `GET /submissions/{submissionId}` | read | | One submission with its counts and the runs that worked on it. |
+| `GET /submissions/{submissionId}` | read | | One submission with its counts and the runs that worked on it, and `deliveredBy`: its delivered records counted by what sent them (`delivered`, `notRecorded`, and `triggers`, each a `kind` and its `records`; [delivery reasons](delivery-reasons.md)). |
 | `GET /submissions/{submissionId}/attempts` | read | `max` (500, at most 5,000) | The submission's attempts. |
 | `GET /submissions/{submissionId}/batches` | read | `status`, `page`, `pageSize` | Its work batches. |
 | `GET /activities` | read | `pipelineId` or `flowId` (not both), `submissionId`, `runId`, `kind`, `actor`, `outcome`, `idle`, `since`, `until`, `page`, `pageSize`, `interface`, `partition` | The audit trail, newest first. `idle=false` leaves out runs that changed nothing, `idle=true` lists only them. |

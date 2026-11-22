@@ -77,6 +77,13 @@ public sealed record DocumentExecutionOptions
     /// which runs the file it was given) adds nothing.</summary>
     public string? Origin { get; init; }
 
+    /// <summary>The git commit of the repository the executed document was read at, when the run is pinned to one: set by
+    /// the node worker from the run's pin, whether it ran the catalog's snapshot of that commit's flow file or a checkout
+    /// of the commit. An executor that records what a run did can name the version of the estate it did it under without
+    /// reading <see cref="Origin"/>'s words. Null for an unpinned run, which reads the node's synced copy as it stands, and
+    /// for every direct CLI run, which runs the file it was given.</summary>
+    public string? Commit { get; init; }
+
     /// <summary>
     /// The collector that gathers this run's events into the <c>run.json</c> <c>events</c> array and forwards each to
     /// <see cref="EventSink"/>, with <see cref="Origin"/> already published as its first event. Every executor builds

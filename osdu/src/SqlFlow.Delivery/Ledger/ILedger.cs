@@ -411,6 +411,20 @@ public sealed record RecordState
     /// <summary>The render context of the last delivered document, canonical JSON.</summary>
     public string? RenderContext { get; init; }
 
+    /// <summary>
+    /// The estate commit the run that planned <see cref="RenderContext"/> executed, when it knew it: what a delivery's reason
+    /// quotes beside the mapping fingerprint the record's document was rendered with. Null when that run was not pinned to a
+    /// commit, and for a context written before the ledger kept it.
+    /// </summary>
+    public string? RenderCommit { get; init; }
+
+    /// <summary>
+    /// The paths of the document OSDU holds of the record and a hash of each value (<see cref="Planning.RenderPaths"/>, encoded):
+    /// what a delivery compares its render with to name the paths it changes. Null for a record delivered before the ledger
+    /// kept them, and once OSDU no longer holds the version they describe (a removal, a reversal, a step back).
+    /// </summary>
+    public byte[]? RenderPaths { get; init; }
+
     /// <summary>The ingestion fingerprint of the rows the delivered document was built from.</summary>
     public string? SourceFingerprint { get; init; }
 
@@ -752,6 +766,12 @@ public sealed record AttemptRecord
     /// <summary>The work batch the try belonged to, when it ran from one.</summary>
     public int? WorkBatch { get; init; }
 
+    /// <summary>
+    /// For a delivered try: the kinds of the inputs that made the record render and be sent (its reason's triggers, which the
+    /// result keeps under <c>reason</c>). Null for every other attempt, and for a delivery made before the ledger kept reasons.
+    /// </summary>
+    public Planning.TriggerKinds? Triggers { get; init; }
+
     /// <summary>The ingestion file the attempt's document was built from.</summary>
     public string? SourceFileName { get; init; }
 
@@ -797,6 +817,15 @@ public sealed record RecordCompletion
     public long? TargetVersion { get; init; }
 
     public string? TargetId { get; init; }
+
+    /// <summary>
+    /// For a promotion: the paths of the document the try sent, encoded (<see cref="Planning.RenderPaths"/>), which the record
+    /// keeps as those of the document OSDU holds; null for a try that sent no document, or whose work carried none.
+    /// </summary>
+    public byte[]? RenderPaths { get; init; }
+
+    /// <summary>For a promotion: the estate commit the work's render context was planned at, which the record keeps with it.</summary>
+    public string? RenderCommit { get; init; }
 
     public DateTime? NextAttemptUtc { get; init; }
 
@@ -995,6 +1024,15 @@ public sealed record SkippedRecord
     /// <summary>The render context the record was rendered under (a rendered skip advances the record to it).</summary>
     public string? RenderContext { get; init; }
 
+    /// <summary>With <see cref="RenderContext"/>: the estate commit the plan's run executed, when it knew it.</summary>
+    public string? RenderCommit { get; init; }
+
+    /// <summary>
+    /// For a rendered skip of a record whose document's paths the ledger never kept: the paths of the document OSDU holds,
+    /// which the render found identical (<see cref="Planning.RenderPaths"/>, encoded). Null for every other skip.
+    /// </summary>
+    public byte[]? RenderPaths { get; init; }
+
     /// <summary>
     /// For a rendered skip, the unique segment of the ids of the children the render looked for (<see cref="RecordState.ChildLinkKey"/>),
     /// null when it looked for none: a record rendered again under a mapping that now links its children keeps it although
@@ -1119,6 +1157,16 @@ public sealed record CacheGapPage(IReadOnlyList<CacheGap> Items, int Total);
 public sealed record UpdateRolloutBatch(long TagId, long Marked, long Processed, long Affected, bool Completed);
 
 /// <summary>One cache change and what happens about it, covering every record built from the value that moved.</summary>
+/// <summary>
+/// The records a submission delivered (<see cref="Delivered"/>), how many under each kind of trigger (<see cref="ByTrigger"/>,
+/// in <see cref="Planning.ReasonKinds.All"/>'s order, kinds no record names left out), and how many were delivered before the
+/// ledger kept reasons (<see cref="NotRecorded"/>).
+/// </summary>
+public sealed record SubmissionTriggerCounts(long Delivered, long NotRecorded, IReadOnlyList<(string Kind, long Records)> ByTrigger);
+
+/// <summary>The intervention that asked a record to be planned again: the audit trail's entry, what it was, who made it and when.</summary>
+public sealed record PlanRequestOrigin(long ActivityId, string Kind, string Actor, DateTime StartedUtc);
+
 public sealed record UpdateTag
 {
     /// <summary>The most characters of <see cref="ItemId"/> the ledger keeps.</summary>
@@ -2826,6 +2874,14 @@ public interface ILedger
     /// <summary>How many distinct records a submission's attempts settled with the given outcome (and phase, when given).</summary>
     Task<long> CountAttemptsAsync(Guid submissionId, AttemptOutcome outcome, string? phase = null, CancellationToken ct = default);
 
+    /// <summary>
+    /// The records a submission delivered, counted by what made them render and be sent (each delivered attempt's triggers,
+    /// <c>osdu.Attempt.Triggers</c>; osdu/docs/reference/concepts/delivery-reasons.md): a record
+    /// counts once under each kind its reason names, so the counts may add up to more than the records delivered. One read of
+    /// the submission's delivered attempts through their index.
+    /// </summary>
+    Task<SubmissionTriggerCounts> CountDeliveredTriggersAsync(Guid submissionId, CancellationToken ct = default);
+
     Task<long> CountAsync(Guid flowId, Guid? submissionId, RecordStatus status, CancellationToken ct = default);
 
     /// <summary>Whether the ledger of <paramref name="flowId"/> holds any record: an index seek, however large the ledger.</summary>
@@ -3501,6 +3557,23 @@ public interface ILedger
 
     /// <summary>The gated sets, which a plan reads once per run to know which records are held back.</summary>
     Task<IReadOnlyList<long>> GatedCacheSetsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// The cache changes of <paramref name="scope"/> found by the captures after <paramref name="fromVersion"/>, up to and with
+    /// <paramref name="toVersion"/>, that reach records (approved or rolled out, not waiting or rejected): what a delivery's
+    /// reason names when a record rendered against <paramref name="fromVersion"/> renders against <paramref name="toVersion"/>
+    /// (osdu/docs/reference/concepts/delivery-reasons.md). At most <paramref name="max"/>, oldest
+    /// first; a plan reads them once for each version its records were last rendered against.
+    /// </summary>
+    Task<IReadOnlyList<UpdateTag>> CacheChangesBetweenAsync(string scope, string fromVersion, string toVersion, int max, CancellationToken ct = default);
+
+    /// <summary>
+    /// The intervention that asked each record to be planned again, as the audit trail recorded it: the newest activity naming
+    /// the record (as its one record, or among the records it reached) that was under way when the request was made. A request
+    /// no intervention made (a cache rollout, a parent or child landing, a sync of the record's row) has none, and is left out.
+    /// </summary>
+    Task<IReadOnlyDictionary<DeliveryKey, PlanRequestOrigin>> PlanRequestOriginsAsync(
+        Guid flowId, IReadOnlyList<(DeliveryKey Key, DateTime AskedUtc)> asked, CancellationToken ct = default);
 
     /// <summary>
     /// The tags in a status, newest first; with a cache name, only the changes that cache's refreshes found. <c>rolling</c>

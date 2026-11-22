@@ -217,7 +217,11 @@ for a record that was.
 
 - **Timeline**: what happened to the record, newest first, in chapters (each started by a row arriving, changing or
   going, or by someone's request), on three lanes (**Source**, **Ledger**, **OSDU**); every try with what OSDU answered,
-  and every request with who made it. It narrows to one lane or to the requests people made.
+  and every request with who made it. Each **Delivered** row is titled with what sent it (`Delivered: mapping
+  WellLog@1.4.0 changed (852db64); acl.viewers changed`), and opens to every input that moved, with what it was and is
+  now and its explanation behind a note mark, and the paths of the document that changed; one delivered before the ledger
+  kept reasons says `reason not recorded` ([delivery reasons](delivery-reasons.md)). It narrows to one lane or to the
+  requests people made.
 - **Source**: where the row came from (ingestion file and row, when received, source key, delivery key, mapping, key
   columns with a copy of the key as the ledger holds it), a newer row a waiting document is built from, and a read of the
   rows as the ingestion tables hold them now, with the flow's own connection.

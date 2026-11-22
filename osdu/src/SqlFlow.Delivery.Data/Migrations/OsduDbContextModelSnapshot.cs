@@ -524,6 +524,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("TargetVersion")
                         .HasColumnType("bigint");
 
+                    b.Property<int?>("Triggers")
+                        .HasColumnType("int");
+
                     b.Property<int?>("WorkBatch")
                         .HasColumnType("int");
 
@@ -3885,8 +3888,15 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("ProblemHash")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("RenderCommit")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RenderContext")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RenderPaths")
+                        .HasColumnType("varbinary(max)");
 
                     b.Property<string>("RestrictedFromAcl")
                         .HasColumnType("nvarchar(max)");
@@ -4192,6 +4202,13 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<bool>("Promote")
                         .HasColumnType("bit");
+
+                    b.Property<string>("RenderCommit")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<byte[]>("RenderPaths")
+                        .HasColumnType("varbinary(max)");
 
                     b.Property<bool>("Replan")
                         .HasColumnType("bit");

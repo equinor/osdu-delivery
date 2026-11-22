@@ -212,11 +212,18 @@ public sealed record DeliveryRecordDetailDto(
     DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null, DeliveryRemovedKeyDto? RemovedKey = null,
     DeliveryRecordRestrictionDto? Restriction = null, DeliveryRecordIncompleteDto? RestrictedUntilComplete = null);
 
-/// <summary>One delivery try, as the append-only history holds it: its outcome, and every step with what the target returned.</summary>
+/// <summary>
+/// One delivery try, as the append-only history holds it: its outcome, and every step with what the target returned. A
+/// delivered try says why it was sent (<c>Reason</c>, lifted out of its result; osdu/docs/reference/concepts/change-detection.md,
+/// Why a record was delivered): its <c>action</c>, its one line <c>summary</c>, every input that moved under <c>triggers</c>
+/// and the paths of the document that changed under <c>paths</c>, with <c>recorded</c> true; a delivery made before the ledger
+/// kept reasons says <c>{"recorded": false, "summary": "reason not recorded"}</c>, never a guess. Every other try has none.
+/// </summary>
 public sealed record DeliveryAttemptDto(
     long AttemptId, Guid DeliveryKey, Guid? SubmissionId, Guid? RunId, string Worker, DateTime StartedUtc, DateTime CompletedUtc,
     string Outcome, string Phase, string? MetadataHash, string? PayloadHash, long? TargetVersion, string? Error, JsonElement? Result, int? WorkBatch,
-    string? SourceFileName, long? SourceRowNumber, DateTime? SourceUpdatedUtc, DateTime? SourceDeletedUtc = null, long? ParentVersion = null);
+    string? SourceFileName, long? SourceRowNumber, DateTime? SourceUpdatedUtc, DateTime? SourceDeletedUtc = null, long? ParentVersion = null,
+    JsonElement? Reason = null);
 
 /// <summary>
 /// One entry of the audit trail: who did what, when, with which inputs, and how it ended, and the partition whose ledger it
@@ -230,9 +237,23 @@ public sealed record DeliveryActivityDto(
     string Outcome, string? ParametersJson, Guid? SubmissionId, Guid? DeliveryKey, Guid? RunId, string? Summary, string? Log,
     string? Partition = null, bool Idle = false, Guid? PipelineId = null, string? Interface = null, string? NamedPartition = null);
 
-/// <summary>A submission with the pipeline, interface and partition that planned it, and the runs that carried it.</summary>
+/// <summary>
+/// A submission with the pipeline, interface and partition that planned it, the runs that carried it, and what its deliveries
+/// were sent for (<c>DeliveredBy</c>).
+/// </summary>
 public sealed record DeliverySubmissionDetailDto(
-    DeliverySubmissionDto Submission, Guid? PipelineId, IReadOnlyList<Guid> RunIds, string? Interface = null, string? Partition = null);
+    DeliverySubmissionDto Submission, Guid? PipelineId, IReadOnlyList<Guid> RunIds, string? Interface = null, string? Partition = null,
+    DeliverySubmissionTriggersDto? DeliveredBy = null);
+
+/// <summary>
+/// The records a submission delivered, counted by what made them render and be sent: under each trigger kind its reasons
+/// name (a record under every kind its reason names), and those delivered before the ledger kept reasons
+/// (osdu/docs/reference/concepts/delivery-reasons.md).
+/// </summary>
+public sealed record DeliverySubmissionTriggersDto(long Delivered, long NotRecorded, IReadOnlyList<DeliveryTriggerCountDto> Triggers);
+
+/// <summary>How many of a submission's delivered records one kind of trigger reached.</summary>
+public sealed record DeliveryTriggerCountDto(string Kind, long Records);
 
 /// <summary>A mapping document as the sync found it in a repository.</summary>
 /// <remarks>
@@ -1553,7 +1574,10 @@ public static class DeliveryEndpoints
 
         var found = await DeliveryPipelines.ForLedgerAsync(db, osdu, submission.FlowId, ct).ConfigureAwait(false);
         var runIds = await SubmissionRunsAsync(db, submissionId, submission.RunId, found?.Pipeline.Id, ct).ConfigureAwait(false);
-        return TypedResults.Ok(new DeliverySubmissionDetailDto(ToDto(submission), found?.Pipeline.Id, runIds, NamedInterface(found), NamedPartition(found)));
+        var counted = await ledger.CountDeliveredTriggersAsync(submissionId, ct).ConfigureAwait(false);
+        var deliveredBy = new DeliverySubmissionTriggersDto(
+            counted.Delivered, counted.NotRecorded, [.. counted.ByTrigger.Select(t => new DeliveryTriggerCountDto(t.Kind, t.Records))]);
+        return TypedResults.Ok(new DeliverySubmissionDetailDto(ToDto(submission), found?.Pipeline.Id, runIds, NamedInterface(found), NamedPartition(found), deliveredBy));
     }
 
     private static async Task<Results<Ok<IReadOnlyList<DeliveryAttemptDto>>, ProblemHttpResult>> ListSubmissionAttemptsAsync(
@@ -4192,14 +4216,45 @@ public static class DeliveryEndpoints
     internal static IReadOnlyList<string>? MissingLines(string? missing)
         => string.IsNullOrEmpty(missing) ? null : missing.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-    private static DeliveryAttemptDto ToDto(AttemptRecord a) => new(
-        a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),
-        a.Phase, a.MetadataHash, a.PayloadHash, a.TargetVersion, a.Error, ParseJsonOrNull(a.ResultJson), a.WorkBatch,
-        // The origin of the document this try sent, which is what makes a past attempt reconstructible from the ledger
-        // alone even after the record has moved on to a newer row.
-        a.SourceFileName, a.SourceRowNumber, a.SourceUpdatedUtc, a.SourceDeletedUtc,
-        // For a record reading its parent: the version of the parent the document this try sent was rendered from.
-        a.ParentVersion);
+    private static DeliveryAttemptDto ToDto(AttemptRecord a)
+    {
+        var (result, reason) = AttemptReason(a);
+        return new(
+            a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),
+            a.Phase, a.MetadataHash, a.PayloadHash, a.TargetVersion, a.Error, result, a.WorkBatch,
+            // The origin of the document this try sent, which is what makes a past attempt reconstructible from the ledger
+            // alone even after the record has moved on to a newer row.
+            a.SourceFileName, a.SourceRowNumber, a.SourceUpdatedUtc, a.SourceDeletedUtc,
+            // For a record reading its parent: the version of the parent the document this try sent was rendered from.
+            a.ParentVersion,
+            reason);
+    }
+
+    /// <summary>
+    /// An attempt's result, and for a delivered try why it was sent, lifted out of the result so it is read in one place: the
+    /// reason its result keeps, marked recorded, or for a delivery made before the ledger kept reasons, that it was not
+    /// recorded. Null for every other try.
+    /// </summary>
+    internal static (JsonElement? Result, JsonElement? Reason) AttemptReason(AttemptRecord attempt)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
+        var result = ParseJsonOrNull(attempt.ResultJson);
+        if (attempt.Outcome != AttemptOutcome.Delivered)
+        {
+            return (result, null);
+        }
+
+        var node = result is { ValueKind: JsonValueKind.Object } parsed ? System.Text.Json.Nodes.JsonObject.Create(parsed) : null;
+        if (node?["reason"] is not System.Text.Json.Nodes.JsonObject kept || SqlFlow.Delivery.Planning.DeliveryReason.FromJson(kept) is null)
+        {
+            return (result, JsonSerializer.SerializeToElement(new { recorded = false, summary = "reason not recorded" }));
+        }
+
+        node.Remove("reason");
+        var reason = (System.Text.Json.Nodes.JsonObject)kept.DeepClone();
+        reason["recorded"] = true;
+        return (JsonSerializer.SerializeToElement(node), JsonSerializer.SerializeToElement(reason));
+    }
 
     private static DeliveryActivityDto ToDto(ActivityRecord a) => new(
         a.ActivityId, a.FlowId, a.FlowName, a.Kind, a.Actor, a.StartedUtc, a.CompletedUtc, a.Outcome, a.ParametersJson, a.SubmissionId,

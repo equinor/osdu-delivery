@@ -24,6 +24,7 @@ import { TruncatedText } from "@/components/TruncatedText";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
 import { SubmissionStatusBadge } from "./DeliveryBadges";
 import { SubmissionCounts } from "./DeliveryFlowPanel";
+import { deliveredByText } from "./deliveryReason";
 import { prettyJson } from "./prettyJson";
 import { ReversalCard } from "./ReversalCard";
 import { ReverseButton } from "./ReverseButton";
@@ -293,6 +294,10 @@ function SubmissionContent({ submissionId }: { submissionId: string }) {
       <Card className="gap-2 rounded-lg p-3">
         <h2 className="text-[13px] font-medium">Outcome</h2>
         <SubmissionCounts submission={s} />
+        {/* What sent the records it delivered, counted from their attempts' reasons: a record under every kind its reason names. */}
+        {detail.deliveredBy != null && detail.deliveredBy.delivered > 0 && (
+          <span className="text-[12.5px] text-muted-foreground" data-testid="submission-delivered-by">{deliveredByText(detail.deliveredBy)}</span>
+        )}
       </Card>
 
       {reversalId !== null

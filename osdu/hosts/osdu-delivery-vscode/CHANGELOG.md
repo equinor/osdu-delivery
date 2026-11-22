@@ -5,6 +5,15 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.5]
 
+### Why a record was delivered
+
+- A record's timeline titles each **Delivered** row with what sent it, and opens to every input that moved (the mapping
+  with its fingerprint and estate commit on each side, the source row, the cache, a request and who made it, ...) and the
+  paths of the document that changed; a delivery made before says its reason was not recorded. A submission's page counts
+  its deliveries by what sent them, and the MCP server the extension carries returns the reason in `delivery_record` and
+  the counts in `delivery_submissions`
+  ([delivery reasons](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/delivery-reasons.md)).
+
 ### A run's records
 
 - A delivery flow's **Runs** tab has a **Records** icon on each run that opens the flow's Records tab narrowed to the

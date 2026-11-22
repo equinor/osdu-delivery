@@ -377,6 +377,13 @@ public sealed partial class FlowRuntime : IDisposable
     /// <summary>The platform run this runtime executes for, when it is one; stamped on activities and attempts.</summary>
     public Guid? RunId { get; set; }
 
+    /// <summary>
+    /// The estate commit the run executes, when it is pinned to one (<c>DocumentExecutionOptions.Commit</c>): what a delivery's
+    /// reason quotes beside the mapping it rendered with, and what the ledger keeps with each record's render context. Null
+    /// for an unpinned run and a direct CLI run.
+    /// </summary>
+    public string? Commit { get; set; }
+
     /// <summary>Supplies the captured log for the activity being completed (the executor sets it).</summary>
     public Func<string?>? ActivityLog { get; set; }
 
@@ -518,7 +525,7 @@ public sealed partial class FlowRuntime : IDisposable
     /// <summary>The flow's ingestion tables, opened once per runtime with the flow's own connection reference.</summary>
     public IIngestionSource Source => _source ??= _context.Sources.Open(Flow, Parameters, _context.Loggers);
 
-    public Planner Planner => _planner ??= new Planner(Source, _context.Payloads, _context.Ledger, _context.Loggers.CreateLogger<Planner>());
+    public Planner Planner => _planner ??= new Planner(Source, _context.Payloads, _context.Ledger, _context.Loggers.CreateLogger<Planner>()) { Commit = Commit };
 
     public SubmissionIntake Intake => new(RequireLedger(), Planner, _context.Stores, _context.Time, _context.Listener, _context.Loggers.CreateLogger<SubmissionIntake>())
     {

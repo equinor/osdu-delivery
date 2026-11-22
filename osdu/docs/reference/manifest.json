@@ -1633,6 +1633,7 @@
         "content hash"
       ],
       "related": [
+        "delivery-concept-delivery-reasons",
         "delivery-flow-delivery",
         "delivery-concept-partition-cache",
         "delivery-concept-record-lifecycle",
@@ -1821,6 +1822,55 @@
         "osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs",
         "osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DatabaseTablePagesTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-concept-delivery-reasons",
+      "corpus": "reference",
+      "path": "concepts/delivery-reasons.md",
+      "title": "Delivery reasons: why a record was delivered, and where an operator reads it",
+      "type": "concept",
+      "summary": "Why each delivered attempt was sent: the inputs that moved since the version the ledger holds, and the paths of its document that changed.",
+      "keywords": [
+        "why delivered",
+        "delivery reason",
+        "delivered again",
+        "trigger",
+        "mapping changed",
+        "cache changed",
+        "source changed",
+        "path diff",
+        "changed paths",
+        "reason not recorded",
+        "RenderPaths",
+        "RenderCommit",
+        "estate commit"
+      ],
+      "related": [
+        "delivery-concept-change-detection",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-submissions",
+        "delivery-concept-partition-cache",
+        "delivery-table-attempt",
+        "delivery-table-record",
+        "delivery-cli-records"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Planning/DeliveryReason.cs",
+        "osdu/src/SqlFlow.Delivery/Planning/DeliveryReasons.cs",
+        "osdu/src/SqlFlow.Delivery/Planning/RenderPaths.cs",
+        "osdu/src/SqlFlow.Delivery/Planning/ChangeDetector.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
+        "osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/AttemptResult.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryRecordVerbs.cs",
+        "osdu/gui/src/features/delivery/DeliveryReasonView.tsx",
+        "osdu/gui/src/features/delivery/deliveryReason.ts"
       ]
     },
     {

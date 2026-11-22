@@ -22,6 +22,7 @@ keywords:
   - key order
   - content hash
 related:
+  - delivery-concept-delivery-reasons
   - delivery-flow-delivery
   - delivery-concept-partition-cache
   - delivery-concept-record-lifecycle
@@ -61,7 +62,8 @@ A delivery flow sends a record only when what it renders to, or its payload, dif
 holds. Every run answers three questions in turn: which rows of the ingestion tables to read, whether a row read needs
 rendering at all, and whether the rendered document or payload differs from what was delivered. Just before a worker
 sends anything, it asks the last question once more. This page is what each question reads and what moves it, so an
-operator can predict what a change will send and why a record was or was not delivered.
+operator can predict what a change will send and why a record was or was not delivered; every delivery also records why
+it was sent ([delivery reasons](delivery-reasons.md)), so the answer for a record already sent is read, not worked out.
 
 The ingestion side of the chain has its own change detection: an `ing` flow updates a row only when its row hash changed,
 and stamps `UpdatedDate_DW` only then, or when it first inserts the row, so a row landed again unchanged keeps its stamp
@@ -289,6 +291,14 @@ OSDU id belongs to one record of the ledger ([mapping](../flow/mapping.md#the-os
 
 The payload keys are on [running an OSDU flow](../cli/run.md); verify, removal and reversal are on
 [removal and reversal](removal-and-reversal.md).
+
+## Why a record was delivered
+
+Every attempt that delivers a record keeps why the plan sent it: every input that moved since the version the ledger
+holds (the source row, a child or lookup row, the mapping and its estate commit, the template, the parameters, an
+enrichment, the cache, a request and who made it, a verify's drift, a change key, the payload) and the paths of the
+document that changed, never their values. The record's timeline titles each delivery with it, and the API, the command
+line and the MCP server return it: [delivery reasons](delivery-reasons.md).
 
 ## See also
 

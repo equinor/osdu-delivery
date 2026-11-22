@@ -130,7 +130,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
                     .ConfigureAwait(false);
             }
 
-            result = await ExecuteOperationAsync(partitioned, source, operation, parameters, payload, runId, actor, runLogger, log, ct).ConfigureAwait(false);
+            result = await ExecuteOperationAsync(partitioned, source, operation, parameters, payload, runId, actor, options.Commit, runLogger, log, ct).ConfigureAwait(false);
             success = true;
             LogDone(log, operation, stopwatch.Elapsed.TotalSeconds);
         }
@@ -199,7 +199,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
     /// </summary>
     private static async Task<object> ExecuteOperationAsync(
         EngineContext context, SourceDefinition source, string operation, RunParameters parameters, DeliveryRunPayload payload,
-        Guid runId, string actor, RunLogger runLogger, ILogger log, CancellationToken ct)
+        Guid runId, string actor, string? commit, RunLogger runLogger, ILogger log, CancellationToken ct)
     {
         var (flow, submission) = await TargetInterfaceAsync(context, source, operation, payload, ct).ConfigureAwait(false);
         if (flow is null)
@@ -208,6 +208,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
             {
                 Actor = actor,
                 RunId = runId,
+                Commit = commit,
                 ActivityLog = runLogger.Render,
                 Values = parameters.Values,
             };
@@ -232,6 +233,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
             : FlowRuntime.ForTarget(interfaceContext, flow, values);
         runtime.Actor = actor;
         runtime.RunId = runId;
+        runtime.Commit = commit;
         runtime.ActivityLog = runLogger.Render;
         runtime.SourceDocument = source;
         if (runtime.ReadsSource)

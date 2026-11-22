@@ -197,6 +197,18 @@ export interface DeliverySubmissionDetail {
   interface?: string | null;
   /** The partition the submission delivered to, for a flow that names its partitions; null for one that names none. */
   partition?: string | null;
+  /**
+   * The records the submission delivered, counted by what sent them: under each trigger kind their reasons name (a record
+   * under every kind its reason names), and those delivered before the ledger kept reasons.
+   */
+  deliveredBy?: DeliverySubmissionTriggers | null;
+}
+
+/** A submission's delivered records counted by trigger kind. */
+export interface DeliverySubmissionTriggers {
+  delivered: number;
+  notRecorded: number;
+  triggers: { kind: DeliveryTriggerKind; records: number }[];
 }
 
 /** The current state of one deliverable: what OSDU holds for it, what is pending, and why it is where it is. */
@@ -590,6 +602,69 @@ export interface DeliveryUndoArtifact {
   note?: string;
 }
 
+/**
+ * What moved between the version the ledger holds for a record and the render a run sent: the kinds a delivered attempt's
+ * reason names (osdu/docs/reference/concepts/delivery-reasons.md).
+ */
+export type DeliveryTriggerKind =
+  | "first-delivery"
+  | "source-changed"
+  | "child-or-lookup-changed"
+  | "mapping-changed"
+  | "template-changed"
+  | "parameters-changed"
+  | "enrichment-changed"
+  | "cache-changed"
+  | "requested"
+  | "drift"
+  | "forced"
+  | "payload-changed"
+  | "other-input-changed";
+
+/** One input that moved, with what it was and is now, and what else names it. Never a value from the source. */
+export interface DeliveryReasonTrigger {
+  kind: DeliveryTriggerKind;
+  /** What it was: a mapping reference, a template or cache version, a row's update moment, a payload hash. */
+  from?: string;
+  to?: string;
+  /** For a mapping: the fingerprints of the documents the two versions were rendered with, and the estate commits. */
+  fromFingerprint?: string;
+  toFingerprint?: string;
+  fromCommit?: string;
+  toCommit?: string;
+  /** The parameters or enrichments that moved, the cache changes that reached the record, the change keys that force it. */
+  names?: string[];
+  more?: number;
+  /** What happened, in a sentence, where the fields alone do not say it. */
+  detail?: string;
+  /** When a plan was asked for, or when verification found the difference. */
+  at?: string;
+  /** For a request an intervention made: the audit trail's entry, what it was, and who asked. */
+  activityId?: number;
+  activity?: string;
+  actor?: string;
+}
+
+/** The paths of a delivered document that changed since the version OSDU held, or why they were not compared. */
+export interface DeliveryReasonPaths {
+  compared: boolean;
+  why?: string;
+  added?: number;
+  removed?: number;
+  changed?: number;
+  /** The paths that changed, in path order, at most 50; `more` counts the rest. */
+  listed?: { path: string; change: "added" | "removed" | "changed" }[];
+  more?: number;
+}
+
+/**
+ * Why a delivered try was sent: what it sent, its one line, every input that moved, and the paths of the document that
+ * changed. A delivery made before the ledger kept reasons says only that it was not recorded.
+ */
+export type DeliveryAttemptReason =
+  | { recorded: true; action: "create" | "update-metadata" | "update-payload" | "update-both"; summary: string; triggers: DeliveryReasonTrigger[]; paths?: DeliveryReasonPaths }
+  | { recorded: false; summary: string };
+
 /** One delivery try, as the append-only history holds it. */
 export interface DeliveryAttempt {
   attemptId: number;
@@ -617,6 +692,8 @@ export interface DeliveryAttempt {
   sourceDeletedUtc?: string | null;
   /** For a record reading its parent: the version of the parent the document this try sent was rendered from. */
   parentVersion?: number | null;
+  /** For a delivered try: why it was sent. Absent for every other try. */
+  reason?: DeliveryAttemptReason | null;
 }
 
 /**

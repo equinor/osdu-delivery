@@ -136,7 +136,7 @@ Every `delivery_*` tool calls a route under `/api/v1/delivery` and nothing else 
 | Question | Tool |
 | --- | --- |
 | Was this record delivered? Which records came from this file? | `delivery_find_records` (indexed prefix search; with no search, the newest records) |
-| Why did it fail? Who deleted it? Which file and row is it from? | `delivery_record` (state, attempts, chain, activities) |
+| Why did it fail? Why was it delivered again? Who deleted it? Which file and row is it from? | `delivery_record` (state, attempts with each delivery's `reason`, chain, activities) |
 | How is this flow doing? Where does it deliver? What does a run need? | `delivery_flow` |
 | What keeps this flow's records blocked, by cause? | `delivery_flow_issues` (each issue's pattern and counts, without the values an error names) |
 | Which records of this flow failed, are held, drifted or came from that run? | `delivery_flow_records` |

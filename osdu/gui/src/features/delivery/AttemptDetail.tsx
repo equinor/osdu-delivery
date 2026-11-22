@@ -1,5 +1,6 @@
 import type { DeliveryAttempt } from "../../api/delivery";
 import { TruncatedText } from "@/components/TruncatedText";
+import { NOT_RECORDED, recordedReason } from "./deliveryReason";
 
 /**
  * An attempt's error, or the note an attempt that did not fail carries, with the correlation id its OSDU requests
@@ -8,9 +9,12 @@ import { TruncatedText } from "@/components/TruncatedText";
 export function AttemptDetail({ attempt }: { attempt: DeliveryAttempt }) {
   const text = attempt.error ?? attempt.result?.detail ?? null;
   const correlationId = attempt.result?.correlationId;
+  // A delivered try says what sent it first (osdu/docs/reference/concepts/delivery-reasons.md).
+  const why = attempt.outcome === "delivered" ? (recordedReason(attempt.reason)?.summary ?? NOT_RECORDED) : null;
   return (
     <div className="flex flex-col gap-0.5">
-      <TruncatedText text={text} maxWidth={360} className={attempt.error !== null ? "text-destructive" : undefined} />
+      {why !== null && <TruncatedText text={why} maxWidth={360} className={recordedReason(attempt.reason) === null ? "text-muted-foreground" : undefined} />}
+      {(why === null || text !== null) && <TruncatedText text={text} maxWidth={360} className={attempt.error !== null ? "text-destructive" : undefined} />}
       {correlationId !== undefined && (
         <TruncatedText text={correlationId} mono copy maxWidth={360} title="Correlation id" className="text-[11px] text-muted-foreground" />
       )}

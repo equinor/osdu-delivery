@@ -31,6 +31,8 @@ import { RecordName } from "./RecordName";
 import { ValidationVerdictView } from "./ValidationVerdictView";
 import { outcomeWord } from "./validationModel";
 import { NoteMark } from "./RecordArtifacts";
+import { DeliveryReasonView } from "./DeliveryReasonView";
+import { deliveredTitle, NOT_RECORDED, recordedReason } from "./deliveryReason";
 
 type Tone = "success" | "destructive" | "warning" | "info" | "muted";
 
@@ -746,7 +748,8 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
 
   switch (attempt.outcome) {
     case "delivered":
-      return { title: "Delivered", tone: "success", icon: CheckCircle2, then: null, outcome: { text: "Delivered", tone: "success" } };
+      // What sent it, in the words its reason keeps; a try delivered before the ledger kept reasons is titled as it was.
+      return { title: deliveredTitle(attempt.reason), tone: "success", icon: CheckCircle2, then: null, outcome: { text: "Delivered", tone: "success" } };
     case "failed": {
       const final = attempt.error?.startsWith("failed after") === true;
       return {
@@ -859,6 +862,8 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
     icon: shape.icon,
     facts: reached
       ? [
+        // A delivery made before the ledger kept reasons says so rather than leaving its title to be read as complete.
+        attempt.outcome === "delivered" && recordedReason(attempt.reason) === null && <span key="w" data-testid="journey-reason-missing">{NOT_RECORDED}</span>,
         undo !== undefined ? UNDO_REASON[undo.reason ?? ""] : PHASE_TEXT[attempt.phase],
         request !== null && <Mono key="q">{request}</Mono>,
         took !== null && `took ${took}`,
@@ -880,6 +885,7 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
     error: refusal?.answer ?? attempt.error,
     more: (
       <div className="flex flex-col gap-2.5">
+        {attempt.outcome === "delivered" && <DeliveryReasonView reason={attempt.reason} />}
         {steps.length > 0 && <StepList steps={steps} />}
         {undo?.artifacts !== undefined && undo.artifacts.length > 0 && <UndoList artifacts={undo.artifacts} keptRecord={undo.keptRecord === true} />}
         {verdict !== null && <ValidationVerdictView verdict={verdict} />}

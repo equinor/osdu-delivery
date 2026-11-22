@@ -62,6 +62,23 @@ public static class AttemptResult
     }
 
     /// <summary>
+    /// <paramref name="resultJson"/> with why the plan sent the record under <c>reason</c>
+    /// (osdu/docs/reference/concepts/delivery-reasons.md): its action, its one line, every input
+    /// that moved and the paths of the document that changed. Left as it is for a delivery whose work carried no reason.
+    /// </summary>
+    public static string? WithReason(string? resultJson, Planning.DeliveryReason? reason)
+    {
+        if (reason is null)
+        {
+            return resultJson;
+        }
+
+        var result = ObjectOrEmpty(resultJson);
+        result["reason"] = reason.ToJson();
+        return result.ToJsonString();
+    }
+
+    /// <summary>
     /// <paramref name="resultJson"/> with <paramref name="detail"/> added. A result that held nothing yet is started with
     /// an empty steps array, so every reader finds the same shape.
     /// </summary>

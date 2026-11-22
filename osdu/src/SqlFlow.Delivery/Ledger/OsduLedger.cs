@@ -740,7 +740,15 @@ public sealed partial class OsduLedger : ILedger
                     entity.SourceFingerprint = skip.SourceFingerprint ?? entity.SourceFingerprint;
                     entity.SourceModifiedUtc = Latest(entity.SourceModifiedUtc, skip.SourceModifiedUtc);
                     entity.PayloadModifiedUtc = Latest(entity.PayloadModifiedUtc, skip.PayloadModifiedUtc);
-                    entity.RenderContext = skip.RenderContext ?? entity.RenderContext;
+                    if (skip.RenderContext is not null)
+                    {
+                        entity.RenderContext = skip.RenderContext;
+                        entity.RenderCommit = Truncate(skip.RenderCommit, DeliveryModel.MaxCommitLength);
+                    }
+
+                    // A record delivered before the ledger kept its document's paths keeps them from the render found
+                    // identical to what OSDU holds, so its next delivery can name what it changes.
+                    entity.RenderPaths ??= skip.RenderPaths;
                     if (changed)
                     {
                         entity.SourceFileName = Truncate(skip.Origin.FileName, DeliveryModel.MaxSourceFileNameLength);
@@ -1037,6 +1045,27 @@ public sealed partial class OsduLedger : ILedger
                 await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(10, 50) * attempt), ct).ConfigureAwait(false);
             }
         }
+    }
+
+    public async Task<SubmissionTriggerCounts> CountDeliveredTriggersAsync(Guid submissionId, CancellationToken ct = default)
+    {
+        var delivered = StatusText.Of(AttemptOutcome.Delivered);
+
+        // The submission's delivered attempts grouped by the set of kinds each names: a few groups however many records, each
+        // counting its distinct records, then spread over the kinds in memory.
+        var groups = await ReadAsync(
+            db => db.DeliveryAttempts.AsNoTracking()
+                .Where(a => a.SubmissionId == submissionId && a.Outcome == delivered)
+                .GroupBy(a => a.Triggers)
+                .Select(g => new { Triggers = g.Key, Records = g.Select(a => a.DeliveryKey).Distinct().LongCount() })
+                .ToListAsync(ct),
+            ct).ConfigureAwait(false);
+        var total = await CountAttemptsAsync(submissionId, AttemptOutcome.Delivered, null, ct).ConfigureAwait(false);
+        var byKind = Planning.ReasonKinds.All
+            .Select(k => (k.Kind, Records: groups.Where(g => g.Triggers is { } set && (set & (int)k.Flag) != 0).Sum(g => g.Records)))
+            .Where(k => k.Records > 0)
+            .ToList();
+        return new SubmissionTriggerCounts(total, groups.Where(g => g.Triggers is null).Sum(g => g.Records), byKind);
     }
 
     public Task<long> CountAttemptsAsync(Guid submissionId, AttemptOutcome outcome, string? phase = null, CancellationToken ct = default)
@@ -2754,6 +2783,7 @@ public sealed partial class OsduLedger : ILedger
         entity.PayloadModifiedUtc = null;
         entity.SourceFingerprint = null;
         entity.SourceModifiedUtc = null;
+        entity.RenderPaths = null;
         entity.LastVerifiedUtc = null;
         entity.HeldSteps = null;
         entity.LastVerifyOutcome = null;
@@ -3000,6 +3030,8 @@ public sealed partial class OsduLedger : ILedger
                 entity.SourceFingerprint = null;
                 entity.SourceModifiedUtc = null;
                 entity.RenderContext = null;
+                entity.RenderCommit = null;
+                entity.RenderPaths = null;
                 entity.TargetVersion = r.NewVersion;
                 entity.TargetStateJson = r.TargetStateJson;
                 entity.LastVerifiedUtc = null;
@@ -3526,6 +3558,80 @@ public sealed partial class OsduLedger : ILedger
 
     public async Task<IReadOnlyList<long>> GatedCacheSetsAsync(CancellationToken ct = default)
         => await ReadAsync(db => db.DeliveryCacheSets.Where(c => c.Gated).Select(c => c.SetId).ToListAsync(ct), ct).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<UpdateTag>> CacheChangesBetweenAsync(string scope, string fromVersion, string toVersion, int max, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fromVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(toVersion);
+
+        // A version's label is its capture instant (20260910T165153Z), so the labels order the captures; a change waiting for
+        // approval, or rejected, reached no record. The partition's changes of each status are one range of their index.
+        string[] reached = ["approved", "rolling", Delivering, "applied"];
+#pragma warning disable CA1309 // Translated to SQL's comparison of the labels, which are ASCII digits and letters: no overload taking a StringComparison is translatable.
+        var rows = await ReadAsync(
+            db => db.DeliveryUpdateTags.AsNoTracking()
+                .Where(t => t.Scope == scope && reached.Contains(t.Status)
+                    && string.Compare(t.ToVersion, fromVersion) > 0 && string.Compare(t.ToVersion, toVersion) <= 0)
+                .OrderBy(t => t.TagId)
+                .Take(Math.Clamp(max, 1, 10_000))
+                .ToListAsync(ct),
+            ct).ConfigureAwait(false);
+#pragma warning restore CA1309
+        return rows.Select(ToTag).ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<DeliveryKey, PlanRequestOrigin>> PlanRequestOriginsAsync(
+        Guid flowId, IReadOnlyList<(DeliveryKey Key, DateTime AskedUtc)> asked, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(asked);
+        var found = new Dictionary<DeliveryKey, PlanRequestOrigin>();
+        if (asked.Count == 0 || await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
+        {
+            return found;
+        }
+
+        foreach (var chunk in asked.GroupBy(a => a.Key).Select(g => (Key: g.Key, AskedUtc: g.Max(a => a.AskedUtc))).Chunk(LookupChunk))
+        {
+            var keys = chunk.Select(a => a.Key.Value).ToArray();
+            var earliest = chunk.Min(a => a.AskedUtc);
+            var latest = chunk.Max(a => a.AskedUtc);
+
+            // The activities naming the records, as their one record or through the records they reached, that were under way
+            // at some request of the chunk: one seek of each record's key in either index, bounded by the chunk's moments.
+            var rows = await ReadAsync(
+                async db =>
+                {
+                    var direct = db.DeliveryActivities.AsNoTracking()
+                        .Where(a => a.PartitionId == partition && a.FlowId == flowId && a.DeliveryKey != null && keys.Contains(a.DeliveryKey.Value)
+                            && a.StartedUtc <= latest && (a.CompletedUtc == null || a.CompletedUtc >= earliest))
+                        .Select(a => new { Key = a.DeliveryKey!.Value, a.ActivityId, a.Kind, a.Actor, a.StartedUtc, a.CompletedUtc });
+                    var reached = from l in db.DeliveryActivityRecords.AsNoTracking()
+                                  join a in db.DeliveryActivities.AsNoTracking() on new { l.PartitionId, l.ActivityId } equals new { a.PartitionId, a.ActivityId }
+                                  where l.PartitionId == partition && l.FlowId == flowId && keys.Contains(l.DeliveryKey)
+                                      && a.StartedUtc <= latest && (a.CompletedUtc == null || a.CompletedUtc >= earliest)
+                                  select new { Key = l.DeliveryKey, a.ActivityId, a.Kind, a.Actor, a.StartedUtc, a.CompletedUtc };
+                    return (await direct.ToListAsync(ct).ConfigureAwait(false)).Concat(await reached.ToListAsync(ct).ConfigureAwait(false)).ToList();
+                },
+                ct).ConfigureAwait(false);
+
+            var byKey = rows.ToLookup(r => r.Key);
+            foreach (var (key, at) in chunk)
+            {
+                var origin = byKey[key.Value]
+                    .Where(r => r.StartedUtc <= at && (r.CompletedUtc is null || r.CompletedUtc >= at))
+                    .OrderByDescending(r => r.StartedUtc)
+                    .ThenByDescending(r => r.ActivityId)
+                    .FirstOrDefault();
+                if (origin is not null)
+                {
+                    found[key] = new PlanRequestOrigin(origin.ActivityId, origin.Kind, origin.Actor, origin.StartedUtc);
+                }
+            }
+        }
+
+        return found;
+    }
 
     public async Task<IReadOnlyList<UpdateTag>> ListTagsAsync(string? status, int max, int offset, string? scope = null, CancellationToken ct = default)
     {
@@ -4356,6 +4462,7 @@ public sealed partial class OsduLedger : ILedger
         TargetVersion = attempt.TargetVersion,
         Error = Truncate(attempt.Error, 2000),
         ResultJson = attempt.ResultJson,
+        Triggers = attempt.Triggers is { } triggers ? (int)triggers : null,
         WorkBatch = attempt.WorkBatch,
         SourceFileName = Truncate(attempt.SourceFileName, DeliveryModel.MaxSourceFileNameLength),
         SourceRowNumber = attempt.SourceRowNumber,
@@ -4380,6 +4487,7 @@ public sealed partial class OsduLedger : ILedger
         TargetVersion = a.TargetVersion,
         Error = a.Error,
         ResultJson = a.ResultJson,
+        Triggers = a.Triggers is { } triggers ? (Planning.TriggerKinds)triggers : null,
         WorkBatch = a.WorkBatch,
         SourceFileName = a.SourceFileName,
         SourceRowNumber = a.SourceRowNumber,
@@ -4513,6 +4621,8 @@ public sealed partial class OsduLedger : ILedger
         Label = r.Label,
         MappingName = r.MappingName,
         RenderContext = r.RenderContext,
+        RenderCommit = r.RenderCommit,
+        RenderPaths = r.RenderPaths,
         SourceFingerprint = r.SourceFingerprint,
         SourceModifiedUtc = r.SourceModifiedUtc,
         SourceFileName = r.SourceFileName,
