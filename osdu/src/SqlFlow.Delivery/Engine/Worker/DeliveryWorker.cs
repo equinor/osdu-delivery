@@ -65,6 +65,11 @@ public sealed class DeliveryWorker
 
     private const int FailuresLoggedPerBatch = 10;
 
+    /// <summary>What a record says when the document queued for it was not there to read, and it asks to be planned again.</summary>
+    public const string UnreadableDocument =
+        "the rendered document queued for the record could not be read where this run reads its work from (another node wrote its work batch, or the batch was pruned or rewritten); "
+        + "the record is planned again from its row, by this run when it can read the row by key, else by the flow's next run";
+
     /// <summary>How often a lease asks the run's trace whether it is time for a progress line.</summary>
     private static readonly TimeSpan ProgressCheck = TimeSpan.FromSeconds(5);
 
@@ -122,6 +127,13 @@ public sealed class DeliveryWorker
     /// (osdu/docs/reference/concepts/submissions.md, Many nodes).
     /// </summary>
     public BatchRange? Batches { get; init; }
+
+    /// <summary>
+    /// Where the worker names each record whose queued document it could not read, for the run it works for to read by key
+    /// and send before it ends (<see cref="SetAsideRecords"/>). Null names none: the records ask to be planned again all the
+    /// same, and the flow's next run plans them.
+    /// </summary>
+    public SetAsideRecords? SetAside { get; init; }
 
     /// <summary>
     /// Where this worker reads the documents of the batches it claims, or null for the work location the submission
@@ -722,13 +734,16 @@ public sealed class DeliveryWorker
         {
             if (item is null || state.TargetId is null)
             {
-                // Nothing about the record's data is wrong: its queued document is gone (or it names no OSDU id to send it
-                // to, which only a write outside the ledger leaves). It drops what it had queued and is planned again from
-                // its row by the next run, rather than held for a release that would only send the missing document again.
+                // Nothing about the record's data is wrong: its queued document is not there to read (written on another
+                // node, or pruned or rewritten since), or it names no OSDU id to send it to, which only a write outside the
+                // ledger leaves. It drops what it had queued and asks to be planned again from its row, rather than held for
+                // a release that would only send the missing document again; the run this worker works for reads it by key
+                // before it ends (SetAside), and the flow's next run does when this one cannot.
                 var (completion, evt, summary) = Settle(
-                    state, batch, started, RecordStatus.Held, AttemptOutcome.Held, "none", null, null,
-                    "the rendered document queued for the record could not be read (its work batch was pruned or rewritten); the flow's next run plans it again from its row",
+                    state, batch, started, RecordStatus.Held, AttemptOutcome.Held, AttemptPhases.DocumentMissing, null, null,
+                    UnreadableDocument,
                     null, null);
+                SetAside?.Add(state);
                 await record(index, completion with { Replan = true }, evt, summary, null, []).ConfigureAwait(false);
                 settledEarly.Add(state);
                 continue;

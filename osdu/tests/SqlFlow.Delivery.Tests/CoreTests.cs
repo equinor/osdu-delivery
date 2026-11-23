@@ -1157,6 +1157,33 @@ public class ChangeDetectorTests
     }
 
     [Fact]
+    public void Queued_work_the_run_cannot_read_is_replaced_by_the_render_even_when_it_is_identical()
+    {
+        var change = new FlowChange();
+        var queued = Delivered() with { Status = RecordStatus.Pending, PendingDocumentRef = "0:0:1", PendingMetadata = true, PendingMetadataHash = "m2", PendingPayload = true, PendingPayloadHash = "p2" };
+
+        // Identical to the queue, which cannot land from here: the render replaces it and sends what OSDU does not hold yet.
+        var same = ChangeDetector.DecideWithQueue(queued, "m2", "p2", true, change, queueReadable: false);
+        Assert.Equal((PlannedAction.UpdateBoth, true, true), (same.Action, same.DeliverMetadata, same.DeliverPayload));
+        Assert.Equal(QueueComparison.UnreadableQueued, same.Basis.Queue);
+        Assert.EndsWith(ChangeBasis.UnreadableQueue, same.Reason, StringComparison.Ordinal);
+
+        // Identical to the queue and to what OSDU holds: still replaced, so the record leaves work no run can send, and the
+        // worker's final check settles it with nothing sent.
+        var held = queued with { PendingMetadataHash = "m1", PendingPayloadHash = "p1" };
+        var settles = ChangeDetector.DecideWithQueue(held, "m1", "p1", true, change, queueReadable: false);
+        Assert.True(settles.IsDelivery);
+        Assert.Equal((ChangeBasisKind.Unchanged, QueueComparison.UnreadableQueued), (settles.Basis.Kind, settles.Basis.Queue));
+
+        // A record OSDU never held is created, whatever was queued for it.
+        var never = queued with { TargetVersion = null, MetadataHash = null, PayloadHash = null };
+        Assert.Equal(PlannedAction.Create, ChangeDetector.DecideWithQueue(never, "m2", "p2", true, change, queueReadable: false).Action);
+
+        // Readable, the identical queue is still what lands it.
+        Assert.Equal(PlannedAction.Skip, ChangeDetector.DecideWithQueue(queued, "m2", "p2", true, change, queueReadable: true).Action);
+    }
+
+    [Fact]
     public void The_final_check_sends_only_the_halves_the_target_does_not_already_hold()
     {
         var change = new FlowChange();

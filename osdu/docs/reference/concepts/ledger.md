@@ -352,7 +352,16 @@ to `OPTIMIZE_FOR_SEQUENTIAL_KEY` where the server has it. OSDU ids are compared 
 
 Many nodes write one record table at once, so no statement writes more than 1,000 records: staging, releases, redeliveries
 and lease applications all work a slice at a time, and a statement the database picks as a deadlock victim is tried up to
-five times in all, each statement written so a second run does what the first would have. A worker does not write `osdu.Record` while it delivers: it renews
+five times in all, each statement written so a second run does what the first would have.
+
+Every write of named records takes them in the order of the table's key: the keys go to the database sorted and distinct,
+and the statement reads them as given and finds each record by a seek of its own (`OPTION (FORCE ORDER, LOOP JOIN)`), so
+two writes that share records meet at the first one they share, and the one that comes second waits there holding none of
+the rest. A write that decides record by record (an intake holding records, or recording a render that sent nothing) takes
+a chunk's records in one such statement, update-locked, decides from the rows as they stand and saves in the same
+transaction; one that loses a race anyway (the table's key refused a record another write inserted meanwhile) is rolled
+back whole and decided again from what the winner left. A hold of records whose parent has not landed, and the landing of
+that parent releasing them on another node, therefore never deadlock, which once failed a part of a split delivery. A worker does not write `osdu.Record` while it delivers: it renews
 one lease row and appends events and attempts, and the records change when the lease applies them
 ([Submissions](submissions.md#leases-and-claims)). Nothing else is maintained inside a record write.
 

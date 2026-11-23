@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, CircleSlash, CircleX, RotateCcw, SkipForward, type LucideIcon } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/DataTable";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -16,6 +14,7 @@ import {
 import { RecordName } from "../RecordName";
 import { RunRef } from "../DeliveryRefs";
 import { RemovalDialog, type InventoryChangeQueued } from "../RemovalDialog";
+import { useRunStarted } from "../runStarted";
 import { ProblemView } from "../TemplateSheet";
 import { GridFooter } from "../dimensions/DimensionGrid";
 import { ExplainTip } from "@/components/ExplainTip";
@@ -145,7 +144,7 @@ function RemovalItemsPanel({ inventory, removal, restore, restoredBy }: {
 }) {
   const [outcome, setOutcome] = useState<InventoryRemovalOutcome | null>(null);
   const [restoring, setRestoring] = useState(false);
-  const navigate = useNavigate();
+  const runStarted = useRunStarted();
   const queryClient = useQueryClient();
   const restores = isRestore(removal);
   const undoable = restore !== undefined && removal.scope === "record" && removal.status !== "running" && removal.removed > 0;
@@ -309,9 +308,11 @@ function RemovalItemsPanel({ inventory, removal, restore, restoredBy }: {
           onClose={() => setRestoring(false)}
           inventory={{ inventory, finding: GONE_FINDING, ids: null, count: removal.removed, policy: restore, restoresRemoval: removal.inventoryRemovalId }}
           onQueued={(queued: InventoryChangeQueued) => {
-            toast.success(
-              `Restore of ${counted(queued.expected, "id")} removal ${removal.inventoryRemovalId} removed, of ${queued.inventory}, queued as a run.`,
-              { action: { label: "Open run", onClick: () => navigate(`/runs/${queued.runId}`) } });
+            runStarted({
+              message: `Restore of ${counted(queued.expected, "id")} removal ${removal.inventoryRemovalId} removed, of ${queued.inventory}, queued as a run.`,
+              runId: queued.runId,
+              title: `Restore · ${queued.inventory}`,
+            });
             void queryClient.invalidateQueries({ queryKey: ["delivery", "inventories"] });
           }}
         />

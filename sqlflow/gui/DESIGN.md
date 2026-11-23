@@ -319,7 +319,11 @@ Fixed viewport frame, no page scroll; only the editor area and panel scroll inte
 - **Bottom panel** (resizable from 15% to the editor's whole height, closable): live surfaces opened by features
   through `usePanel()`. An operation's trace never opens it by itself: the operation follows its trace in the trace
   tray (`follow`), which keeps it streaming out of view behind the title bar's indicator, and the panel shows it when
-  someone asks (the indicator, a failed sync's badge, a run's Trace button: `open`). A trace that leaves the panel
+  someone asks (the indicator, a failed sync's badge, a run's Trace button: `open`). An action whose whole point is the
+  run it queues (a module's action on its flow, say, confirmed in a dialog) opens that run's trace as it is queued,
+  held under the run's own id (`runTraceSpec`), so the run's page reaches the same trace; an action asked from what the
+  panel already shows follows it instead. A run's trace shown anywhere but the run's page leads to it (**Open run**, a
+  header action of `TraceLog`, drawn as its tools are: `TRACE_HEADER_ACTION`). A trace that leaves the panel
   keeps streaming in the tray until it has ended and been read. Header: a 36px `card` bar under a 2px `primary` top edge (the accent the
   active tab wears), uppercase 11px title in `foreground` + close; while it is open, the page above fades into a
   shade along its bottom edge, so the panel reads as a surface of its own rather than one more grid header of the

@@ -121,6 +121,14 @@ public static class AttemptPhases
     public const string SourceDeleted = "source-deleted";
 
     /// <summary>
+    /// A held attempt: the document queued for the record was not there to read where the run that had it reads its work
+    /// from (another node wrote its work batch, or the batch was pruned or rewritten), so nothing was sent. The record is
+    /// not blocked: it dropped what it had queued and asks to be planned again from its row
+    /// (osdu/docs/reference/concepts/submissions.md, Work queued where a run cannot read it).
+    /// </summary>
+    public const string DocumentMissing = "document-missing";
+
+    /// <summary>
     /// A skipped attempt a sync writes: the record's row is not in the ingestion table, or not in the scope the record was
     /// planned under. The record keeps its status: what OSDU holds is removed only by a removal someone asks for.
     /// </summary>
@@ -3067,6 +3075,14 @@ public interface ILedger
     /// written again.
     /// </summary>
     Task<int?> LastWorkBatchIndexAsync(Guid submissionId, int first, int beyond, CancellationToken ct = default);
+
+    /// <summary>
+    /// The numbers of the work batches records of <paramref name="submissionId"/> are still queued in, in order: each a batch
+    /// that a record pending, being delivered or waiting for a record it refers to points into. Empty once every record of
+    /// the submission is settled. The run that closes a split delivery asks, to find the records its parts left queued in
+    /// batch files on their own nodes (osdu/docs/reference/concepts/submissions.md, Work queued where a run cannot read it).
+    /// </summary>
+    Task<IReadOnlyList<int>> ListQueuedWorkBatchesAsync(Guid flowId, Guid submissionId, CancellationToken ct = default);
 
     Task<long> CountWorkBatchesAsync(Guid submissionId, WorkBatchStatus? status, CancellationToken ct = default);
 

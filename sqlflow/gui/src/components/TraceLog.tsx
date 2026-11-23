@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check, CheckCircle2, CircleAlert, Copy, Download, Eraser, Loader2, Maximize2, OctagonAlert, Radio, TriangleAlert,
 } from "lucide-react";
@@ -81,6 +81,10 @@ function StatusPill({ connected, ended, failed }: { connected: boolean; ended: b
   );
 }
 
+/** How a tool in the panel header is drawn: a small ghost icon and label, a link an owner adds among them included. */
+export const TRACE_HEADER_ACTION =
+  "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+
 /** A small ghost icon+label button for the panel header (copy, download, clear). */
 function HeaderButton({
   icon: Icon, label, onClick, disabled, "data-testid": testId,
@@ -97,7 +101,7 @@ function HeaderButton({
       onClick={onClick}
       disabled={disabled}
       data-testid={testId}
-      className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      className={TRACE_HEADER_ACTION}
     >
       <Icon className="size-3.5 shrink-0" />
       {label}
@@ -292,6 +296,9 @@ function TraceRow({ line, separated }: { line: TraceLine; separated: boolean }) 
  *
  * Held in the workbench's trace tray, the log reports whether it has ended, how, and its current group's problems
  * (Clear notwithstanding), which the title bar's trace indicator shows while the log is out of view.
+ *
+ * `actions` go at the head of the header's tools: what the owner leads from the trace to (a run's page, say), drawn as
+ * {@link TRACE_HEADER_ACTION} draws a tool, so a trace shown away from its subject can still reach it.
  */
 export function TraceLog({
   lines,
@@ -303,11 +310,13 @@ export function TraceLog({
   fileName,
   emptyLive = "Waiting for the first line…",
   emptyEnded = "No trace to show.",
+  actions,
 }: {
   lines: TraceLine[];
   connected: boolean;
   ended: boolean;
   failed: boolean;
+  actions?: ReactNode;
   currentGroup?: string;
   /** The whole trace as plain text, called on a click (never per render). It can reach past the lines on screen: a
    * run's trace fetches the complete document its server renders. */
@@ -425,6 +434,7 @@ export function TraceLog({
           {visible.length} line{visible.length === 1 ? "" : "s"}
         </span>
         <div className="flex items-center gap-1">
+          {actions}
           {problems.length > 0 ? (
             <button
               type="button"

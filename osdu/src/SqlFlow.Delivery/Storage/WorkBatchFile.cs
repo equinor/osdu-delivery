@@ -223,6 +223,55 @@ public static class WorkBatchFile
         }
     }
 
+    /// <summary>
+    /// Whether a submission's batch file is at <paramref name="workRoot"/> to read, holding at least a byte: what a plan asks
+    /// before it passes a record over as queued in it. A file that is not there (another node wrote it to a folder of its
+    /// own, or the work location was pruned) and one that holds nothing are not; a store that did not answer throws as it
+    /// came, since that says nothing about the file.
+    /// </summary>
+    public static async Task<bool> ExistsAsync(FileStoreRegistry stores, string workRoot, Guid submissionId, int batch, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(stores);
+        ArgumentException.ThrowIfNullOrWhiteSpace(workRoot);
+        var path = PathFor(workRoot, submissionId, batch);
+        Stream stream;
+        try
+        {
+            stream = await stores.OpenRangeAsync(path, 0, 1, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsNotFound(ex) || IsEmpty(ex))
+        {
+            return false;
+        }
+
+        await using (stream.ConfigureAwait(false))
+        {
+            var first = new byte[1];
+            try
+            {
+                return await stream.ReadAsync(first, ct).ConfigureAwait(false) == 1;
+            }
+            catch (Exception ex) when (IsNotFound(ex) || IsEmpty(ex))
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Whether a store's failure says the file holds no byte to read: a blob store refuses a range of an empty blob (416).</summary>
+    private static bool IsEmpty(Exception ex)
+    {
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is global::Azure.RequestFailedException { Status: 416 })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Whether a store's failure says the file is not there, rather than that the store could not be reached.</summary>
     private static bool IsNotFound(Exception ex)
     {

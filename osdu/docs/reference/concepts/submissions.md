@@ -155,8 +155,8 @@ Each share of a [fan-out](#many-nodes) numbers its batches in a range of its own
 again (a run resuming its submission, a member the platform executes again, a coordinating run planning the share of a
 member it stopped) passes over the records it already queued, which keep reading their documents from the files they were
 written to, and writes its batches after those, so no file a queued record reads from is written again. A record whose
-document is read back by its range checks that the line there is its own; one that is not is held, and the flow's next run
-plans it again from its row.
+document is read back by its range checks that the line there is its own; one that is not is set aside, as a record whose
+document is gone is ([Work queued where a run cannot read it](#work-queued-where-a-run-cannot-read-it)).
 
 ## Planning in bounded memory
 
@@ -255,7 +255,9 @@ those of a part are its own alone, and its chip on the Records tab leads to the 
 
 **The first run coordinates.** It delivers no range itself: it waits for the parts, finalises the submission with every
 part's totals, sends what the submission still holds (a record a part left in backoff, a record released from a wait),
-and closes it. A part never closes the submission, moves the watermark or brings the cache up to date: the first run does
+and closes it. A record a part left queued in a batch file on its own node (waiting for a record it refers to, or under a
+lease that ran out) is rendered again into the first run's own batches before it sends
+([Work queued where a run cannot read it](#work-queued-where-a-run-cannot-read-it)). A part never closes the submission, moves the watermark or brings the cache up to date: the first run does
 that once for the whole delivery.
 
 **Nothing is lost when a part does not finish.**
@@ -266,9 +268,10 @@ that once for the whole delivery.
 - A part that fails has its range delivered by the first run, with a line on its trace:
   `Part <slot> (run <id>) failed: <error>; this run delivers its rows (slices <slices>).`
 - Delivering a range again is safe: the records the part sent are unchanged and passed over, and the rows it never
-  reached are planned now. A record it had queued and not sent has its document in a batch file on that part's node; the
-  first run finds the document missing, and the record is held, to be planned again by the flow's next run
-  ([Work batches](#work-batches)). It is never sent from a document that is not its own.
+  reached are planned now. A record it had queued and not sent has its document in a batch file on that part's node,
+  which the first run cannot read: the first run renders it again into a batch of its own and sends it in the same
+  delivery ([Work queued where a run cannot read it](#work-queued-where-a-run-cannot-read-it)). It is never sent from a
+  document that is not its own.
 - A first run that fails or is cancelled stops its parts with it, and a run the platform executes again gets its parts
   back and delivers the same cut.
 
@@ -281,8 +284,33 @@ Why a run was not split is on its trace: `The delivery is not split: it reads 40
 or the other reason (no primary key to split the rows on, `parallelism.nodes` is 1, a run outside the fleet).
 
 Records of one flow written by many nodes never wait on each other for long: no statement writes more than 1,000 records,
-a worker writes only its lease row and the append-only tables while it sends, staging locks only records that exist, and a
-statement the database ends as a deadlock victim is run again, up to five runs in all.
+a worker writes only its lease row and the append-only tables while it sends, staging locks only records that exist, every
+write of named records takes them in the order of the table's key, and a statement the database ends as a deadlock victim
+is run again, up to five runs in all ([Writes at scale](ledger.md#writes-at-scale)).
+
+## Work queued where a run cannot read it
+
+A queued record points into a batch file at its submission's work location, and a work location on a node's own disk is
+that node's alone. A part that failed after it planned, a part or a run the platform executes again on another node, and a
+submission a later run takes over all leave records queued in files the run that comes next cannot open. Such work is
+never waited on, and never sent from a document that is not its own:
+
+- **A plan renders it again.** Before a plan passes a record over as already queued, it asks whether the batch its queued
+  work points into is there where this run reads its work from (once per batch file). When it is not, the record is
+  rendered from its row and the render replaces what was queued, even when it is identical to it, into this run's own
+  batches; the delivery's reason says it replaces work already queued whose document was not where the run reads its work
+  from. The run's trace counts them: `<n> record(s) were already queued with their documents where this run cannot read them ...; they were rendered again from their rows and are sent from here.`
+- **The first run of a split delivery looks for it.** Once every part has ended, it plans again the slices of any part
+  that still holds records queued in batch files not in its own folder, which renders exactly those records and passes
+  over the ones the part delivered.
+- **A worker that meets it sets the record aside.** A record whose document is not there when its turn comes (one no plan
+  of this run read) is not sent and not blocked: its attempt is held with phase `document-missing`, it drops what it had
+  queued, and it asks to be planned again. The run that found it reads it again by key before it ends and sends it, in a
+  submission of its own; a record that carries no source key, or one set aside again, is the flow's next run's. Its
+  timeline says **Set aside: its queued document could not be read where it was sent from**, and the record **Set aside:
+  waiting for the next run** until a run sends it. Nobody has to release it.
+
+A flow whose `source.work` names storage every node reads has every batch everywhere, and none of this happens to it.
 
 ## Recovering a stopped submission
 

@@ -26,11 +26,12 @@ internal static partial class SqlServerLedgerBulk
             r.[LastError] = @note,
             r.[UpdatedUtc] = @now
         OUTPUT inserted.[DeliveryKey] INTO @asked ([DeliveryKey])
-        FROM (SELECT DISTINCT CAST(k.[value] AS uniqueidentifier) AS [DeliveryKey] FROM OPENJSON(@keys) AS k) AS n
+        FROM {{NamedKeys}}
         INNER JOIN [osdu].[Record] AS r WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
             ON r.[PartitionId] = @partitionId AND r.[FlowId] = @flowId AND r.[DeliveryKey] = n.[DeliveryKey]
         WHERE r.[Status] = N'held' AND r.[ClaimedTargetId] IS NULL AND r.[LeaseOwner] IS NULL AND r.[AdoptRequestedUtc] IS NULL
-          AND (r.[OccupiedTargetId] IS NOT NULL OR r.[LastError] LIKE @prefix + N'%');
+          AND (r.[OccupiedTargetId] IS NOT NULL OR r.[LastError] LIKE @prefix + N'%')
+        {{InKeyOrder}};
         IF @activityId IS NOT NULL
             INSERT INTO [osdu].[ActivityRecord] ([PartitionId], [FlowId], [DeliveryKey], [ActivityId])
             SELECT @partitionId, @flowId, x.[DeliveryKey], @activityId
@@ -56,7 +57,7 @@ internal static partial class SqlServerLedgerBulk
             }
 
             await using var command = Command(connection, transaction, AdoptSliceSql, slice: null);
-            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = System.Text.Json.JsonSerializer.Serialize(keys) });
+            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = KeysInOrder(keys) });
             command.Parameters.Add(new SqlParameter("@partitionId", SqlDbType.SmallInt) { Value = partitionId });
             command.Parameters.Add(new SqlParameter("@flowId", SqlDbType.UniqueIdentifier) { Value = flowId });
             command.Parameters.Add(new SqlParameter("@activityId", SqlDbType.BigInt) { Value = activityId is { } id ? id : DBNull.Value });

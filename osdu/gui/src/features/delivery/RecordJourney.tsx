@@ -625,6 +625,19 @@ function statusText(refusal: Refusal): string {
   return `HTTP ${refusal.status}${refusal.reason !== "" ? ` ${refusal.reason}` : ""}`;
 }
 
+/** How a try set aside for an unreadable queued document said so before the ledger gave that its own phase. */
+const SET_ASIDE_BEFORE = "the rendered document queued for the record could not be read";
+
+/**
+ * Whether a held try was the worker setting the record aside because the document queued for it was not there to read
+ * (phase `document-missing`; before it had a phase, its error said so): the record dropped what it had queued and asks to
+ * be planned again, unblocked.
+ */
+function setAside(attempt: DeliveryAttempt): boolean {
+  return attempt.outcome === "held"
+    && (attempt.phase === "document-missing" || (attempt.phase === "none" && attempt.error?.startsWith(SET_ASIDE_BEFORE) === true));
+}
+
 function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached: boolean): {
   title: string; tone: Tone; icon: LucideIcon; then: Outcome | null; outcome: Outcome | null;
 } {
@@ -676,6 +689,18 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
         ? { text: "What could not be undone yet is tried again by the sweep; newer work for the record waits for it.", tone: "muted" }
         : null,
       outcome: null,
+    };
+  }
+
+  // A record whose queued document was not there to read when its turn came: nothing about its data is wrong, it holds no
+  // problem, and it is planned again from its row without anyone releasing it.
+  if (setAside(attempt)) {
+    return {
+      title: "Set aside: its queued document could not be read where it was sent from",
+      tone: "muted",
+      icon: RefreshCw,
+      then: { text: "Not blocked: it is planned again from its row, by the run that found it or by the flow's next run.", tone: "muted" },
+      outcome: { text: "Set aside to be planned again", tone: "muted" },
     };
   }
 
@@ -1327,11 +1352,12 @@ function verifiedEntry(record: DeliveryRecord, at: string): Entry {
 /**
  * Where the record stands, in the words of a chapter's outcome, and whether work on it is in flight (a document queued
  * or being sent, a wait on a record it refers to): what the latest chapter says when nothing in it has settled yet, or
- * when something since has set the record going again. `adopted` says its newest attempt is an adoption made before
- * adoption was asked of a run, so a record asked to be planned with no document kept claimed the record OSDU already held
- * and waits for its first write there.
+ * when something since has set the record going again. `newest` is its newest attempt: an adoption made before adoption
+ * was asked of a run means a record asked to be planned with no document kept claimed the record OSDU already held and
+ * waits for its first write there; a try that set the record aside means it waits to be planned again, released by no one.
  */
-function standingOf(record: DeliveryRecord, adopted: boolean): { outcome: Outcome; inFlight: boolean } {
+function standingOf(record: DeliveryRecord, newest: DeliveryAttempt | undefined): { outcome: Outcome; inFlight: boolean } {
+  const adopted = newest?.phase === "adopt" && newest.worker !== "intake";
   switch (record.status) {
     case "delivered":
       return { outcome: { text: "Delivered", tone: "success" }, inFlight: false };
@@ -1348,7 +1374,10 @@ function standingOf(record: DeliveryRecord, adopted: boolean): { outcome: Outcom
       // Released, asked to adopt the record OSDU holds at the id its key makes, or asked to be planned again, with no document
       // kept: the next run plans it from its row. A request to adopt that a run held the record over since waits for a release.
       if (!record.blocked && !record.hasPendingDocument && record.planRequestedUtc !== null) {
-        const waiting = record.adoptRequestedUtc != null ? "Adoption asked" : adopted ? "Adopted" : "Released";
+        const waiting = record.adoptRequestedUtc != null ? "Adoption asked"
+          : adopted ? "Adopted"
+          : newest !== undefined && setAside(newest) ? "Set aside"
+          : "Released";
         return { outcome: { text: `${waiting}: waiting for the next run`, tone: "info" }, inFlight: true };
       }
 
@@ -1429,11 +1458,11 @@ function buildStory(
   });
 
   const chapters: Chapter[] = [];
-  // An adoption made at an operator's click as the record's newest attempt is what it waits on.
+  // An adoption made at an operator's click, or a try that set the record aside, as its newest attempt is what it waits on.
   const newest = attempts.reduce<DeliveryAttempt | undefined>(
     (latest, attempt) => latest === undefined || parseUtc(attempt.startedUtc).getTime() > parseUtc(latest.startedUtc).getTime() ? attempt : latest,
     undefined);
-  const standing = standingOf(record, newest?.phase === "adopt" && newest.worker !== "intake");
+  const standing = standingOf(record, newest);
   for (const entry of foldRepeats(entries)) {
     const current = chapters.at(-1);
     const onlyTriggers = current !== undefined && current.entries.every((e) => e.trigger !== null);

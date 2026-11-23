@@ -7,6 +7,7 @@ using SqlFlow.Delivery.Engine.FanOut;
 using SqlFlow.Delivery.Engine.Intake;
 using SqlFlow.Delivery.Engine.Worker;
 using SqlFlow.Delivery.Http;
+using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
@@ -338,11 +339,12 @@ public class ScaleEngineTests : IDisposable
 
     /// <summary>
     /// A part whose node stopped after it planned its rows leaves records queued in batch files on that node, which no other
-    /// run reads. The first run finds those documents missing and gives the records back to be planned again by the flow's
-    /// next run: the delivery completes, nothing is sent from a document that is not the record's, and no record is lost.
+    /// run reads. The first run, taking the part's rows over, does not pass those records over as already queued: it renders
+    /// each again into a batch of its own and sends it, so the delivery ends with every record delivered once and none held
+    /// for a later run.
     /// </summary>
     [Fact]
-    public async Task A_part_that_stopped_after_planning_leaves_its_queued_records_to_be_planned_again()
+    public async Task A_part_that_stopped_after_planning_has_its_queued_records_rendered_again_and_sent_by_the_first_run()
     {
         var tables = await EstateAsync();
         var ledger = _db.Ledger(_clock);
@@ -357,24 +359,280 @@ public class ScaleEngineTests : IDisposable
         runtime.Actor = "test";
 
         var result = await runtime.RunAsync(force: false);
+        var submissionId = result.Submission.SubmissionId;
 
-        var held = new List<RecordState>();
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal((5, 0), (result.Submission.Delivered, result.Submission.Held));
+        await AssertEachDeliveredOnceAsync(ledger, protocol, flow);
+
+        // What the stopped part queued on its node was sent from the first run's own folder: the batches it wrote there
+        // follow the part's in the slice's numbers, so no file a record points into was written again.
+        var stopped = dispatcher.Enqueued[0].Payload.Slices;
+        var queuedThere = (await ledger.ListWorkBatchesAsync(submissionId, 20, 0)).Where(b => stopped.Contains(b.Index / SubmissionIntake.BatchesPerPartition)).ToList();
+        var partFolder = Path.Combine(_root, "node-1", "work");
+        var ownFolder = Path.Combine(_root, "coordinator", "work");
+        var written = queuedThere.Where(b => File.Exists(WorkBatchFile.PathFor(partFolder, submissionId, b.Index))).ToList();
+        var again = queuedThere.Where(b => File.Exists(WorkBatchFile.PathFor(ownFolder, submissionId, b.Index))).ToList();
+        Assert.NotEmpty(written);
+        Assert.Equal(written.Count, again.Count);
+        Assert.True(again.Min(b => b.Index) > written.Max(b => b.Index));
+        Assert.Equal(written.Sum(b => b.RecordCount), again.Sum(b => b.Delivered));
+        Assert.All(written, b => Assert.Equal(0, b.Delivered));
+
+        // No record of the part was held on the way: each has one attempt, the delivery, made by the first run.
+        foreach (var batch in again)
+        {
+            Assert.Equal(WorkBatchStatus.Done, batch.Status);
+        }
+
+        for (var index = 0; index < 5; index++)
+        {
+            var attempts = await ledger.ListAttemptsAsync(flow.Id, SampleEstate.Key(index), 10);
+            Assert.DoesNotContain(attempts, a => a.Outcome == AttemptOutcome.Held);
+        }
+
+        Assert.Empty(await ledger.ListQueuedWorkBatchesAsync(flow.Id, submissionId));
+    }
+
+    /// <summary>
+    /// A part the platform executes again on another node (the node it ran on was lost after it planned) finds its rows
+    /// queued in batch files on the lost node. It renders them again into its own folder and sends them, as a part that
+    /// plans its rows for the first time does.
+    /// </summary>
+    [Fact]
+    public async Task A_part_executed_again_on_another_node_renders_again_what_its_first_attempt_queued_and_sends_it()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var flow = OnNode(Split(Samples.LocalFlow(_root), nodes: 2), "coordinator");
+        var dispatcher = new InlineDispatcher(flow)
+        {
+            OnNode = slot => OnNode(flow, $"node-{slot}"),
+            ExecutedAgainOn = new Dictionary<int, FlowDefinition> { [1] = OnNode(flow, "node-1-again") },
+        };
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        dispatcher.Engine = engine;
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+
+        var result = await runtime.RunAsync(force: false);
+        var submissionId = result.Submission.SubmissionId;
+
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal((5, 0), (result.Submission.Delivered, result.Submission.Held));
+        await AssertEachDeliveredOnceAsync(ledger, protocol, flow);
+
+        // The part sent its rows itself, from the node it was executed again on, and the first run took none over.
+        var slice = dispatcher.Enqueued[0].Payload.Slices[0];
+        Assert.True(File.Exists(WorkBatchFile.PathFor(Path.Combine(_root, "node-1", "work"), submissionId, SubmissionIntake.BatchBase(slice))));
+        Assert.True(Directory.Exists(WorkBatchFile.DirectoryFor(Path.Combine(_root, "node-1-again", "work"), submissionId)));
+        Assert.False(Directory.Exists(WorkBatchFile.DirectoryFor(Path.Combine(_root, "coordinator", "work"), submissionId)));
+    }
+
+    /// <summary>
+    /// A part that delivered its rows can still leave a record queued on its node: one it left waiting for a record it
+    /// refers to, or whose lease ran out. The first run finds the batch that record points into is not in its own folder,
+    /// plans that part's slice again, which renders exactly that record and passes over the ones the part delivered, and
+    /// sends it.
+    /// </summary>
+    [Fact]
+    public async Task A_record_a_part_left_queued_on_its_node_is_rendered_again_and_sent_by_the_first_run()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var flow = OnNode(Split(Samples.LocalFlow(_root), nodes: 2), "coordinator");
+        DeliveryKey? left = null;
+        var dispatcher = new InlineDispatcher(flow) { OnNode = slot => OnNode(flow, $"node-{slot}") };
+        dispatcher.AfterMember = async (slot, onNode, member, runId) =>
+        {
+            if (slot != 1)
+            {
+                return;
+            }
+
+            // One record the part delivered is asked for again and planned on the part's node, where its document stays
+            // queued: what a record released from a wait after its part ended looks like to the first run.
+            var slices = DeliveryRunPayload.Parse(member).Slices;
+            for (var index = 0; index < 5 && left is null; index++)
+            {
+                var record = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(index)))!;
+                if (record.Status == RecordStatus.Delivered)
+                {
+                    left = SampleEstate.Key(index);
+                }
+            }
+
+            Assert.NotNull(left);
+            Assert.Equal(1, await ledger.ForceRedeliverAsync(flow.Id, [left.Value], RedeliverScope.Metadata, _clock.GetUtcNow().UtcDateTime));
+            await FanOutMembers.PlanOnlyAsync(dispatcher.Engine!, onNode, member, runId, CancellationToken.None);
+            var queued = (await ledger.GetRecordAsync(flow.Id, left.Value))!;
+            Assert.Equal(RecordStatus.Pending, queued.Status);
+            Assert.Contains(queued.WorkBatch!.Value / SubmissionIntake.BatchesPerPartition, slices);
+        };
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        dispatcher.Engine = engine;
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+
+        var result = await runtime.RunAsync(force: false);
+        var submissionId = result.Submission.SubmissionId;
+
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal(0, result.Submission.Held);
+        for (var index = 0; index < 5; index++)
+        {
+            Assert.Equal(RecordStatus.Delivered, (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(index)))!.Status);
+        }
+
+        // The record left queued was sent twice in all: by its part, and again by the first run from its own folder. Every
+        // other record once.
+        Assert.Equal(6, protocol.Deliveries.Count);
+        Assert.Equal(2, protocol.Deliveries.Count(d => d.Key == left!.Value));
+        Assert.Equal(5, protocol.Deliveries.Select(d => d.Key).Distinct().Count());
+        var sent = (await ledger.GetRecordAsync(flow.Id, left!.Value))!;
+        Assert.Null(sent.PendingDocumentRef);
+        var own = Directory.GetFiles(WorkBatchFile.DirectoryFor(Path.Combine(_root, "coordinator", "work"), submissionId));
+        Assert.Single(own);
+        Assert.Empty(await ledger.ListQueuedWorkBatchesAsync(flow.Id, submissionId));
+    }
+
+    /// <summary>
+    /// A run the platform executes again on another node resumes the submission its first attempt planned, whose batch files
+    /// are on the node that was lost: it renders those records again into its own folder and sends them, rather than passing
+    /// them over as queued and holding each when its document turns out missing.
+    /// </summary>
+    [Fact]
+    public async Task A_run_executed_again_on_another_node_renders_again_what_its_first_attempt_queued_and_sends_it()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol) };
+        var local = Samples.LocalFlow(_root);
+        var run = Guid.CreateVersion7();
+        Guid interrupted;
+        using (var first = await FlowRuntime.CreateAsync(engine, OnNode(local, "node-a"), SampleEstate.Values))
+        {
+            await ledger.RegisterAsync(first.Flow);
+            first.RunId = run;
+            first.Actor = "test";
+            var planned = await first.Intake.IntakeAsync(first.Flow, first.Mapping, first.Parameters, first.Request, force: false);
+            Assert.Equal(5, planned.Counts.Planned);
+            interrupted = planned.Submission.SubmissionId;
+        }
+
+        using var again = await FlowRuntime.CreateAsync(engine, OnNode(local, "node-b"), SampleEstate.Values);
+        again.RunId = run;
+        again.Actor = "test";
+        var resumed = await again.RunAsync(force: false);
+
+        Assert.Equal(interrupted, resumed.Submission.SubmissionId);
+        Assert.Equal((SubmissionStatus.Completed, 5L, 0L), (resumed.Submission.Status, resumed.Submission.Delivered, resumed.Submission.Held));
+        await AssertEachDeliveredOnceAsync(ledger, protocol, again.Flow);
+        Assert.True(Directory.Exists(WorkBatchFile.DirectoryFor(Path.Combine(_root, "node-b", "work"), interrupted)));
+    }
+
+    /// <summary>
+    /// A later run of the flow, on a node that cannot read what a stopped run queued (that run's node is gone, and its work
+    /// folder with it), renders those records again under its own submission and sends them; the stopped submission is
+    /// closed with nothing left in it.
+    /// </summary>
+    [Fact]
+    public async Task A_later_run_renders_again_what_a_stopped_run_queued_in_a_work_folder_that_is_gone()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol) };
+        var flow = OnNode(Samples.LocalFlow(_root), "node-a");
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.CreateVersion7();
+        runtime.Actor = "test";
+        var planned = await runtime.Intake.IntakeAsync(runtime.Flow, runtime.Mapping, runtime.Parameters, runtime.Request, force: false);
+        var stopped = planned.Submission.SubmissionId;
+        Directory.Delete(WorkBatchFile.DirectoryFor(planned.Submission.WorkLocation!, stopped), recursive: true);
+
+        runtime.RunId = Guid.CreateVersion7();
+        var later = await runtime.RunAsync(force: false);
+
+        Assert.NotEqual(stopped, later.Submission.SubmissionId);
+        Assert.Equal((SubmissionStatus.Completed, 5L, 0L), (later.Submission.Status, later.Submission.Delivered, later.Submission.Held));
+        await AssertEachDeliveredOnceAsync(ledger, protocol, runtime.Flow);
+        var closed = (await ledger.GetSubmissionAsync(stopped))!;
+        Assert.Equal(SubmissionStatus.Completed, closed.Status);
+        Assert.Empty(await ledger.ListQueuedWorkBatchesAsync(runtime.Flow.Id, stopped));
+    }
+
+    /// <summary>
+    /// A record whose queued document is not there when it is its turn to be sent (its plan did not read its row, and the
+    /// work folder that held the document is gone) is set aside, not blocked: it drops what it had queued and asks to be
+    /// planned again, and the run that found it reads it by key and sends it before it ends.
+    /// </summary>
+    [Fact]
+    public async Task A_record_whose_queued_document_is_gone_when_it_is_sent_is_read_again_by_key_and_sent_by_the_same_run()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol) };
+        var flow = Samples.LocalFlow(_root);
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.CreateVersion7();
+        runtime.Actor = "test";
+        var planned = await runtime.Intake.IntakeAsync(flow, runtime.Mapping, runtime.Parameters, runtime.Request, force: false);
+        var submissionId = planned.Submission.SubmissionId;
+        Directory.Delete(WorkBatchFile.DirectoryFor(planned.Submission.WorkLocation!, submissionId), recursive: true);
+
+        var worker = await runtime.WorkerAsync();
+        var drained = await worker.DrainAsync(submissionId);
+
+        Assert.Equal((0L, 5L), (drained.Delivered, drained.Held));
+        Assert.Empty(protocol.Deliveries);
+        Assert.Equal(5, runtime.SetAside.Count);
+        for (var index = 0; index < 5; index++)
+        {
+            var aside = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(index)))!;
+            Assert.Equal((RecordStatus.Held, false), (aside.Status, aside.Blocked));
+            Assert.NotNull(aside.PlanRequestedUtc);
+            Assert.Null(aside.PendingDocumentRef);
+            Assert.Equal(DeliveryWorker.UnreadableDocument, aside.LastError);
+            var attempt = Assert.Single(await ledger.ListAttemptsAsync(flow.Id, SampleEstate.Key(index), 5));
+            Assert.Equal((AttemptOutcome.Held, AttemptPhases.DocumentMissing), (attempt.Outcome, attempt.Phase));
+        }
+
+        var selection = runtime.Selection;
+        var passes = await DeliveryExecutor.DeliverSetAsideAsync(runtime, selection, new DeliveryRunPayload(), RequestedPasses.None, Samples.Logger<DeliveryWorker>(), CancellationToken.None);
+
+        Assert.Equal((1, 5L, 5L), (passes.Passes, passes.Read, passes.Planned));
+        Assert.NotEqual(submissionId, passes.FirstSubmissionId);
+        Assert.Equal(0, runtime.SetAside.Count);
+        Assert.Same(selection, runtime.Selection);
+        await AssertEachDeliveredOnceAsync(ledger, protocol, flow);
+
+        // Nothing is left to set aside, so a run with none makes no pass.
+        Assert.Same(passes, await DeliveryExecutor.DeliverSetAsideAsync(runtime, selection, new DeliveryRunPayload(), passes, Samples.Logger<DeliveryWorker>(), CancellationToken.None));
+    }
+
+    /// <summary>Every sample record is delivered, sent once, and never held on the way.</summary>
+    private static async Task AssertEachDeliveredOnceAsync(OsduLedger ledger, FakeProtocol protocol, FlowDefinition flow)
+    {
+        Assert.Equal(5, protocol.Deliveries.Count);
+        Assert.Equal(5, protocol.Deliveries.Select(d => d.Key).Distinct().Count());
         for (var index = 0; index < 5; index++)
         {
             var record = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(index)))!;
-            if (record.Status != RecordStatus.Delivered)
-            {
-                held.Add(record);
-            }
+            Assert.Equal(RecordStatus.Delivered, record.Status);
+            Assert.Null(record.PlanRequestedUtc);
+            Assert.Null(record.PendingDocumentRef);
         }
-
-        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
-        Assert.NotEmpty(held);
-        Assert.Equal(5 - held.Count, protocol.Deliveries.Count);
-        Assert.Equal((5 - held.Count, held.Count), (result.Submission.Delivered, result.Submission.Held));
-        Assert.All(held, r => Assert.Equal(RecordStatus.Held, r.Status));
-        Assert.All(held, r => Assert.Contains("could not be read", r.LastError, StringComparison.Ordinal));
-        Assert.All(held, r => Assert.NotNull(r.PlanRequestedUtc));
     }
 
     /// <summary>
@@ -609,6 +867,15 @@ public class ScaleEngineTests : IDisposable
 
         public IReadOnlySet<int> PlanOnly { get; init; } = new HashSet<int>();
 
+        /// <summary>
+        /// The slots whose node is lost after it planned its share, each with the flow the node the platform executes the run
+        /// again on has: the share is planned on the slot's node, then the same run delivers it from that other node.
+        /// </summary>
+        public IReadOnlyDictionary<int, FlowDefinition> ExecutedAgainOn { get; init; } = new Dictionary<int, FlowDefinition>();
+
+        /// <summary>What happens once a slot's run has ended on its node, before the next slot starts: the slot, its node's flow, the run and its id.</summary>
+        public Func<int, FlowDefinition, RunParameters, Guid, Task>? AfterMember { get; set; }
+
         public List<(string Operation, DeliveryRunPayload Payload)> Enqueued { get; } = [];
 
         /// <summary>Whether every split asked for a node per part.</summary>
@@ -642,8 +909,18 @@ public class ScaleEngineTests : IDisposable
                     continue;
                 }
 
+                if (ExecutedAgainOn.TryGetValue(slot, out var elsewhere))
+                {
+                    await FanOutMembers.PlanOnlyAsync(Engine!, flow, member, runId, ct);
+                    flow = elsewhere;
+                }
+
                 var (_, _, resultJson) = await FanOutMembers.RunAsync(Engine!, flow, member, runId, ct);
                 _members[runId] = new FanOutMemberState(runId, slot, "succeeded", null, resultJson);
+                if (AfterMember is { } after)
+                {
+                    await after(slot, flow, member, runId);
+                }
             }
 
             _groups[groupId] = ids;

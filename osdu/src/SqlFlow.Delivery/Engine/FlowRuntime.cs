@@ -615,6 +615,12 @@ public sealed partial class FlowRuntime : IDisposable
             context.Parameters.GetValueOrDefault(RenderContext.DataPartitionParameter, "(not supplied)"));
     }
 
+    /// <summary>
+    /// The records this run's workers could not send because the documents queued for them were not there to read, which
+    /// the run reads by key and sends before it ends (<see cref="DeliveryExecutor.DeliverSetAsideAsync"/>).
+    /// </summary>
+    internal SetAsideRecords SetAside { get; } = new();
+
     public Task<DeliveryWorker> WorkerAsync(CancellationToken ct = default) => WorkerAsync(null, null, ct);
 
     /// <summary>
@@ -641,6 +647,7 @@ public sealed partial class FlowRuntime : IDisposable
             Gate = await GateAsync(ct).ConfigureAwait(false),
             Batches = batches,
             WorkRoot = workRoot,
+            SetAside = SetAside,
         };
     }
 

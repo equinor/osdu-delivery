@@ -282,6 +282,11 @@ public sealed class SubmissionIntake
         var header = await _planner.OpenAsync(
             flow, resolved, parameters, selection, gate: !force && existing is null, stored: described?.Window(), ct: ct).ConfigureAwait(false);
 
+        // The plan sends what it queues from this run's work location, so it asks whether work already queued for a record is
+        // there to read before it passes the record over as queued (osdu/docs/reference/concepts/submissions.md, Work queued
+        // where a run cannot read it).
+        header = header with { Queued = new QueuedDocuments(_stores, _ledger, submissionId, workRoot) };
+
         SubmissionState submission;
         var created = false;
         if (existing is not null)
@@ -482,6 +487,8 @@ public sealed class SubmissionIntake
         var held = new List<RecordState>();
         var untrackedLogged = 0;
         var holdsLogged = 0;
+        // Records queued before whose documents this run cannot read, rendered again here.
+        long requeued = 0;
         var lastProgress = _time.GetUtcNow();
         _logger.LogInformation(
             "Planning submission {SubmissionId}: {What}, {Workers} render batch(es) of {Records} at a time, {BatchRecords} record(s) to a work batch.",
@@ -551,6 +558,11 @@ public sealed class SubmissionIntake
                         if (Describes(entry.Key.Value))
                         {
                             _logger.LogInformation("{Entry}", PlanFormatting.Describe(entry));
+                        }
+
+                        if (entry.ReplacesUnreadable)
+                        {
+                            requeued++;
                         }
 
                         writer ??= await WorkBatchWriter.OpenAsync(_stores, workRoot, submission.SubmissionId, nextBatch, ct).ConfigureAwait(false);
@@ -636,6 +648,13 @@ public sealed class SubmissionIntake
         if (held.Count > 0)
         {
             await FlushHeldAsync(flow, submission, held, ct).ConfigureAwait(false);
+        }
+
+        if (requeued > 0)
+        {
+            _logger.LogWarning(
+                "{Count} record(s) were already queued with their documents where this run cannot read them (the work folder of another node, or a work location pruned since); they were rendered again from their rows and are sent from here.",
+                requeued);
         }
 
         return new IntakeCounts(summary.Records, staged, summary.Skips, summary.Holds + conflicted, summary.Blocked, summary.Untracked, batches, summary.Stale + refused, summary.AwaitingApproval);

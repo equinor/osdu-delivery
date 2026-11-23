@@ -39,6 +39,8 @@ import { CompactTime, OsduTarget, RecordIdentity, type RecordOrigin } from "./Re
 import { RunRef } from "./DeliveryRefs";
 import { useInterfaceChoice } from "./useInterfaceChoice";
 import { useFollowDeliveryRuns } from "./followRuns";
+import { useRunStarted } from "./runStarted";
+import { RunsUnderWay } from "./RunsUnderWay";
 import { RemovalDialog, type RemovalSelection } from "./RemovalDialog";
 import { DeleteLedgerDialog } from "./DeleteLedgerDialog";
 import { OpenUndosCard, UndoUnfinishedButton } from "./DeliveryOpenUndos";
@@ -227,8 +229,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   // The overview shows the source in the partition in view: its counts are every interface's, with the breakdown below
   // them. The records and submissions views show one interface, because that is what their ledgers are.
   const statsOf = section === "overview" ? null : interfaceName;
-  // A run of the flow reaches its counts, submissions and records within seconds of it, not at their next poll.
-  useFollowDeliveryRuns(pipelineId, ready);
+  // A run of the flow reaches its counts, submissions and records within seconds of it, not at their next poll, and the
+  // runs under way show above the tab, whatever started them.
+  const underWay = useFollowDeliveryRuns(pipelineId, ready);
+  // An action that queues a run opens its live trace and says what it queued.
+  const runStarted = useRunStarted();
   const stats = useQuery({
     queryKey: ["delivery", "stats", pipelineId, statsOf, partition],
     queryFn: () => deliveryApi.stats(pipelineId, { interfaceName: statsOf, partition }),
@@ -257,11 +262,13 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     onSuccess: (result) => {
       setReleaseOpen(false);
       const released = `Released ${result.released.toLocaleString()} record${result.released === 1 ? "" : "s"}`;
-      toast.success(
-        result.released === 0
+      runStarted({
+        message: result.released === 0
           ? "Nothing was blocked: no record released."
           : result.runId ? `${released}; a deliver run plans them now.` : `${released}; the flow's next run plans them.`,
-        result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+        runId: result.runId,
+        title: `Release blocked · ${ledgerLabel(flowName, scope)}`,
+      });
       void queryClient.invalidateQueries({ queryKey: ["delivery"] });
     },
     onError: (error) => {
@@ -279,7 +286,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
         clearSelection();
       }
 
-      toast.success("Timeline sync queued.", { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+      runStarted({ message: "Timeline sync queued.", runId: accepted.runId, title: `Sync timelines · ${ledgerLabel(flowName, scope)}` });
     },
     onError: (error) => toast.error(isApiError(error) ? error.detail ?? error.title : String(error)),
   });
@@ -319,6 +326,8 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
 
   return (
     <div className="flex flex-col gap-4" data-testid={`delivery-panel-${section}`}>
+      {/* The overview has it in its status card, under the actions that start runs. */}
+      {section !== "overview" && <RunsUnderWay runs={underWay} flowName={flowName} />}
       {partitions.length > 1 && partition !== null && (
         <p className="text-[13px] text-muted-foreground" data-testid="delivery-partition-in-view">
           In <span className="font-mono text-foreground">{partition}</span>, the partition picked in the title bar: one of the{" "}
@@ -409,6 +418,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                   </>
                 )}
               />
+              <RunsUnderWay runs={underWay} flowName={flowName} inCard />
               {s.lastSubmission && (
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2.5 text-[13px]" data-testid="delivery-last-submission">
                   <span className="font-medium">Last submission</span>
@@ -680,7 +690,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             onQueued={(accepted) => {
               clearSelection();
               // A remove run of the flow: the page follows the flow's runs, so its counts and records move once it ends.
-              toast.success(removalQueuedText(accepted, true), { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+              runStarted({ message: removalQueuedText(accepted, true), runId: accepted.runId, title: `Remove · ${ledgerName}` });
               void queryClient.invalidateQueries({ queryKey: ["delivery"] });
             }}
           />
@@ -714,9 +724,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             const asked = redeliverFor.kind === "all" && outcome.marked === 0
               ? `Every delivered record will be ${what}`
               : `${outcome.marked.toLocaleString()} record${outcome.marked === 1 ? "" : "s"} will be ${what}`;
-            toast.success(
-              outcome.runId ? `${asked} by a deliver run.` : `${asked} by the flow's next run.`,
-              outcome.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${outcome.runId}`) } } : undefined);
+            runStarted({
+              message: outcome.runId ? `${asked} by a deliver run.` : `${asked} by the flow's next run.`,
+              runId: outcome.runId,
+              title: `Redeliver · ${ledgerName}`,
+            });
             void queryClient.invalidateQueries({ queryKey: ["delivery"] });
           }}
         />
@@ -732,9 +744,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
           stats={s}
           interfaces={many ? rows ?? null : null}
           onQueued={(accepted) => {
-            toast.success(
-              `Deleting the ledger of ${flowName} in ${accepted.partition}: queued as a run.`,
-              { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+            runStarted({
+              message: `Deleting the ledger of ${flowName} in ${accepted.partition}: queued as a run.`,
+              runId: accepted.runId,
+              title: `Delete ledger · ${flowName} in ${accepted.partition}`,
+            });
             void queryClient.invalidateQueries({ queryKey: ["delivery"] });
           }}
         />
@@ -752,11 +766,13 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             setAdoptFor(null);
             clearSelection();
             const asked = `Adoption asked of ${result.asked.toLocaleString()} record${result.asked === 1 ? "" : "s"}`;
-            toast.success(
-              result.asked === 0
+            runStarted({
+              message: result.asked === 0
                 ? "No record was asked: none of them is held because OSDU already holds a record at its id."
                 : result.runId ? `${asked}; a deliver run takes them over now.` : `${asked}; the flow's next run takes them over.`,
-              result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+              runId: result.runId,
+              title: `Adopt · ${adoptFor.kind === "every" ? flowName : ledgerName}`,
+            });
             void queryClient.invalidateQueries({ queryKey: ["delivery"] });
           }}
         />

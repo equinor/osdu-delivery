@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eraser, Link2, RefreshCw, RotateCcw, Send, ShieldCheck, Trash2, Unlock } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ import { ReleaseDialog } from "./ReleaseDialog";
 import { RemovalDialog } from "./RemovalDialog";
 import { removalQueuedText } from "./removalQueued";
 import { useRecordOsduRead } from "./useRecordOsduRead";
+import { useRunStarted } from "./runStarted";
 import { shortId } from "./idTail";
 
 /**
@@ -83,7 +84,6 @@ export default function DeliveryRecordPage() {
 
 /** One flow's record: the same source row read by another flow is that flow's record, with a page of its own. */
 function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<"send-now" | null>(null);
   const [redeliverOpen, setRedeliverOpen] = useState(false);
@@ -148,18 +148,24 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const refresh = useCallback(() => void queryClient.invalidateQueries({ queryKey: ["delivery"] }), [queryClient]);
 
   const fail = (error: unknown) => toast.error(isApiError(error) ? error.detail ?? error.title : String(error));
+  // A run an action on the record queues opens its live trace here, under the record's name; the page stays, and reads the
+  // record again as the run lands.
+  const runStarted = useRunStarted();
+  const recordName = query.data?.record.label ?? query.data?.record.sourceKey ?? deliveryKey;
 
   const verify = useMutation({
     mutationFn: () => deliveryApi.verify(ref),
-    onSuccess: (accepted) => { toast.success("Verify run queued."); navigate(`/runs/${accepted.runId}`); },
+    onSuccess: (accepted) => {
+      runStarted({ message: "Verify run queued.", runId: accepted.runId, title: `Verify · ${recordName}` });
+      refresh();
+    },
     onError: fail,
   });
-  // A sync reads the record's row from its ingestion table and consolidates the ledger with it; it sends nothing, so it
-  // stays on the page, and the page reads the record again as the run lands.
+  // A sync reads the record's row from its ingestion table and consolidates the ledger with it; it sends nothing.
   const sync = useMutation({
     mutationFn: () => deliveryApi.syncRecord(ref),
     onSuccess: (accepted) => {
-      toast.success("Timeline sync queued.", { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+      runStarted({ message: "Timeline sync queued.", runId: accepted.runId, title: `Sync timeline · ${recordName}` });
       refresh();
     },
     onError: fail,
@@ -179,9 +185,11 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     mutationFn: (run: boolean) => deliveryApi.adopt(ref, run),
     onSuccess: (result) => {
       setAdoptOpen(false);
-      toast.success(
-        result.runId ? "Adoption asked: a deliver run takes the record over now." : "Adoption asked: the flow's next run takes the record over.",
-        result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+      runStarted({
+        message: result.runId ? "Adoption asked: a deliver run takes the record over now." : "Adoption asked: the flow's next run takes the record over.",
+        runId: result.runId,
+        title: `Adopt · ${recordName}`,
+      });
       refresh();
     },
     onError: (error) => { setAdoptOpen(false); fail(error); },
@@ -191,9 +199,11 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const lift = useMutation({
     mutationFn: () => removalApi.liftRecord(flowId, deliveryKey, true),
     onSuccess: (result) => {
-      toast.success(
-        result.runId ? "Removal lifted: a deliver run delivers the record again now." : "Removal lifted.",
-        result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+      runStarted({
+        message: result.runId ? "Removal lifted: a deliver run delivers the record again now." : "Removal lifted.",
+        runId: result.runId,
+        title: `Deliver again · ${recordName}`,
+      });
       if (result.marksKept) {
         toast.warning(`Removal lifted, but ${result.marksKept}`);
       }
@@ -503,9 +513,11 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           startMode={record.status === "delivered" ? "uptodate" : "again"}
           onDone={(outcome) => {
             const what = outcome.mode === "uptodate" ? "Bringing the record up to date" : "Sending the record again";
-            toast.success(
-              outcome.runId ? `${what}: a deliver run is queued.` : `${what} is asked of the flow's next run.`,
-              outcome.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${outcome.runId}`) } } : undefined);
+            runStarted({
+              message: outcome.runId ? `${what}: a deliver run is queued.` : `${what} is asked of the flow's next run.`,
+              runId: outcome.runId,
+              title: `Redeliver · ${recordName}`,
+            });
             refresh();
           }}
         />
@@ -528,7 +540,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           }}
           onQueued={(accepted) => {
             // A remove run of the flow: the record's own reads poll, so its state moves once the run has removed it.
-            toast.success(removalQueuedText(accepted, false), { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+            runStarted({ message: removalQueuedText(accepted, false), runId: accepted.runId, title: `Remove · ${recordName}` });
             refresh();
           }}
         />

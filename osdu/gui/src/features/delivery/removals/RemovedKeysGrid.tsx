@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { deliveryRecordRoute, type DeliveryFlowScope } from "../../../api/delivery";
 import { MAX_LIFT, REMOVED_KEY_STATES, removalApi, type RemovedKey, type RemovedKeyState } from "../../../api/removals";
 import { ProblemView } from "../TemplateSheet";
+import { useRunStarted } from "../runStarted";
 import { DimensionGrid, GridFooter, GridViewMenu } from "../dimensions/DimensionGrid";
 import { useHiddenColumns, type GridColumnChoice } from "../dimensions/dimensionGridState";
 import { OutcomeMark, RemovalStateStrip, StateGlyph } from "./RemovalBadges";
@@ -81,6 +82,7 @@ export function RemovedKeysGrid({ ledgerFlowId, state, onState, keyColumns, lift
 }) {
   const [hidden, toggleColumn] = useHiddenColumns("osdu.removals.keys.columns", AT_FIRST);
   const navigate = useNavigate();
+  const runStarted = useRunStarted();
   const queryClient = useQueryClient();
   const pages = useInfiniteQuery({
     queryKey: ["delivery", "removals", "keys", ledgerFlowId, state],
@@ -317,11 +319,13 @@ export function RemovedKeysGrid({ ledgerFlowId, state, onState, keyColumns, lift
           keys={pickedKeys}
           onLifted={(result) => {
             setPicked(new Set());
-            toast.success(
-              result.lifted === 0
+            runStarted({
+              message: result.lifted === 0
                 ? "None of them was kept out any more: nothing lifted."
                 : `Lifted the removal of ${result.lifted.toLocaleString("en-US")} record${result.lifted === 1 ? "" : "s"}${result.runId ? "; a deliver run delivers them now." : "; the flow's next run delivers them."}`,
-              result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+              runId: result.runId,
+              title: `Deliver again · ${lift.flowName}`,
+            });
             if (result.marksKept) {
               toast.warning(`Lifted, but ${result.marksKept}`);
             }

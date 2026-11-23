@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, ShieldAlert, ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExplainMark } from "@/components/ExplainTip";
@@ -11,6 +10,7 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { runValueAssignment } from "@/lib/runValues";
 import { removalApi, type RemovalEntry, type RemovalFlow, type RemovalSource, type RemovedKeyState } from "../../../api/removals";
 import { ProblemView } from "../TemplateSheet";
+import { useRunStarted } from "../runStarted";
 import { DeletionCounts, RemovalRunPill } from "./RemovalBadges";
 import { ApproveDialog } from "./RemovalDialogs";
 import { RemovalRunsTable } from "./RemovalRunsTable";
@@ -64,7 +64,7 @@ export function RemovalEntryView({ flow, entry, view, state, onShow, omitName = 
   /** Leaves the removal's name out of the heading, for a page whose own title names it. */
   omitName?: boolean;
 }) {
-  const navigate = useNavigate();
+  const runStarted = useRunStarted();
   const queryClient = useQueryClient();
   const [approving, setApproving] = useState(false);
   const runs = useQuery({
@@ -201,9 +201,11 @@ export function RemovalEntryView({ flow, entry, view, state, onShow, omitName = 
           run={held}
           onReview={review}
           onQueued={(accepted) => {
-            toast.success(
-              `Approval of ${accepted.expected.toLocaleString("en-US")} removed key${accepted.expected === 1 ? "" : "s"} queued as a run; it takes them out of OSDU.`,
-              { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+            runStarted({
+              message: `Approval of ${accepted.expected.toLocaleString("en-US")} removed key${accepted.expected === 1 ? "" : "s"} queued as a run; it takes them out of OSDU.`,
+              runId: accepted.runId,
+              title: `Approve removal · ${entry.name}`,
+            });
             void queryClient.invalidateQueries({ queryKey: ["delivery", "removals"] });
           }}
         />

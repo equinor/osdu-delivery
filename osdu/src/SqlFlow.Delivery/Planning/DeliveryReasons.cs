@@ -92,9 +92,14 @@ public sealed class DeliveryReasons
             found.Add(new ReasonTrigger
             {
                 Kind = ReasonKinds.OtherInputChanged,
-                Detail = decision.Basis.Queue == QueueComparison.ReplacesQueued
-                    ? "nothing the ledger compares moved since the version OSDU holds; the render replaces work already queued for the record, which differed from it"
-                    : "nothing the ledger compares moved since the version OSDU holds, and the document renders differently: the render reads something those inputs do not cover, such as a record it searches for in OSDU, its parent, or a child it links",
+                Detail = decision.Basis.Queue switch
+                {
+                    QueueComparison.ReplacesQueued =>
+                        "nothing the ledger compares moved since the version OSDU holds; the render replaces work already queued for the record, which differed from it",
+                    QueueComparison.UnreadableQueued =>
+                        "nothing the ledger compares moved since the version OSDU holds; the render replaces work already queued for the record, whose document was not where the run reads its work from",
+                    _ => "nothing the ledger compares moved since the version OSDU holds, and the document renders differently: the render reads something those inputs do not cover, such as a record it searches for in OSDU, its parent, or a child it links",
+                },
             });
         }
 

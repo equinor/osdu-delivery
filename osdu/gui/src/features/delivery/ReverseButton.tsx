@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Undo2 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deliveryApi, type DeliveryFlowScope, type DeliveryReversalAccepted, type ReversalSource } from "../../api/delivery";
 import { ReverseDialog } from "./ReverseDialog";
+import { useRunStarted } from "./runStarted";
 
 interface ReverseButtonProps {
   pipelineId: string;
@@ -17,7 +16,7 @@ interface ReverseButtonProps {
   /** What the button says when it would open a reversal ("Reverse this run"); a reversal that exists is resumed instead. */
   label: string;
   testId: string;
-  /** What the page does once the reverse run is queued, beside the toast that links to it. */
+  /** What the page does once the reverse run is queued, beside the trace it opens and the toast that links to it. */
   onQueued?: (accepted: DeliveryReversalAccepted) => void;
 }
 
@@ -29,8 +28,8 @@ interface ReverseButtonProps {
  * reverse run is already working on offer nothing. A reversal that stopped is offered as a resume.
  */
 export function ReverseButton({ pipelineId, flowScope, flowName, source, label, testId, onQueued }: ReverseButtonProps) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const runStarted = useRunStarted();
   const [open, setOpen] = useState(false);
   const state = useQuery({
     queryKey: ["delivery", "reversible", pipelineId, flowScope.interfaceName ?? null, flowScope.partition ?? null, source.kind, source.id],
@@ -65,8 +64,10 @@ export function ReverseButton({ pipelineId, flowScope, flowName, source, label, 
         onQueued={(accepted) => {
           void queryClient.invalidateQueries({ queryKey: ["delivery", "reversible"] });
           void queryClient.invalidateQueries({ queryKey: ["delivery", "reversals"] });
-          toast.success(`Reversal of ${accepted.records.toLocaleString()} record(s) queued.`, {
-            action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) },
+          runStarted({
+            message: `Reversal of ${accepted.records.toLocaleString()} record(s) queued.`,
+            runId: accepted.runId,
+            title: `Reverse · ${flowName}`,
           });
           onQueued?.(accepted);
         }}

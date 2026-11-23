@@ -30,6 +30,9 @@ sourceRefs:
   - osdu/gui/src/features/delivery/PartitionSwitcher.tsx
   - osdu/gui/src/features/delivery/useLinkedPartition.ts
   - osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx
+  - osdu/gui/src/features/delivery/runStarted.tsx
+  - osdu/gui/src/features/delivery/RunsUnderWay.tsx
+  - osdu/gui/src/features/delivery/followRuns.ts
   - osdu/gui/src/features/delivery/DeliveryIssuesPanel.tsx
   - osdu/gui/src/features/delivery/DeliveryIssuePanel.tsx
   - osdu/gui/src/features/delivery/DeliveryPreviewPanel.tsx
@@ -261,6 +264,24 @@ partition for a flow that follows the registry ([three ways a flow names its par
 A header flow's partition is known from its ledger once it has run; until then, and while no partition is picked, its
 tabs show its ledger as they always do. The notice changes nothing: the switch is the title bar's. A link that names a
 partition the flow serves (`?partition=`) makes it the title bar's, so a link lands on the ledger it names.
+
+## A run an action starts
+
+Every action on these pages that queues a run shows the run at once, wherever it was asked from: **Delete ledger**,
+**Redeliver**, **Sync timelines**, **Release blocked**, **Adopt** and **Remove** on a flow's page, an issue's **Release**
+and **Adopt**, a record's **Verify**, **Sync timeline**, **Adopt**, **Redeliver**, **Remove** and **Deliver again** (a
+removal lifted), a reversal, a removal's approval and its **Deliver again**, and an inventory's removal and restore. The run's live trace opens in the bottom
+panel under the action and what it acts on (`DELETE LEDGER · wells in dev`), with **Open run** to the run's page, and
+stays behind the title bar's trace indicator once the panel is closed, which marks its end; the toast says what was
+queued, with **Open run** too. It is the run's own trace, the one its page shows. An issue's **Try** leaves the issue in
+the panel and holds the trace behind the indicator alone. An action that queues no run (a release left to the flow's
+next run) says so in the toast.
+
+While a run of the flow is queued or running, whatever started it (an action here, the trigger dialog, a schedule), the
+flow's **Delivery** tab names it in its status card, under the actions, and the **Records** and **Submissions** tabs
+above their content: what it performs (**Delete ledger**, **Sync timelines**, **Deliver**), how long it has run or that
+it waits for a node, what it is doing now, **Trace** and **Open run**, and how many more runs are under way (the parts of
+a delivery split over nodes, a run queued behind another), leading to the **Runs** tab. Nothing is shown while no run is.
 
 ## Runs and the trigger dialog
 

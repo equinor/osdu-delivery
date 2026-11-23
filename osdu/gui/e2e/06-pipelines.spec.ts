@@ -91,6 +91,31 @@ test.describe.serial("pipelines", () => {
     await expect(dialog).toHaveCount(0);
   });
 
+  test("a run an action queues opens its trace at once, which leads to the run's page and stays open there", async ({ adminPage }) => {
+    await adminPage.getByTestId("nav-pipelines").click();
+    await adminPage.getByTestId("filter-name").fill(DELIVERY_FLOW);
+    await adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW }).first().click();
+    await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible();
+
+    // A sync sends nothing to OSDU. Its run's trace opens in the bottom panel under the action and the flow, where the
+    // action left only a toast before, with the way to the run's page.
+    const sync = adminPage.getByTestId("delivery-sync-all");
+    await expect(sync).toBeEnabled({ timeout: 30_000 });
+    await sync.click();
+    const panel = adminPage.locator("section[data-testid='bottom-panel']");
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute("aria-label", `Sync timelines · ${DELIVERY_FLOW}`);
+    // Closed, it would stay behind the title bar's trace indicator, which holds it already.
+    await expect(adminPage.getByTestId("trace-indicator")).toBeVisible();
+
+    await panel.getByTestId("trace-open-run").click();
+    await expect(adminPage.getByTestId("page-run-detail")).toBeVisible();
+    await expect(adminPage.getByTestId("run-kind")).toBeVisible();
+    // On the run's own page the panel keeps the trace, and no longer offers the way to the page it is on.
+    await expect(panel).toBeVisible();
+    await expect(panel.getByTestId("trace-open-run")).toHaveCount(0);
+  });
+
   test("the Records tab downloads every record its filter matches as an Excel workbook, and says why when there is none", async ({ adminPage }) => {
     test.setTimeout(600_000);
     expect(stageWellLogRecords()).toContain("record(s)");

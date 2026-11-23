@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { TraceLog, type TraceLine } from "@/components/TraceLog";
+import { CirclePlay } from "lucide-react";
+import { TRACE_HEADER_ACTION, TraceLog, type TraceLine } from "@/components/TraceLog";
 import { downloadFileName } from "@/lib/download";
 import { runApi } from "../../api/endpoints";
 import type { RunTraceEntry } from "../../api/types";
@@ -33,10 +35,13 @@ function toLine(entry: RunTraceEntry): TraceLine {
  * moment the executing node persists each entry); once terminal it shows the authoritative at-rest trace. Rendered
  * through the shared {@link TraceLog}, so it looks identical to the repository sync trace. Copy trace and Download
  * fetch the same canonical plain-text document the LLM-facing /trace/text endpoint serves, saved under the flow's
- * name and the run id.
+ * name and the run id. Shown anywhere but the run's own page (opened by the page that started the run, say), its
+ * header leads to the run: its status, its outcome and everything it recorded.
  */
 export function RunTracePanel({ runId }: { runId: string }) {
   const queryClient = useQueryClient();
+  const runPage = `/runs/${runId}`;
+  const onRunPage = useLocation().pathname === runPage;
 
   // The run header drives live vs at-rest; shares the ["runs", runId] cache with the run detail page.
   const runQuery = useQuery({
@@ -88,6 +93,12 @@ export function RunTracePanel({ runId }: { runId: string }) {
         ? "The run is queued; the trace streams in once a node claims it."
         : "Waiting for the first trace entry…"}
       emptyEnded="No trace was recorded for this run."
+      actions={onRunPage ? undefined : (
+        <Link to={runPage} className={TRACE_HEADER_ACTION} data-testid="trace-open-run">
+          <CirclePlay className="size-3.5 shrink-0" />
+          Open run
+        </Link>
+      )}
     />
   );
 }

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { RotateCcw, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -25,6 +24,7 @@ import { FindingGlyph } from "./InventoryBadges";
 import { InventoryIdPanel } from "./InventoryIdPanel";
 import { InventoryRepairDialog } from "./InventoryRepairDialog";
 import { RemovalDialog, type InventoryChangeQueued } from "../RemovalDialog";
+import { useRunStarted } from "../runStarted";
 import { fieldLabel } from "../explorer/explorerModel";
 import { arrowsKeptByTarget, typedInField } from "../panelKeys";
 import { findingVisual, findingWhy } from "./inventoryFormat";
@@ -194,7 +194,7 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
     setPicked(new Set());
     setEveryOne(false);
   }
-  const navigate = useNavigate();
+  const runStarted = useRunStarted();
   const queryClient = useQueryClient();
   const clearPicked = () => {
     setPicked(new Set());
@@ -642,9 +642,11 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
           }}
           onQueued={(queued: InventoryChangeQueued) => {
             clearPicked();
-            toast.success(
-              `${queued.restore ? "Restore" : "Removal"} of ${queued.expected.toLocaleString("en-US")} ${noun}${queued.expected === 1 ? "" : "s"} of ${queued.inventory} queued as a run.`,
-              { action: { label: "Open run", onClick: () => navigate(`/runs/${queued.runId}`) } });
+            runStarted({
+              message: `${queued.restore ? "Restore" : "Removal"} of ${queued.expected.toLocaleString("en-US")} ${noun}${queued.expected === 1 ? "" : "s"} of ${queued.inventory} queued as a run.`,
+              runId: queued.runId,
+              title: `${queued.restore ? "Restore" : "Remove"} · ${queued.inventory}`,
+            });
             void queryClient.invalidateQueries({ queryKey: ["delivery", "inventories"] });
           }}
         />

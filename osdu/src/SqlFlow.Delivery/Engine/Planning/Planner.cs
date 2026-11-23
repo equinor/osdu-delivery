@@ -93,6 +93,13 @@ public sealed record PlanEntry
     /// </summary>
     public RenderPaths? Paths { get; init; }
 
+    /// <summary>
+    /// Whether the delivery replaces work already queued for the record whose document the run could not read
+    /// (<see cref="QueueComparison.UnreadableQueued"/>): the run counts them, so its trace says how many records it rendered
+    /// again for that and why.
+    /// </summary>
+    public bool ReplacesUnreadable { get; init; }
+
     public bool IsDelivery => DeliverMetadata || DeliverPayload;
 }
 
@@ -143,6 +150,13 @@ public sealed record PlanHeader
     /// every record the plan renders carries among its assertion findings.
     /// </summary>
     public RunRowsFindings RunRows { get; init; } = RunRowsFindings.None;
+
+    /// <summary>
+    /// Says whether the run this plan is made for can read the document of work already queued for a record
+    /// (<see cref="QueuedDocuments"/>), so a record queued where the run cannot read is rendered again rather than passed
+    /// over. Null for a plan that sends nothing itself (a plan run, a preview, a check): it takes queued work as it stands.
+    /// </summary>
+    public QueuedDocuments? Queued { get; init; }
 
     private DeliveryReasons? _reasons;
 
@@ -910,7 +924,13 @@ public sealed class Planner
                 }
             }
 
-            if (!header.RenderEvery && ChangeDetector.CanSkipWithoutRender(ChangeDetector.Expected(state), source, payloadHash, context, flow.Change))
+            // Work already queued for the record counts as what OSDU will hold only when this run can send it: its document
+            // is in a work batch where the run reads its work from. One queued on another node (a part of a split delivery
+            // that failed or ran again elsewhere, a run that resumed on another node) cannot land from here, so the record is
+            // rendered again and the render replaces it, rather than being passed over for work no drain of this run can read.
+            var queueReadable = state is not { HasPendingWork: true } || header.Queued is null
+                || await header.Queued.ReadableAsync(state, ct).ConfigureAwait(false);
+            if (!header.RenderEvery && ChangeDetector.CanSkipWithoutRender(queueReadable ? ChangeDetector.Expected(state) : state, source, payloadHash, context, flow.Change))
             {
                 entries.Add(basis with
                 {
@@ -937,6 +957,7 @@ public sealed class Planner
                 ChunkCount = chunkCount,
                 Parts = resolvedParts,
                 CarriedComposite = carriedComposite,
+                QueueReadable = queueReadable,
             };
 
             var questions = await FinishRecordAsync(header, pending, payload, parts, roles, entries, final: false, ct).ConfigureAwait(false);
@@ -1251,7 +1272,7 @@ public sealed class Planner
             break;
         }
 
-        var decision = ChangeDetector.DecideWithQueue(state, render.MetadataHash, payloadHash, hasPayload, flow.Change);
+        var decision = ChangeDetector.DecideWithQueue(state, render.MetadataHash, payloadHash, hasPayload, flow.Change, pending.QueueReadable);
         var carriedPayload = false;
         if (decision.DeliverPayload && payloadModified is { } filesModified && ChangeDetector.NewestPayloadModified(state) is { } newestPayload && filesModified < newestPayload)
         {
@@ -1389,6 +1410,7 @@ public sealed class Planner
             DeliverPayload = decision.DeliverPayload,
             Why = reason,
             Paths = paths,
+            ReplacesUnreadable = decision.Basis.Queue == QueueComparison.UnreadableQueued,
 
             // Only a document that is sent can point at a record that is not there yet; a payload alone changes no reference.
             References = decision.DeliverMetadata ? header.References.Read(render.Document, render.TargetId) : [],
@@ -1458,6 +1480,9 @@ public sealed class Planner
         public List<ResolvedPart>? Parts { get; init; }
 
         public string? CarriedComposite { get; init; }
+
+        /// <summary>Whether the run can read the document of the work already queued for the record; true when none is queued.</summary>
+        public bool QueueReadable { get; init; } = true;
     }
 
     /// <summary>

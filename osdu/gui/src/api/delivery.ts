@@ -686,6 +686,7 @@ export interface DeliveryAttempt {
   completedUtc: string;
   /** `undone` is an undo of what an unfinished delivery left (phase `undo`); a skipped or held try of phase `undo-wait` waited for one. */
   outcome: "delivered" | "skipped" | "failed" | "held" | "deleted" | "historypurged" | "restored" | "undone" | "restricted" | "unrestricted";
+  /** What the try was: a held try of phase `document-missing` set the record aside, unblocked, because the document queued for it was not there to read. */
   phase: string;
   metadataHash: string | null;
   payloadHash: string | null;

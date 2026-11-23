@@ -85,6 +85,13 @@ public enum QueueComparison
 
     /// <summary>The render differs from what is queued and replaces it.</summary>
     ReplacesQueued,
+
+    /// <summary>
+    /// What is queued cannot be sent by the run that plans: its document is not where that run reads its work from (another
+    /// node wrote it there, or the work location was pruned). The render replaces it whatever it held, so the record is
+    /// sent from a document the run can read.
+    /// </summary>
+    UnreadableQueued,
 }
 
 /// <summary>
@@ -111,11 +118,16 @@ public sealed record ChangeBasis
 
     public static ChangeBasis NotInLedger { get; } = new() { Kind = ChangeBasisKind.NotInLedger, MetadataChanged = true };
 
+    /// <summary>What a plan says of work it replaces because the run cannot read the document it queued.</summary>
+    public const string UnreadableQueue =
+        "the document already queued for the record is not where this run reads its work from, so this render replaces it and the record is sent from here";
+
     /// <summary>The basis in the words a plan's entry says it in.</summary>
     public string Describe() => (Kind, Queue) switch
     {
         (_, QueueComparison.EqualsQueued) => "metadata and payload hashes equal the version already queued",
         (_, QueueComparison.ReplacesQueued) => $"{Queued?.Describe() ?? "it differs"} against the version already queued, which this one replaces",
+        (_, QueueComparison.UnreadableQueued) => $"{(this with { Queue = QueueComparison.None }).Describe()}; {UnreadableQueue}",
         (ChangeBasisKind.NotInLedger, _) => "not in ledger",
         (ChangeBasisKind.NeverDelivered, _) => $"ledger status {Status?.ToString().ToLowerInvariant() ?? "unknown"}, never delivered",
         (ChangeBasisKind.Unchanged, _) => "metadata and payload hashes unchanged",
@@ -255,8 +267,16 @@ public static class ChangeDetector
     /// a skip, because that work lands it. Otherwise a half is sent when it differs from either: the queue it replaces
     /// may carry a half OSDU does not hold yet, and a delivery in flight may land something this render differs from.
     /// The worker's final hash check (<see cref="AtPush"/>) then drops whatever the target turns out to hold already.
+    /// <para>
+    /// With <paramref name="queueReadable"/> false, the run that plans cannot read the document the queued work points at
+    /// (another node wrote it to its own work folder, or the work location was pruned), so that work cannot land from
+    /// here and is never a reason to skip: the render replaces it even when it is identical to it, sending the halves OSDU
+    /// does not hold yet. A render identical to the queue and to what OSDU holds still replaces the queue, as a document the
+    /// final check then finds OSDU holding, so the record settles with nothing sent rather than keep work no run can send.
+    /// </para>
     /// </summary>
-    public static ChangeDecision DecideWithQueue(RecordState? existing, string metadataHash, string? payloadHash, bool hasPayload, FlowChange change)
+    public static ChangeDecision DecideWithQueue(
+        RecordState? existing, string metadataHash, string? payloadHash, bool hasPayload, FlowChange change, bool queueReadable = true)
     {
         var delivered = Decide(existing, metadataHash, payloadHash, hasPayload, change);
         if (existing is not { HasPendingWork: true })
@@ -265,13 +285,19 @@ public static class ChangeDetector
         }
 
         var queued = Decide(Expected(existing), metadataHash, payloadHash, hasPayload, change);
-        if (queued.Action == PlannedAction.Skip)
+        if (queued.Action == PlannedAction.Skip && queueReadable)
         {
             return queued with { Basis = queued.Basis with { Queue = QueueComparison.EqualsQueued } };
         }
 
         var metadata = delivered.DeliverMetadata || queued.DeliverMetadata;
         var payload = delivered.DeliverPayload || queued.DeliverPayload;
+        if (!metadata && !payload)
+        {
+            // Only work that cannot be read reaches here: identical to the queue and to what OSDU holds.
+            metadata = true;
+        }
+
         var action = delivered.Action == PlannedAction.Create
             ? PlannedAction.Create
             : (metadata, payload) switch
@@ -281,13 +307,15 @@ public static class ChangeDetector
                 _ => PlannedAction.UpdatePayload,
             };
         // Against the version OSDU holds, the render is a create, or sends what moved from it; the queue adds the halves it
-        // differs from, and the basis keeps both so a reason can say the render replaces queued work.
+        // differs from, and the basis keeps both so a reason can say the render replaces queued work. Work replaced because
+        // it cannot be read says what the render is against the version OSDU holds, as it stands: nothing moved there for a
+        // render the queue already held.
         var basis = delivered.Basis with
         {
-            Kind = delivered.Basis.Kind == ChangeBasisKind.Unchanged ? ChangeBasisKind.Changed : delivered.Basis.Kind,
+            Kind = queueReadable && delivered.Basis.Kind == ChangeBasisKind.Unchanged ? ChangeBasisKind.Changed : delivered.Basis.Kind,
             MetadataChanged = metadata,
             PayloadChanged = payload,
-            Queue = QueueComparison.ReplacesQueued,
+            Queue = queueReadable ? QueueComparison.ReplacesQueued : QueueComparison.UnreadableQueued,
             Queued = queued.Basis,
         };
         return new ChangeDecision(action, SkipTier.None, metadata, payload, basis);

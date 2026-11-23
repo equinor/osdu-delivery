@@ -46,13 +46,14 @@ internal static partial class SqlServerLedgerBulk
             r.[WaitingFor] = CASE WHEN r.[Status] = N'waiting' THEN NULL ELSE r.[WaitingFor] END,
             r.[UpdatedUtc] = @now
         OUTPUT inserted.[DeliveryKey] INTO @released ([DeliveryKey])
-        FROM (SELECT DISTINCT CAST(k.[value] AS uniqueidentifier) AS [DeliveryKey] FROM OPENJSON(@keys) AS k) AS n
+        FROM {{NamedKeys}}
         INNER JOIN [osdu].[Record] AS r WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
             ON r.[PartitionId] = @partitionId AND r.[FlowId] = @flowId AND r.[DeliveryKey] = n.[DeliveryKey]
         WHERE r.[RestrictionId] IS NULL
           AND ((r.[Blocked] = 1 AND r.[Status] IN (N'held', N'failed', N'deleted', N'reverted'))
             OR ({{Stranded}})
-            OR (@waiting = 1 AND r.[Status] = N'waiting'));
+            OR (@waiting = 1 AND r.[Status] = N'waiting'))
+        {{InKeyOrder}};
         IF @activityId IS NOT NULL
             INSERT INTO [osdu].[ActivityRecord] ([PartitionId], [FlowId], [DeliveryKey], [ActivityId])
             SELECT @partitionId, @flowId, x.[DeliveryKey], @activityId
@@ -84,10 +85,11 @@ internal static partial class SqlServerLedgerBulk
             r.[LastError] = CASE WHEN r.[ProblemHash] IS NOT NULL THEN r.[LastError] ELSE @note END,
             r.[UpdatedUtc] = @now
         OUTPUT inserted.[DeliveryKey] INTO @marked ([DeliveryKey])
-        FROM (SELECT DISTINCT CAST(k.[value] AS uniqueidentifier) AS [DeliveryKey] FROM OPENJSON(@keys) AS k) AS n
+        FROM {{NamedKeys}}
         INNER JOIN [osdu].[Record] AS r WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
             ON r.[PartitionId] = @partitionId AND r.[FlowId] = @flowId AND r.[DeliveryKey] = n.[DeliveryKey]
-        WHERE @delivered = 0 OR (r.[Status] = N'delivered' AND r.[TargetId] IS NOT NULL);
+        WHERE @delivered = 0 OR (r.[Status] = N'delivered' AND r.[TargetId] IS NOT NULL)
+        {{InKeyOrder}};
         IF @activityId IS NOT NULL
             INSERT INTO [osdu].[ActivityRecord] ([PartitionId], [FlowId], [DeliveryKey], [ActivityId])
             SELECT @partitionId, @flowId, x.[DeliveryKey], @activityId
@@ -115,10 +117,11 @@ internal static partial class SqlServerLedgerBulk
             r.[PlanRequestedUtc] = @now,
             r.[UpdatedUtc] = @now
         OUTPUT inserted.[DeliveryKey] INTO @marked ([DeliveryKey])
-        FROM (SELECT DISTINCT CAST(k.[value] AS uniqueidentifier) AS [DeliveryKey] FROM OPENJSON(@keys) AS k) AS n
+        FROM {{NamedKeys}}
         INNER JOIN [osdu].[Record] AS r WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
             ON r.[PartitionId] = @partitionId AND r.[FlowId] = @flowId AND r.[DeliveryKey] = n.[DeliveryKey]
-        WHERE r.[Status] = N'delivered' AND r.[TargetId] IS NOT NULL;
+        WHERE r.[Status] = N'delivered' AND r.[TargetId] IS NOT NULL
+        {{InKeyOrder}};
         IF @activityId IS NOT NULL
             INSERT INTO [osdu].[ActivityRecord] ([PartitionId], [FlowId], [DeliveryKey], [ActivityId])
             SELECT @partitionId, @flowId, x.[DeliveryKey], @activityId
@@ -282,7 +285,7 @@ internal static partial class SqlServerLedgerBulk
         => InTransactionAsync(db, async (connection, transaction) =>
         {
             await using var command = Command(connection, transaction, ReleaseSliceSql, slice: null);
-            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = System.Text.Json.JsonSerializer.Serialize(keys) });
+            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = KeysInOrder(keys) });
             command.Parameters.Add(new SqlParameter("@partitionId", SqlDbType.SmallInt) { Value = partitionId });
             command.Parameters.Add(new SqlParameter("@flowId", SqlDbType.UniqueIdentifier) { Value = flowId });
             command.Parameters.Add(new SqlParameter("@waiting", SqlDbType.Bit) { Value = waiting });
@@ -303,7 +306,7 @@ internal static partial class SqlServerLedgerBulk
         {
             await using var command = Command(connection, transaction, RedeliverSliceSql, slice: null);
             command.Parameters.Add(new SqlParameter("@lost", SqlDbType.Bit) { Value = lost });
-            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = System.Text.Json.JsonSerializer.Serialize(keys) });
+            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = KeysInOrder(keys) });
             command.Parameters.Add(new SqlParameter("@partitionId", SqlDbType.SmallInt) { Value = partitionId });
             command.Parameters.Add(new SqlParameter("@flowId", SqlDbType.UniqueIdentifier) { Value = flowId });
             command.Parameters.Add(new SqlParameter("@scope", SqlDbType.NVarChar, 16) { Value = scope });
@@ -324,7 +327,7 @@ internal static partial class SqlServerLedgerBulk
         => InTransactionAsync(db, async (connection, transaction) =>
         {
             await using var command = Command(connection, transaction, RenderSliceSql, slice: null);
-            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = System.Text.Json.JsonSerializer.Serialize(keys) });
+            command.Parameters.Add(new SqlParameter("@keys", SqlDbType.NVarChar, -1) { Value = KeysInOrder(keys) });
             command.Parameters.Add(new SqlParameter("@partitionId", SqlDbType.SmallInt) { Value = partitionId });
             command.Parameters.Add(new SqlParameter("@flowId", SqlDbType.UniqueIdentifier) { Value = flowId });
             command.Parameters.Add(new SqlParameter("@activityId", SqlDbType.BigInt) { Value = activityId is { } id ? id : DBNull.Value });

@@ -5,6 +5,23 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.5]
 
+### A run you start
+
+- **Delete ledger**, **Redeliver**, **Sync timelines**, **Release blocked**, **Adopt**, **Remove**, a reversal and the
+  other actions that queue a run open the run's live trace in the page's bottom panel, with **Open run** to its page,
+  and keep it behind the trace indicator once the panel is closed. A delivery flow's **Delivery**, **Records** and
+  **Submissions** tabs name a run of the flow while it is queued or running, with how long it has run, what it is doing,
+  **Trace** and **Open run**
+  ([a run an action starts](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/gui.md#a-run-an-action-starts)).
+
+### A record set aside, not held
+
+- A record whose queued document was not where the run sending it reads its work from (another node wrote it, or it was
+  pruned) shows **Set aside: its queued document could not be read where it was sent from** on its timeline, and **Set
+  aside: waiting for the next run** until a run sends it, rather than **Held** with "Not tried again until someone
+  releases it": nothing about it is wrong and nobody has to release it
+  ([work queued where a run cannot read it](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/submissions.md#work-queued-where-a-run-cannot-read-it)).
+
 ### Why a record was delivered
 
 - A record's timeline titles each **Delivered** row with what sent it, and opens to every input that moved (the mapping

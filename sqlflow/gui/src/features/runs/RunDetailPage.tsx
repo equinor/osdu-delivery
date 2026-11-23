@@ -36,7 +36,7 @@ import { useTabTitle } from "../../layout/workbench/TabsContext";
 import { embeddedHealthCheckName } from "../../lib/definition";
 import { formatBytes, parseUtc } from "../../lib/time";
 import { kindContribution } from "../../modules/registry";
-import { RunTracePanel } from "./RunTracePanel";
+import { runTraceId, runTraceSpec } from "./runTrace";
 import { TriggerRunDialog } from "./TriggerRunDialog";
 import { hasCensus } from "../../lib/lsp/sqlflowLsp";
 
@@ -213,13 +213,11 @@ function RunDetailContent({ runId }: { runId: string }) {
   // The trace lives in the workbench's trace tray, not an embedded tab, and opens in the bottom panel when asked: the
   // header's Trace button, or the title bar's trace indicator. A run still queued or running when its page opens is
   // followed there, so it streams live, exactly like the repository sync trace, and its end is signalled however far
-  // the reader has moved on. Once per run, when the flow name is known so the trace is titled.
+  // the reader has moved on. Once per run, when the flow name is known so the trace is titled. A page that started the
+  // run may hold its trace already (runTraceSpec), and then the page reaches that one.
   const flowName = query.data?.flowName;
-  const traceId = `run:${runId}`;
-  const traceSpec = useCallback(
-    () => ({ id: traceId, title: `Trace · ${flowName ?? runId}`, node: <RunTracePanel runId={runId} /> }),
-    [traceId, runId, flowName],
-  );
+  const traceId = runTraceId(runId);
+  const traceSpec = useCallback(() => runTraceSpec(runId, `Trace · ${flowName ?? runId}`), [runId, flowName]);
   const openTrace = useCallback(() => open(traceSpec()), [open, traceSpec]);
   const held = traces.some((trace) => trace.id === traceId);
   const followedFor = useRef<string | null>(null);

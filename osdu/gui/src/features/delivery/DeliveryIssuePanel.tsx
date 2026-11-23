@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown, ChevronUp, CirclePause, CircleX, FileText, Layers, Link2, ListFilter, Loader2, Play, Rows3, ScanSearch, Unlock,
@@ -24,6 +24,7 @@ import { issueParts, issueStatesText, samplesText } from "./issueText";
 import { CompactTime, RecordIdentity } from "./RecordCells";
 import { PLANNED_PER_PASS, ReleaseDialog } from "./ReleaseDialog";
 import { problemText } from "./problemText";
+import { useRunStarted } from "./runStarted";
 
 /** How often an open issue is read again: its counts, its samples and the files its records came from. */
 const REFRESH_MS = 30000;
@@ -128,7 +129,6 @@ export function IssuePanel({ pipelineId, scope, issueId, listed, ledgerName, par
   /** The Records tab narrowed to the issue's records. */
   recordsLink: string;
 }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [adoptOpen, setAdoptOpen] = useState(false);
@@ -145,16 +145,20 @@ export function IssuePanel({ pipelineId, scope, issueId, listed, ledgerName, par
   const files = detail.data?.files;
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["delivery"] });
-  const openRun = (runId: string) => ({ label: "Open run", onClick: () => navigate(`/runs/${runId}`) });
+  const runStarted = useRunStarted();
 
-  // One record released and run at once: whether its issue is fixed shows on its timeline, and in this issue's count.
+  // One record released and run at once: whether its issue is fixed shows on its timeline, and in this issue's count. The
+  // issue stays in the panel to try the next sample; the run's trace waits behind the title bar's trace indicator.
   const trySample = useMutation({
     mutationFn: (record: DeliveryRecord) => deliveryApi.release(record, true),
-    onSuccess: (result) => {
+    onSuccess: (result, record) => {
       refresh();
-      toast.success(
-        result.released === 0 ? "The record was no longer blocked; a run for it is queued." : "The record is released and a run for it is queued.",
-        result.runId ? { action: openRun(result.runId) } : undefined);
+      runStarted({
+        message: result.released === 0 ? "The record was no longer blocked; a run for it is queued." : "The record is released and a run for it is queued.",
+        runId: result.runId,
+        title: `Try · ${record.label ?? record.sourceKey}`,
+        openTrace: false,
+      });
     },
     onError: (error) => toast.error(problemText(error)),
   });
@@ -165,12 +169,14 @@ export function IssuePanel({ pipelineId, scope, issueId, listed, ledgerName, par
       setReleaseOpen(false);
       refresh();
       const released = `Released ${result.released.toLocaleString()} record${result.released === 1 ? "" : "s"}`;
-      toast.success(
-        result.released === 0
+      // Released, the issue keeps no record blocked: there is nothing left to show of it, and the run's trace takes the panel.
+      runStarted({
+        message: result.released === 0
           ? "The issue keeps no record blocked any more: none released."
           : result.runId ? `${released}; a deliver run plans them now.` : `${released}; the flow's next run plans them.`,
-        result.runId ? { action: openRun(result.runId) } : undefined);
-      // Released, the issue keeps no record blocked: there is nothing left to show of it.
+        runId: result.runId,
+        title: `Release blocked · ${ledgerName}`,
+      });
       onClose();
     },
     onError: (error) => {
@@ -188,11 +194,13 @@ export function IssuePanel({ pipelineId, scope, issueId, listed, ledgerName, par
       setAdoptTyped("");
       refresh();
       const asked = `Adoption asked of ${result.asked.toLocaleString()} record${result.asked === 1 ? "" : "s"}`;
-      toast.success(
-        result.asked === 0
+      runStarted({
+        message: result.asked === 0
           ? "No record of the issue was asked: they were held for something else, or a run took them up since."
           : result.runId ? `${asked}; a deliver run takes them over now.` : `${asked}; the flow's next run takes them over.`,
-        result.runId ? { action: openRun(result.runId) } : undefined);
+        runId: result.runId,
+        title: `Adopt · ${ledgerName}`,
+      });
     },
     onError: (error) => {
       setAdoptOpen(false);

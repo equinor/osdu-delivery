@@ -9,6 +9,7 @@ using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
+using SqlFlow.Delivery.Storage;
 
 namespace SqlFlow.Delivery.Engine;
 
@@ -140,7 +141,8 @@ public sealed partial class FlowRuntime
 
             // A part that did not deliver its range is delivered here. Planning the range again is safe: the records the part
             // sent are unchanged and passed over, and the rows it never reached are planned now. A record it queued and did not
-            // send has its document on that part's node: this run finds it missing, and the flow's next run plans it again.
+            // send has its document on that part's node, where this run cannot read it: the plan renders it again into a batch
+            // of this run's own (QueuedDocuments), so it is sent here, in this delivery.
             if (!wait.Stopped.Contains(runId))
             {
                 _log.LogWarning(
@@ -161,12 +163,55 @@ public sealed partial class FlowRuntime
             totals = totals.Add(await PlanShareAsync(prepared, taken, ct).ConfigureAwait(false));
         }
 
+        // A part that delivered its range can still leave records queued: one left waiting for a record it refers to, which
+        // a later landing releases, or one under a lease that ran out. Their documents are on that part's node too, so
+        // their slices are planned again here, which renders exactly those records into this run's batches and passes over
+        // every record the part delivered. The part counted its rows, so only the batches written here are added.
+        var stranded = await StrandedSlicesAsync(prepared, taken, ranges.Count, ct).ConfigureAwait(false);
+        if (stranded.Count > 0)
+        {
+            _log.LogInformation(
+                "Slices {Slices} still hold records their parts queued and did not send (waiting for a record they refer to, or under a lease that ran out), in work batches this run cannot read; planning those slices again here, so the records are sent from this run.",
+                KeySlices.Describe(stranded));
+            var again = await PlanShareAsync(prepared, stranded, ct).ConfigureAwait(false);
+            totals = totals with { Batches = totals.Batches + again.Batches };
+        }
+
         var finalized = await intake.FinalizePlanningAsync(Flow, submission.SubmissionId, Parameters, totals, ct).ConfigureAwait(false);
 
-        // Every part has ended. What the submission still holds is sent here: the rows taken over, records a part left in
-        // backoff or whose lease ran out, and records released from a wait once what they waited for landed.
+        // Every part has ended. What the submission still holds is sent here, from this run's own batches: the rows taken
+        // over, records a part left waiting or whose lease ran out, and records released from a wait once what they waited
+        // for landed.
         var rest = await SendShareAsync(submission.SubmissionId, null, null, ct).ConfigureAwait(false);
         return (new IntakeResult(finalized, header, totals, AlreadyProcessed: false), new SharesSent(rest, members.Count));
+    }
+
+    /// <summary>
+    /// The key slices of a split delivery that still hold records queued in work batches this run cannot read, beside the
+    /// slices in <paramref name="taken"/>, which it plans whatever they hold: every batch a queued record of the submission
+    /// points into is asked for at this run's work location, and a batch that is not there names its slice (batches are
+    /// numbered a slice at a time, <see cref="SubmissionIntake.BatchBase"/>). A flow whose work location every node reads (a
+    /// storage location) has none: every batch is there, and the drain sends what is left as it stands.
+    /// </summary>
+    private async Task<IReadOnlyList<int>> StrandedSlicesAsync(PreparedIntake prepared, IReadOnlyCollection<int> taken, int slices, CancellationToken ct)
+    {
+        var submissionId = prepared.Submission.SubmissionId;
+        var stranded = new SortedSet<int>();
+        foreach (var batch in await RequireLedger().ListQueuedWorkBatchesAsync(Flow.Id, submissionId, ct).ConfigureAwait(false))
+        {
+            var slice = batch / SubmissionIntake.BatchesPerPartition;
+            if (slice >= slices || taken.Contains(slice) || stranded.Contains(slice))
+            {
+                continue;
+            }
+
+            if (!await WorkBatchFile.ExistsAsync(_context.Stores, prepared.WorkRoot, submissionId, batch, ct).ConfigureAwait(false))
+            {
+                stranded.Add(slice);
+            }
+        }
+
+        return [.. stranded];
     }
 
     /// <summary>

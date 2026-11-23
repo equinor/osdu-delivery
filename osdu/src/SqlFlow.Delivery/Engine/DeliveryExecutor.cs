@@ -424,6 +424,15 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
                     log.LogWarning("{Count} record(s) asked to be planned again carry no source key and the read of the whole scope did not meet their rows; each says so on its history.", gone);
                 }
 
+                // What the run could not send because the documents queued for it were out of its reach is read by key and sent
+                // now, and the run's submission is counted again once those records have moved on from it.
+                var before = requested.Passes;
+                requested = await DeliverSetAsideAsync(runtime, selection, payload, requested, log, ct).ConfigureAwait(false);
+                if (requested.Passes > before)
+                {
+                    run = run with { Submission = await runtime.Intake.CompleteAsync(run.Submission.SubmissionId, flow.Id, ct).ConfigureAwait(false) };
+                }
+
                 var delivered = DeliverOutcome.From(run, operation, source, selection.Describe(), requested);
                 LogOutcome(log, string.Create(
                     CultureInfo.InvariantCulture,
@@ -651,6 +660,72 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         }
 
         return passes with { Keyless = keyless };
+    }
+
+    /// <summary>
+    /// Delivers the records the run's workers set aside because the documents queued for them were not there to read
+    /// (<see cref="Worker.SetAsideRecords"/>; osdu/docs/reference/concepts/submissions.md, Work queued where a run cannot
+    /// read it): a record its plan did not read, queued by a run on another node or released with a document whose work
+    /// folder is gone. Each dropped what it had queued and asks to be planned again, which the flow's next run would answer
+    /// before its own pass; this run answers it now, reading the records by key as that pass does,
+    /// <see cref="FlowRuntime.RequestedPerPass"/> to a pass and each pass in a submission of its own, so they are rendered
+    /// into this run's own work batches and sent. One round only: a record a pass sets aside again (the work location lost
+    /// what was just written to it) keeps its request for the next run, so the run ends. A record that carries no source key
+    /// cannot be read by key, and is left to the next run's read of the whole scope. Returns <paramref name="passes"/> with
+    /// the passes made here added.
+    /// </summary>
+    internal static async Task<RequestedPasses> DeliverSetAsideAsync(
+        FlowRuntime runtime, SourceSelection selection, DeliveryRunPayload payload, RequestedPasses passes, ILogger log, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(passes);
+        ArgumentNullException.ThrowIfNull(log);
+        if (runtime.Context.Ledger is null || runtime.SetAside.Count == 0)
+        {
+            return passes;
+        }
+
+        var (keys, keyless) = runtime.SetAside.Take();
+        log.LogWarning(
+            "{Count} record(s) could not be sent because the documents queued for them were not where this run reads its work from (the work folder of another node, or a work location pruned since); reading them again by key and sending them now.",
+            keys.Count + keyless);
+        if (keyless > 0)
+        {
+            log.LogInformation(
+                "{Count} of them carry no source key, so they cannot be read by key; the flow's next run reads the whole scope to plan them.", keyless);
+        }
+
+        try
+        {
+            foreach (var page in keys.Chunk(Math.Max(1, runtime.RequestedPerPass)))
+            {
+                ct.ThrowIfCancellationRequested();
+                runtime.Selection = SourceSelection.ForKeys(page);
+                runtime.SubmissionId = null;
+                var run = await runtime.RunAsync(force: true, ct).ConfigureAwait(false);
+                log.LogInformation(
+                    "The records set aside, read again by key: {Summary} (submission {SubmissionId:D}).",
+                    SubmissionIntake.Summarize(run.Submission), run.Submission.SubmissionId);
+                passes = passes.Add(run.Submission.SubmissionId, page.Length, run.Submission.Planned);
+            }
+        }
+        finally
+        {
+            runtime.Selection = selection;
+            runtime.SubmissionId = payload.SubmissionId;
+        }
+
+        if (runtime.SetAside.Count > 0)
+        {
+            var (again, unkeyed) = runtime.SetAside.Take();
+            log.LogWarning(
+                "{Count} record(s) were set aside again: the documents just queued for them were not there to read either. They keep their request to be planned again, and the flow's next run plans them.",
+                again.Count + unkeyed);
+        }
+
+        return passes;
     }
 
     /// <summary>
