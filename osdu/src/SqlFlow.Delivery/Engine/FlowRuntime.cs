@@ -1757,7 +1757,6 @@ public sealed partial class FlowRuntime : IDisposable
             var ledger = RequireLedger();
             var keys = selection.Keys ?? await FilteredKeysAsync(ledger, selection.Filter!, ct).ConfigureAwait(false);
             var protocol = await ProtocolAsync(ct).ConfigureAwait(false);
-            var results = new List<RemovalRecordResult>(keys.Count);
 
             // A lease that ran out is settled first, so the only records a worker holds below are ones it is sending now.
             await ledger.RecoverExpiredLeasesAsync(Flow.Id, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
@@ -1770,24 +1769,41 @@ public sealed partial class FlowRuntime : IDisposable
             var purged = 0;
             var undone = UndoSummary.Empty;
 
-            foreach (var chunk in keys.Chunk(RemovalLimits.Chunk))
+            // A page of records at a time, as many pages at once as the flow sends records at once; a step back and an access
+            // change go a page at a time, since each keeps what it learns of the routes it writes through for the next page.
+            var lanes = stepBack is null && access is null ? RemovalLanes : 1;
+            var size = RemovalPageSize(keys.Count, lanes, SmallestRemovalPage);
+            var pageResults = new List<RemovalRecordResult>[(keys.Count + size - 1) / size];
+            var counting = new object();
+            await ForEachPageAsync(PagesOf(keys, size), lanes, async (page, token) =>
             {
-                ct.ThrowIfCancellationRequested();
+                var (index, chunk) = page;
+                var mine = new List<RemovalRecordResult>(chunk.Length);
+                var pageUndone = UndoSummary.Empty;
 
-                // The chunk's records are held while they are taken out of OSDU, so no worker sends one meanwhile. A step back
+                // The page's records are held while they are taken out of OSDU, so no worker sends one meanwhile. A step back
                 // holds none: it passes over a record with work queued or under a lease, and writes only a version OSDU held.
-                purged += await UnderRemovalHoldAsync(ledger, stepBack is null ? chunk : [], async holder =>
+                var pagePurged = await UnderRemovalHoldAsync(ledger, stepBack is null ? chunk : [], async holder =>
                 {
-                    var records = await ledger.GetRecordsAsync(Flow.Id, chunk, ct).ConfigureAwait(false);
+                    var records = await ledger.GetRecordsAsync(Flow.Id, chunk, token).ConfigureAwait(false);
 
                     // What unfinished deliveries of these records left is undone first, through the one undo path, so the
                     // removal never leaves behind a dataset, session or version no record names.
-                    var (chunkUndone, unsettled) = await UndoForRemovalAsync(ledger, protocol, records.Values.ToList(), open: true, minted: false, holder, ct).ConfigureAwait(false);
-                    undone = undone.Add(chunkUndone);
+                    var (chunkUndone, unsettled) = await UndoForRemovalAsync(ledger, protocol, records.Values.ToList(), open: true, minted: false, holder, token).ConfigureAwait(false);
+                    pageUndone = chunkUndone;
                     return await RemoveChunkAsync(
-                        ledger, protocol, chunk, records, scope, purgeLedger, deliverAgain: true, activity, stepBack, results, unsettled, holder, ct, access).ConfigureAwait(false);
-                }, ct).ConfigureAwait(false);
-            }
+                        ledger, protocol, chunk, records, scope, purgeLedger, deliverAgain: true, activity, stepBack, mine, unsettled, holder, token, access).ConfigureAwait(false);
+                }, token).ConfigureAwait(false);
+                pageResults[index] = mine;
+                lock (counting)
+                {
+                    purged += pagePurged;
+                    undone = undone.Add(pageUndone);
+                }
+            }, ct).ConfigureAwait(false);
+
+            // Each record's result in the order the records were named, whichever page finished first.
+            var results = pageResults.SelectMany(r => r ?? []).ToList();
 
             // What the removal took out of OSDU, or stepped back, leaves the cache types the pipeline puts its records into. A
             // record deleted from the ledger as well leaves no row to tell it, so its id is handed to the step.
@@ -2077,8 +2093,9 @@ public sealed partial class FlowRuntime : IDisposable
     /// Deletes the ledger (osdu/docs/reference/concepts/removal-and-reversal.md, Deleting the ledger). Nothing happens
     /// unless <paramref name="confirm"/> names the partition the ledger is kept in, and no worker holds a lease on its
     /// records. Then every record OSDU may hold is removed from it first, reversibly (the record scope), through the
-    /// removal a selection takes, a page of the ledger at a time in key order; a record the ledger already marks
-    /// removed is not asked about again. Only when OSDU answered for every one is the ledger deleted whole
+    /// removal a selection takes, a page of the ledger at a time in key order and <see cref="RemovalLanes"/> pages at once;
+    /// a record the ledger already marks removed is not asked about again. Only when OSDU answered for every one, whatever
+    /// order the pages ended in, is the ledger deleted whole
     /// (<see cref="ILedger.DeleteLedgerAsync"/>): its records, whatever their state, each kept as one line, and what it
     /// keeps of its runs, so the next run reads every row and delivers each as a new record. Before a page's records
     /// are removed, what their unfinished deliveries left is undone; once a record is out of OSDU, the datasets,
@@ -2126,46 +2143,46 @@ public sealed partial class FlowRuntime : IDisposable
             var protocol = await ProtocolAsync(ct).ConfigureAwait(false);
             var tally = new RemovalTally();
             var undone = UndoSummary.Empty;
-            DeliveryKey? after = null;
-            while (true)
+            var counting = new object();
+
+            // A page of the ledger at a time in the order of its key, as many pages at once as the flow sends records at once,
+            // each page as large as shares the ledger out over them (counted no further than fills every lane).
+            var lanes = RemovalLanes;
+            var counted = await ledger.CountAsync(Flow.Id, new RecordQuery(), lanes * RemovalLimits.Chunk, ct).ConfigureAwait(false);
+            await ForEachPageAsync(LedgerPagesAsync(ledger, RemovalPageSize(counted.Count, lanes, SmallestRemovalPage), ct), lanes, async (pageKeys, token) =>
             {
-                ct.ThrowIfCancellationRequested();
-                var page = await ledger.ListRecordsAsync(Flow.Id, after, RemovalLimits.Chunk, ct).ConfigureAwait(false);
-                if (page.Count == 0)
-                {
-                    break;
-                }
-
-                after = page[^1].DeliveryKey;
-
                 // The page's records are held while they are taken out of OSDU, so no run that started since sends one meanwhile;
                 // one a worker holds already is refused below, and the ledger is kept.
-                var pageKeys = page.Select(r => r.DeliveryKey).ToList();
                 await UnderRemovalHoldAsync(ledger, pageKeys, async holder =>
                 {
-                    var read = await ledger.GetRecordsAsync(Flow.Id, pageKeys, ct).ConfigureAwait(false);
+                    var read = await ledger.GetRecordsAsync(Flow.Id, pageKeys, token).ConfigureAwait(false);
                     var current = pageKeys.Where(read.ContainsKey).Select(k => read[k]).ToList();
 
                     // What the page's unfinished deliveries left, a removed record's included, is undone before anything is removed.
-                    undone = undone.Add((await UndoForRemovalAsync(ledger, protocol, current, open: true, minted: false, holder, ct).ConfigureAwait(false)).Undone);
+                    var opened = (await UndoForRemovalAsync(ledger, protocol, current, open: true, minted: false, holder, token).ConfigureAwait(false)).Undone;
                     var held = current.Where(r => r.Status != RecordStatus.Deleted).ToList();
-                    tally.AlreadyRemoved += current.Count - held.Count;
                     var results = new List<RemovalRecordResult>(held.Count);
                     if (held.Count > 0)
                     {
                         await RemoveChunkAsync(
                             ledger, protocol, held.Select(r => r.DeliveryKey).ToList(), held.ToDictionary(r => r.DeliveryKey), RemovalChoice.Record,
-                            purgeLedger: false, deliverAgain: false, activity, stepBack: null, results, new HashSet<DeliveryKey>(), holder, ct).ConfigureAwait(false);
-                        tally.Add(results);
+                            purgeLedger: false, deliverAgain: false, activity, stepBack: null, results, new HashSet<DeliveryKey>(), holder, token).ConfigureAwait(false);
                     }
 
                     // Once a record is out of OSDU, the ids its committed deliveries minted are removed reversibly with it.
                     var outOfOsdu = results.Where(r => r.Outcome is "removed" or "already-gone").Select(r => new DeliveryKey(r.DeliveryKey)).ToHashSet();
                     var retired = current.Where(r => r.Status == RecordStatus.Deleted || outOfOsdu.Contains(r.DeliveryKey)).ToList();
-                    undone = undone.Add((await UndoForRemovalAsync(ledger, protocol, retired, open: false, minted: true, holder, ct).ConfigureAwait(false)).Undone);
+                    var minted = (await UndoForRemovalAsync(ledger, protocol, retired, open: false, minted: true, holder, token).ConfigureAwait(false)).Undone;
+                    lock (counting)
+                    {
+                        tally.AlreadyRemoved += current.Count - held.Count;
+                        tally.Add(results);
+                        undone = undone.Add(opened).Add(minted);
+                    }
+
                     return 0;
-                }, ct).ConfigureAwait(false);
-            }
+                }, token).ConfigureAwait(false);
+            }, ct).ConfigureAwait(false);
 
             if (tally.Failed > 0)
             {
@@ -2578,7 +2595,7 @@ public sealed partial class FlowRuntime : IDisposable
 
         var result = outcome.Outcome!;
         var now = _context.Time.GetUtcNow().UtcDateTime;
-        await _context.Listener.OnEventAsync(new DeliveryEvent
+        await AnnounceAsync(new DeliveryEvent
         {
             AtUtc = now,
             FlowId = Flow.Id,
@@ -2610,7 +2627,7 @@ public sealed partial class FlowRuntime : IDisposable
         }
 
         var restricted = result.Outcome == "restricted";
-        await _context.Listener.OnEventAsync(new DeliveryEvent
+        await AnnounceAsync(new DeliveryEvent
         {
             AtUtc = _context.Time.GetUtcNow().UtcDateTime,
             FlowId = Flow.Id,
@@ -2638,7 +2655,7 @@ public sealed partial class FlowRuntime : IDisposable
             return step.Result;
         }
 
-        await _context.Listener.OnEventAsync(new DeliveryEvent
+        await AnnounceAsync(new DeliveryEvent
         {
             AtUtc = _context.Time.GetUtcNow().UtcDateTime,
             FlowId = Flow.Id,
@@ -2784,6 +2801,7 @@ public sealed partial class FlowRuntime : IDisposable
 
     public void Dispose()
     {
+        _announcing.Dispose();
         _holds?.Dispose();
         (_search as IDisposable)?.Dispose();
         _target.Dispose();

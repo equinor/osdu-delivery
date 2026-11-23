@@ -134,12 +134,13 @@ A filter that matches another count than the operator was shown is refused too (
 runs with its trace, its run log and its outcome. Its payload names the interface, `scope`, `purgeLedger`, and the records
 by `recordKeys` or by `filter` ([Running an OSDU flow](../cli/run.md)). As a run of the pipeline it never runs beside
 another of them: one asked for while a delivery of the pipeline runs starts once that run ends, and the next delivery
-waits for it. Records are removed in chunks of 500, batched into one request where the route and the scope allow it
-(only the reversible scope has a bulk call), each record with its own attempt and the run's correlation id
-([request correlation](request-correlation.md)). A record
+waits for it. Records are removed a page at a time, several pages at once
+([how a removal works through many records](#how-a-removal-works-through-many-records)), each page batched into one
+request where the route and the scope allow it (only the reversible scope has a bulk call), each record with its own
+attempt and the run's correlation id ([request correlation](request-correlation.md)). A record
 OSDU has already lost is reported as `already-gone` and settled as removed; a record with no OSDU id, or one that never
 queued a document (so this flow wrote nothing to OSDU under that id), is skipped. While a chunk is removed, its records
-are held under a lease of the removal's own, renewed every half of `reliability.leaseSeconds` as a worker renews its
+are held under a lease of the removal's own, one a page, renewed every half of `reliability.leaseSeconds` as a worker renews its
 lease: no worker claims one of them, and a plan that queues newer work for one leaves it held, so OSDU never ends up holding
 what a worker sent under the removal while the ledger says removed. A record another lease holds (a worker is sending it,
 or another removal has it) is skipped:
@@ -175,6 +176,30 @@ several interfaces names the one it removes in, with `"interface"`):
 ```bash
 sqlflow run flows/welldb-wellbore-03-delivery.yaml --operation remove --set partition=dev   --payload '{"recordKeys":["<delivery key>"],"scope":"record","purgeLedger":true}'
 ```
+
+### How a removal works through many records
+
+A removal, and the removal that opens [deleting the ledger](#deleting-the-ledger), work through their records a page at a
+time, `parallelism.recordsAtOnce` pages at once (8 by default, the records a delivery sends at the same time;
+[delivery flow](../flow/delivery.md)). A page holds as many records as shares them out over those lanes, from 50 up to 500
+(a storage call's chunk): 400 records go in eight pages of 50, 15,000 in thirty of 500, eight at a time. Each page holds
+its records under a lease of its own, undoes what their unfinished deliveries left, removes them (one bulk call for the
+reversible scope), settles them in the ledger, and, when the ledger is deleted, removes what their committed deliveries
+minted, the datasets of every record of the page in one bulk call ([Datasets registered for files](artifacts-and-undo.md#datasets-registered-for-files)).
+
+- Pages hold different records, and every write of named records takes them in the order of the ledger's key
+  ([Writes at scale](ledger.md#writes-at-scale)), so pages never wait on one another.
+- The flow's `reliability.rateLimitRps` is the run's and holds across its pages: more pages at once never send faster
+  than the flow allows.
+- A record OSDU refuses is a result, not a stop: the other pages go on, and the run ends failed naming what was refused,
+  as one page at a time did. A page that fails outright (the ledger unreachable) stops the others: pages under way are
+  cancelled, each lets its records go as its hold ends, and none starts after it. Deleting the ledger deletes it only when
+  every page is done and OSDU answered for every record, whatever order the pages ended in.
+- The run's result lists each record in the order the records were named, whichever page ended first.
+- A step back to the previous version and a change of access go a page at a time, since each keeps what it learns of the
+  routes it writes through for the next page.
+
+A flow that wants a removal gentler on OSDU sets `parallelism.recordsAtOnce` lower, or `reliability.rateLimitRps`.
 
 ### Restoring the previous version
 
@@ -233,8 +258,9 @@ refuses before anything is removed, since the next run would deliver it again
 
 1. Refuses while a worker holds a lease on the ledger's records:
    `A worker holds a lease on records of '<flow>' until <time>, so nothing was removed or deleted: work is in flight on this ledger. Delete it once that work has ended.`
-2. Removes from OSDU, at the `record` scope, every record OSDU may hold, a page of the ledger at a time in key order,
-   each page held as a removal holds its records; a record already marked removed is not asked about again. Before a record
+2. Removes from OSDU, at the `record` scope, every record OSDU may hold, a page of the ledger at a time in key order and
+   several pages at once ([how a removal works through many records](#how-a-removal-works-through-many-records)), each
+   page held as a removal holds its records; a record already marked removed is not asked about again. Before a record
    is removed, what an unfinished delivery of it left is undone; once it is out of OSDU, the datasets, content and outputs
    its deliveries minted are removed reversibly too.
 3. Only when OSDU answered for every record, deletes the ledger whole: every record whatever its state (one line of each

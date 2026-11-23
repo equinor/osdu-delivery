@@ -597,7 +597,7 @@ parallelism:
 | --- | --- | --- | --- |
 | `nodes` | integer | 8 | The most nodes a delivery is spread over, 1 to 64. A run reading at least twice `minRowsPerNode` rows is split into parts, one per `minRowsPerNode` rows and at most this many; each part delivers its range of the record table's `primaryKey` from a node of its own. 1 keeps every delivery on one node. |
 | `minRowsPerNode` | integer | 1000 | The fewest rows a part takes, so a node is started only for work enough to be worth it. At least 1. |
-| `recordsAtOnce` | integer | 8 | How many records each part, or a run alone, sends to OSDU at the same time; verify and reverse runs work this many at once too. At least 1. |
+| `recordsAtOnce` | integer | 8 | How many records each part, or a run alone, sends to OSDU at the same time; verify and reverse runs work this many at once too, and a removal and deleting the ledger work this many pages of records at once ([how a removal works through many records](../concepts/removal-and-reversal.md#how-a-removal-works-through-many-records)). At least 1. |
 | `renderThreads` | integer | 0 | The threads that render records on one node, 0 to 256; 0 is half the node's processors, at least one. |
 | `recordsPerBatch` | integer | 500 | The records one batch file holds, 1 to 100000: one file a part writes, one claim a worker takes, one unit of progress. |
 | `interfacesAtOnce` | integer | 4 | The interface form only: how many interfaces of one wave deliver at the same time, 1 to 32 ([interfaces](interfaces.md#order)). |

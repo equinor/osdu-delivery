@@ -30,16 +30,20 @@ const SYNCING_REFETCH_MS = 2000;
 
 const errorText = (error: unknown) => (isApiError(error) ? error.detail ?? error.title : String(error));
 
-/** The control plane a sync acts on, as a person tells one from another: its host. */
-function placeOf(apiBaseUrl: string | null): string {
-  if (apiBaseUrl === null) {
+/** The environment a sync acts on, as a person tells one from another: its saved name and stage, or else its host. */
+function placeOf(start: HostStart): string {
+  if (start.environment !== null) {
+    return `${start.environment.name} (${start.environment.stage})`;
+  }
+
+  if (start.apiBaseUrl === null) {
     return "this control plane";
   }
 
   try {
-    return new URL(apiBaseUrl).host;
+    return new URL(start.apiBaseUrl).host;
   } catch {
-    return apiBaseUrl;
+    return start.apiBaseUrl;
   }
 }
 
@@ -73,7 +77,7 @@ export function HostedSync({ start }: { start: HostStart }) {
   const { hasScope } = useAuth();
   const canOperate = hasScope("operate");
   const [confirming, setConfirming] = useState<RepoSource | null>(null);
-  const where = placeOf(start.apiBaseUrl);
+  const where = placeOf(start);
 
   // Read when the side bar opens and whenever it is asked to sync, and every two seconds only while a sync runs: the
   // side bar stays open all day, and a list that only matters at a click is not read all day.

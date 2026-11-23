@@ -62,6 +62,13 @@
   --info: var(--primary);
   --info-foreground: var(--primary-foreground);
 
+  /* The stage of the environment a host works against (embed/environments.ts): green, orange and red, read at a glance
+     and as text on the ground, each at 4.5:1 or more. Development and production are the status hues; test is its own
+     orange, apart from both the warning amber and the production red. */
+  --environment-development: var(--success);
+  --environment-test: #b85400;
+  --environment-production: var(--destructive);
+
   /* Workbench chrome: activity bar and status bar stay branded in both modes. The title bar shares the activity bar's
      ground, and what sits on it draws in --title-bar-foreground (and its opacities, with --title-bar-subtle for the
      attribution), so a design may make it light;
@@ -136,6 +143,8 @@
   --info: var(--primary);
   --info-foreground: var(--primary-foreground);
 
+  --environment-test: #f0883e;
+
   --title-bar: var(--activity-bar);
   --title-bar-foreground: #ffffff;
   --title-bar-subtle: color-mix(in oklab, var(--title-bar-foreground) 45%, transparent);
@@ -206,6 +215,9 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-environment-development: var(--environment-development);
+  --color-environment-test: var(--environment-test);
+  --color-environment-production: var(--environment-production);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
 

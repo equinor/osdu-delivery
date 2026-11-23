@@ -25,7 +25,7 @@ lands. This extension is where you write those files, with every record in view 
 ## Get started
 
 1. Open the folder of a delivery repository.
-2. Run **OSDU Delivery: Set Control Plane URL**, then **OSDU Delivery: Sign In with the Browser**.
+2. In the side bar, add your environments (dev, test, prod, each in its colour) and sign in to one.
 3. Open a mapping and press Ctrl+K V to see the records it makes.
 
 Completion, hover and problems work offline, with no sign-in. VS Code 1.101 or later, on Windows, Linux and macOS; the

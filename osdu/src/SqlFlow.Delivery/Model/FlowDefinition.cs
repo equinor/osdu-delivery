@@ -1370,7 +1370,10 @@ public sealed record FlowParallelism
     /// <summary>The fewest rows a part takes unless the flow says otherwise.</summary>
     public const int DefaultMinRowsPerNode = 1000;
 
-    /// <summary>The records each part, or a run alone, sends to OSDU at the same time; a verify or reverse run reads this many at once too. Default 8.</summary>
+    /// <summary>
+    /// The records each part, or a run alone, sends to OSDU at the same time; a verify or reverse run reads this many at once
+    /// too, and a removal or deleting the ledger works this many pages of records at once. Default 8.
+    /// </summary>
     public int RecordsAtOnce { get; init; } = 8;
 
     /// <summary>The threads that render records on one node. 0 means half the node's processors, at least one.</summary>

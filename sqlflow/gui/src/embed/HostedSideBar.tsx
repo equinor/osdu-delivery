@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { BookOpen, Bot, LogOut, PlugZap } from "lucide-react";
+import { BookOpen, Bot, LogOut, Server } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -13,8 +13,9 @@ import {
 import { PanelProvider } from "../layout/workbench/PanelContext";
 import { SideBarSearch, SideBarSections } from "../layout/workbench/SideBar";
 import type { GuiModule } from "../modules/registry";
+import { EnvironmentBar, EnvironmentsPanel } from "./HostedEnvironments";
 import { pageHost } from "./hostBridge";
-import { useHostStart } from "./hostState";
+import { useEnvironmentsShown, useHostStart } from "./hostState";
 import { HostedSignIn } from "./HostedSignIn";
 import { HostedSync } from "./HostedSync";
 import type { HostAction, HostSession, HostStart } from "./protocol";
@@ -30,6 +31,7 @@ function act(action: HostAction): void {
 // ---- Who is signed in ------------------------------------------------------------------------------------------------
 
 function AccountMenu({ start, session }: { start: HostStart; session: HostSession }) {
+  const [, show] = useEnvironmentsShown();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -48,14 +50,16 @@ function AccountMenu({ start, session }: { start: HostStart; session: HostSessio
           <div className="truncate text-foreground">
             {`${session.subject}${session.role === null ? "" : ` (${session.role})`}`}
           </div>
-          {start.apiBaseUrl !== null && <div className="truncate font-mono text-[11px] text-muted-foreground">{start.apiBaseUrl}</div>}
+          <div className="truncate font-mono text-[11px] text-muted-foreground">
+            {start.environment === null ? start.apiBaseUrl : `${start.environment.name}, ${start.environment.url}`}
+          </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => act("connectAssistant")} data-testid="side-bar-connect-assistant"><Bot />Connect an AI assistant</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => act("searchDocs")} data-testid="side-bar-search-docs"><BookOpen />Search the documentation</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => act("setControlPlane")} data-testid="side-bar-set-control-plane">
-          <PlugZap />
-          {start.apiBaseUrl === null ? "Set the control plane" : "Change the control plane"}
+        <DropdownMenuItem onSelect={() => show({ mode: "list" })} data-testid="side-bar-set-control-plane">
+          <Server />
+          Environments
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => act("signOut")} data-testid="side-bar-sign-out"><LogOut />Sign out</DropdownMenuItem>
@@ -82,34 +86,49 @@ function MenuOpens() {
 }
 
 /**
- * The host's side bar: the workbench's own navigation, each entry opening its page in a tab of the editor. A header
- * first, as the workbench's side bar has one: its search, which opens the search page; the sync of a repository on the
- * control plane signed in to; and who is signed in, and to where. Under it the menu. While nobody is signed in the side
- * bar is the way in alone (HostedSignIn), since nothing of the header would answer before then. The files of the folder
- * open in the editor are the editor's own Explorer's, and a flow is run from its page.
+ * The host's side bar: the workbench's own navigation, each entry opening its page in a tab of the editor. On top, the
+ * environment it works against, in its stage's colour, with the switch to another. Then a header, as the workbench's
+ * side bar has one: its search, which opens the search page; the sync of a repository on the environment signed in to;
+ * and who is signed in. Under it the menu. While nobody is signed in the side bar is the way in alone (HostedSignIn),
+ * since nothing of the header would answer before then. The person's environments, when asked for, take the place of the
+ * menu or of the way in. The files of the folder open in the editor are the editor's own Explorer's, and a flow is run
+ * from its page.
  */
 function HostedSideBar() {
   const start = useHostStart();
   const session = start.session;
+  const [environments] = useEnvironmentsShown();
+  const shown = environments !== null;
   return (
     <div className="flex h-screen min-h-0 flex-col bg-sidebar text-sidebar-foreground" data-testid="hosted-side-bar">
       <MenuOpens />
       {session === null
         ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <HostedSignIn start={start} compact />
+            {shown ? <EnvironmentsPanel start={start} /> : <HostedSignIn start={start} compact />}
           </div>
         )
         : (
           <>
-            <div className="flex shrink-0 items-center gap-1 border-b border-sidebar-border px-2 py-1.5">
-              <SideBarSearch className="min-w-0 flex-1 border-b-0 p-0" />
-              <HostedSync start={start} />
-              <AccountMenu start={start} session={session} />
-            </div>
-            <nav aria-label="Pages" className="min-h-0 flex-1 overflow-y-auto py-1" data-testid="side-bar-menu">
-              <SideBarSections reveal={null} />
-            </nav>
+            <EnvironmentBar start={start} />
+            {shown
+              ? (
+                <div className="min-h-0 flex-1 overflow-y-auto border-t border-sidebar-border">
+                  <EnvironmentsPanel start={start} />
+                </div>
+              )
+              : (
+                <>
+                  <div className="flex shrink-0 items-center gap-1 border-y border-sidebar-border px-2 py-1.5">
+                    <SideBarSearch className="min-w-0 flex-1 border-b-0 p-0" />
+                    <HostedSync start={start} />
+                    <AccountMenu start={start} session={session} />
+                  </div>
+                  <nav aria-label="Pages" className="min-h-0 flex-1 overflow-y-auto py-1" data-testid="side-bar-menu">
+                    <SideBarSections reveal={null} />
+                  </nav>
+                </>
+              )}
           </>
         )}
     </div>

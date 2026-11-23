@@ -57,6 +57,11 @@
   --info: var(--primary);
   --info-foreground: var(--primary-foreground);
 
+  /* The environment a host works against, by its stage: the design's own success, warning orange and danger. */
+  --environment-development: var(--success);
+  --environment-test: var(--warning);
+  --environment-production: var(--destructive);
+
   --title-bar: #ffffff; /* bg-neutral-surface */
   --title-bar-foreground: #1d1d1d;
   --title-bar-subtle: #6f6f6f; /* EDS legacy text, static icons tertiary */
@@ -113,6 +118,11 @@
   --warning-foreground: #040303;
   --info: var(--primary);
   --info-foreground: var(--primary-foreground);
+
+  /* The environment a host works against, by its stage: the design's own success, warning orange and danger. */
+  --environment-development: var(--success);
+  --environment-test: var(--warning);
+  --environment-production: var(--destructive);
 
   --title-bar: #202223; /* bg-neutral-surface */
   --title-bar-foreground: #f5fdff;

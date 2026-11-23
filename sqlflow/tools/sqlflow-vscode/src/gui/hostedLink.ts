@@ -12,6 +12,7 @@ import {
 } from '../../../../gui/src/embed/protocol';
 import { DocumentIndex } from '../documents/documentIndex';
 import { Carrier } from './carrier';
+import { Environments } from './environments';
 import { HostedEntry } from './hostedFiles';
 import { hostedHtml, messageHtml } from './hostedHtml';
 import { HostedSession } from './hostedSession';
@@ -22,6 +23,8 @@ export interface HostedSurroundings {
     /** The folder of the hosted build, the only one a webview may read. */
     folder: vscode.Uri;
     session: HostedSession;
+    /** The person's saved environments, which the side bar switches between and changes. */
+    environments: Environments;
     documents: DocumentIndex;
     output: vscode.LogOutputChannel;
     /** Who the carrier says it is to the control plane. */
@@ -34,6 +37,13 @@ export interface HostedSurroundings {
 export interface LinkHooks {
     /** The page shown, and what it is called. */
     located?(path: string, title: string, flowKind: string | undefined): void;
+    /**
+     * Whether this surface may switch, save and remove the person's environments: the side bar only. A switch moves where
+     * the person's sign-in goes, so a page's tab, which shows what the estate holds, is never the surface that asks it.
+     */
+    environments?: boolean;
+    /** The surface has been given what it starts with, and so listens for what follows it. */
+    started?(): void;
 }
 
 /** The command each thing a page may ask of the editor runs. */
@@ -42,7 +52,7 @@ const ACTION_COMMANDS: Readonly<Record<HostAction, string>> = {
     signInWithToken: 'sqlflow.signInWithToken',
     cancelSignIn: 'sqlflow.cancelSignIn',
     signOut: 'sqlflow.signOut',
-    setControlPlane: 'sqlflow.setControlPlaneUrl',
+    manageEnvironments: 'sqlflow.manageEnvironments',
     refreshEstate: 'sqlflow.refreshCatalog',
     connectAssistant: 'sqlflow.setupMcp',
     searchDocs: 'sqlflow.searchDocs',
@@ -111,6 +121,11 @@ export class HostedLink implements vscode.Disposable {
         this.webview.html = messageHtml(message);
     }
 
+    /** Whether the page has said it listens. */
+    get listening(): boolean {
+        return this.ready;
+    }
+
     /** Says something to the page. Nothing is said before the page has said it listens. */
     post(message: HostMessage): void {
         if (this.ready) {
@@ -128,6 +143,7 @@ export class HostedLink implements vscode.Disposable {
     private async start(): Promise<void> {
         if (this.ready) {
             this.post({ type: 'start', start: await this.around.session.start() });
+            this.hooks.started?.();
         }
     }
 
@@ -174,6 +190,11 @@ export class HostedLink implements vscode.Disposable {
             case 'watch':
                 void this.watch(message.document).catch((error: unknown) => this.failed('The document could not be read', error));
                 return;
+            case 'environment':
+                if (typeof message.id === 'number') {
+                    void this.environment(message.id, message.request);
+                }
+                return;
             case 'unwatch':
                 this.watches.get(message.document)?.dispose();
                 this.watches.delete(message.document);
@@ -195,6 +216,14 @@ export class HostedLink implements vscode.Disposable {
             return;
         }
         void vscode.env.openExternal(vscode.Uri.parse(url, true));
+    }
+
+    /** Does what the side bar asked of the person's environments, and answers it; any other surface is told it may not. */
+    private async environment(id: number, request: unknown): Promise<void> {
+        const answer = this.hooks.environments === true
+            ? await this.around.environments.handle(request)
+            : { ok: false as const, problem: 'Environments are switched and changed in the side bar.' };
+        this.post({ type: 'environmentAnswer', id, answer });
     }
 
     private async act(action: unknown): Promise<void> {

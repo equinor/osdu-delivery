@@ -13,7 +13,9 @@ export default function WindowFrame() {
     <ExplainProvider>
       <RepoFileWindowProvider>
         <div className="relative flex h-screen flex-col bg-background text-foreground" data-testid="window-frame">
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-explain-scope>
+          {/* Positioned, so what a page positions itself (a screen reader's label) scrolls with the page:
+              placed in the box around instead, it made that box scroll too, a second scroll bar. */}
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto" data-explain-scope>
             <Outlet />
           </div>
           <RepoFileDrawer maximizedClassName="inset-0" />

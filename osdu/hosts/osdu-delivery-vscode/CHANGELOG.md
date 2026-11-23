@@ -5,6 +5,23 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.5]
 
+### Environments
+
+- **Dev, test and prod, each in its colour.** Save each control plane you work against with a name and a stage
+  (development, test, production), and switch between them from the menu at the top of the side bar. The sign-in kept
+  for each comes with it, so an environment you signed in to opens with no browser while its session lasts; the list
+  says which hold one. Switching to production asks first.
+- **Always know where you are.** The environment in use is a line and a name in green, orange or red across the side
+  bar, on every page's strip (production on red) and in the status bar (production on the editor's red).
+- **Adding one is a form, not an input box**: the address is checked as you type, the name comes from it, and the stage
+  is picked when the name says one (and asked for when it does not). The sign-in's card shows the environment you sign
+  in to, and **Sign in to** names it. **Switch or Add an Environment** replaces **Set Control Plane URL**, and the list
+  is the `sqlflow.environments` setting, in your own settings only.
+- Moving to another control plane closes the pages open from the one before, whose addresses name its own flows, runs
+  and records, and **Open in the browser** follows the environment's GUI address
+  ([environments in the extension](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/guides/vscode-environments.md)).
+- The Home page has one scroll bar, where it showed a second beside its own.
+
 ### A run you start
 
 - **Delete ledger**, **Redeliver**, **Sync timelines**, **Release blocked**, **Adopt**, **Remove**, a reversal and the

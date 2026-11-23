@@ -1051,6 +1051,104 @@ public class RemovalRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_the_ledger_removes_its_pages_at_once_and_deletes_the_ledger_once_every_page_is_done()
+    {
+        var (runtime, protocol, ledger) = await DeliveredEstateAsync(recordsAtOnce: 5);
+        using (runtime)
+        {
+            // A page a record, and every removal call waits until all five pages are under way at once.
+            runtime.SmallestRemovalPage = 1;
+            Together(protocol, 5);
+            runtime.Actor = "gui:tahir";
+            var partition = (await ledger.GetLedgerAsync(runtime.Flow.Id))!.Partition!;
+            _clock.Advance(TimeSpan.FromMinutes(10));
+
+            var summary = await runtime.DeleteLedgerAsync(partition);
+
+            Assert.Equal((5, 0, 0, 5), (summary.Removed, summary.AlreadyGone, summary.AlreadyRemoved, summary.Deleted.Records));
+            Assert.Equal(5, protocol.Deletes.Select(d => d.TargetId).Distinct(StringComparer.Ordinal).Count());
+            Assert.Empty(await ledger.ListKeysAsync(runtime.Flow.Id, new RecordQuery(), 100));
+            Assert.Contains("5 record(s) removed from OSDU (reversible)", Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = runtime.Flow.Id, Kind = DeliveryOperations.DeleteLedger })).Summary!, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task A_record_OSDU_will_not_remove_on_one_page_keeps_the_ledger_whatever_the_other_pages_removed()
+    {
+        var (runtime, protocol, ledger) = await DeliveredEstateAsync(recordsAtOnce: 5);
+        using (runtime)
+        {
+            runtime.SmallestRemovalPage = 1;
+            Together(protocol, 5);
+            var keys = await ledger.ListKeysAsync(runtime.Flow.Id, new RecordQuery(), 100);
+            var refused = (await ledger.GetRecordAsync(runtime.Flow.Id, keys[3]))!.TargetId!;
+            protocol.Refuse.Add(refused);
+            var partition = (await ledger.GetLedgerAsync(runtime.Flow.Id))!.Partition!;
+            _clock.Advance(TimeSpan.FromMinutes(10));
+
+            var failure = await Assert.ThrowsAsync<DeliveryException>(() => runtime.DeleteLedgerAsync(partition));
+
+            // The four other pages removed theirs, which the ledger marks so; the ledger itself stays whole, and every page let
+            // go of its records, so the next try takes them again.
+            Assert.Contains("1 record(s) of", failure.Message, StringComparison.Ordinal);
+            Assert.Contains(refused, failure.Message, StringComparison.Ordinal);
+            Assert.Equal(5, (await ledger.ListKeysAsync(runtime.Flow.Id, new RecordQuery(), 100)).Count);
+            Assert.Equal(4, (await ledger.ListKeysAsync(runtime.Flow.Id, new RecordQuery { Status = RecordStatus.Deleted }, 100)).Count);
+            Assert.Null(await ledger.NextLeaseExpiryAsync(runtime.Flow.Id, null));
+
+            protocol.Refuse.Clear();
+            protocol.BeforeDelete = null;
+            protocol.Deletes.Clear();
+            var summary = await runtime.DeleteLedgerAsync(partition);
+            Assert.Equal((1, 4, 5), (summary.Removed, summary.AlreadyRemoved, summary.Deleted.Records));
+            Assert.Equal(refused, Assert.Single(protocol.Deletes).TargetId);
+        }
+    }
+
+    [Fact]
+    public async Task A_removal_takes_its_pages_at_once_and_reports_each_record_in_the_order_it_was_named()
+    {
+        var (runtime, protocol, ledger) = await DeliveredEstateAsync(recordsAtOnce: 5);
+        using (runtime)
+        {
+            runtime.SmallestRemovalPage = 1;
+            Together(protocol, 5);
+            var keys = (await ledger.ListKeysAsync(runtime.Flow.Id, new RecordQuery(), 100)).Reverse().ToList();
+
+            var summary = await runtime.RemoveAsync(RemovalSelection.Of(keys), RemovalChoice.Record);
+
+            Assert.Equal((5, 5, 0), (summary.Selected, summary.Removed, summary.Failed));
+            Assert.Equal(keys.Select(k => k.Value), summary.Records.Select(r => r.DeliveryKey));
+            foreach (var key in keys)
+            {
+                Assert.Equal(RecordStatus.Deleted, (await ledger.GetRecordAsync(runtime.Flow.Id, key))!.Status);
+            }
+
+            Assert.Equal("completed", Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = runtime.Flow.Id, Kind = "delete" })).Outcome);
+        }
+    }
+
+    /// <summary>
+    /// Holds every removal call of <paramref name="protocol"/> until <paramref name="together"/> of them are under way at once, so a
+    /// test proves they run together. Calls that never come together that many fail after half a minute rather than wait for
+    /// ever, and the test sees them fail.
+    /// </summary>
+    private static void Together(FakeProtocol protocol, int together)
+    {
+        var arrived = 0;
+        var all = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        protocol.BeforeDelete = async _ =>
+        {
+            if (Interlocked.Increment(ref arrived) >= together)
+            {
+                all.TrySetResult();
+            }
+
+            await all.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        };
+    }
+
+    [Fact]
     public async Task Deleting_the_ledger_names_the_partition_it_is_kept_in_or_touches_nothing()
     {
         var (runtime, protocol, ledger) = await DeliveredEstateAsync();
@@ -1109,13 +1207,14 @@ public class RemovalRuntimeTests : IDisposable
     }
 
     /// <summary>The sample estate delivered through the fake protocol, with the runtime wired to that same fake.</summary>
-    private async Task<(FlowRuntime Runtime, FakeProtocol Protocol, OsduLedger Ledger)> DeliveredEstateAsync(bool deliver = true)
+    private async Task<(FlowRuntime Runtime, FakeProtocol Protocol, OsduLedger Ledger)> DeliveredEstateAsync(bool deliver = true, int recordsAtOnce = 1)
     {
         var tables = await SampleEstate.BuildAsync(_root, _clock.GetUtcNow().UtcDateTime.AddMinutes(-5), time: _clock);
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
         var engine = Samples.Engine(ledger, _clock, new FixedProtocolFactory(protocol), sources: tables);
-        var flow = Samples.LocalFlow(_root);
+        var local = Samples.LocalFlow(_root);
+        var flow = local with { Parallelism = local.Parallelism with { RecordsAtOnce = recordsAtOnce } };
         var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         await ledger.RegisterAsync(runtime.Flow);
         var intake = await runtime.Intake.IntakeAsync(runtime.Flow, runtime.Mapping, runtime.Parameters, runtime.Request, force: false);
@@ -1160,6 +1259,18 @@ internal sealed class FixedProtocolFactory : IProtocolFactory
 [Trait("Category", "Integration")]
 public class RemovalContractTests
 {
+    [Theory]
+    [InlineData(5, 8, 1, 1)]
+    [InlineData(5, 8, 50, 50)]
+    [InlineData(400, 8, 50, 50)]
+    [InlineData(1_000, 8, 50, 125)]
+    [InlineData(15_000, 8, 50, 500)]
+    [InlineData(15_000, 1, 50, 500)]
+    [InlineData(0, 8, 50, 50)]
+    [InlineData(100, 4, 1_000, 500)]
+    public void A_removal_s_pages_share_its_records_over_its_lanes_between_the_smallest_page_and_a_storage_call(long records, int lanes, int smallest, int size)
+        => Assert.Equal(size, FlowRuntime.RemovalPageSize(records, lanes, smallest));
+
     [Theory]
     [InlineData("record", RemovalChoice.Record)]
     [InlineData("previous", RemovalChoice.Previous)]

@@ -19,6 +19,8 @@ import {
     TASK_TYPE,
 } from './editor/documentActions';
 import { builtInReferences, References } from './editor/references';
+import { sameControlPlane, STAGE_WORDS } from '../../../gui/src/embed/environments';
+import { Environments } from './gui/environments';
 import { HostedBuild, readHostedBuild } from './gui/hostedFiles';
 import { HostedSurroundings } from './gui/hostedLink';
 import { HostedPages, OpenPage } from './gui/hostedPages';
@@ -118,8 +120,10 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const signIn = new SignIn(mcp, host.product);
     const documents = new DocumentIndex(output);
     const docs = new Docs(host.docCorpora(extensionPath), mcp);
-    const session = new HostedSession(mcp, signIn, host.product);
-    context.subscriptions.push(mcp, signIn, documents, session);
+    const userAgent = `${host.mcp.program}-vscode/${version}`;
+    const environments = new Environments(output, userAgent);
+    const session = new HostedSession(mcp, signIn, host.product, environments);
+    context.subscriptions.push(mcp, signIn, documents, environments, session);
     // Signed in here is signed in for the person's other tools too: their terminals and Claude Code get the command line
     // and the server.
     const otherTools = new OtherTools(context, host.product, mcp, output);
@@ -129,6 +133,13 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     const shareControlPlane = (): void => {
         const url = vscode.workspace.getConfiguration('sqlflow').get<string>('controlPlaneUrl', '').trim();
         if (url === '') {
+            return;
+        }
+        // A test run works against a control plane of its own, which the person's other servers on the machine it runs
+        // on must not follow: the server keeps the address it is given in the person's own folder, whatever home the
+        // test gives it. This extension's server is started with the address in its environment and needs nothing more.
+        if (context.extensionMode === vscode.ExtensionMode.Test) {
+            output.info('[mcp] the control plane is not given to the other servers: the extension runs under tests.');
             return;
         }
         mcp.text('set_control_plane_url', { url }).catch((err: unknown) => {
@@ -171,9 +182,10 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         product: host.product,
         folder: vscode.Uri.file(hostedFolder(extensionPath)),
         session,
+        environments,
         documents,
         output,
-        userAgent: `${host.mcp.program}-vscode/${version}`,
+        userAgent,
         openPage: (pagePath) => pages.open(pagePath),
     });
     const icon = context.extension.packageJSON.icon as string | undefined;
@@ -196,6 +208,32 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         vscode.window.registerWebviewViewProvider(SIDE_BAR_VIEW, sideBar, { webviewOptions: { retainContextWhenHidden: true } })
     );
 
+    /** The control plane the settings name, as last seen: a change to another one closes the pages of the one before. */
+    let controlPlaneInUse = vscode.workspace.getConfiguration('sqlflow').get<string>('controlPlaneUrl', '').trim();
+    const controlPlaneMoved = (): void => {
+        const next = vscode.workspace.getConfiguration('sqlflow').get<string>('controlPlaneUrl', '').trim();
+        if (sameControlPlane(next, controlPlaneInUse)) {
+            return;
+        }
+        const before = environments.of(controlPlaneInUse === '' ? null : controlPlaneInUse)?.name
+            ?? (controlPlaneInUse === '' ? 'the control plane before' : controlPlaneInUse);
+        const after = environments.of(next === '' ? null : next)?.name
+            ?? (next === '' ? 'the control plane the server was last given' : next);
+        controlPlaneInUse = next;
+        // A page's address names its control plane's flows, runs and records by id, and the same ids on another control
+        // plane are other objects: the pages of the one before are closed rather than shown on this one.
+        const closed = hostedPages.closeAll();
+        output.info(`[environments] now working against ${after}; ${closed} page(s) of ${before} closed.`);
+        if (closed > 0) {
+            const pagesWere = closed === 1 ? 'The page' : `The ${closed} pages`;
+            const verb = closed === 1 ? 'was' : 'were';
+            void vscode.window.showInformationMessage(
+                `${host.product}: now working against ${after}. ${pagesWere} open from ${before} ${verb} closed, `
+                + `since a page's address names ${before}'s own flows, runs and records.`
+            );
+        }
+    };
+
     const refreshAll = (): void => {
         estate.forget();
         lenses.refresh();
@@ -216,6 +254,9 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
             }
         }),
         vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('sqlflow.controlPlaneUrl')) {
+                controlPlaneMoved();
+            }
             if (event.affectsConfiguration('sqlflow.controlPlaneUrl') || event.affectsConfiguration('sqlflow.guiUrl')
                 || event.affectsConfiguration('sqlflow.mcpBinaryPath')) {
                 mcp.restart();
@@ -251,16 +292,10 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
     register('sqlflow.cancelSignIn', () => signIn.cancel());
     command('sqlflow.signOut', () => signIn.signOut());
 
-    register('sqlflow.setControlPlaneUrl', async () => {
-        const current = vscode.workspace.getConfiguration('sqlflow').get<string>('controlPlaneUrl', '');
-        const url = await vscode.window.showInputBox({
-            prompt: `${host.product} control plane base URL`,
-            value: current,
-            ignoreFocusOut: true,
-        });
-        if (url) {
-            await vscode.workspace.getConfiguration('sqlflow').update('controlPlaneUrl', url.trim(), vscode.ConfigurationTarget.Global);
-        }
+    // The environments are switched, added and changed in the side bar, drawn as the rest of it is.
+    register('sqlflow.manageEnvironments', async () => {
+        sideBar.showEnvironments();
+        await vscode.commands.executeCommand(`${SIDE_BAR_VIEW}.focus`);
     });
 
     register('sqlflow.newFlow', () => newDocument(host.skeletons));
@@ -401,7 +436,7 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
                     ? { label: '$(sign-out) Sign Out', id: 'sqlflow.signOut' }
                     : { label: '$(sign-in) Sign In with the Browser', id: 'sqlflow.signIn' },
                 ...(signedIn ? [] : [{ label: '$(key) Sign In with an Access Token', id: 'sqlflow.signInWithToken' }]),
-                { label: '$(gear) Set Control Plane URL', id: 'sqlflow.setControlPlaneUrl' },
+                { label: '$(server-environment) Switch or Add an Environment', id: 'sqlflow.manageEnvironments' },
                 { label: '$(hubot) Connect an AI Assistant', id: 'sqlflow.setupMcp' },
                 { label: '$(checklist) Validate Repository', id: 'sqlflow.validateRepository' },
                 { label: '$(book) Search Docs', id: 'sqlflow.searchDocs' },
@@ -413,15 +448,40 @@ export async function activateHost(context: vscode.ExtensionContext, host: Vscod
         }
     });
 
+    // The environment the editor works against, in its stage's colour, where the editor says where a window is connected:
+    // green and orange in the item's text, and production on the red the editor keeps for what needs attention.
     const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
     status.command = 'sqlflow.showStatus';
-    const showStatus = (): void => {
-        status.text = signIn.who ? `$(account) ${host.product}` : `$(sign-in) ${host.product}: sign in`;
-        status.tooltip = signIn.who ? `Signed in as ${signIn.who}` : 'Sign in with the browser';
+    let statusAsked = 0;
+    const showStatus = async (): Promise<void> => {
+        statusAsked += 1;
+        const asked = statusAsked;
+        const url = await session.controlPlaneUrl().catch(() => null);
+        if (asked !== statusAsked) {
+            // A later change is being shown: this answer is older than it.
+            return;
+        }
+        const environment = environments.of(url);
+        const who = signIn.who;
+        if (environment === null) {
+            status.text = who ? `$(account) ${host.product}` : `$(sign-in) ${host.product}: sign in`;
+            status.tooltip = who ? `Signed in as ${who}` : 'Sign in with the browser';
+            status.color = undefined;
+            status.backgroundColor = undefined;
+        } else {
+            const stage = STAGE_WORDS[environment.stage].toLowerCase();
+            status.text = who ? `$(server-environment) ${environment.name}` : `$(sign-in) ${environment.name}: sign in`;
+            status.tooltip = `${host.product}: working against ${environment.name} (${stage}) at ${environment.url}, `
+                + (who ? `signed in as ${who}.` : 'not signed in.');
+            status.color = environment.stage === 'production'
+                ? new vscode.ThemeColor('statusBarItem.errorForeground')
+                : new vscode.ThemeColor(environment.stage === 'development' ? 'charts.green' : 'charts.orange');
+            status.backgroundColor = environment.stage === 'production' ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
+        }
         status.show();
     };
-    context.subscriptions.push(status, signIn.changed(showStatus));
-    showStatus();
+    context.subscriptions.push(status, session.changed(() => void showStatus()));
+    void showStatus();
 
     context.subscriptions.push(
         recogniseOpenedDocuments(),

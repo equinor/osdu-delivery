@@ -36,9 +36,11 @@ keywords:
   - claude code registration
   - fetch a template
   - sqlflow.controlPlaneUrl
+  - sqlflow.environments
   - sqlflow.guiUrl
   - sqlflow.cliPath
 related:
+  - delivery-guide-vscode-environments
   - delivery-guide-mcp
   - delivery-guide-writing-a-mapping
   - delivery-concept-templates
@@ -98,9 +100,9 @@ panel of the editor's own.
 
 ## Signing in
 
-Until you sign in, the side bar is the way in: the product, the control plane you sign in to with whether it answers
-(**Change** names another), and **Sign in**. A control plane that does not answer says so there, before your browser opens
-on nothing.
+Until you sign in, the side bar is the way in: the product, the [environment](vscode-environments.md) you sign in to,
+in its stage's colour, with whether it answers (**Switch** or **Change** leads to your environments), and **Sign in**. A
+control plane that does not answer says so there, before your browser opens on nothing.
 
 **Sign in** (or **OSDU Delivery: Sign In with the Browser**, or the status bar) opens your browser on the control plane.
 The control plane passes you to the GUI's approval page, which stands on the login page's brand field: you sign in the way
@@ -151,8 +153,10 @@ for files nobody has open.
 
 ## The side bar and the pages
 
-The extension's side bar is the GUI's own navigation once you are signed in. Its header holds the search, which opens
-the search page; a **Sync** button; and who is signed in, and to which control plane. Under it is the GUI's menu, and every entry opens its
+The extension's side bar is the GUI's own navigation once you are signed in. Across its top is the
+[environment](vscode-environments.md) you work against, in its stage's colour (development green, test orange, production
+red), with the menu that switches to another, adds one or manages them. Its header holds the search, which opens
+the search page; a **Sync** button; and who is signed in. Under it is the GUI's menu, and every entry opens its
 page in a tab of the editor. The files of the folder you have open are in the editor's own Explorer, and a flow is run from
 its page or from the lens at the top of its file.
 
@@ -280,7 +284,8 @@ out; **Make the Command Line and Server Available to Other Tools** puts them bac
 
 | Setting | Meaning |
 | --- | --- |
-| `sqlflow.controlPlaneUrl` | The control plane. Empty uses the address the server was last given. An untrusted workspace cannot set it, so a repository cannot choose where your sign-in goes. |
+| `sqlflow.controlPlaneUrl` | The control plane. Empty uses the address the server was last given. An untrusted workspace cannot set it, so a repository cannot choose where your sign-in goes. Switching [environments](vscode-environments.md) sets it. |
+| `sqlflow.environments` | Your environments: each a control plane's address, its name and its stage, with its GUI's address if you give one ([environments](vscode-environments.md)). Your own settings only: a workspace cannot set it. |
 | `sqlflow.guiUrl` | The GUI's public address. With it a page offers itself in the browser, and links into the GUI are absolute. |
 | `sqlflow.cliPath` | The command line. Empty uses the one the extension carries, else `sqlflow` on the PATH. A machine setting: a workspace cannot name it. |
 | `sqlflow.lspBinaryPath`, `sqlflow.mcpBinaryPath` | A build of either server instead of the packaged one. Machine settings too. |

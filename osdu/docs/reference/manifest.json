@@ -8474,10 +8474,12 @@
         "claude code registration",
         "fetch a template",
         "sqlflow.controlPlaneUrl",
+        "sqlflow.environments",
         "sqlflow.guiUrl",
         "sqlflow.cliPath"
       ],
       "related": [
+        "delivery-guide-vscode-environments",
         "delivery-guide-mcp",
         "delivery-guide-writing-a-mapping",
         "delivery-concept-templates",
@@ -8524,6 +8526,48 @@
         ".github/workflows/vscode-build.yml",
         ".github/workflows/vscode-publish.yml",
         "osdu/hosts/osdu-delivery-vscode/notices.mts"
+      ]
+    },
+    {
+      "id": "delivery-guide-vscode-environments",
+      "corpus": "reference",
+      "path": "guides/vscode-environments.md",
+      "title": "Environments in the VS Code extension: dev, test and prod, each in its colour",
+      "type": "guide",
+      "summary": "Save the control planes you work against with a name and a stage, switch between them with their sign-ins, and see the one in use in green, orange or red.",
+      "keywords": [
+        "environments",
+        "dev test prod",
+        "switch environment",
+        "switch control plane",
+        "add an environment",
+        "manage environments",
+        "environment colour",
+        "production in red",
+        "stage",
+        "development",
+        "test",
+        "production",
+        "sqlflow.environments",
+        "sign-in per control plane",
+        "status bar",
+        "side bar"
+      ],
+      "related": [
+        "delivery-guide-vscode",
+        "delivery-wiki-0061-environments-are-deployments",
+        "delivery-concept-partitions",
+        "concept-environments"
+      ],
+      "sourceRefs": [
+        "sqlflow/gui/src/embed/environments.ts",
+        "sqlflow/gui/src/embed/HostedEnvironments.tsx",
+        "sqlflow/gui/src/embed/HostedSignIn.tsx",
+        "sqlflow/tools/sqlflow-vscode/src/gui/environments.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/environmentCalls.ts",
+        "sqlflow/tools/sqlflow-vscode/src/gui/credentials.ts",
+        "sqlflow/tools/sqlflow-vscode/src/host.ts",
+        "osdu/hosts/osdu-delivery-vscode/package.json"
       ]
     },
     {

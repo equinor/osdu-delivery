@@ -250,15 +250,15 @@ public sealed class AtomicFileRouteTests
         Assert.Contains(Dataset(3), rig.Platform.Removed);
         Assert.Contains(Dataset(4), rig.Platform.Removed);
 
-        // The record is asked about first; then each landing path is looked up and every dataset found there removed. The
-        // files stay in the landing zone, which no call removes.
+        // The record is asked about first; then each landing path is looked up, and every dataset found there removed in one
+        // bulk call. The files stay in the landing zone, which no call removes.
         Assert.Equal(
             [
                 "GET " + StorageRecords + "/" + LogId,
-                "POST " + Search, "POST " + Delete(Dataset(3)),
-                "POST " + Search, "POST " + Delete(Dataset(4)),
+                "POST " + Search, "POST " + Search, "POST " + StorageRecords + "/delete",
             ],
             Since(rig.Platform, mark));
+        Assert.Equal([Dataset(3), Dataset(4)], JsonNode.Parse(rig.Platform.Calls[^1].Body!)!.AsArray().Select(n => n!.GetValue<string>()).Order(StringComparer.Ordinal));
         Assert.True(rig.Platform.Staged.ContainsKey(Landing(1)));
         Assert.True(rig.Platform.Staged.ContainsKey(Landing(2)));
     }
@@ -556,6 +556,49 @@ public sealed class AtomicFileRouteTests
     }
 
     [Fact]
+    public async Task The_datasets_of_many_records_are_removed_in_one_storage_call_and_each_record_answered_for_its_own()
+    {
+        // What the committed deliveries of three records minted, as a removal hands them over once the records are out of
+        // OSDU: two known by their id alone, and one by where its file landed, whose registration the index lists.
+        using var rig = new Rig();
+        for (var n = 1; n <= 4; n++)
+        {
+            var dataset = FakeOsduPlatform.Record(Dataset(n), "osdu:wks:dataset--File.Generic:1.0.0");
+            dataset["data"]!["DatasetProperties"] = new JsonObject { ["FileSourceInfo"] = new JsonObject { ["FileSource"] = Landing(n) } };
+            rig.Platform.Put(dataset);
+        }
+
+        var started = DateTime.UtcNow;
+        UndoWork Minted(int record, params TargetArtifact[] artifacts) => new()
+        {
+            Key = DeliveryKey.Derive("atomic-file-route", [record.ToString(CultureInfo.InvariantCulture)]),
+            TargetId = LogId + record.ToString(CultureInfo.InvariantCulture),
+            Reason = UndoReason.Removed,
+            Items = artifacts.Select((a, i) => new UndoItem((record * 10) + i, a, Guid.NewGuid(), started)).ToList(),
+        };
+        TargetArtifact Known(int n) => new() { Slot = "dataset:" + n.ToString(CultureInfo.InvariantCulture), Role = ArtifactRoles.Dataset, TargetId = Dataset(n), Status = ArtifactStatus.Live };
+        var works = new[]
+        {
+            Minted(1, Known(1), Known(2)),
+            Minted(2, Known(4)),
+            Minted(3, new TargetArtifact { Slot = "dataset:0", Role = ArtifactRoles.Dataset, Locator = Landing(3), Status = ArtifactStatus.Live }),
+        };
+
+        var mark = rig.Platform.Calls.Count;
+        var results = await rig.Protocol.UndoAsync(works);
+
+        // The index is asked once for the path, and every dataset of the three records goes in one bulk removal.
+        Assert.Equal(["POST " + Search, "POST " + StorageRecords + "/delete"], Since(rig.Platform, mark));
+        var sent = JsonNode.Parse(rig.Platform.Calls[^1].Body!)!.AsArray().Select(n => n!.GetValue<string>()).Order(StringComparer.Ordinal);
+        Assert.Equal([Dataset(1), Dataset(2), Dataset(3), Dataset(4)], sent);
+        Assert.Equal(4, results.Count);
+        Assert.All(results, r => Assert.Equal(ArtifactStatus.Removed, r.Outcome));
+        Assert.Equal(works.SelectMany(w => w.Items).Select(i => i.ArtifactId).Order(), results.Select(r => r.Item.ArtifactId).Order());
+        Assert.Contains("registered as " + Dataset(3), results.Single(r => r.Item.Artifact.Locator == Landing(3)).Note, StringComparison.Ordinal);
+        Assert.Equal([Dataset(1), Dataset(2), Dataset(3), Dataset(4)], rig.Platform.Removed.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task A_registration_sent_again_after_the_index_listed_nothing_is_undone_with_the_one_whose_answer_was_lost()
     {
         using var rig = new Rig();
@@ -674,7 +717,7 @@ public sealed class AtomicFileRouteTests
     }
 
     [Fact]
-    public async Task A_second_undo_of_several_datasets_answers_each_gone_and_changes_nothing()
+    public async Task A_second_undo_of_several_datasets_settles_each_again_and_changes_nothing()
     {
         using var rig = new Rig();
         rig.Faults.Refuse(HttpMethod.Put, StorageRecords, HttpStatusCode.BadRequest);
@@ -686,11 +729,14 @@ public sealed class AtomicFileRouteTests
         Assert.All(first.Where(r => r.Item.Artifact.Role == ArtifactRoles.Dataset), r => Assert.Equal(ArtifactStatus.Removed, r.Outcome));
         var removed = rig.Platform.Removed.ToHashSet(StringComparer.Ordinal);
 
-        // Each dataset is looked up by its landing path, which the index no longer lists, and asked for by its id alone: storage
-        // answers that it no longer holds it.
+        // Each dataset is looked up by its landing path, which the index no longer lists, and removed by its id in one bulk call,
+        // which marks a dataset storage already soft-deleted deleted again (osdu/specs/core/INTEGRATION.md, D2): each is
+        // settled, none fails, and storage holds what it held.
+        var mark = rig.Platform.Calls.Count;
         var again = await rig.Protocol.UndoAsync([undo]);
         FileFamilyLedger.AssertAnsweredOnce([undo], again);
-        Assert.All(again, r => Assert.Equal(ArtifactStatus.Gone, r.Outcome));
+        Assert.All(again, r => Assert.Contains(r.Outcome, new[] { ArtifactStatus.Removed, ArtifactStatus.Gone }));
+        Assert.Equal(1, Since(rig.Platform, mark).Count(c => c == "POST " + StorageRecords + "/delete"));
         Assert.Equal(removed, rig.Platform.Removed);
     }
 
@@ -719,28 +765,30 @@ public sealed class AtomicFileRouteTests
         }
         else
         {
-            rig.Faults.Refuse(HttpMethod.Post, Delete(Dataset(4)), HttpStatusCode.ServiceUnavailable);
+            // The datasets go in one bulk removal: that is the call that fails.
+            rig.Faults.Refuse(HttpMethod.Post, StorageRecords + "/delete", HttpStatusCode.ServiceUnavailable);
         }
 
         var results = await rig.Protocol.UndoAsync([undo]);
         FileFamilyLedger.AssertAnsweredOnce([undo], results);
         var failed = FileFamilyLedger.For(results, failingSlot);
         Assert.Equal(ArtifactStatus.Failed, failed.Outcome);
-        Assert.All(results.Where(r => r.Item.Artifact.Slot != failingSlot), r => Assert.Equal(ArtifactStatus.Removed, r.Outcome));
         if (searchFails)
         {
+            Assert.All(results.Where(r => r.Item.Artifact.Slot != failingSlot), r => Assert.Equal(ArtifactStatus.Removed, r.Outcome));
             Assert.Contains("the index could not be asked which dataset " + Landing(3) + " became", failed.Note, StringComparison.Ordinal);
             Assert.DoesNotContain(Dataset(6), rig.Platform.Removed);
             Assert.Contains(Dataset(4), rig.Platform.Removed);
+            Assert.Contains(Dataset(5), rig.Platform.Removed);
         }
         else
         {
-            Assert.Contains("503", failed.Note, StringComparison.Ordinal);
-            Assert.DoesNotContain(Dataset(4), rig.Platform.Removed);
-            Assert.Contains(Dataset(6), rig.Platform.Removed);
+            // Every dataset the failed call carried is failed with what storage said, and nothing was removed; the sweep tries
+            // each again.
+            Assert.All(results, r => Assert.Equal(ArtifactStatus.Failed, r.Outcome));
+            Assert.All(results, r => Assert.Contains("503", r.Note, StringComparison.Ordinal));
+            Assert.Empty(rig.Platform.Removed);
         }
-
-        Assert.Contains(Dataset(5), rig.Platform.Removed);
     }
 
     [Fact]
@@ -754,7 +802,9 @@ public sealed class AtomicFileRouteTests
         var undo = ledger.Undo(work);
         Assert.Equal(2, undo.Items.Count);
 
-        rig.Faults.Refuse(HttpMethod.Post, Delete(Dataset(3)), HttpStatusCode.Forbidden);
+        // Storage keeps the one dataset it will not remove for the caller and names it in the bulk call's 207; the route asks
+        // about that one alone, and storage refuses it with 403.
+        rig.Platform.RefusedDeletes.Add(Dataset(3));
         var results = await rig.Protocol.UndoAsync([undo]);
         FileFamilyLedger.AssertAnsweredOnce([undo], results);
         var refused = FileFamilyLedger.For(results, SlotOf(0, Landing(1)));
@@ -765,6 +815,7 @@ public sealed class AtomicFileRouteTests
         Assert.Contains(Dataset(4), rig.Platform.Removed);
 
         // Settled as the ledger settles it, the next undo takes only what failed, and removes it once storage takes it.
+        rig.Platform.RefusedDeletes.Clear();
         ledger.Settle(results);
         var retry = ledger.Undo(work);
         var item = Assert.Single(retry.Items);

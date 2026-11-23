@@ -178,7 +178,9 @@ public sealed class OsduFileProtocol : IDeliveryProtocol
     /// record first, when its write that names the new datasets may have landed (removed when the unit created it,
     /// given back the version before when it updated it), then each dataset removed reversibly through storage, a
     /// registration whose answer was lost found by where its file landed. A record that cannot be taken back yet keeps
-    /// its datasets with it. The files a registration copied stay in the landing zone, which no call removes.
+    /// its datasets with it. The datasets of every record given are removed together, in as few storage calls as storage
+    /// takes, once every record has gone back. The files a registration copied stay in the landing zone, which no call
+    /// removes.
     /// </summary>
     public async Task<IReadOnlyList<UndoResult>> UndoAsync(IReadOnlyList<UndoWork> works, CancellationToken ct = default)
     {
@@ -191,18 +193,26 @@ public sealed class OsduFileProtocol : IDeliveryProtocol
             Versions = _records.VersionsAsync,
         };
         var results = new List<UndoResult>();
+        var datasets = new List<DatasetUndo>();
         foreach (var work in works)
         {
             var record = work.Items.Where(i => ArtifactRoles.IsTheRecord(i.Artifact.Role)).ToList();
             var recordResults = await ArtifactUndo.RecordItselfAsync(work, record, side, ct).ConfigureAwait(false);
             results.AddRange(recordResults);
-            var datasets = work.Items.Where(i => i.Artifact.Role == ArtifactRoles.Dataset).ToList();
-            results.AddRange(ArtifactUndo.WaitForRecord(recordResults) is { } blocked
-                ? datasets.Select(i => UndoResult.Failed(i, blocked))
-                : await ArtifactUndo.DatasetsAsync(_client, _options, _records, work, datasets, ct).ConfigureAwait(false));
-            results.AddRange(ArtifactUndo.Keep(work.Items.Except(datasets).Except(record), "the file route creates nothing of this kind"));
+            var mine = work.Items.Where(i => i.Artifact.Role == ArtifactRoles.Dataset).ToList();
+            if (ArtifactUndo.WaitForRecord(recordResults) is { } blocked)
+            {
+                results.AddRange(mine.Select(i => UndoResult.Failed(i, blocked)));
+            }
+            else if (mine.Count > 0)
+            {
+                datasets.Add(new DatasetUndo(work, mine));
+            }
+
+            results.AddRange(ArtifactUndo.Keep(work.Items.Except(mine).Except(record), "the file route creates nothing of this kind"));
         }
 
+        results.AddRange(await ArtifactUndo.DatasetsAsync(_client, _options, _records, datasets, ct).ConfigureAwait(false));
         return results;
     }
 

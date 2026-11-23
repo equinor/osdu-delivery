@@ -50,21 +50,63 @@ export function tokenExpiry(token: string): number | undefined {
     }
 }
 
-/** The token the shared file keeps for a control plane, or null when it keeps none, is missing or does not parse. */
-export function fileCredential(file: string, url: string): string | null {
+/** What the shared file keeps, by control plane; empty when it is missing or does not parse, as the server reads it. */
+export function readCredentialFile(file: string): Record<string, unknown> {
     let entries: unknown;
     try {
         entries = JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch {
         // No file yet means nobody has signed in on this machine; one that does not parse holds nothing, as the server reads it.
-        return null;
+        return {};
     }
-    if (entries === null || typeof entries !== 'object' || Array.isArray(entries)) {
-        return null;
-    }
-    const entry = (entries as Record<string, unknown>)[credentialKey(url)];
-    const token = entry !== null && typeof entry === 'object' ? (entry as { token?: unknown }).token : undefined;
+    return entries !== null && typeof entries === 'object' && !Array.isArray(entries) ? (entries as Record<string, unknown>) : {};
+}
+
+/** The entry kept for a control plane in what the shared file holds, or undefined for none. */
+function entryOf(entries: Record<string, unknown>, url: string): Record<string, unknown> | undefined {
+    const entry = entries[credentialKey(url)];
+    return entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : undefined;
+}
+
+/** The token the shared file keeps for a control plane, or null when it keeps none, is missing or does not parse. */
+export function fileCredential(file: string, url: string): string | null {
+    const token = entryOf(readCredentialFile(file), url)?.token;
     return typeof token === 'string' && token !== '' ? token : null;
+}
+
+/** Who a JWT says it is (its `sub`), or undefined for a token that says nothing (an access token). */
+function tokenSubject(token: string): string | undefined {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+        return undefined;
+    }
+    try {
+        const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { sub?: unknown };
+        return typeof claims.sub === 'string' && claims.sub.trim() !== '' ? claims.sub : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * The sign-in the shared file keeps for a control plane, when it keeps one that has not ended, with who it is when the
+ * entry or its token says; null for none. What a person is shown of an environment they are not working against: a
+ * server renews only the session of the control plane it uses, so one that has ended asks for a sign-in when the person
+ * switches back to it, and one that has not signs in with no browser.
+ */
+export function heldSignIn(entries: Record<string, unknown>, url: string, now: number = Date.now()): { account: string | null } | null {
+    const entry = entryOf(entries, url);
+    const token = entry?.token;
+    if (entry === undefined || typeof token !== 'string' || token === '') {
+        return null;
+    }
+    const stated = typeof entry.expiresUtc === 'string' ? Date.parse(entry.expiresUtc) : Number.NaN;
+    const ends = Number.isFinite(stated) ? stated : tokenExpiry(token);
+    if (ends !== undefined && ends <= now + EXPIRY_FLOOR_MS) {
+        return null;
+    }
+    const username = typeof entry.username === 'string' && entry.username.trim() !== '' ? entry.username : undefined;
+    return { account: username ?? tokenSubject(token) ?? null };
 }
 
 /** The credential to present to a control plane now, or null while nobody is signed in to it. */

@@ -167,7 +167,9 @@ function WorkbenchFrame() {
                     the handle, which stays under the tab strip, brings the page back. */}
                 <ResizablePanel id="editor-content" minSize="0">
                   <div className="relative h-full">
-                    <main className="h-full overflow-y-auto bg-background" data-explain-scope>
+                    {/* Positioned, so what a page positions itself (a screen reader's label) scrolls with the page:
+                        placed in the box around instead, it made that box scroll too, a second scroll bar. */}
+                    <main className="relative h-full overflow-y-auto bg-background" data-explain-scope>
                       <div className="mx-auto max-w-[1600px] p-4 md:p-6">
                         <SideBarRoomContext.Provider value={room}>
                           <Outlet />

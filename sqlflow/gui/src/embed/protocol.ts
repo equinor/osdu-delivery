@@ -1,11 +1,14 @@
 // What a hosted page and its host say to each other. A page of this GUI can be shown by a host other than a browser tab
 // (an editor's webview): the host serves the page's files, carries its calls to the control plane under the person's
 // sign-in, and opens what the page asks for in the host's own tabs. Both sides compile this one file, the page here and
-// the host in tools/sqlflow-vscode, so a message one side sends is a message the other reads. Kept free of imports and of
-// anything a browser or Node alone has, so both compile it and the unit suites read it.
+// the host in tools/sqlflow-vscode, so a message one side sends is a message the other reads. Kept free of imports but the
+// rules of environments beside it, which are kept the same way, and of anything a browser or Node alone has, so both
+// compile it and the unit suites read it.
+
+import type { SavedEnvironment } from "./environments";
 
 /** The version of this contract. A host and a page of different versions do not talk: each is built with the other. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Who is signed in, as the host knows it. The credential itself never reaches the page. */
 export interface HostSession {
@@ -24,6 +27,17 @@ export interface HostSignIn {
   url: string;
 }
 
+/**
+ * An environment the person saved (environments.ts), with whether a sign-in is kept for it: the shared credential file
+ * keeps one per control plane, so switching to an environment that has one signs in with it and opens no browser.
+ */
+export interface HostEnvironment extends SavedEnvironment {
+  /** Whether a sign-in is kept for its control plane that has not ended. */
+  signedIn: boolean;
+  /** Who that sign-in is, when it says. */
+  account: string | null;
+}
+
 /** What a page needs before it renders, given once it says it is ready and again whenever any of it changes. */
 export interface HostStart {
   protocol: number;
@@ -38,7 +52,34 @@ export interface HostStart {
   signingIn: HostSignIn | null;
   /** The GUI's public address, when the host knows it: where "open in the browser" goes. */
   guiBaseUrl: string | null;
+  /** The environments the person saved, in their order. */
+  environments: HostEnvironment[];
+  /** The saved environment the control plane in use is; null when it is none of them, or none is set. */
+  environment: HostEnvironment | null;
 }
+
+/** Whether an address answers as a control plane, and in a sentence what it answered. */
+export interface ControlPlaneReach {
+  answers: boolean;
+  detail: string;
+}
+
+/**
+ * Something done to the person's environments, which only the host's side bar may ask for: work against a saved one,
+ * save one (new, or in place of the one at `replaces`, and with `use` work against it), remove one, or ask whether an
+ * address answers. A switch names a saved environment by its address and moves to nothing else, so no page can send a
+ * person's sign-in to an address of its choosing.
+ */
+export type EnvironmentRequest =
+  | { kind: "use"; url: string }
+  | { kind: "save"; replaces: string | null; environment: SavedEnvironment; use: boolean }
+  | { kind: "remove"; url: string }
+  | { kind: "probe"; url: string };
+
+/** The host's answer to an `EnvironmentRequest`: done (with what a probe found), or why not. */
+export type EnvironmentAnswer =
+  | { ok: true; reach: ControlPlaneReach | null }
+  | { ok: false; problem: string };
 
 /** The text of a working copy document a page watches, as the editor holds it now, saved or not. */
 export interface WatchedDocument {
@@ -103,7 +144,9 @@ export type PageMessage =
   | { type: "act"; action: HostAction }
   /** Tell the page the text of a working copy document now and whenever it changes, until `unwatch`. */
   | { type: "watch"; document: string }
-  | { type: "unwatch"; document: string };
+  | { type: "unwatch"; document: string }
+  /** Something done to the person's environments; the host answers with `environmentAnswer` and the same id. */
+  | { type: "environment"; id: number; request: EnvironmentRequest };
 
 /** What a host sends a page. */
 export type HostMessage =
@@ -117,7 +160,10 @@ export type HostMessage =
   /** A call never reached the control plane, or was dropped. */
   | { type: "failed"; id: number; reason: string; aborted: boolean }
   /** A watched document's text. */
-  | { type: "document"; watched: WatchedDocument };
+  | { type: "document"; watched: WatchedDocument }
+  | { type: "environmentAnswer"; id: number; answer: EnvironmentAnswer }
+  /** Show the person's environments, as the host's own command asks. */
+  | { type: "showEnvironments" };
 
 /**
  * What a page may ask its host to do. A fixed list, so a page (and anything that got to run in one) can never name a
@@ -129,7 +175,8 @@ export const HOST_ACTIONS = [
   /** Stop waiting for the browser sign-in the page shows. */
   "cancelSignIn",
   "signOut",
-  "setControlPlane",
+  /** Show the person's environments, where they are switched, added and changed: the host's side bar. */
+  "manageEnvironments",
   /** What the control plane runs has changed (a repository was synced): the host reads again what it keeps of it. */
   "refreshEstate",
   "connectAssistant",

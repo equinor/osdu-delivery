@@ -53,6 +53,7 @@ public sealed class OsduFileAndDdmsProtocol : IDeliveryProtocol
     {
         ArgumentNullException.ThrowIfNull(works);
         var results = new List<UndoResult>();
+        var undone = new List<DatasetUndo>();
         foreach (var work in works)
         {
             var datasets = work.Items.Where(i => i.Artifact.Role == ArtifactRoles.Dataset).ToList();
@@ -71,9 +72,15 @@ public sealed class OsduFileAndDdmsProtocol : IDeliveryProtocol
                     continue;
                 }
 
-                _storage ??= new OsduRecordProtocol(_client, RecordRestores.WriterOptions(new ProtocolOptions { BatchSize = _options.BatchSize }), _time);
-                results.AddRange(await ArtifactUndo.DatasetsAsync(_client, _files, _storage, work, datasets, ct).ConfigureAwait(false));
+                undone.Add(new DatasetUndo(work, datasets));
             }
+        }
+
+        // The datasets of every record that went back are removed together, in as few storage calls as storage takes.
+        if (undone.Count > 0)
+        {
+            _storage ??= new OsduRecordProtocol(_client, RecordRestores.WriterOptions(new ProtocolOptions { BatchSize = _options.BatchSize }), _time);
+            results.AddRange(await ArtifactUndo.DatasetsAsync(_client, _files, _storage, undone, ct).ConfigureAwait(false));
         }
 
         return results;

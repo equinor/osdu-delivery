@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Environments in the VS Code extension.** Save the control planes you work against (dev, test, prod) with a name
+  and a stage, and switch between them from the side bar: the sign-in kept for each comes with it, production asks
+  first, and the environment in use shows in green, orange or red across the side bar, on every page and in the status
+  bar. Adding one is a form in the side bar that checks the address answers and picks the stage from the name
+  ([environments in the extension](osdu/docs/reference/guides/vscode-environments.md)).
 - **Every delivery says why it was sent.** A delivered attempt keeps every input that moved since the version the ledger
   holds (the source row, a child or lookup row, the mapping with its old and new fingerprint and estate commit, the
   template, the parameters, an enrichment, the cache and the changes that reached the record, a request and who made it,
@@ -789,6 +794,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- **Set Control Plane URL** in the VS Code extension is replaced by **Switch or Add an Environment**, and moving to
+  another control plane closes the pages open from the one before, since their addresses name its flows, runs and
+  records ([environments in the extension](osdu/docs/reference/guides/vscode-environments.md#switching)).
+- **Delete ledger and Remove work several pages of records at once.** They worked one page of 500 records at a time,
+  and removed what each record's deliveries had registered (a file delivery's `dataset--File.Generic`) with a call of
+  its own. A removal now runs `parallelism.recordsAtOnce` pages at once (8 by default), each sized so every lane has
+  work, under the flow's rate limit; the datasets of a page go in one bulk call per 500. What a refusal or a failure
+  does is unchanged: the ledger is deleted only once OSDU answered for every record
+  ([how a removal works through many records](osdu/docs/reference/concepts/removal-and-reversal.md#how-a-removal-works-through-many-records)).
 - **A run an action starts shows as it starts.** **Delete ledger**, **Redeliver**, **Sync timelines**, **Release
   blocked**, **Adopt**, **Remove**, a reversal and the other actions that queue a run open the run's live trace in the
   bottom panel, with **Open run** to its page, and keep it behind the title bar's trace indicator once the panel is
@@ -1348,6 +1362,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so for every part that left records behind; and a record set aside for its missing document is read again by key and
   sent before the run ends, its timeline saying **Set aside** rather than **Held**
   ([work queued where a run cannot read it](osdu/docs/reference/concepts/submissions.md#work-queued-where-a-run-cannot-read-it)).
+- **One scroll bar on a page.** A page that places something itself (the Home page's recent runs, whose status a
+  screen reader reads) showed a second scroll bar beside its own, in the browser and in the VS Code extension, since
+  what it placed scrolled the box around the page as well as the page.
 - **A cache refresh reaches the records a `$findAll` read from a lookup table.** A row the table moved to another key,
   or a row it added under one, left the records built from that key as they were, so a log could keep an access group
   the table no longer listed for its field. They are now tagged `relisted`, as for a type of OSDU records

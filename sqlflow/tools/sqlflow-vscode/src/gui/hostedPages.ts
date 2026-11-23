@@ -56,6 +56,17 @@ export class HostedPages implements vscode.Disposable {
         }
     }
 
+    /**
+     * Closes every page's tab, and says how many there were: what the editor does when it moves to another control plane,
+     * since a page's address names that control plane's own flows, runs and records by their ids, and the same address on
+     * another one names something else.
+     */
+    closeAll(): number {
+        const open = [...this.pages];
+        open.forEach((page) => page.panel.dispose());
+        return open.length;
+    }
+
     /** Shows a page of the GUI: in the tab already on it, or in a new one. */
     open(pagePath: string, where: OpenPage = {}): void {
         if (!isGuiPath(pagePath)) {

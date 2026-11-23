@@ -35,6 +35,9 @@ internal sealed record RecordSide
     public Func<string, CancellationToken, Task<IReadOnlyList<long>?>>? Versions { get; init; }
 }
 
+/// <summary>One record's file registrations an undo removes: the record's undo work, and the dataset artifacts of it to undo.</summary>
+internal sealed record DatasetUndo(UndoWork Work, IReadOnlyList<UndoItem> Items);
+
 /// <summary>
 /// The undo steps the routes share (osdu/docs/reference/concepts/artifacts-and-undo.md, What every route's undo
 /// shares): soft deletes of the OSDU ids a unit minted through storage, finding a file registration whose answer was
@@ -46,11 +49,24 @@ internal sealed record RecordSide
 internal static class ArtifactUndo
 {
     /// <summary>
-    /// Removes <paramref name="targets"/> reversibly through the storage service (<c>POST /records/delete</c>, 500 ids a
-    /// request, falling back one at a time as a removal does): removed, gone when storage no longer held it, or failed with what
-    /// storage said.
+    /// Removes <paramref name="targets"/>, ids one record's unit minted, reversibly through the storage service
+    /// (<see cref="SoftDeleteManyAsync"/>).
     /// </summary>
-    public static async Task<IReadOnlyList<UndoResult>> SoftDeleteAsync(OsduRecordProtocol storage, Identity.DeliveryKey key, IReadOnlyList<(UndoItem Item, string Id)> targets, CancellationToken ct)
+    public static Task<IReadOnlyList<UndoResult>> SoftDeleteAsync(OsduRecordProtocol storage, Identity.DeliveryKey key, IReadOnlyList<(UndoItem Item, string Id)> targets, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        return SoftDeleteManyAsync(storage, targets.Select(t => (t.Item, key, t.Id)).ToList(), ct);
+    }
+
+    /// <summary>
+    /// Removes <paramref name="targets"/>, ids the units of any number of records minted, reversibly through the storage service
+    /// in as few calls as storage takes them (<c>POST /records/delete</c>, 500 ids a request, falling back one at a time as a
+    /// removal does): each answered removed, gone when storage no longer held it, or failed with what storage said, in the order
+    /// given. An id named twice is sent once, and both are answered with what became of it. A failure of the call as a whole
+    /// (storage unreachable, throttled past its retries) answers every target with it, so the sweep tries each again.
+    /// </summary>
+    public static async Task<IReadOnlyList<UndoResult>> SoftDeleteManyAsync(
+        OsduRecordProtocol storage, IReadOnlyList<(UndoItem Item, Identity.DeliveryKey Key, string Id)> targets, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(targets);
@@ -59,7 +75,10 @@ internal static class ArtifactUndo
             return [];
         }
 
-        var removals = targets.Select(t => new RecordRemoval(key, t.Id, null)).ToList();
+        var removals = targets
+            .DistinctBy(t => t.Id, StringComparer.Ordinal)
+            .Select(t => new RecordRemoval(t.Key, t.Id, null))
+            .ToList();
         IReadOnlyList<RemovalResult> removed;
         try
         {
@@ -70,78 +89,105 @@ internal static class ArtifactUndo
             return targets.Select(t => UndoResult.Failed(t.Item, Redact(ex))).ToList();
         }
 
-        var results = new List<UndoResult>(targets.Count);
-        for (var i = 0; i < targets.Count; i++)
+        // Storage answers each removal in the order it was given, which is the order of the distinct ids.
+        var byId = new Dictionary<string, RemovalResult>(StringComparer.Ordinal);
+        for (var i = 0; i < removals.Count && i < removed.Count; i++)
         {
-            var result = i < removed.Count ? removed[i] : null;
-            results.Add(result switch
-            {
-                { Failure: { } failure } => UndoResult.Failed(targets[i].Item, Redact(failure)),
-                { Outcome.AlreadyGone: true } => UndoResult.Gone(targets[i].Item, $"{targets[i].Id}: storage no longer holds it"),
-                { Outcome: { } outcome } => UndoResult.Removed(targets[i].Item, $"{targets[i].Id}: {outcome.Detail}"),
-                _ => UndoResult.Failed(targets[i].Item, "storage gave no answer for it"),
-            });
+            byId[removals[i].TargetId] = removed[i];
         }
 
-        return results;
+        return targets
+            .Select(t => byId.GetValueOrDefault(t.Id) switch
+            {
+                { Failure: { } failure } => UndoResult.Failed(t.Item, Redact(failure)),
+                { Outcome.AlreadyGone: true } => UndoResult.Gone(t.Item, $"{t.Id}: storage no longer holds it"),
+                { Outcome: { } outcome } => UndoResult.Removed(t.Item, $"{t.Id}: {outcome.Detail}"),
+                _ => UndoResult.Failed(t.Item, "storage gave no answer for it"),
+            })
+            .ToList();
     }
 
     /// <summary>
-    /// Undoes file registrations (<see cref="ArtifactRoles.Dataset"/>): every dataset registered for the landing-zone path a
-    /// registration names is removed reversibly through storage, found by the index (the path is one upload's alone, so each is
-    /// the unit's: a registration whose answer was lost, and the one a later try sent again under the same slot when the index
-    /// had not listed the first), with the id the registration answered. One that names no path is removed by its id. An intent
-    /// the index lists nothing for is gone: the registration never landed, or the index has not caught up, which the inventory
-    /// finds if it did.
+    /// Undoes one record's file registrations (<see cref="DatasetsAsync(OsduHttpClient, ProtocolOptions, OsduRecordProtocol, IReadOnlyList{DatasetUndo}, CancellationToken)"/>).
     /// </summary>
-    public static async Task<IReadOnlyList<UndoResult>> DatasetsAsync(
+    public static Task<IReadOnlyList<UndoResult>> DatasetsAsync(
         OsduHttpClient client, ProtocolOptions options, OsduRecordProtocol storage, UndoWork work, IReadOnlyList<UndoItem> items, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(work);
         ArgumentNullException.ThrowIfNull(items);
-        var results = new List<UndoResult>(items.Count);
-        var targets = new List<(UndoItem Item, string Id)>();
-        foreach (var item in items)
+        return DatasetsAsync(client, options, storage, [new DatasetUndo(work, items)], ct);
+    }
+
+    /// <summary>
+    /// Undoes file registrations (<see cref="ArtifactRoles.Dataset"/>) of any number of records: every dataset registered for
+    /// the landing-zone path a registration names is removed reversibly through storage, found by the index (the path is one
+    /// upload's alone, so each is the unit's: a registration whose answer was lost, and the one a later try sent again under the
+    /// same slot when the index had not listed the first), with the id the registration answered. One that names no path is
+    /// removed by its id. An intent the index lists nothing for is gone: the registration never landed, or the index has not
+    /// caught up, which the inventory finds if it did. The index is asked once a path; every dataset found, and every one known
+    /// by its id, of every record given, is then removed in as few storage calls as storage takes
+    /// (<see cref="SoftDeleteManyAsync"/>), so undoing the datasets of a page of records costs a call per 500 of them rather
+    /// than one a record.
+    /// </summary>
+    public static async Task<IReadOnlyList<UndoResult>> DatasetsAsync(
+        OsduHttpClient client, ProtocolOptions options, OsduRecordProtocol storage, IReadOnlyList<DatasetUndo> asked, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(asked);
+        var results = new List<UndoResult>();
+        var targets = new List<(UndoItem Item, Identity.DeliveryKey Key, string Id)>();
+
+        // Which targets answer an item by themselves (known by their id), and which together answer one path's registration.
+        var direct = new List<int>();
+        var found = new List<(UndoItem Item, int First, IReadOnlyList<string> Ids)>();
+        foreach (var (work, items) in asked)
         {
-            var known = item.Artifact.TargetId;
-            if (item.Artifact.Locator is not { } landed)
+            foreach (var item in items)
             {
-                if (known is not null)
+                var known = item.Artifact.TargetId;
+                if (item.Artifact.Locator is not { } landed)
                 {
-                    targets.Add((item, known));
+                    if (known is not null)
+                    {
+                        direct.Add(targets.Count);
+                        targets.Add((item, work.Key, known));
+                    }
+                    else
+                    {
+                        results.Add(UndoResult.Kept(item, "the registration names neither the dataset it made nor where its file landed, so nothing can find it"));
+                    }
+
+                    continue;
                 }
-                else
+
+                IReadOnlyList<string> listed;
+                try
                 {
-                    results.Add(UndoResult.Kept(item, "the registration names neither the dataset it made nor where its file landed, so nothing can find it"));
+                    listed = await FileUploads.RegisteredAtAsync(client, options, landed, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (Answerable(ex, ct))
+                {
+                    results.Add(UndoResult.Failed(item, $"the index could not be asked which dataset {landed} became: {Redact(ex)}"));
+                    continue;
                 }
 
-                continue;
-            }
+                var ids = (known is null ? listed : listed.Append(known)).Distinct(StringComparer.Ordinal).ToList();
+                if (ids.Count == 0)
+                {
+                    results.Add(UndoResult.Gone(item, $"the index lists no dataset registered for {landed}: the registration did not land, or the index has not listed it yet (an inventory of the dataset kind finds it if it did)"));
+                    continue;
+                }
 
-            IReadOnlyList<string> listed;
-            try
-            {
-                listed = await FileUploads.RegisteredAtAsync(client, options, landed, ct).ConfigureAwait(false);
+                // Every dataset registered for the path is this unit's: the landing-zone path is one upload's alone.
+                found.Add((item, targets.Count, ids));
+                targets.AddRange(ids.Select(id => (item, work.Key, id)));
             }
-            catch (Exception ex) when (Answerable(ex, ct))
-            {
-                results.Add(UndoResult.Failed(item, $"the index could not be asked which dataset {landed} became: {Redact(ex)}"));
-                continue;
-            }
-
-            var found = (known is null ? listed : listed.Append(known)).Distinct(StringComparer.Ordinal).ToList();
-            if (found.Count == 0)
-            {
-                results.Add(UndoResult.Gone(item, $"the index lists no dataset registered for {landed}: the registration did not land, or the index has not listed it yet (an inventory of the dataset kind finds it if it did)"));
-                continue;
-            }
-
-            // Every dataset registered for the path is this unit's: the landing-zone path is one upload's alone.
-            var removed = await SoftDeleteAsync(storage, work.Key, found.Select(f => (item, f)).ToList(), ct).ConfigureAwait(false);
-            results.Add(Combine(item, removed, found));
         }
 
-        results.AddRange(await SoftDeleteAsync(storage, work.Key, targets, ct).ConfigureAwait(false));
+        var removed = await SoftDeleteManyAsync(storage, targets, ct).ConfigureAwait(false);
+        results.AddRange(direct.Select(i => removed[i]));
+        results.AddRange(found.Select(f => Combine(f.Item, removed.Skip(f.First).Take(f.Ids.Count).ToList(), f.Ids)));
         return results;
     }
 

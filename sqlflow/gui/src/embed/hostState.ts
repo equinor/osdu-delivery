@@ -1,11 +1,18 @@
 // What a hosted page knows from its host (protocol.ts), kept where React reads it: who is signed in and where the
-// control plane is, the text of the documents a page watches, and the mode of the host's own theme. Each is a small store read with useSyncExternalStore, so a message from the host re-renders exactly
-// what reads it, and nothing here sets state from an effect.
+// control plane is, the text of the documents a page watches, whether the side bar shows the person's environments, and
+// the mode of the host's own theme. Each is a small store read with useSyncExternalStore, so a message from the host
+// re-renders exactly what reads it, and nothing here sets state from an effect.
 
 import { useEffect, useSyncExternalStore } from "react";
 import { useLocation } from "react-router-dom";
 import { pageHost } from "./hostBridge";
-import { PROTOCOL_VERSION, type HostStart, type WatchedDocument } from "./protocol";
+import {
+  PROTOCOL_VERSION,
+  type EnvironmentAnswer,
+  type EnvironmentRequest,
+  type HostStart,
+  type WatchedDocument,
+} from "./protocol";
 import type { ThemeMode } from "../theme/designs";
 
 /** A value that changes, and who wants to know. */
@@ -38,6 +45,21 @@ class Store<T> {
 
 const start = new Store<HostStart | null>(null);
 const watched = new Map<string, { store: Store<WatchedDocument | null>; readers: number }>();
+/** The environment requests waiting for the host's answer, by id. */
+const asked = new Map<number, (answer: EnvironmentAnswer) => void>();
+let lastAsked = 0;
+/**
+ * What of the person's environments the side bar shows in place of its menu or its sign-in, or null for none: the list,
+ * the form that adds one (with an address to start from, when it saves the control plane in use), or the form that
+ * changes the one at `url`. One value for the whole side bar, so the list stays open while the person signs in to the
+ * environment they picked in it, and the host's own command opens it before the side bar has rendered as well as after.
+ */
+export type EnvironmentsView =
+  | { mode: "list" }
+  | { mode: "add"; url: string; guiUrl: string }
+  | { mode: "edit"; url: string };
+
+const environmentsShown = new Store<EnvironmentsView | null>(null);
 
 let connected: Promise<HostStart> | null = null;
 
@@ -66,6 +88,15 @@ export function connectHost(): Promise<HostStart> {
         case "document":
           watched.get(message.watched.document)?.store.set(message.watched);
           return;
+        case "environmentAnswer": {
+          const waiting = asked.get(message.id);
+          asked.delete(message.id);
+          waiting?.(message.answer);
+          return;
+        }
+        case "showEnvironments":
+          environmentsShown.set({ mode: "list" });
+          return;
         default:
           return;
       }
@@ -73,6 +104,29 @@ export function connectHost(): Promise<HostStart> {
     host.send({ type: "ready", protocol: PROTOCOL_VERSION });
   });
   return connected;
+}
+
+/**
+ * Asks the host to do something to the person's environments and waits for its answer: switch, save, remove, or whether
+ * an address answers. Only the side bar is answered; a page's tab is told it may not.
+ */
+export function askHost(request: EnvironmentRequest): Promise<EnvironmentAnswer> {
+  lastAsked += 1;
+  const id = lastAsked;
+  return new Promise<EnvironmentAnswer>((resolve) => {
+    asked.set(id, resolve);
+    pageHost().send({ type: "environment", id, request });
+  });
+}
+
+/** What of the person's environments the side bar shows, and the way to show another view or none. */
+export function useEnvironmentsShown(): [EnvironmentsView | null, (view: EnvironmentsView | null) => void] {
+  const shown = useSyncExternalStore(environmentsShown.subscribe, environmentsShown.read);
+  return [shown, showEnvironments];
+}
+
+function showEnvironments(view: EnvironmentsView | null): void {
+  environmentsShown.set(view);
 }
 
 /**

@@ -604,8 +604,14 @@ public static class RemovalLimits
     /// </summary>
     public const int MaxSelection = 25_000;
 
-    /// <summary>Records resolved, removed and written back per round trip.</summary>
+    /// <summary>Records resolved, removed and written back per round trip: the most a page of a removal holds.</summary>
     public const int Chunk = 500;
+
+    /// <summary>
+    /// The fewest records a page of a removal holds when it shares a few records out over several lanes
+    /// (osdu/docs/reference/concepts/removal-and-reversal.md, How a removal works through many records).
+    /// </summary>
+    public const int SmallestPage = 50;
 
     /// <summary>Per-record results carried back in a removal's task result before it is summarised instead.</summary>
     public const int MaxReported = 200;

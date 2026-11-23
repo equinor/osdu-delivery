@@ -245,10 +245,17 @@ the next undo, so OSDU never serves a record naming what the undo already remove
 A `dataset` artifact the file service minted carries the landing-zone path its file was uploaded to. The undo asks the
 search index for every dataset registered for that path (each path is one upload's alone, so every one of them is the
 unit's), adds the id the registration answered, and soft-deletes them all through storage (`POST /records/delete`, 500
-ids a request): `removed`, `gone` when storage no longer holds them, or `gone` when the index lists none (the
+ids a request): `removed`, `gone` when storage never held one or holds it no more, or `gone` when the index lists none (the
 registration did not land, or the index has not listed it yet; an inventory of the dataset kind finds it if it did). A
 dataset artifact with an id and no path is soft-deleted by its id; one with neither is `kept`. The files a registration
 copied stay in the landing zone, which no call removes.
+
+The datasets of every record an undo is given go in the same bulk calls, once the index has been asked for each path:
+undoing what a page of a removal's records minted costs a call per 500 datasets, not one a record. Storage answers a bulk
+call with the ids it kept, each asked about again alone (`gone` when storage never held it, `failed` with storage's answer
+when it refused), and marks an id it soft-deleted before deleted again, which settles it `removed`
+([osdu/specs/core/INTEGRATION.md](../../../specs/core/INTEGRATION.md), D2). A bulk call that fails as a whole fails every
+dataset it carried, and the sweep tries each again.
 
 ### Registrations under ids the route chooses
 

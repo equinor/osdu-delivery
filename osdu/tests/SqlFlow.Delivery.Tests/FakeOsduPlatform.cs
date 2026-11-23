@@ -107,6 +107,9 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
 
     public HashSet<string> Removed { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The ids storage will not soft-delete for the caller: 403 alone, named in a bulk delete's 207 (osdu/specs/core/INTEGRATION.md, D1, D2).</summary>
+    public HashSet<string> RefusedDeletes { get; } = new(StringComparer.Ordinal);
+
     public HashSet<string> Purged { get; } = new(StringComparer.Ordinal);
 
     /// <summary>The ids storage brought back from a soft delete through a merge patch, in the order it did.</summary>
@@ -631,12 +634,28 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
 
         if (operation == "records/delete" && method == "POST")
         {
+            // As storage answers it (osdu/specs/core/INTEGRATION.md, D2): every id it can delete is deleted, an id already
+            // soft-deleted is marked deleted again and not reported, and the ids it kept are named in a 207, each with why.
+            var kept = new JsonArray();
             foreach (var id in JsonNode.Parse(body!)!.AsArray().Select(i => i!.GetValue<string>()))
             {
-                Removed.Add(id);
+                if (!Records.ContainsKey(id))
+                {
+                    kept.Add(new JsonObject { ["notDeletedRecordId"] = id, ["message"] = $"Record with id '{id}' not found" });
+                }
+                else if (RefusedDeletes.Contains(id))
+                {
+                    kept.Add(new JsonObject { ["notDeletedRecordId"] = id, ["message"] = $"The user is not authorized to perform delete record with id {id}" });
+                }
+                else
+                {
+                    Removed.Add(id);
+                }
             }
 
-            return new HttpResponseMessage(HttpStatusCode.NoContent);
+            return kept.Count == 0
+                ? new HttpResponseMessage(HttpStatusCode.NoContent)
+                : new HttpResponseMessage(HttpStatusCode.MultiStatus) { Content = new StringContent(kept.ToJsonString(), System.Text.Encoding.UTF8, "application/json") };
         }
 
         // The version list beside the record (openapi storage v2, GET /records/versions/{id}): every version the record's
@@ -675,6 +694,11 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
                 if (!Records.ContainsKey(id) || Removed.Contains(id))
                 {
                     return Error(HttpStatusCode.NotFound, "Record not found");
+                }
+
+                if (RefusedDeletes.Contains(id))
+                {
+                    return Error(HttpStatusCode.Forbidden, $"The user is not authorized to perform delete record with id {id}");
                 }
 
                 Removed.Add(id);

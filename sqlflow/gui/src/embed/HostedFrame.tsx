@@ -17,6 +17,7 @@ import { TraceIndicator } from "../layout/workbench/TraceIndicator";
 import { TraceTrayProvider } from "../layout/workbench/TraceTray";
 import { usePersistentLayout } from "../layout/workbench/usePersistentLayout";
 import { moduleTitleBarItems } from "../modules/registry";
+import { PageEnvironment, PageEnvironmentLine } from "./HostedEnvironments";
 import { pageHost } from "./hostBridge";
 import { useHostStart } from "./hostState";
 
@@ -127,9 +128,10 @@ function BarButton({ label, disabled, onClick, children }: {
 
 /**
  * The strip over a hosted page, where the workbench has its title bar: back and forward through what this tab has
- * shown, read everything again, and on the right what the title bar carries that a page needs wherever it is shown,
- * the trace indicator and the controls the registered modules add (the scope every page of a module is read in), with
- * the way to the same page in a browser when the host knows the GUI's address. The editor's own tab names the page.
+ * shown, read everything again, and on the right what the title bar carries that a page needs wherever it is shown:
+ * the environment the page works against, the trace indicator and the controls the registered modules add (the scope
+ * every page of a module is read in), with the way to the same page in a browser when the host knows the GUI's address.
+ * The editor's own tab names the page.
  */
 function HostedBar() {
   const navigate = useNavigate();
@@ -147,6 +149,7 @@ function HostedBar() {
       <BarButton label="Forward" disabled={place.index >= place.keys.length - 1} onClick={() => navigate(1)}><ArrowRight /></BarButton>
       <BarButton label="Read everything on this page again" onClick={() => void queries.invalidateQueries()}><RotateCw /></BarButton>
       <div className="flex-1" />
+      <PageEnvironment />
       <TraceIndicator />
       {moduleTitleBarItems().map((control) => <control.component key={control.id} />)}
       {guiBaseUrl !== null && (
@@ -181,6 +184,7 @@ function Workbench() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" data-testid="hosted-frame">
       <HostedPageLink />
+      <PageEnvironmentLine />
       <HostedBar />
       <ResizablePanelGroup
         orientation="vertical"
@@ -190,7 +194,9 @@ function Workbench() {
       >
         <ResizablePanel id="editor-content" minSize="0">
           <div className="relative h-full">
-            <main className="h-full overflow-y-auto bg-background" data-explain-scope>
+            {/* Positioned, so what a page positions itself (a screen reader's label) scrolls with the page:
+                placed in the box around instead, it made that box scroll too, a second scroll bar. */}
+            <main className="relative h-full overflow-y-auto bg-background" data-explain-scope>
               <div className="mx-auto max-w-[1600px] p-4 md:p-6">
                 <SideBarRoomContext.Provider value={room}>
                   <Outlet />

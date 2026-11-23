@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, ExternalLink, FileCheck, KeyRound, LogIn, PlugZap } from "lucide-react";
+import { BookOpen, ExternalLink, FileCheck, KeyRound, LogIn, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { authApi } from "../api/endpoints";
 import { branding } from "../modules/branding";
 import { controlPlaneAddress } from "./controlPlaneAddress";
 import { pageHost } from "./hostBridge";
+import { shownAddress, StageDot, StageLine, StageWord } from "./HostedEnvironments";
+import { useEnvironmentsShown } from "./hostState";
 import type { HostAction, HostSignIn, HostStart } from "./protocol";
 
 function act(action: HostAction): void {
@@ -99,37 +101,80 @@ function useReach(apiBaseUrl: string | null): Reach {
   return answer.isSuccess ? "answering" : answer.isError ? "silent" : "checking";
 }
 
-function ReachMark({ reach }: { reach: Reach }) {
+/** Whether the control plane answers, said while it is asked; an answer is the calm case, and silence is said below it. */
+function ReachText({ reach }: { reach: Reach }) {
   return (
-    <span className="relative mt-[5px] flex size-2 shrink-0" title={REACH_WORDS[reach]} data-testid="hosted-control-plane-reach" data-reach={reach}>
-      {reach === "checking" && <span className="absolute inset-0 rounded-full bg-muted-foreground/60 motion-safe:animate-pulse" />}
-      {reach === "answering" && <span className="absolute inset-0 rounded-full bg-success" />}
-      {reach === "silent" && <span className="absolute inset-0 rounded-full bg-destructive" />}
-      <span className="sr-only">{REACH_WORDS[reach]}</span>
+    <span data-testid="hosted-control-plane-reach" data-reach={reach}>
+      {reach === "checking"
+        ? <span className="motion-safe:animate-pulse">{" · asking"}</span>
+        : <span className="sr-only">{REACH_WORDS[reach]}</span>}
     </span>
   );
 }
 
-/** The control plane the person signs in to: its name, the rest of its address, whether it answers, and the change. */
-function ControlPlane({ start }: { start: HostStart }) {
+/** Where the environments are shown and changed from the sign-in: in the side bar itself, or, from a page's tab, in it. */
+interface EnvironmentWays {
+  /** The list of the person's environments. */
+  manage: () => void;
+  /** The form, starting from the control plane in use, or from nothing. */
+  add: (url: string, guiUrl: string) => void;
+}
+
+/**
+ * The environment the person signs in to: a line and a dot in its stage's colour, its name and stage, its address and
+ * whether it answers, and the way to another one. A control plane that is none of the saved environments shows hollow,
+ * with the way to save it with its stage; with none at all, the way to add the first.
+ */
+function EnvironmentCard({ start, ways }: { start: HostStart; ways: EnvironmentWays }) {
   const reach = useReach(start.apiBaseUrl);
+  const environment = start.environment;
+  const stage = environment?.stage ?? null;
   const address = start.apiBaseUrl === null ? null : controlPlaneAddress(start.apiBaseUrl);
   const problem = start.sessionProblem ?? (reach === "silent" ? "It does not answer. Check the address, and that it is running." : null);
 
   return (
-    <section className="rounded-md border border-border bg-card text-left" aria-label="Control plane" data-testid="hosted-control-plane">
+    <section
+      className="overflow-hidden rounded-md border border-border bg-card text-left"
+      aria-label="Environment"
+      data-testid="hosted-control-plane"
+      data-stage={stage ?? "none"}
+    >
+      {stage !== null && <StageLine stage={stage} />}
       <div className="flex items-center justify-between gap-2 px-3 pt-2">
-        <span className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">Control plane</span>
-        <HostLink onClick={() => act("setControlPlane")} testId="hosted-set-control-plane">{address === null ? "Set" : "Change"}</HostLink>
+        <span className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">Environment</span>
+        {(address !== null || start.environments.length > 0) && (
+          <HostLink onClick={ways.manage} testId="hosted-set-control-plane">
+            {start.environments.length > 1 || (start.environments.length === 1 && environment === null) ? "Switch" : "Change"}
+          </HostLink>
+        )}
       </div>
       {address === null
-        ? <p className="px-3 pt-0.5 pb-2.5 text-[12px] text-muted-foreground">None is set yet. Name the one your team runs to sign in to it.</p>
+        ? <p className="px-3 pt-0.5 pb-2.5 text-[12px] text-muted-foreground">None yet. Add the control plane your team runs, with its stage, to sign in to it.</p>
         : (
           <div className="flex items-start gap-2 px-3 pt-0.5 pb-2.5" title={start.apiBaseUrl ?? undefined}>
-            <ReachMark reach={reach} />
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium text-foreground" data-testid="hosted-control-plane-name">{address.name}</div>
-              {address.rest !== null && <div className="truncate font-mono text-[11px] text-muted-foreground">{address.rest}</div>}
+            <StageDot stage={stage} className="mt-[5px]" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="truncate font-mono text-[13px] font-semibold text-foreground" data-testid="hosted-control-plane-name">
+                  {environment?.name ?? address.name}
+                </span>
+                <StageWord stage={stage} />
+              </div>
+              <div className="truncate font-mono text-[11px] text-muted-foreground">
+                {/* A local address is its own name: said once, above. */}
+                {environment === null && address.rest === null ? null : shownAddress(start.apiBaseUrl ?? "")}
+                <ReachText reach={reach} />
+              </div>
+              {environment === null && (
+                <button
+                  type="button"
+                  onClick={() => ways.add(start.apiBaseUrl ?? "", start.guiBaseUrl ?? "")}
+                  className="mt-1 rounded-sm text-[12px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  data-testid="hosted-save-control-plane"
+                >
+                  Save it with its stage
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -140,13 +185,16 @@ function ControlPlane({ start }: { start: HostStart }) {
   );
 }
 
-/** The ways in: the browser first, a pasted token for a place no browser reaches. With no control plane, naming one. */
-function WaysIn({ start }: { start: HostStart }) {
+/**
+ * The ways in: the browser first, naming the environment it signs in to, and a pasted token for a place no browser
+ * reaches. With no control plane, adding the first environment.
+ */
+function WaysIn({ start, ways }: { start: HostStart; ways: EnvironmentWays }) {
   if (start.apiBaseUrl === null) {
     return (
-      <Button className={LEAD_BUTTON} onClick={() => act("setControlPlane")} data-testid="hosted-set-control-plane-lead">
-        <PlugZap />
-        Set the control plane
+      <Button className={LEAD_BUTTON} onClick={() => ways.add("", "")} data-testid="hosted-set-control-plane-lead">
+        <Plus />
+        Add an environment
       </Button>
     );
   }
@@ -155,7 +203,7 @@ function WaysIn({ start }: { start: HostStart }) {
     <div className="flex flex-col items-center gap-2.5">
       <Button className={LEAD_BUTTON} onClick={() => act("signIn")} data-testid="hosted-sign-in-browser">
         <LogIn />
-        Sign in
+        {start.environment === null ? "Sign in" : `Sign in to ${start.environment.name}`}
       </Button>
       <p className="text-center text-[11px] leading-snug text-balance text-muted-foreground">
         Your browser opens to sign you in. This editor, its assistants and the <span className="font-mono">sqlflow</span> command
@@ -234,20 +282,25 @@ function Waiting({ signIn }: { signIn: HostSignIn }) {
 
 /**
  * What a hosted page shows while nobody is signed in, the first thing a person meets of the product in their editor: the
- * product and what it is for, the control plane they sign in to and whether it answers, and the way in. The host signs
+ * product and what it is for, the environment they sign in to and whether it answers, and the way in. The host signs
  * the person in (their browser opens on the control plane, which is where single sign-on is) and says so to every page of
  * its own, so this view is replaced by the page that was asked for without the person coming back to press anything;
  * while the browser waits for them it shows the code to approve. `compact` is the same in the height and width of a side
- * bar: the way in centred in it, and what works before signing in at its foot.
+ * bar: the way in centred in it, and what works before signing in at its foot. The side bar shows the person's
+ * environments in its own place; a page's tab asks the host to show them there.
  */
 export function HostedSignIn({ start, compact = false }: { start: HostStart; compact?: boolean }) {
+  const [, show] = useEnvironmentsShown();
+  const ways: EnvironmentWays = compact
+    ? { manage: () => show({ mode: "list" }), add: (url, guiUrl) => show({ mode: "add", url, guiUrl }) }
+    : { manage: () => act("manageEnvironments"), add: () => act("manageEnvironments") };
   const body = start.signingIn !== null
     ? <Waiting signIn={start.signingIn} />
     : (
       <div className="flex flex-col gap-6">
         <Introduction />
-        <ControlPlane start={start} />
-        <WaysIn start={start} />
+        <EnvironmentCard start={start} ways={ways} />
+        <WaysIn start={start} ways={ways} />
       </div>
     );
 

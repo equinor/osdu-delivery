@@ -55,6 +55,55 @@
           "default": "",
           "description": "Base URL of the control plane. Empty uses the one the MCP server was last given."
         },
+        "sqlflow.environments": {
+          "type": "array",
+          "default": [],
+          "scope": "application",
+          "maxItems": 20,
+          "markdownDescription": "The environments you work against, each a control plane with its name and its stage. Switched, added and changed in the side bar; the stage is the colour every surface shows the environment in: development green, test orange, production red. Kept in your own settings, so a workspace cannot relabel one.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "url",
+              "stage"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                "maxLength": 64,
+                "description": "What you call it: dev, test, prod."
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https?://",
+                "maxLength": 2000,
+                "description": "The control plane's base address."
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "development",
+                  "test",
+                  "production"
+                ],
+                "enumDescriptions": [
+                  "Where flows and mappings are built and tried. Shown green.",
+                  "Where a change is checked before it is released. Shown orange.",
+                  "What the business runs on. Shown red, and switching to it asks first."
+                ]
+              },
+              "guiUrl": {
+                "type": "string",
+                "pattern": "^https?://",
+                "maxLength": 2000,
+                "description": "The public address of the environment's GUI, where Open in the browser goes."
+              }
+            }
+          }
+        },
         "sqlflow.lspBinaryPath": {
           "type": "string",
           "default": "",
@@ -107,8 +156,8 @@
         "category": "SQLFlow"
       },
       {
-        "command": "sqlflow.setControlPlaneUrl",
-        "title": "Set Control Plane URL",
+        "command": "sqlflow.manageEnvironments",
+        "title": "Switch or Add an Environment",
         "category": "SQLFlow"
       },
       {

@@ -192,6 +192,21 @@ const checks = {
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     },
 
+    async 'moving to another control plane closes the pages of the one before, and the environments open in the side bar'() {
+        const config = () => vscode.workspace.getConfiguration('sqlflow');
+        const before = config().inspect('controlPlaneUrl')?.globalValue;
+        await vscode.commands.executeCommand('sqlflow.openHome');
+        await until('a page in a tab', () => pageTabs().length === 1);
+        try {
+            // A page's address names its control plane's own objects, so another control plane's pages are not kept.
+            await config().update('controlPlaneUrl', 'http://127.0.0.1:9', vscode.ConfigurationTarget.Global);
+            await until('the page of the control plane before to close', () => pageTabs().length === 0);
+            await vscode.commands.executeCommand('sqlflow.manageEnvironments');
+        } finally {
+            await config().update('controlPlaneUrl', before, vscode.ConfigurationTarget.Global);
+        }
+    },
+
     async 'a mapping\'s preview opens beside its file'() {
         const document = await open('mappings/Wellbore@1.3.0.yaml');
         await vscode.commands.executeCommand('osduDelivery.previewMapping', document.uri);
