@@ -17,7 +17,8 @@ import type { PipelineSummary } from "@/api/types";
 import type { DeliveryFlowStats } from "../../api/delivery";
 import { deliversTo } from "./deliveryTotals";
 import {
-  deliveredPercent, flowVerdict, percentOf, ringArcs, statusShares, type StatusKey, type StatusShare, type Verdict, type VerdictTarget,
+  deliveredPercent, elsewhereLine, flowVerdict, percentOf, ringArcs, statusShares, type StatusKey, type StatusShare, type Verdict,
+  type VerdictTarget,
 } from "./flowHealth";
 import { restrictedExplanation, restrictedFigure, type RestrictedFigure } from "./recordAccess";
 import { STATUS_LOOK, TONE_INK } from "./statusLook";
@@ -406,7 +407,7 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
             >
               <span tabIndex={0} className="flex items-center gap-1.5 text-[13px] leading-5 text-muted-foreground outline-none" data-testid={`${testId}-elsewhere`}>
                 <CircleDashed className="size-3.5 shrink-0" aria-hidden />
-                {`Delivers to ${partitions.join(", ")}, not ${active}`}
+                {elsewhereLine(partitions, active)}
               </span>
             </ExplainTip>
           ) : (

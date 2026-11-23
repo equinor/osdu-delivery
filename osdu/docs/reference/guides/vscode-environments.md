@@ -132,5 +132,10 @@ An entry the extension cannot read (a stage it does not know, a name or address 
 user name in it, one past the twentieth) is left out of the side bar and said in the extension's output, and the side bar
 saves nothing until it is corrected, so nothing in the list is lost.
 
+VS Code saves only a setting the window has loaded. When the extension is installed or updated after the window
+opened, the window can still hold the settings of the version before, which do not have `sqlflow.environments`:
+saving then says so in the form, and the editor's notification offers **Reload Window**, after which the save goes
+through.
+
 The environment names here are yours. The GUI's title bar names the environment a deployment says it is
 ([environments](../../../../sqlflow/docs/reference/concepts/environments.md)).

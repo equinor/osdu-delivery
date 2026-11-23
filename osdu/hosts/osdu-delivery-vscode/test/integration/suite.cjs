@@ -192,6 +192,14 @@ const checks = {
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     },
 
+    async 'every setting the side bar writes is one the editor has loaded, so a save is never refused'() {
+        // A setting with no default here is one the window has no record of, which the side bar would say to reload for.
+        const settings = vscode.workspace.getConfiguration();
+        assert.deepEqual(settings.inspect('sqlflow.environments')?.defaultValue, []);
+        assert.equal(settings.inspect('sqlflow.controlPlaneUrl')?.defaultValue, '');
+        assert.equal(settings.inspect('sqlflow.guiUrl')?.defaultValue, '');
+    },
+
     async 'moving to another control plane closes the pages of the one before, and the environments open in the side bar'() {
         const config = () => vscode.workspace.getConfiguration('sqlflow');
         const before = config().inspect('controlPlaneUrl')?.globalValue;

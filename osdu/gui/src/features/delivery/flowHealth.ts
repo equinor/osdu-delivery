@@ -346,6 +346,11 @@ export interface OverviewTotals {
   accessRestricted?: number;
 }
 
+/** The line under the name of a flow that delivers only to other partitions, in place of a verdict: where it delivers instead. */
+export function elsewhereLine(partitions: readonly string[], active: string | null): string {
+  return `Delivers to ${partitions.join(", ")}${active === null ? "" : `, not ${active}`}`;
+}
+
 /**
  * The page's line of totals: how many flows deliver here, how much of what they hold is delivered, and only the counts
  * that ask for someone (failed, held, drifted, restricted, pending), so a partition where everything is delivered and

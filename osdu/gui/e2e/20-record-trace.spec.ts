@@ -17,13 +17,13 @@ test.describe.serial("record trace", () => {
     test.setTimeout(600_000);
     expect(stageWellLogRecords()).toContain("record(s)");
 
-    // The Delivery page's field opens the Records page looked up for the term.
-    await adminPage.getByTestId("nav-delivery").click();
-    await expect(adminPage.getByTestId("page-delivery")).toBeVisible();
+    // The home page's field opens the Records page looked up for the term.
+    await adminPage.goto("/");
+    await expect(adminPage.getByTestId("home-delivery")).toBeVisible({ timeout: 60_000 });
     // A source key is the source system and the row's key columns (welldb:PROJECT_A/LOG-0004/1: the well database's
     // project and the log id); the lookup is a prefix.
-    await adminPage.getByTestId("delivery-find-record-term").fill("welldb:PROJECT_A");
-    await adminPage.getByTestId("delivery-find-record-go").click();
+    await adminPage.getByTestId("home-find-record-term").fill("welldb:PROJECT_A");
+    await adminPage.getByTestId("home-find-record-go").click();
     await expect(adminPage.getByTestId("page-delivery-records")).toBeVisible();
     await expect(adminPage).toHaveURL(/q=welldb%3APROJECT_A/);
     await expect(adminPage.getByTestId("delivery-lookup-search")).toHaveValue("welldb:PROJECT_A");

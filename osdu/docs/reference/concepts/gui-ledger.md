@@ -93,8 +93,12 @@ The verdicts are in that order of precedence, and the cards take it too, once ev
 and a failed submission, then held, then drifted, then delivering and waiting, then the rest; a flow that delivers only to
 other partitions comes last, dimmed, saying where it delivers, without counts. The header line says how many flows deliver
 to the partition, the share of their records delivered, and only the counts that ask for someone (failed, held, drifted,
-pending), with how many flows need attention. **Find a record** with **Look up** opens Records looked up for what is typed.
-A card opens the flow's Delivery tab. **Sync now** syncs the repository picked in the list beside it, so a commit reaches the
+pending), with how many flows need attention. **Filter flows**, first in the header, narrows the cards to the flows whose
+card shows every word typed, in any order and ignoring case: the flow's name, its path, its batch, the partitions it
+delivers to and the line under its name, so `failed` or `held` leaves the flows that need someone. The cards keep their
+order, a line over them says how many of the page's flows match, and the header's totals stay the partition's. When no
+flow matches, the page says what the filter reads, with **Show every flow**. A record is found by its keys from the home
+page's **Find a record** and on [Records](#records). A card opens the flow's Delivery tab. **Sync now** syncs the repository picked in the list beside it, so a commit reaches the
 flows without a trip to the Repos page: it is the Repos page's own sync, with its message, and its trace followed by the
 title bar's trace indicator, which opens it in the bottom panel when clicked. A repository whose auto sync is off holds its commit on purpose, so its Sync now asks first, naming the commit it holds, before moving it to its branch's tip ([automatic sync](../../../../sqlflow/docs/reference/concepts/repository-auto-sync.md)). The list shows how each repository last synced and which sync only on request, a paused one cannot be picked, the pick is remembered, and a mark
 beside a repository whose last sync failed shows the error and opens that trace. When any sync ends, whoever started it,

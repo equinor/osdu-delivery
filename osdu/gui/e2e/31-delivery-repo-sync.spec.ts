@@ -1,4 +1,4 @@
-import { REPO_NAME } from "./global-setup";
+import { DELIVERY_FLOW, REPO_NAME } from "./global-setup";
 import { expect, FIRST_PAGE_MS, test } from "./helpers";
 
 // Syncing a repository from the Delivery page (osdu/docs/reference/concepts/gui-ledger.md, Delivery). The first test syncs the
@@ -139,12 +139,12 @@ test.describe("Syncing a repository from the Delivery page", () => {
     await expect(adminPage.getByTestId("delivery-repo-sync-now")).toBeEnabled();
   });
 
-  test("keeps the record search first in the page's header", async ({ adminPage }) => {
+  test("keeps the flow filter first in the page's header", async ({ adminPage }) => {
     await adminPage.route(SOURCES, (route) => route.fulfill(listing([source("healthy")])));
     await adminPage.goto("/delivery");
     await expect(adminPage.getByTestId("delivery-repo-sync")).toBeVisible({ timeout: FIRST_PAGE_MS });
 
-    const syncFollows = await adminPage.getByTestId("delivery-find-record").evaluate((search) => {
+    const syncFollows = await adminPage.getByTestId("delivery-flows-filter").evaluate((search) => {
       const sync = document.querySelector("[data-testid=delivery-repo-sync]");
       return sync !== null && (search.compareDocumentPosition(sync) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     });
@@ -155,7 +155,35 @@ test.describe("Syncing a repository from the Delivery page", () => {
     await adminPage.route(SOURCES, (route) => route.fulfill(listing([])));
     await adminPage.goto("/delivery");
     await expect(adminPage.getByTestId("page-delivery")).toBeVisible({ timeout: FIRST_PAGE_MS });
-    await expect(adminPage.getByTestId("delivery-find-record")).toBeVisible();
+    await expect(adminPage.getByTestId("delivery-flows-filter")).toBeVisible();
     await expect(adminPage.getByTestId("delivery-repo-sync")).toHaveCount(0);
+  });
+});
+
+test.describe("Filtering the Delivery page's flows", () => {
+  test("narrows the cards to the flows whose card shows every word typed, says how many, and shows them all again", async ({ adminPage }) => {
+    await adminPage.goto("/delivery");
+    const grid = adminPage.getByTestId("delivery-flows");
+    await expect(grid).toBeVisible({ timeout: FIRST_PAGE_MS });
+    const cards = grid.locator(":scope > [data-testid^='delivery-flow-']");
+    const names = grid.locator(":scope > [data-testid^='delivery-flow-'] [data-testid$='-open']");
+    const total = await cards.count();
+    expect(total).toBeGreaterThan(1);
+
+    // Part of one flow's name, in another case: the cards left are the flows whose name or path holds it.
+    const filter = adminPage.getByTestId("delivery-flows-filter");
+    await filter.fill(DELIVERY_FLOW.toUpperCase().slice(0, -"-delivery".length));
+    await expect(names.filter({ hasText: DELIVERY_FLOW })).toHaveCount(1);
+    const shown = await cards.count();
+    expect(shown).toBeLessThan(total);
+    await expect(adminPage.getByTestId("delivery-flows-shown")).toHaveText(new RegExp(`^${shown} of ${total} delivery flows match`));
+
+    // A filter nothing matches says what it reads, and one click shows every flow again.
+    await filter.fill("no-flow-is-named-this");
+    await expect(adminPage.getByTestId("delivery-flows-none")).toContainText("No delivery flow matches 'no-flow-is-named-this'");
+    await adminPage.getByTestId("delivery-flows-filter-reset").click();
+    await expect(cards).toHaveCount(total);
+    await expect(filter).toHaveValue("");
+    await expect(adminPage.getByTestId("delivery-flows-shown")).toHaveCount(0);
   });
 });

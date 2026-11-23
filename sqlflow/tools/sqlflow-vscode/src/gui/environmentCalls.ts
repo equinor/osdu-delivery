@@ -142,3 +142,29 @@ export async function probeControlPlane(
     }
     return reachOf(response.status, body);
 }
+
+// ---- A setting the window has not loaded ----------------------------------------------------------------------------
+
+/**
+ * A setting of the extension that VS Code, in this window, has no record of yet: the extension was installed or updated
+ * under a window that has not reloaded since, so the window still holds the settings of the version before, and VS Code
+ * refuses to write one it does not know, in words that do not say what to do. Reloading the window loads them.
+ */
+export class SettingNotLoaded extends Error {
+    readonly setting: string;
+
+    constructor(setting: string) {
+        super(
+            `This window has not loaded the setting ${setting}, which this version of the extension adds, so VS Code cannot `
+            + 'save it: the extension was installed or updated after the window opened. Reload the window (Developer: '
+            + 'Reload Window) and save again.'
+        );
+        this.setting = setting;
+    }
+}
+
+/** Whether an error VS Code gave for a write is its refusal of a setting it has no record of. */
+export function isUnknownSettingRefusal(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /is not a registered configuration/i.test(message);
+}

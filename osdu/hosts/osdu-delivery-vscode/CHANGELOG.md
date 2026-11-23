@@ -3,6 +3,23 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
+## [1.0.6]
+
+### Saving an environment
+
+- Saving an environment in a window that opened before the extension was installed or updated said only that
+  `sqlflow.environments` "is not a registered configuration". The side bar now says the window has not loaded the
+  setting, and the notification offers **Reload Window**, after which the save goes through
+  ([the setting](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/guides/vscode-environments.md#the-setting)).
+
+### Delivery
+
+- **The Delivery page filters its flows.** The field first in its header narrows the flow cards to the flows whose card
+  shows every word typed (a name, a path, a batch, a partition, or a verdict such as failed or held), says how many
+  match, and keeps the partition's totals. It used to look a record up on the Records page instead, which **Find a
+  Record** and the Home page still do
+  ([the Delivery page](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/gui-ledger.md#delivery)).
+
 ## [1.0.5]
 
 ### Environments

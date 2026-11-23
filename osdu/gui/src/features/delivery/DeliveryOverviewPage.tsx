@@ -1,14 +1,17 @@
-import { PackageCheck } from "lucide-react";
+import { useState } from "react";
+import { PackageCheck, SearchX } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError } from "@/api/client";
 import { CorrelationError } from "@/components/CorrelationError";
 import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
-import { useDeliveryTotals } from "./deliveryTotals";
-import { FindRecordForm } from "./FindRecordForm";
+import { SearchInput } from "@/components/SearchInput";
+import { deliversTo, useDeliveryTotals } from "./deliveryTotals";
 import { FlowCard } from "./FlowCard";
-import { attentionOrder, flowVerdict, overviewSubtitle } from "./flowHealth";
+import { attentionOrder, elsewhereLine, flowVerdict, overviewSubtitle } from "./flowHealth";
+import { filteredLine, matchingFlows } from "./flowSearch";
 import { OrphanedLedgersNotice } from "./OrphanedLedgersNotice";
 import { RepositorySyncControl } from "./RepositorySyncControl";
 
@@ -16,10 +19,12 @@ import { RepositorySyncControl } from "./RepositorySyncControl";
  * Every delivery flow with what it has delivered in the workbench's partition: the "uploaded versus not" view. Each card
  * leads with its verdict, and once every flow's counts have answered, the flows that need someone come first (failed, then
  * held, then drifted), then the ones still delivering, then the delivered. A flow that delivers only to other partitions
- * is listed last, dimmed, with where it delivers, and left out of the totals.
+ * is listed last, dimmed, with where it delivers, and left out of the totals. The header's filter narrows the cards to the
+ * flows whose card shows every word typed; the totals stay the partition's.
  */
 export default function DeliveryOverviewPage() {
   const { flows, pipelines, active, stats, elsewhere, totals, counted } = useDeliveryTotals();
+  const [filter, setFilter] = useState("");
   const verdicts = stats.map((query, index) => (query?.data === undefined || elsewhere[index] ? null : flowVerdict(query.data)));
   // Sorted once every count has answered, so cards do not move while the answers come in; afterwards a card moves only
   // when its verdict does.
@@ -28,6 +33,22 @@ export default function DeliveryOverviewPage() {
     : pipelines.map((_, index) => index);
   const here = pipelines.length - elsewhere.filter(Boolean).length;
   const needing = verdicts.filter((verdict) => verdict !== null && (verdict.tone === "destructive" || verdict.tone === "warning")).length;
+
+  // What each card shows of its flow, read in the cards' order, so a match keeps its place among them.
+  const searched = filter.trim();
+  const shown = matchingFlows(order.map((index) => {
+    const pipeline = pipelines[index]!;
+    const partitions = deliversTo(stats[index]?.data) ?? [];
+    return {
+      index,
+      name: pipeline.name,
+      relativePath: pipeline.relativePath,
+      batch: pipeline.batch !== null && pipeline.batch !== "default" ? pipeline.batch : null,
+      active: pipeline.active,
+      partitions,
+      headline: elsewhere[index] ? elsewhereLine(partitions, active) : verdicts[index]?.headline ?? null,
+    };
+  }), searched).map((flow) => flow.index);
 
   if (flows.isError) {
     return (
@@ -44,7 +65,14 @@ export default function DeliveryOverviewPage() {
         subtitle={flows.data ? overviewSubtitle(here, active, totals, counted ? needing : 0) : undefined}
         actions={(
           <>
-            <FindRecordForm />
+            <SearchInput
+              value={filter}
+              onChange={setFilter}
+              placeholder="Filter flows: name, batch, partition or state"
+              label="Filter the delivery flows"
+              className="sm:w-80"
+              testId="delivery-flows-filter"
+            />
             <RepositorySyncControl />
           </>
         )}
@@ -59,21 +87,40 @@ export default function DeliveryOverviewPage() {
           description="Register a repository holding flowType: delivery documents; each flow appears here with what it has delivered."
           data-testid="delivery-empty"
         />
+      ) : shown.length === 0 ? (
+        <EmptyState
+          icon={<SearchX />}
+          title={`No delivery flow matches '${searched}'`}
+          description="The filter reads each flow's name, its path, its batch, the partitions it delivers to and the line under its name, such as failed, held or delivered."
+          action={(
+            <Button variant="outline" size="sm" onClick={() => setFilter("")} data-testid="delivery-flows-filter-reset">
+              Show every flow
+            </Button>
+          )}
+          data-testid="delivery-flows-none"
+        />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2" data-testid="delivery-flows">
-          {order.map((index) => {
-            const pipeline = pipelines[index]!;
-            return (
-              <FlowCard
-                key={pipeline.id}
-                pipeline={pipeline}
-                stats={stats[index]?.data}
-                active={active}
-                elsewhere={elsewhere[index] ?? false}
-              />
-            );
-          })}
-        </div>
+        <>
+          {searched !== "" && (
+            <p className="text-[12px] text-muted-foreground" data-testid="delivery-flows-shown">
+              {filteredLine(shown.length, pipelines.length, searched)}
+            </p>
+          )}
+          <div className="grid gap-3 lg:grid-cols-2" data-testid="delivery-flows">
+            {shown.map((index) => {
+              const pipeline = pipelines[index]!;
+              return (
+                <FlowCard
+                  key={pipeline.id}
+                  pipeline={pipeline}
+                  stats={stats[index]?.data}
+                  active={active}
+                  elsewhere={elsewhere[index] ?? false}
+                />
+              );
+            })}
+          </div>
+        </>
       )}
     </Page>
   );

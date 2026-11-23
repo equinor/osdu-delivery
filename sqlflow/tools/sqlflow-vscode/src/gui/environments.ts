@@ -9,7 +9,10 @@ import {
 } from '../../../../gui/src/embed/environments';
 import type { EnvironmentAnswer, HostEnvironment } from '../../../../gui/src/embed/protocol';
 import { credentialFile, heldSignIn, readCredentialFile } from './credentials';
-import { probeControlPlane, readEnvironmentRequest } from './environmentCalls';
+import { isUnknownSettingRefusal, probeControlPlane, readEnvironmentRequest, SettingNotLoaded } from './environmentCalls';
+
+/** The action that reloads the window, offered when the window has not loaded a setting of the extension. */
+const RELOAD_WINDOW = 'Reload Window';
 
 /** The setting the environments are saved in. */
 export const ENVIRONMENTS_SETTING = 'sqlflow.environments';
@@ -30,6 +33,26 @@ function asSetting(environment: SavedEnvironment): Record<string, string> {
 }
 
 /**
+ * Writes a setting, once this window is known to hold it. VS Code gives every setting it has registered the default the
+ * extension declares, and refuses to write one it has no record of (the extension installed or updated under a window
+ * that has not reloaded since) in words that do not say what to do, so a setting with no default here, or a refusal of
+ * that kind, is said as SettingNotLoaded, which says to reload the window.
+ */
+async function update(config: vscode.WorkspaceConfiguration, key: string, setting: string, value: unknown, where: vscode.ConfigurationTarget): Promise<void> {
+    if (config.inspect(key)?.defaultValue === undefined) {
+        throw new SettingNotLoaded(setting);
+    }
+    try {
+        await config.update(key, value, where);
+    } catch (error) {
+        if (isUnknownSettingRefusal(error)) {
+            throw new SettingNotLoaded(setting);
+        }
+        throw error;
+    }
+}
+
+/**
  * Writes one of the extension's settings where it is set: in the workspace when the workspace sets it, so the value the
  * editor reads is the one written, and in the person's own settings otherwise. Nothing is written when it holds already.
  */
@@ -41,7 +64,7 @@ async function writeSetting(key: 'controlPlaneUrl' | 'guiUrl', value: string): P
     const where = config.inspect<string>(key)?.workspaceValue !== undefined
         ? vscode.ConfigurationTarget.Workspace
         : vscode.ConfigurationTarget.Global;
-    await config.update(key, value, where);
+    await update(config, key, `sqlflow.${key}`, value, where);
 }
 
 /**
@@ -131,6 +154,14 @@ export class Environments implements vscode.Disposable {
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this.output.warn(`[environments] ${message}`);
+            if (error instanceof SettingNotLoaded) {
+                // The form says it too; the editor's own notification is where the reload is one click.
+                void vscode.window.showWarningMessage(message, RELOAD_WINDOW).then((pick) => {
+                    if (pick === RELOAD_WINDOW) {
+                        void vscode.commands.executeCommand('workbench.action.reloadWindow');
+                    }
+                });
+            }
             return { ok: false, problem: message };
         }
     }
@@ -170,7 +201,9 @@ export class Environments implements vscode.Disposable {
     }
 
     private async write(environments: SavedEnvironment[]): Promise<void> {
-        await vscode.workspace.getConfiguration().update(
+        await update(
+            vscode.workspace.getConfiguration(),
+            ENVIRONMENTS_SETTING,
             ENVIRONMENTS_SETTING,
             environments.length === 0 ? undefined : environments.map(asSetting),
             vscode.ConfigurationTarget.Global

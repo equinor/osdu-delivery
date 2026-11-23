@@ -1,3 +1,5 @@
+import { rowsMatching } from "./rowSearch.ts";
+
 /** What a search reads of a mapping: what its row shows. */
 interface SearchedMapping {
   reference: string;
@@ -43,13 +45,5 @@ export function mappingSearchText(mapping: SearchedMapping): string {
  * `context` is what the grid shows of a mapping beyond its own row, such as the repository its group is headed by.
  */
 export function matchingMappings<T extends SearchedMapping>(mappings: readonly T[], search: string, context?: (mapping: T) => string): T[] {
-  const words = search.toLowerCase().split(/\s+/).filter((word) => word !== "");
-  if (words.length === 0) {
-    return [...mappings];
-  }
-
-  return mappings.filter((mapping) => {
-    const text = `${mappingSearchText(mapping)} ${context?.(mapping) ?? ""}`.toLowerCase();
-    return words.every((word) => text.includes(word));
-  });
+  return rowsMatching(mappings, search, (mapping) => `${mappingSearchText(mapping)} ${context?.(mapping) ?? ""}`);
 }

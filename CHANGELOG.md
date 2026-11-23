@@ -794,6 +794,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- **The Delivery page's search filters its flows.** The field first in its header narrows the flow cards to the flows
+  whose card shows every word typed (name, path, batch, partition, or a verdict such as failed or held) and says how many
+  match, where it used to open the Records page looked up for the term; a record is still looked up from the home page
+  and on Records ([the Delivery page](osdu/docs/reference/concepts/gui-ledger.md#delivery)).
 - **Set Control Plane URL** in the VS Code extension is replaced by **Switch or Add an Environment**, and moving to
   another control plane closes the pages open from the one before, since their addresses name its flows, runs and
   records ([environments in the extension](osdu/docs/reference/guides/vscode-environments.md#switching)).
@@ -1351,6 +1355,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **Saving an environment in a window that has not loaded the setting says what to do.** When the VS Code extension
+  was installed or updated after the window opened, VS Code refused to save `sqlflow.environments` with "not a
+  registered configuration". The side bar now says the window has not loaded the setting, and the notification
+  offers **Reload Window**
+  ([the setting](osdu/docs/reference/guides/vscode-environments.md#the-setting)).
 - **A part of a split delivery no longer fails on a deadlock while it holds records.** Holding records, and recording a
   render that sent nothing, took them in an order of their own while a landing on another node released or asked for
   them again, so the database chose one as a deadlock victim and the part failed. Every write of named records now takes

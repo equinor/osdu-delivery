@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { probeControlPlane, reachOf, readEnvironmentRequest, RequestRefused } from '../src/gui/environmentCalls.ts';
+import { isUnknownSettingRefusal, probeControlPlane, reachOf, readEnvironmentRequest, RequestRefused, SettingNotLoaded } from '../src/gui/environmentCalls.ts';
 
 // What the side bar asks of the person's environments is read as coming from anyone: only in the protocol's shape.
 test('a request is read only in the shape the protocol gives it', () => {
@@ -95,4 +95,18 @@ test('a probe of what is no address asks nothing, and says why', async () => {
     const reach = await probeControlPlane('https://me:pw@cp.example.com', 'probe/1', never);
     assert.equal(called, false);
     assert.deepEqual(reach, { answers: false, detail: 'An address never carries a user name or a password.' });
+});
+
+test('a setting the window has not loaded is said to be that, with the way out', () => {
+    const notLoaded = new SettingNotLoaded('sqlflow.environments');
+    assert.equal(notLoaded.setting, 'sqlflow.environments');
+    assert.match(notLoaded.message, /has not loaded the setting sqlflow\.environments/);
+    assert.match(notLoaded.message, /Reload the window \(Developer: Reload Window\) and save again\./);
+});
+
+test('VS Code\'s refusal of a setting it has no record of is told from any other failed write', () => {
+    assert.equal(isUnknownSettingRefusal(new Error('Unable to write to User Settings because sqlflow.environments is not a registered configuration.')), true);
+    assert.equal(isUnknownSettingRefusal('Unable to write to Workspace Settings because sqlflow.guiUrl is not a registered configuration.'), true);
+    assert.equal(isUnknownSettingRefusal(new Error('Unable to write into user settings. Please open the user settings to correct errors/warnings in it and try again.')), false);
+    assert.equal(isUnknownSettingRefusal(new Error('EPERM: operation not permitted')), false);
 });
