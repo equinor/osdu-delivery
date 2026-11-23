@@ -70,8 +70,14 @@ test('a probe asks the sign-in methods, sends no credential, and says why an add
     assert.equal(silent.answers, false);
     assert.match(silent.detail, /does not answer: fetch failed \(ENOTFOUND\)/);
 
+    // An address that never answers. Its open connection is what keeps the process waiting, as a real socket does: the
+    // probe's own timeout (AbortSignal.timeout) holds nothing open, so without it the process would end first.
     const slow: typeof fetch = async (_input, init) => new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        const connection = setTimeout(() => reject(new Error('the probe never gave up on an address that does not answer')), 5000);
+        init?.signal?.addEventListener('abort', () => {
+            clearTimeout(connection);
+            reject(init.signal?.reason);
+        });
     });
     const late = await probeControlPlane('https://slow.example.com', 'probe/1', slow, 20);
     assert.match(late.detail, /nothing came back/);
