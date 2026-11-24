@@ -44,6 +44,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerCacheSets.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
   - sqlflow/src/SqlFlow.Core/Engine/FlowRunner.cs
 ---

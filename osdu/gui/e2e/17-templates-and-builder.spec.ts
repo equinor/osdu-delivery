@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { E2E } from "../playwright.config";
 import { REPO_NAME, SOURCE } from "./global-setup";
-import { expect, test } from "./helpers";
+import { expect, FIRST_PAGE_MS, test } from "./helpers";
 
 // Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
 // osdu/docs/reference/concepts/gui-build.md, Mapping builder). Runs after the seed (03), which syncs the fixture repository: its
@@ -43,12 +43,6 @@ function rowWith(page: Page, table: string, testId: string): Locator {
 }
 
 /**
- * How long a page may take to appear on its first visit of a run: the GUI's dev server compiles a lazily loaded page's
- * modules when it is first asked for, which takes longer than the default wait on a busy machine.
- */
-const FIRST_VISIT_MS = 30_000;
-
-/**
  * Turns one of the variable tree's view options (required, minted, nested) on or off. The options wait in a popover the
  * page renders outside the sheet, so the switch is found on the page, and the popover is closed again after.
  */
@@ -61,7 +55,7 @@ async function toggleViewOption(page: Page, scope: Locator, option: "required" |
 
 async function openTemplates(page: Page): Promise<void> {
   await page.getByTestId("nav-delivery-templates").click();
-  await expect(page.getByTestId("page-delivery-templates")).toBeVisible({ timeout: FIRST_VISIT_MS });
+  await expect(page.getByTestId("page-delivery-templates")).toBeVisible();
 }
 
 test.describe.serial("templates and the mapping builder", () => {
@@ -143,7 +137,7 @@ test.describe.serial("templates and the mapping builder", () => {
     // The links the mapping, dimension and order pages make name a kind and version; the page opens the file holding it.
     await adminPage.goto(`/delivery/templates?${new URLSearchParams({ kind: WELLBORE_KIND, version: WELLBORE_VERSION }).toString()}`);
     const sheet = adminPage.getByTestId("templates-sheet");
-    await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION, { timeout: FIRST_VISIT_MS });
+    await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION, { timeout: FIRST_PAGE_MS });
     await expect(sheet.getByTestId("templates-view-file")).toContainText(`templates/${WELLBORE_FILE}`);
     await adminPage.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
@@ -151,12 +145,12 @@ test.describe.serial("templates and the mapping builder", () => {
     expect(new URL(adminPage.url()).searchParams.has("kind")).toBe(false);
 
     await adminPage.goto(`/delivery/templates?${new URLSearchParams({ kind: WELLBORE_KIND, version: "0".repeat(16) }).toString()}`);
-    await expect(adminPage.getByTestId("templates-link-unheld")).toContainText(`${WELLBORE_KIND} version ${"0".repeat(16)}`, { timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("templates-link-unheld")).toContainText(`${WELLBORE_KIND} version ${"0".repeat(16)}`, { timeout: FIRST_PAGE_MS });
     await expect(adminPage.getByTestId("templates-sheet")).toHaveCount(0);
 
     // A link to a file the sync did not record says so in the sheet rather than showing nothing.
     await adminPage.goto(`/delivery/templates?${new URLSearchParams({ repoId: "00000000-0000-0000-0000-000000000000", path: "nowhere/templates/none.json" }).toString()}`);
-    await expect(adminPage.getByTestId("templates-detail-error")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("templates-detail-error")).toBeVisible({ timeout: FIRST_PAGE_MS });
   });
 
   test("the OSDU data definitions are browsed by release, and a kind opens as a template and downloads as its file", async ({ adminPage }) => {
@@ -396,7 +390,7 @@ test.describe.serial("templates and the mapping builder", () => {
     // The builder is no entry of the menu: Mappings opens it.
     await adminPage.getByTestId("nav-delivery-documents").click();
     await adminPage.getByTestId("delivery-documents-new-mapping").click();
-    await expect(adminPage.getByTestId("page-delivery-mapping-builder")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("page-delivery-mapping-builder")).toBeVisible();
     await expect(adminPage.getByTestId("mapping-builder-empty")).toBeVisible();
 
     await adminPage.getByTestId("mapping-builder-repo").click();
@@ -436,7 +430,7 @@ test.describe.serial("templates and the mapping builder", () => {
 
   test("a column picked on a mapping's overview brings the YAML to the lines that read it, marked where they name it", async ({ adminPage }) => {
     await adminPage.getByTestId("nav-delivery-documents").click();
-    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible();
     const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: "WellLog@1.4.0" }).first();
     await expect(row).toContainText(WELLLOG_VERSION, { timeout: 30_000 });
     await row.click();
@@ -480,7 +474,7 @@ test.describe.serial("templates and the mapping builder", () => {
     }));
     // The capabilities are read as the app loads, so it loads again here.
     await adminPage.goto("/delivery/documents");
-    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible();
     const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: "WellLog@1.4.0" }).first();
     await expect(row).toContainText(WELLLOG_VERSION, { timeout: 30_000 });
     await row.click();
@@ -538,7 +532,7 @@ test.describe.serial("templates and the mapping builder", () => {
 
   test("a synced mapping opens in the builder and passes the check against the cache its flow reads", async ({ adminPage }) => {
     await adminPage.getByTestId("nav-delivery-documents").click();
-    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible();
     const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: "WellLog@1.4.0" }).first();
     await expect(row).toContainText(WELLLOG_VERSION, { timeout: 30_000 });
     await row.click();

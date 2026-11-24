@@ -1281,8 +1281,8 @@ public sealed partial class FlowRuntime : IDisposable
     /// holds, and none whose unfinished deliveries left something the undo has not taken back yet; any other named
     /// record is left as it is and counted as such. Each record deleted keeps one line and is named under this
     /// intervention's activity, the same way the removal's extra step deletes one
-    /// (<see cref="ILedger.PurgeRecordsAsync"/>), and its line asks for its row to be read again, so the flow's next run
-    /// delivers it as a new record.
+    /// (<see cref="ILedgerRemovals.PurgeRecordsAsync"/>), and its line asks for its row to be read again, so the flow's
+    /// next run delivers it as a new record.
     /// </summary>
     public Task<LedgerPurgeSummary> PurgeFromLedgerAsync(IReadOnlyList<DeliveryKey>? keys, CancellationToken ct = default)
         => TrackAsync(
@@ -1718,13 +1718,14 @@ public sealed partial class FlowRuntime : IDisposable
     /// (<see cref="Reversals.PreviousVersionRestore"/>), under an activity of its own, since it removes nothing. With
     /// <paramref name="purgeLedger"/>, a removal that takes the record out of OSDU (<see cref="RemovalChoice.Record"/> or
     /// <see cref="RemovalChoice.Everything"/>) also deletes each record OSDU answered for from the ledger, keeping one line
-    /// of it (<see cref="ILedger.PurgeRecordsAsync"/>); a record whose removal failed stays in the ledger as it was. Either
-    /// way each record removed is asked for again, on its record or on its line, so the flow's next run reads its row by key
-    /// and delivers it again: what the source holds and OSDU does not comes back. <see cref="RemovalChoice.Restrict"/> and
-    /// <see cref="RemovalChoice.Unrestrict"/> take the same path too, replacing each record's ACL in OSDU with the registered
-    /// access restriction <paramref name="restriction"/> names, or giving it back the ACL it had
-    /// (<see cref="Restrictions.RecordRestrictions"/>; osdu/docs/reference/concepts/access-restriction.md); before anything is
-    /// restricted, the flow's identity is checked to be able to lift it again.
+    /// of it (<see cref="ILedgerRemovals.PurgeRecordsAsync"/>); a record whose removal failed stays in the ledger as it
+    /// was. Either way each record removed is asked for again, on its record or on its line, so the flow's next run
+    /// reads its row by key and delivers it again: what the source holds and OSDU does not comes back.
+    /// <see cref="RemovalChoice.Restrict"/> and <see cref="RemovalChoice.Unrestrict"/> take the same path too,
+    /// replacing each record's ACL in OSDU with the registered access restriction <paramref name="restriction"/> names,
+    /// or giving it back the ACL it had (<see cref="Restrictions.RecordRestrictions"/>;
+    /// osdu/docs/reference/concepts/access-restriction.md); before anything is restricted, the flow's identity is
+    /// checked to be able to lift it again.
     /// </summary>
     public Task<RemovalSummary> RemoveAsync(RemovalSelection selection, RemovalChoice scope, bool purgeLedger = false, string? restriction = null, CancellationToken ct = default)
     {
@@ -1974,10 +1975,10 @@ public sealed partial class FlowRuntime : IDisposable
 
     /// <summary>
     /// Runs <paramref name="remove"/> while the records of <paramref name="keys"/> no lease holds are held for a removal
-    /// (<see cref="ILedger.HoldForRemovalAsync"/>), handing it the hold's token (null when it holds nothing): no worker claims
-    /// one of them, so OSDU never ends up holding what a worker sent under the removal while the ledger says removed. The
-    /// hold is renewed every half of the flow's lease while the removal goes on, and let go when it ends, whatever its
-    /// outcome; a removal that stops lets its records go once that lease runs out.
+    /// (<see cref="ILedgerLeases.HoldForRemovalAsync"/>), handing it the hold's token (null when it holds nothing): no
+    /// worker claims one of them, so OSDU never ends up holding what a worker sent under the removal while the ledger
+    /// says removed. The hold is renewed every half of the flow's lease while the removal goes on, and let go when it
+    /// ends, whatever its outcome; a removal that stops lets its records go once that lease runs out.
     /// </summary>
     private async Task<T> UnderRemovalHoldAsync<T>(ILedger ledger, IReadOnlyCollection<DeliveryKey> keys, Func<string?, Task<T>> remove, CancellationToken ct)
     {
@@ -2100,13 +2101,13 @@ public sealed partial class FlowRuntime : IDisposable
     /// removal a selection takes, a page of the ledger at a time in key order and <see cref="RemovalLanes"/> pages at once;
     /// a record the ledger already marks removed is not asked about again. Only when OSDU answered for every one, whatever
     /// order the pages ended in, is the ledger deleted whole
-    /// (<see cref="ILedger.DeleteLedgerAsync"/>): its records, whatever their state, each kept as one line, and what it
-    /// keeps of its runs, so the next run reads every row and delivers each as a new record. Before a page's records
-    /// are removed, what their unfinished deliveries left is undone; once a record is out of OSDU, the datasets,
-    /// content and outputs its committed deliveries minted are removed reversibly too, since nothing would name them
-    /// afterwards. A removal OSDU refused, or an undo it could not take, leaves the ledger as it was, with the records
-    /// it did remove marked removed, and fails naming them: OSDU never holds a record or an id the ledger forgot. A
-    /// route with no reversible removal is refused outright.
+    /// (<see cref="ILedgerRemovals.DeleteLedgerAsync"/>): its records, whatever their state, each kept as one line, and
+    /// what it keeps of its runs, so the next run reads every row and delivers each as a new record. Before a page's
+    /// records are removed, what their unfinished deliveries left is undone; once a record is out of OSDU, the
+    /// datasets, content and outputs its committed deliveries minted are removed reversibly too, since nothing would
+    /// name them afterwards. A removal OSDU refused, or an undo it could not take, leaves the ledger as it was, with
+    /// the records it did remove marked removed, and fails naming them: OSDU never holds a record or an id the ledger
+    /// forgot. A route with no reversible removal is refused outright.
     /// </summary>
     public Task<LedgerDeleteSummary> DeleteLedgerAsync(string confirm, CancellationToken ct = default)
     {
@@ -2365,14 +2366,14 @@ public sealed partial class FlowRuntime : IDisposable
     /// run was over, and a submission its run left received, planned or running when it stopped (its node was lost, its
     /// process ended, it ran out of attempts) with records still planned in its work batches. A newer plan skips those
     /// records, because their rows are what they already queue, so without this they would wait for a drain by hand.
-    /// Each one is taken over only when no run holds it (<see cref="ILedger.TakeOverSubmissionAsync"/>), so a run still
-    /// planning or sending it, a fan-out member included, is never raced, and only when no lease that has not run out holds
-    /// its work; it is passed over until nothing of it is claimable (records in backoff are not waited for), and closed:
-    /// a settled one has its totals counted again when anything of it was sent, and one its run left open is closed as
-    /// its records stand, failed with why when records of it are still to be sent or its planning never finished. Every
-    /// claim is the one a run of the submission makes, so a record is sent once, resuming after the steps a stopped try
-    /// recorded. A submission is visited once per run: what is left of it is the next run's, so the run ends however many
-    /// submissions it finds.
+    /// Each one is taken over only when no run holds it (<see cref="ILedgerSubmissions.TakeOverSubmissionAsync"/>), so
+    /// a run still planning or sending it, a fan-out member included, is never raced, and only when no lease that has
+    /// not run out holds its work; it is passed over until nothing of it is claimable (records in backoff are not
+    /// waited for), and closed: a settled one has its totals counted again when anything of it was sent, and one its
+    /// run left open is closed as its records stand, failed with why when records of it are still to be sent or its
+    /// planning never finished. Every claim is the one a run of the submission makes, so a record is sent once,
+    /// resuming after the steps a stopped try recorded. A submission is visited once per run: what is left of it is the
+    /// next run's, so the run ends however many submissions it finds.
     /// </summary>
     private async Task<WorkerSummary> SendUnattendedAsync(DeliveryWorker worker, Guid current, CancellationToken ct)
     {

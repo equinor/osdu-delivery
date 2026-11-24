@@ -16,8 +16,7 @@ test.describe.serial("pipelines", () => {
     await expect(row.getByTestId("repo-pipeline-kind")).toHaveText("Delivery");
     await expect(row.getByTestId("repo-pipeline-kind")).toHaveAttribute("data-kind", "delivery");
     await row.click();
-    // The suite's first visit to a pipeline's page, which the GUI's dev server compiles when it is first asked for.
-    await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible({ timeout: 30_000 });
+    await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible();
 
     // The kind leads the header: its tile before the flow's name and its name under it. The workbench tab wears the same
     // icon, so pipelines of several kinds open side by side read apart.

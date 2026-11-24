@@ -11,7 +11,8 @@ namespace SqlFlow.Delivery.Ledger;
 /// own for as long as the run works on the submission, and released when the hold is disposed. Any number of runs hold one
 /// submission at once, as a fan-out's coordinator and its members do. A process that stops frees its holds with its
 /// connections, whatever stopped it, which is how a later run of the flow tells a submission somebody still works on from
-/// one whose run has ended (<see cref="ILedger.TakeOverSubmissionAsync"/>). A hold reads and writes nothing of the ledger.
+/// one whose run has ended (<see cref="ILedgerSubmissions.TakeOverSubmissionAsync"/>). A hold reads and writes nothing
+/// of the ledger.
 /// </summary>
 public sealed class SubmissionHold : IAsyncDisposable, IDisposable
 {

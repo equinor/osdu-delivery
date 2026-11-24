@@ -106,7 +106,7 @@ internal static class DeliveryInventoryVerbs
         var listed = new List<(InventoryState Inventory, InventoryRecentRuns Runs, IReadOnlyDictionary<string, long>? Findings)>(inventories.Count);
         foreach (var inventory in inventories)
         {
-            var runs = await InventoryReport.RecentRunsAsync(ledger, inventory, ct).ConfigureAwait(false);
+            var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false);
             listed.Add((inventory, runs, InventoryReport.Findings(runs.LastReconcile?.FindingsJson)));
         }
 
@@ -153,7 +153,7 @@ internal static class DeliveryInventoryVerbs
     /// <summary>One inventory: what it reads, its last build and reconcile, the owners it used, and its ids by finding as its rows hold them now.</summary>
     private static async Task<int> ShowAsync(CliVerbContext context, ILedger ledger, InventoryState inventory, CancellationToken ct)
     {
-        var runs = await InventoryReport.RecentRunsAsync(ledger, inventory, ct).ConfigureAwait(false);
+        var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false);
         var counts = await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
         var owners = InventoryReport.Owners(inventory.OwnersJson, inventory.OwnersSource);
         if (context.Json)

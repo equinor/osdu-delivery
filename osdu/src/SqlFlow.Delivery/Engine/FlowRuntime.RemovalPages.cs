@@ -67,7 +67,7 @@ public sealed partial class FlowRuntime
     /// Every record of the flow's ledger, <paramref name="size"/> at a time in the order of its key: each page read when a lane
     /// asks for it, after the last key of the page before, so records a page under way marks removed never move the walk.
     /// </summary>
-    private async IAsyncEnumerable<IReadOnlyList<DeliveryKey>> LedgerPagesAsync(ILedger ledger, int size, [EnumeratorCancellation] CancellationToken ct = default)
+    private async IAsyncEnumerable<IReadOnlyList<DeliveryKey>> LedgerPagesAsync(ILedgerQueries ledger, int size, [EnumeratorCancellation] CancellationToken ct = default)
     {
         DeliveryKey? after = null;
         while (true)

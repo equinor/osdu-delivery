@@ -28,6 +28,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Operations/TableRowsOperation.cs
   - osdu/src/SqlFlow.Delivery/Catalog/CacheProofSql.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Caches.cs
   - osdu/gui/src/features/delivery/overview/OverviewRows.tsx
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
 ---

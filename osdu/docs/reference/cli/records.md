@@ -48,6 +48,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/RecordExport.cs
   - osdu/src/SqlFlow.Delivery/Storage/XlsxWorkbook.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerRecords.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerQueries.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs

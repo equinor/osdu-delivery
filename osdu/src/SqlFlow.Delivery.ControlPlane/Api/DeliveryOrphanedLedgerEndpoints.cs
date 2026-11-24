@@ -60,7 +60,7 @@ public static class DeliveryOrphanedLedgerEndpoints
     }
 
     /// <summary>The missing documents with a ledger in the partition the query names, else the workbench's, else in any partition.</summary>
-    private static async Task<Ok<IReadOnlyList<OrphanedDocument>>> ListAsync(string? partition, HttpRequest request, ILedger ledger, CancellationToken ct)
+    private static async Task<Ok<IReadOnlyList<OrphanedDocument>>> ListAsync(string? partition, HttpRequest request, ILedgerRegistry ledger, CancellationToken ct)
         => TypedResults.Ok(await ledger.ListOrphanedDocumentsAsync(WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false));
 
     /// <summary>
@@ -69,7 +69,7 @@ public static class DeliveryOrphanedLedgerEndpoints
     /// (once); otherwise answers what came of each ledger.
     /// </summary>
     private static async Task<Results<Ok<DeliveryTakeoverAnswer>, ProblemHttpResult>> TakeOverAsync(
-        DeliveryTakeoverRequest? body, HttpRequest request, ILedger ledger, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryTakeoverRequest? body, HttpRequest request, ILedgerRegistry ledger, ClaimsPrincipal user, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body?.Kind) || string.IsNullOrWhiteSpace(body.From) || string.IsNullOrWhiteSpace(body.To))
         {
@@ -104,7 +104,7 @@ public static class DeliveryOrphanedLedgerEndpoints
     /// flow or partition, and with 409 when the document left no orphaned ledger in the partition.
     /// </summary>
     private static async Task<Results<Ok<DeliveryOrphanDeletePreview>, ProblemHttpResult>> PreviewDeleteAsync(
-        DeliveryOrphanDeleteRequest? body, HttpRequest request, ILedger ledger, CancellationToken ct)
+        DeliveryOrphanDeleteRequest? body, HttpRequest request, ILedgerRegistry ledger, CancellationToken ct)
     {
         if (Named(body, request, out var named) is { } incomplete)
         {
@@ -135,7 +135,7 @@ public static class DeliveryOrphanedLedgerEndpoints
     /// be deleted saying why.
     /// </summary>
     private static async Task<Results<Ok<DeliveryOrphanDeleteAnswer>, ProblemHttpResult>> DeleteAsync(
-        DeliveryOrphanDeleteRequest? body, HttpRequest request, ILedger ledger, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryOrphanDeleteRequest? body, HttpRequest request, ILedgerRegistry ledger, ClaimsPrincipal user, CancellationToken ct)
     {
         if (Named(body, request, out var named) is { } incomplete)
         {

@@ -66,13 +66,16 @@ public sealed class DimensionWriteClockTests
             Session = 57,
         };
 
+        // The step runs until the clock has reported twice (at 20 ms, and 40 ms after that) however late a busy machine runs
+        // the reports, rather than for a set time a busy machine may not report twice in; a clock that never does fails here.
         await clock.TimeAsync(DimensionWriteStep.Merge, "10 key(s)", async () =>
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(150));
+            var reported = await Task.WhenAny(heard.SecondRunning, Task.Delay(TimeSpan.FromSeconds(30)));
+            Assert.True(reported == heard.SecondRunning, "the clock did not report twice in 30 s: " + string.Join(" / ", heard.Lines));
             return 0;
         }, _ => "done", CancellationToken.None);
 
-        // At least the first report, at 20 ms, and the next at 60 ms, came before the step ended at 150 ms; none after.
+        // Both reports came before the step ended, each saying what its statement is doing, and none after it.
         var running = heard.Lines.Where(l => l.StartsWith("running merging", StringComparison.Ordinal)).ToList();
         Assert.True(running.Count >= 2, string.Join(" / ", heard.Lines));
         Assert.All(running, l => Assert.EndsWith(": its INSERT is working, waiting on PAGEIOLATCH_SH", l, StringComparison.Ordinal));
@@ -103,8 +106,13 @@ public sealed class DimensionWriteClockTests
     private sealed class Heard : IDimensionWriteListener
     {
         private readonly Lock _gate = new();
+        private readonly TaskCompletionSource _secondRunning = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _running;
 
         public List<string> Lines { get; } = [];
+
+        /// <summary>Completes once the listener has been told a second time that a step is running.</summary>
+        public Task SecondRunning => _secondRunning.Task;
 
         public void Started(DimensionWriteStep writeStep, string what) => Add($"started {DimensionWriteClock.Named(writeStep)}: {what}");
 
@@ -112,7 +120,14 @@ public sealed class DimensionWriteClockTests
 
         public void Locked(DimensionWriteStep writeStep, TimeSpan waited) => Add($"locked {DimensionWriteClock.Named(writeStep)}");
 
-        public void Running(DimensionWriteStep writeStep, TimeSpan elapsed, string? state) => Add($"running {DimensionWriteClock.Named(writeStep)}: {state}");
+        public void Running(DimensionWriteStep writeStep, TimeSpan elapsed, string? state)
+        {
+            Add($"running {DimensionWriteClock.Named(writeStep)}: {state}");
+            if (Interlocked.Increment(ref _running) == 2)
+            {
+                _secondRunning.TrySetResult();
+            }
+        }
 
         public void Ended(DimensionWriteStep writeStep, TimeSpan took, string what) => Add($"ended {DimensionWriteClock.Named(writeStep)}: {what}");
 

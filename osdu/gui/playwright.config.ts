@@ -10,7 +10,8 @@ import { defineConfig, devices } from "@playwright/test";
 //     provisioning applies SQLFlow's catalog migrations and the OSDU module's beside them, seeds roles, and creates the
 //     e2e admin the tests sign in with. The chain's source and ingestion tables are in the same database, in schemas
 //     of their own;
-//  2. the GUI dev server, pointed at that control plane via VITE_API_BASE_URL (which wins in dev mode);
+//  2. the GUI as a deployment serves it: the production build of this checkout, its config.json naming that control
+//     plane (e2e/serve-gui.ts), so the suite tests what ships and a page arrives as a few chunks, not module by module;
 //  3. a stand-in for the OSDU platform the sample flows deliver to (standin/osdu-standin.mjs), which answers the wellbore
 //     searches a WellLog or a trajectory makes when it renders, and nothing else, so no run reaches a real OSDU.
 // Requirements on the machine: a SQL Server the suite may create a database on, sqlcmd, and the .NET SDK, same as the
@@ -19,8 +20,7 @@ import { defineConfig, devices } from "@playwright/test";
 //
 // Both ports are overridable so the suite can run next to a developer's own environment. This matters most
 // for the GUI port: a long-running `npm run dev` server on the default 5173 points at the DEV control plane
-// (public/config.json), and reuseExistingServer would silently reuse it, so every API call in the suite
-// would land on the wrong backend and fail with rejected e2e tokens.
+// (public/config.json), so the suite never reuses whatever answers on its GUI port: it says the port is taken.
 
 const apiPort = Number(process.env.SQLFLOW_E2E_API_PORT ?? 5299);
 const guiPort = Number(process.env.SQLFLOW_E2E_GUI_PORT ?? 5173);
@@ -194,15 +194,12 @@ export default defineConfig({
       },
     },
     {
-      // The CLI port wins over vite.config.ts, so an overridden gui port really binds (strictPort keeps the
-      // failure loud if even that port is taken).
-      command: `npm run dev -- --port ${guiPort} --strictPort`,
+      // Builds this checkout's GUI and serves it on the suite's port, strictly, so a taken port fails loudly. Never a
+      // server left running: it would serve another checkout's build, or a dev server pointed at another control plane.
+      command: `node e2e/serve-gui.ts --port ${guiPort} --api ${E2E.apiBaseUrl}`,
       url: E2E.guiBaseUrl,
-      timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
-      env: {
-        VITE_API_BASE_URL: E2E.apiBaseUrl,
-      },
+      timeout: 180_000,
+      reuseExistingServer: false,
     },
   ],
 });

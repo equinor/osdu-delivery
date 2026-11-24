@@ -38,6 +38,8 @@ related:
   - delivery-guide-deployment
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Stats.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs
   - osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs
   - osdu/src/SqlFlow.Delivery/Model/RegisteredPartitions.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs

@@ -29,6 +29,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Interventions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs

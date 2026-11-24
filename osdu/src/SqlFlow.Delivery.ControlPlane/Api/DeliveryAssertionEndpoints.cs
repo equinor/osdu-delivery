@@ -396,7 +396,7 @@ public static class DeliveryAssertionEndpoints
         }
 
         var named = members.Select(SetOf).FirstOrDefault(s => s is not null) ?? set;
-        return await AssertionSetReport.ReadAsync(named, partition, bound, ledger, generatedUtc, ct).ConfigureAwait(false);
+        return await AssertionSetReport.ReadAsync(named, partition, bound, ledger.Assertions, generatedUtc, ct).ConfigureAwait(false);
     }
 
     /// <summary>The partition a bound flow's tests are judged in: the one it is bound to, else the one its ledger is kept under.</summary>

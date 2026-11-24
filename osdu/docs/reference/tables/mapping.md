@@ -21,6 +21,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Mappings.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Mappings.cs
 ---
 
 # osdu.Mapping: each mapping document a repository sync found, the read model behind the mappings page

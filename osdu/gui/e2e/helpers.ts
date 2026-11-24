@@ -87,9 +87,9 @@ export async function seedSideBarOpen(page: Page): Promise<void> {
 }
 
 /**
- * How long the first page of a test may take to appear. Each test opens a new browser context, which loads the whole
- * app from the GUI's dev server and renews its session against the control plane; on a busy machine that takes longer
- * than the default wait, and a test failing there has tested nothing.
+ * How long the first page of a test, or of a page load, may take to appear. A new browser context or a reload loads the
+ * whole app and renews its session against the control plane; on a busy machine that takes longer than the default
+ * wait, and a test failing there has tested nothing.
  */
 export const FIRST_PAGE_MS = 30_000;
 

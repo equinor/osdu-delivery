@@ -32,16 +32,16 @@ public static class InventoryReport
     /// <summary>
     /// The inventory's newest run, last build and last reconcile, each read once: a build that completed is usually all three.
     /// </summary>
-    public static async Task<InventoryRecentRuns> RecentRunsAsync(ILedger ledger, InventoryState inventory, CancellationToken ct)
+    public static async Task<InventoryRecentRuns> RecentRunsAsync(InventoryStore inventories, InventoryState inventory, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(inventories);
         ArgumentNullException.ThrowIfNull(inventory);
         if (string.IsNullOrWhiteSpace(inventory.Partition))
         {
             return new InventoryRecentRuns(null, null, null);
         }
 
-        var newest = await ledger.Inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, 1, ct).ConfigureAwait(false);
+        var newest = await inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, 1, ct).ConfigureAwait(false);
         var read = new Dictionary<long, InventoryRunState?>();
         if (newest.Count > 0)
         {
@@ -57,7 +57,7 @@ public static class InventoryReport
 
             if (!read.TryGetValue(id, out var run))
             {
-                run = await ledger.Inventories.GetRunAsync(inventory.Partition, id, ct).ConfigureAwait(false);
+                run = await inventories.GetRunAsync(inventory.Partition, id, ct).ConfigureAwait(false);
                 read[id] = run;
             }
 

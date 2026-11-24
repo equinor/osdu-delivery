@@ -43,6 +43,8 @@ related:
   - delivery-concept-access-restriction
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/LedgerRows.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerRecords.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
@@ -55,6 +57,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Interventions.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ProblemSignature.cs

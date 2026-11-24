@@ -9,7 +9,8 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig([
-  // Build output, the TypeScript project build cache, playwright's reports, and the fixture repository e2e generates.
+  // Build output, the TypeScript project build cache, playwright's reports, and what e2e generates: the fixture
+  // repository, and the GUI build it serves.
   globalIgnores(["dist", ".tsbuild", "node_modules", "playwright-report", "test-results", "e2e/.fixtures"]),
   {
     // The module's pages: browser globals, React's rules of hooks, and components that Vite's fast refresh can swap.

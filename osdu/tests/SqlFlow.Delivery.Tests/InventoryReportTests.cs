@@ -100,7 +100,7 @@ public sealed class InventoryReportTests : IDisposable
     public async Task The_recent_runs_are_the_newest_the_last_build_and_the_last_reconcile_each_read_once()
     {
         var (ledger, inventory) = await InventoryAsync();
-        Assert.Equal(new InventoryRecentRuns(null, null, null), await InventoryReport.RecentRunsAsync(ledger, inventory, CancellationToken.None));
+        Assert.Equal(new InventoryRecentRuns(null, null, null), await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, CancellationToken.None));
 
         var build = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
         await ledger.Inventories.CompleteRunAsync(
@@ -115,7 +115,7 @@ public sealed class InventoryReportTests : IDisposable
         var running = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Reconcile, Guid.NewGuid(), "tests", "search", Now);
 
         var state = (await ledger.Inventories.GetAsync(Partition, inventory.InventoryId))!;
-        var runs = await InventoryReport.RecentRunsAsync(ledger, state, CancellationToken.None);
+        var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, state, CancellationToken.None);
 
         Assert.Equal((running, InventoryRunStatus.Running), (runs.Latest!.InventoryRunId, runs.Latest.Status));
         Assert.Equal(build, runs.LastBuild!.InventoryRunId);

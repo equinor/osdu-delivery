@@ -27,8 +27,8 @@ public sealed record VerifySummary(int Checked, int Matched, int Drifted, int Mi
 /// record with the ledger's <c>targetVersion</c>, and checks each record the ledger marks removed from OSDU to be gone from
 /// it (<see cref="VerifyOutcome.Gone"/>, or <see cref="VerifyOutcome.Served"/> when OSDU still holds it). A mismatch is
 /// either drift to correct or a signal that this system is not the authority for the record. With <c>reconcile</c> each drifted or missing record is marked for redelivery as a
-/// redelivery marks it (<see cref="ILedger.RecordVerifyAsync"/>), named under the pass's activity, so the flow's next
-/// deliver run sends it again whatever its incremental window reads. Every drifted record and the pass itself go
+/// redelivery marks it (<see cref="ILedgerRecords.RecordVerifyAsync"/>), named under the pass's activity, so the flow's
+/// next deliver run sends it again whatever its incremental window reads. Every drifted record and the pass itself go
 /// through the completion callback.
 /// </summary>
 public sealed class Verifier

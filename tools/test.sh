@@ -211,8 +211,8 @@ gui_builds() {
   npm run build:hosted
 }
 
-# The GUI end-to-end suite. It starts the control plane on 5299 and the GUI on 5173 from the Release build; a dev GUI on
-# 5173 would answer for it, so the suite takes 5174 then.
+# The GUI end-to-end suite. It starts the control plane on 5299 from the Release build and serves the GUI's production
+# build on 5173; a dev GUI holds 5173 while it runs, so the suite takes 5174 then.
 osdu_gui_e2e() {
   if [ -z "${SQLFLOW_E2E_GUI_PORT:-}" ] && { (echo > /dev/tcp/127.0.0.1/5173) > /dev/null 2>&1; }; then
     export SQLFLOW_E2E_GUI_PORT=5174

@@ -543,7 +543,7 @@ public static partial class DeliveryInventoryEndpoints
 
         var key = InventoryDuplicateKey.Parse(check.KeyJson);
         return TypedResults.Stream(
-            stream => InventoryDuplicateExport.WriteAsync(ledger, inventory!, checkId, key.Paths, stream, ct),
+            stream => InventoryDuplicateExport.WriteAsync(ledger.Inventories, inventory!, checkId, key.Paths, stream, ct),
             InventoryExport.MediaType,
             InventoryDuplicateExport.FileName(inventory!, checkId));
     }

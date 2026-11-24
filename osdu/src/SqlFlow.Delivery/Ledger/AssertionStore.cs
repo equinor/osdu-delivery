@@ -1,7 +1,143 @@
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Delivery.Data;
+using SqlFlow.Delivery.Identity;
 
 namespace SqlFlow.Delivery.Ledger;
+
+/// <summary>The statuses of an assertion run: running while its tests run, then how they came out, or why it stopped.</summary>
+public static class AssertionRunStatus
+{
+    public const string Running = "running";
+
+    /// <summary>Every test passed, or failed only assertions of a severity that does not fail the run.</summary>
+    public const string Passed = "passed";
+
+    /// <summary>A test failed an assertion whose severity fails the run.</summary>
+    public const string Failed = "failed";
+
+    /// <summary>The run could not run its tests (the platform unreachable, the flow unresolvable), or a test could not be evaluated.</summary>
+    public const string Errored = "errored";
+
+    public const string Cancelled = "cancelled";
+}
+
+/// <summary>The outcomes of one test in one run, and of one assertion of it.</summary>
+public static class TestOutcomes
+{
+    /// <summary>Every assertion held (an info assertion that failed does not change it).</summary>
+    public const string Passed = "passed";
+
+    /// <summary>An error-severity assertion failed.</summary>
+    public const string Failed = "failed";
+
+    /// <summary>A warning-severity assertion failed, and no error-severity one did.</summary>
+    public const string Warned = "warned";
+
+    /// <summary>The test could not be evaluated: its definition does not fit its template, or reading OSDU failed.</summary>
+    public const string Errored = "errored";
+
+    /// <summary>The test does not run in the partition the run tested, or the run stopped before it.</summary>
+    public const string Skipped = "skipped";
+
+    public static IReadOnlyList<string> All { get; } = [Passed, Failed, Warned, Errored, Skipped];
+}
+
+/// <summary>How many of a run's tests came out each way.</summary>
+public sealed record AssertionCounts(int Tests, int Passed, int Failed, int Warned, int Errored, int Skipped)
+{
+    public static AssertionCounts None { get; } = new(0, 0, 0, 0, 0, 0);
+
+    /// <summary>The counts of <paramref name="outcomes"/>, one outcome per test.</summary>
+    public static AssertionCounts Of(IEnumerable<string> outcomes)
+    {
+        ArgumentNullException.ThrowIfNull(outcomes);
+        var list = outcomes.ToList();
+        return new AssertionCounts(
+            list.Count,
+            list.Count(o => o == TestOutcomes.Passed),
+            list.Count(o => o == TestOutcomes.Failed),
+            list.Count(o => o == TestOutcomes.Warned),
+            list.Count(o => o == TestOutcomes.Errored),
+            list.Count(o => o == TestOutcomes.Skipped));
+    }
+}
+
+/// <summary>
+/// One run of an assertion flow's tests as the ledger holds it (osdu/docs/reference/flow/assertion.md, The report).
+/// </summary>
+public sealed record AssertionRunState
+{
+    public long AssertionRunId { get; init; }
+
+    /// <summary>The ledger identity of the flow in the partition it tested.</summary>
+    public required Guid FlowId { get; init; }
+
+    /// <summary>The partition the run tested, as the ledger's directory names it: filled when the ledger reads the row.</summary>
+    public string? Partition { get; init; }
+
+    public required string FlowName { get; init; }
+
+    public Guid? RunId { get; init; }
+
+    public string Actor { get; init; } = "unknown";
+
+    /// <summary>The tests the run was asked for, as JSON; null when it ran every test.</summary>
+    public string? Selection { get; init; }
+
+    public string Status { get; init; } = AssertionRunStatus.Running;
+
+    public AssertionCounts Counts { get; init; } = AssertionCounts.None;
+
+    public string? DefinitionsHash { get; init; }
+
+    public DateTime StartedUtc { get; init; }
+
+    public DateTime? CompletedUtc { get; init; }
+
+    public string? Error { get; init; }
+}
+
+/// <summary>One test's result in one run, as the ledger holds it: the summary columns, and the whole result as JSON.</summary>
+public sealed record AssertionResultState
+{
+    public long ResultId { get; init; }
+
+    public long AssertionRunId { get; init; }
+
+    public required Guid FlowId { get; init; }
+
+    public required string TestName { get; init; }
+
+    public required string Kind { get; init; }
+
+    public required string Outcome { get; init; }
+
+    /// <summary>The heaviest severity among the assertions that failed; null when none did.</summary>
+    public string? Severity { get; init; }
+
+    public long? Matched { get; init; }
+
+    public long? Evaluated { get; init; }
+
+    public bool Sampled { get; init; }
+
+    public int Assertions { get; init; }
+
+    public int FailedAssertions { get; init; }
+
+    public required string DefinitionHash { get; init; }
+
+    public long DurationMs { get; init; }
+
+    public string? Error { get; init; }
+
+    /// <summary>The whole result as JSON (<see cref="Engine.Assertions.TestResult"/>).</summary>
+    public required string Detail { get; init; }
+
+    public DateTime StartedUtc { get; init; }
+
+    public DateTime CompletedUtc { get; init; }
+}
 
 /// <summary>
 /// The runs and results of assertion flows (osdu/docs/reference/flow/assertion.md): each run of a flow in its partition, the

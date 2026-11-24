@@ -142,7 +142,7 @@ public sealed class SyncedTemplates : ITemplateSource
     }
 
     /// <summary>The folders the catalog recorded for repository <paramref name="repoId"/>, read through <paramref name="ledger"/>.</summary>
-    public static async Task<SyncedTemplates> ReadAsync(ILedger ledger, IRepositoryFolders folders, Guid repoId, CancellationToken ct)
+    public static async Task<SyncedTemplates> ReadAsync(ILedgerDocuments ledger, IRepositoryFolders folders, Guid repoId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(folders);

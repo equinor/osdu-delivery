@@ -771,15 +771,16 @@ public sealed class SubmissionIntake
     /// and takes them out of <paramref name="pending"/> before staging. Such a record never queued a document, so nothing it
     /// did wrote that record: it is another system's, or one this ledger has no record of, and writing to the id would make
     /// a new version of a record the ledger does not own. The hold keeps the id and the version OSDU answered, so an operator
-    /// who knows the records are this ledger's can ask them to adopt it (<see cref="ILedger.RequestAdoptionAsync"/>). A record
-    /// of <paramref name="adopting"/>, asked so, is not held: it stays in <paramref name="pending"/> carrying the version OSDU
-    /// holds now, and staging claims the id for it, so the batch writes it there as an update of that record. The flow's own
-    /// read back asks (<see cref="IDeliveryProtocol.VerifyBatchAsync"/>), one batched read for the batch. An id a record of the
-    /// ledger has claimed is not asked: staging refuses it, naming that record. An answer that is not an absence holds the
-    /// record too, adoption asked or not, since an id made from a key is claimed only when it is known to be free or known to
-    /// hold a record to adopt; a release, or the next run, asks again. A target that keeps records under keys of its own (a
-    /// DSPDM row's primary key) stores nothing at the id, and is not asked. Returns how many records were held, and the
-    /// records adopted.
+    /// who knows the records are this ledger's can ask them to adopt it
+    /// (<see cref="ILedgerRecords.RequestAdoptionAsync"/>). A record of <paramref name="adopting"/>, asked so, is not
+    /// held: it stays in <paramref name="pending"/> carrying the version OSDU holds now, and staging claims the id for
+    /// it, so the batch writes it there as an update of that record. The flow's own read back asks
+    /// (<see cref="IDeliveryProtocol.VerifyBatchAsync"/>), one batched read for the batch. An id a record of the ledger
+    /// has claimed is not asked: staging refuses it, naming that record. An answer that is not an absence holds the
+    /// record too, adoption asked or not, since an id made from a key is claimed only when it is known to be free or
+    /// known to hold a record to adopt; a release, or the next run, asks again. A target that keeps records under keys
+    /// of its own (a DSPDM row's primary key) stores nothing at the id, and is not asked. Returns how many records were
+    /// held, and the records adopted.
     /// </summary>
     private async Task<(int Held, IReadOnlyList<RecordAdoption> Adopted)> HoldOccupiedAsync(
         FlowDefinition flow, SubmissionState submission, int batch, List<RecordState> pending, HashSet<DeliveryKey> unclaimed, HashSet<DeliveryKey> adopting,

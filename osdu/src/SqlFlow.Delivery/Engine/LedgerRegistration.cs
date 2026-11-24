@@ -60,7 +60,8 @@ public static class LedgerRegistration
     /// </exception>
     /// <remarks>
     /// A move of the ledger of the pipeline this one replaced, which the repository sync asked for, is finished before the
-    /// entry is returned (<see cref="ILedger.CompleteLedgerMovesAsync"/>), so whatever registered the ledger reads it whole.
+    /// entry is returned (<see cref="ILedgerRegistry.CompleteLedgerMovesAsync"/>), so whatever registered the ledger
+    /// reads it whole.
     /// </remarks>
     public static async Task<LedgerEntry> RegisterAsync(ILedger ledger, FlowDefinition flow, ISecretResolver secrets, bool keptWhenUnresolved, CancellationToken ct = default)
     {

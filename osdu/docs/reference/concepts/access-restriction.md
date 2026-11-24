@@ -48,6 +48,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAccessRestrictionEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Removals.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs
   - osdu/gui/src/features/delivery/RemovalDialog.tsx
   - osdu/gui/src/features/delivery/AccessRestrictionsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordPage.tsx

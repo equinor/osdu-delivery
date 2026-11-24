@@ -200,7 +200,7 @@ public static class VersionWriteBack
     }
 
     /// <summary>The access restrictions <paramref name="records"/> are restricted until complete under, by id, read once.</summary>
-    public static async Task<IReadOnlyDictionary<int, AccessRestrictionState>> RestrictionsOfAsync(ILedger ledger, IEnumerable<RecordState> records, CancellationToken ct)
+    public static async Task<IReadOnlyDictionary<int, AccessRestrictionState>> RestrictionsOfAsync(ILedgerRestrictions ledger, IEnumerable<RecordState> records, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(records);

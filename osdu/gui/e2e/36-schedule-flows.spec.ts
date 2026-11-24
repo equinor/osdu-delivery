@@ -43,7 +43,7 @@ async function makeSchedule(request: APIRequestContext, name: string, members: s
 
 test.describe("Schedule flows", () => {
   test("a schedule's name opens its run board and its flow count opens its flows on the Pipelines page", async ({ adminPage, request }) => {
-    // Four pages, one of them reached for the first time on a dev server that compiles it then.
+    // Four pages and a schedule made and removed through the API, several of them waiting on what a sync left.
     test.setTimeout(180_000);
     const { headers, scheduleId } = await makeSchedule(request, SCHEDULE, [WELLBORES, LOGS]);
 
@@ -56,11 +56,11 @@ test.describe("Schedule flows", () => {
 
       // A search an earlier visit left on the Pipelines page, which would hide both flows: the link lifts it.
       await adminPage.getByTestId("nav-pipelines").click();
-      await expect(adminPage.getByTestId("page-pipelines")).toBeVisible({ timeout: 30_000 });
+      await expect(adminPage.getByTestId("page-pipelines")).toBeVisible();
       await adminPage.getByTestId("filter-name").fill("no-such-flow");
 
       await adminPage.getByTestId("nav-schedules").click();
-      await expect(adminPage.getByTestId("page-schedules")).toBeVisible({ timeout: 30_000 });
+      await expect(adminPage.getByTestId("page-schedules")).toBeVisible();
       const search = adminPage.getByTestId("filter-schedule-name");
       await search.fill(SCHEDULE);
       const row = adminPage.getByTestId("table-row").filter({ hasText: SCHEDULE }).first();
@@ -79,7 +79,7 @@ test.describe("Schedule flows", () => {
 
       // The count opens the Pipelines page as a tab beside the Schedules page, on the schedule's flows and no others.
       await row.getByTestId("schedule-flows-link").click();
-      await expect(adminPage.getByTestId("page-pipelines")).toBeVisible({ timeout: 30_000 });
+      await expect(adminPage.getByTestId("page-pipelines")).toBeVisible();
       await expect(adminPage.getByTestId("filter-schedule")).toHaveText(SCHEDULE);
       await expect(adminPage.getByTestId("filter-name")).toHaveValue("");
       const flows = adminPage.getByTestId("repo-pipeline");
@@ -125,7 +125,7 @@ test.describe("Schedule flows", () => {
         .toBeLessThan(waveOf.get(WELLBORES) as number);
 
       await adminPage.goto(`/pipelines?repo=${repoId}&schedule=${scheduleId}`);
-      await expect(adminPage.getByTestId("page-pipelines")).toBeVisible({ timeout: 30_000 });
+      await expect(adminPage.getByTestId("page-pipelines")).toBeVisible();
       const flows = adminPage.getByTestId("repo-pipeline");
       await expect(flows).toHaveCount(2, { timeout: 30_000 });
       // Each row says the wave its flow runs in as the run board numbers them, not its lineage wave in the repository.

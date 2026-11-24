@@ -53,6 +53,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Interventions.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Sync.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Removals.cs
   - osdu/gui/src/module.tsx
   - osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordPage.tsx

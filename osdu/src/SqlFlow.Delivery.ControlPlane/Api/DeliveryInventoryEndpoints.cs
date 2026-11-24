@@ -786,7 +786,7 @@ public static partial class DeliveryInventoryEndpoints
             return problem!;
         }
 
-        var runs = await InventoryReport.RecentRunsAsync(ledger, inventory, ct).ConfigureAwait(false);
+        var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false);
         var counts = await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
         var (pipeline, flow, declared) = await DeclaringFlowAsync(db, documents, inventory, ct).ConfigureAwait(false);
         var spec = declared == true ? flow?.Inventory(inventory.Name) : null;
@@ -1134,7 +1134,7 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>An inventory as listings show it, with its newest run and the counts its last reconcile wrote.</summary>
     private static async Task<DeliveryInventoryDto> SummaryAsync(ILedger ledger, InventoryState inventory, CancellationToken ct)
-        => ToDto(inventory, await InventoryReport.RecentRunsAsync(ledger, inventory, ct).ConfigureAwait(false));
+        => ToDto(inventory, await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false));
 
     /// <summary>The names of the ledgers the records name, read once each.</summary>
     private static async Task<Dictionary<Guid, string>> LedgerNamesAsync(ILedger ledger, IReadOnlyList<InventoryRecordState> records, CancellationToken ct)

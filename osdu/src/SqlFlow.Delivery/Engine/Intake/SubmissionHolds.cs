@@ -3,10 +3,11 @@ using SqlFlow.Delivery.Ledger;
 namespace SqlFlow.Delivery.Engine.Intake;
 
 /// <summary>
-/// The submissions one runtime works on, each held while it does (<see cref="ILedger.HoldSubmissionAsync"/>), so a later run
-/// of the flow can tell a submission somebody works on from one whose run has ended. A submission is held once however often
-/// the runtime asks for it. The operation that took a hold releases it when it ends; the runtime releases whatever is left
-/// when it is disposed, and a process that stops frees every hold it had with its connections.
+/// The submissions one runtime works on, each held while it does
+/// (<see cref="ILedgerSubmissions.HoldSubmissionAsync"/>), so a later run of the flow can tell a submission somebody
+/// works on from one whose run has ended. A submission is held once however often the runtime asks for it. The
+/// operation that took a hold releases it when it ends; the runtime releases whatever is left when it is disposed, and
+/// a process that stops frees every hold it had with its connections.
 /// </summary>
 public sealed class SubmissionHolds : IAsyncDisposable, IDisposable
 {

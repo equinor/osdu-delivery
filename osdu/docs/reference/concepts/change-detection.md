@@ -52,6 +52,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Json/CanonicalJson.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/SchemaSnapshot.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerRecords.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
 ---

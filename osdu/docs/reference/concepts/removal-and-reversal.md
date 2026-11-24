@@ -59,6 +59,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/Artifacts.cs
   - osdu/src/SqlFlow.Delivery/Protocols/IDeliveryProtocol.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Removals.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Interventions.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Sync.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryLedgerEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryReversalEndpoints.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryReversalVerbs.cs

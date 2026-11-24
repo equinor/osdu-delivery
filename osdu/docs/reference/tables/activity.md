@@ -25,6 +25,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Activities.cs
 ---
 
 # osdu.Activity: the audit trail, one row per run and per operator intervention

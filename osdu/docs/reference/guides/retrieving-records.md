@@ -32,6 +32,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs
   - osdu/src/SqlFlow.Delivery/Storage/FileStore.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Submissions.cs
   - sqlflow/src/SqlFlow.Sources/SourceFormatDetector.cs
   - sqlflow/src/SqlFlow.ControlPlane/Background/ScheduleFire.cs
 ---

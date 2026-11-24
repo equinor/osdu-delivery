@@ -40,6 +40,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Deletes.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Deletes.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerRegistry.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs
   - osdu/src/SqlFlow.Delivery/Catalog/LedgerOwnership.cs
   - osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs

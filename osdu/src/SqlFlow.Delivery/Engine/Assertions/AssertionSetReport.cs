@@ -86,13 +86,13 @@ public sealed record AssertionSetReport(string Set, string? Partition, IReadOnly
     /// one query across the flows; a flow with a problem keeps it and lists no test.
     /// </summary>
     public static async Task<AssertionSetReport> ReadAsync(
-        string set, string? partition, IReadOnlyList<AssertionSetMember> members, ILedger ledger, DateTime generatedUtc, CancellationToken ct)
+        string set, string? partition, IReadOnlyList<AssertionSetMember> members, AssertionStore assertions, DateTime generatedUtc, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(set);
         ArgumentNullException.ThrowIfNull(members);
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(assertions);
         var ledgerIds = members.Where(m => m.Bound is not null).Select(m => m.Bound!.LedgerId).Distinct().ToList();
-        var latest = (await ledger.Assertions.LatestResultsAsync(ledgerIds, withDetail: true, ct).ConfigureAwait(false))
+        var latest = (await assertions.LatestResultsAsync(ledgerIds, withDetail: true, ct).ConfigureAwait(false))
             .GroupBy(r => r.FlowId)
             .ToDictionary(g => g.Key, g => g.ToDictionary(r => r.TestName, StringComparer.OrdinalIgnoreCase));
         var flows = new List<AssertionSetFlow>(members.Count);
@@ -104,7 +104,7 @@ public sealed record AssertionSetReport(string Set, string? Partition, IReadOnly
                 continue;
             }
 
-            var runs = await ledger.Assertions.ListRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
+            var runs = await assertions.ListRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
             var ofFlow = latest.TryGetValue(bound.LedgerId, out var found) ? found : null;
             var tests = bound.Tests
                 .Where(t => t.RunsIn(member.TestPartition))

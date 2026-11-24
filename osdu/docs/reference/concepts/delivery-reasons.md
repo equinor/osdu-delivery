@@ -38,6 +38,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Submissions.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryRecordVerbs.cs
   - osdu/gui/src/features/delivery/DeliveryReasonView.tsx
   - osdu/gui/src/features/delivery/deliveryReason.ts

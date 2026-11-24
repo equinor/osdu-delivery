@@ -45,7 +45,7 @@ public sealed class RepositoryTemplates : ITemplateSource
         => Of(await FilesAsync(db, null, ct).ConfigureAwait(false), folders);
 
     /// <summary>The templates <paramref name="ledger"/> records.</summary>
-    public static async Task<RepositoryTemplates> ReadAsync(ILedger ledger, IRepositoryFolders folders, CancellationToken ct)
+    public static async Task<RepositoryTemplates> ReadAsync(ILedgerDocuments ledger, IRepositoryFolders folders, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         return Of(await ledger.RepositoryTemplatesAsync(ct).ConfigureAwait(false), folders);

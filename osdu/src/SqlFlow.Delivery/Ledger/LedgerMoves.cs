@@ -16,9 +16,9 @@ namespace SqlFlow.Delivery.Ledger;
 /// (<see cref="RequestAsync"/>): by the repository sync, when it finds one document under two names, and by a person who
 /// binds a ledger no declared flow keeps to the flow of their choice (<see cref="LedgerBindings"/>). Either way it is an
 /// activity of kind <see cref="Kind"/> on the new identity, <c>running</c> until the move is done, and the ledger carries it
-/// out in committed slices (<see cref="ILedger.CompleteLedgerMovesAsync"/>): the repository sync right after it commits, the
-/// bind as it is asked, the control plane's pass for a move that had to wait, and a run of the flow before it reads its
-/// ledger if it gets there first, so no run reads half a ledger.
+/// out in committed slices (<see cref="ILedgerRegistry.CompleteLedgerMovesAsync"/>): the repository sync right after it
+/// commits, the bind as it is asked, the control plane's pass for a move that had to wait, and a run of the flow before
+/// it reads its ledger if it gets there first, so no run reads half a ledger.
 /// <para>
 /// Every row the old identity keys (<see cref="KeyedTables"/>) takes the new one, and every row that names the old ledger
 /// (<see cref="NamingTables"/>) names the new, so the flow carries on with the records, their history, their claims and its

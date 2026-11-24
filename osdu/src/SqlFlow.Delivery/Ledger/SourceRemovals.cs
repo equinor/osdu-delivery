@@ -122,7 +122,7 @@ public static class SourceRemovals
         => detail is null ? null : detail.Length <= MaxDetailLength ? detail : detail[..(MaxDetailLength - 3)] + "...";
 }
 
-/// <summary>What opens a removal run (<see cref="ILedger.StartRemovalRunAsync"/>).</summary>
+/// <summary>What opens a removal run (<see cref="ILedgerRemovals.StartRemovalRunAsync"/>).</summary>
 public sealed record RemovalRunStart
 {
     /// <summary>The removal flow, by name.</summary>
@@ -297,14 +297,16 @@ public sealed record RemovalTally
 }
 
 /// <summary>
-/// A row of the delivery flow's record table whose deleted mark a removal sets or takes off (<see cref="ILedger.RemovalMarksAsync"/>).
+/// A row of the delivery flow's record table whose deleted mark a removal sets or takes off
+/// (<see cref="ILedgerRemovals.RemovalMarksAsync"/>).
 /// </summary>
 /// <param name="Key">The row's delivery key.</param>
 /// <param name="SourceKeyJson">The row's key tuple, a JSON array of the key columns' values as text, in the record key's order.</param>
 /// <param name="Mark">True to mark the row deleted; false to take the mark off it.</param>
 public sealed record RemovalMark(DeliveryKey Key, string SourceKeyJson, bool Mark);
 
-/// <summary>One key a removal stages (<see cref="ILedger.StageRemovalKeysAsync"/>), already derived to its delivery key.</summary>
+/// <summary>One key a removal stages (<see cref="ILedgerRemovals.StageRemovalKeysAsync"/>), already derived to its
+/// delivery key.</summary>
 public sealed record StagedRemovalKey
 {
     public required DeliveryKey Key { get; init; }
@@ -324,9 +326,9 @@ public sealed record StagedRemovalKey
 }
 
 /// <summary>
-/// How a batch of raw key values is converted where the ledger is kept (<see cref="ILedger.ConvertRemovalKeysAsync"/>): each
-/// key column's expression over its raw value and the record table's type it is converted to, and, for the removed side, the
-/// expression over the raw removal moment.
+/// How a batch of raw key values is converted where the ledger is kept
+/// (<see cref="ILedgerRemovals.ConvertRemovalKeysAsync"/>): each key column's expression over its raw value and the
+/// record table's type it is converted to, and, for the removed side, the expression over the raw removal moment.
 /// </summary>
 public sealed record RemovalKeyConversion
 {
@@ -360,7 +362,7 @@ public sealed record RawRemovalKey
 /// <summary>One row of a batch as SQL Server converted it: each key column's typed value (null where it did not convert) and the removal moment.</summary>
 public sealed record ConvertedRemovalKey(IReadOnlyList<object?> Values, DateTime? Moment);
 
-/// <summary>What a removal's comparison asks (<see cref="ILedger.DetectRemovalsAsync"/>).</summary>
+/// <summary>What a removal's comparison asks (<see cref="ILedgerRemovals.DetectRemovalsAsync"/>).</summary>
 public sealed record RemovalComparison
 {
     /// <summary>Whether the source's current key set was read: a key it does not hold is removed.</summary>
@@ -400,7 +402,7 @@ public sealed record RemovalComparison
     public required DateTime NowUtc { get; init; }
 }
 
-/// <summary>What a removal's comparison found (<see cref="ILedger.DetectRemovalsAsync"/>).</summary>
+/// <summary>What a removal's comparison found (<see cref="ILedgerRemovals.DetectRemovalsAsync"/>).</summary>
 public sealed record RemovalDetection
 {
     /// <summary>Distinct keys compared: the ledger's records in the scope that are not removed, and the record table's keys besides.</summary>
@@ -472,13 +474,14 @@ public sealed record RemovedKeyState
     public required DateTime UpdatedUtc { get; init; }
 }
 
-/// <summary>What one try to take out a removed key came to (<see cref="ILedger.SettleRemovalsAsync"/>).</summary>
+/// <summary>What one try to take out a removed key came to
+/// (<see cref="ILedgerRemovals.SettleRemovalsAsync"/>).</summary>
 public sealed record RemovalKeyOutcome(DeliveryKey Key, string Outcome, string? Detail);
 
 /// <summary>
 /// Why a record a removal took out or settled in the ledger is no longer delivered, as its attempt says it
-/// (<see cref="ILedger.MarkRemovedAsync"/>): the removal flow and run, why its source no longer holds it, and the file and row
-/// that said so.
+/// (<see cref="ILedgerRecords.MarkRemovedAsync"/>): the removal flow and run, why its source no longer holds it, and
+/// the file and row that said so.
 /// </summary>
 public sealed record SourceRemovalNote
 {

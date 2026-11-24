@@ -21,6 +21,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerLeases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Holds.cs
 ---

@@ -49,6 +49,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs
   - osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx
   - osdu/gui/src/features/delivery/RecordSituation.tsx
   - osdu/docs/census/keys.mapping.json

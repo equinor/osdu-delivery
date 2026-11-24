@@ -196,6 +196,24 @@ public static class DeliveryServices
         services.AddSingleton(sp => sp.GetRequiredService<DeliveryLedgerSource>().Open(sp)
             ?? throw new DeliveryException(NoLedgerMessage));
         services.AddSingleton<ILedger>(sp => sp.GetRequiredService<OsduLedger>());
+
+        // Each part of the ledger, and each store beside it, is that one ledger's: a service takes the part it uses.
+        services.AddSingleton<ILedgerRegistry>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerSubmissions>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerLeases>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerArtifacts>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerRecords>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerQueries>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerCacheSets>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerActivities>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerRemovals>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerReversals>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerRestrictions>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton<ILedgerDocuments>(sp => sp.GetRequiredService<OsduLedger>());
+        services.AddSingleton(sp => sp.GetRequiredService<OsduLedger>().Inventories);
+        services.AddSingleton(sp => sp.GetRequiredService<OsduLedger>().Downloads);
+        services.AddSingleton(sp => sp.GetRequiredService<OsduLedger>().Assertions);
+        services.AddSingleton(sp => sp.GetRequiredService<OsduLedger>().Dimensions);
         services.AddSingleton<ICacheStore>(sp => sp.GetRequiredService<DeliveryLedgerSource>().Cache(sp)
             ?? throw new DeliveryException(NoLedgerMessage));
 

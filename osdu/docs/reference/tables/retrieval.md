@@ -20,6 +20,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedgerActivities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Engine/RetrievalExecutor.cs
 ---

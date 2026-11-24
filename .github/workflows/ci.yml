@@ -416,9 +416,9 @@ jobs:
           echo "$wrapper" >> "$GITHUB_PATH"
           npx playwright install --with-deps chromium
 
-      # The suite starts the control plane, the GUI and a stand-in for the OSDU platform itself, signs in
-      # and drives the pages over the sample estate. Its runs only plan, and a plan's wellbore searches are
-      # answered by the stand-in, so nothing reaches an OSDU. The hosts run from the Release build above.
+      # The suite starts the control plane, the GUI (its production build) and a stand-in for the OSDU platform
+      # itself, signs in and drives the pages over the sample estate. Its runs only plan, and a plan's wellbore
+      # searches are answered by the stand-in, so nothing reaches an OSDU. The hosts run from the Release build above.
       - name: OSDU GUI end-to-end suite
         id: e2e
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.sql-server.outcome == 'success' && steps.e2e-prepare.outcome == 'success' }}

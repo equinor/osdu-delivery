@@ -13,7 +13,7 @@ public sealed record PreviousVersionStep(RemovalRecordResult Result, PreviousVer
 /// Takes the latest version of records out of being current (<see cref="RemovalChoice.Previous"/>;
 /// osdu/docs/reference/concepts/removal-and-reversal.md, Restoring the previous version). OSDU has no call that removes
 /// a record's latest version alone, so the version OSDU held before the write that left the latest, as the ledger tells
-/// it (<see cref="ILedger.PriorVersionsAsync"/>), is read and written back as a new version
+/// it (<see cref="ILedgerReversals.PriorVersionsAsync"/>), is read and written back as a new version
 /// (<see cref="VersionWriteBack"/>, the write a reversal makes). A record is stepped back only while OSDU's latest
 /// version is the one the ledger says this flow left: stepping back a record something else wrote since would undo that
 /// write instead, so it is left as it is, saying so. Each record written back is settled in the ledger as reverted and

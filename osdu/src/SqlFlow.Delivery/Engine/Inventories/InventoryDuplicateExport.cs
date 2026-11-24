@@ -43,9 +43,9 @@ public static class InventoryDuplicateExport
     /// of the key's <paramref name="paths"/> at the end, its values joined by a semicolon and a space; returns how many rows it
     /// wrote. The stream is left open.
     /// </summary>
-    public static async Task<long> WriteAsync(ILedger ledger, InventoryState inventory, long checkId, IReadOnlyList<string> paths, Stream output, CancellationToken ct)
+    public static async Task<long> WriteAsync(InventoryStore inventories, InventoryState inventory, long checkId, IReadOnlyList<string> paths, Stream output, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(inventories);
         ArgumentNullException.ThrowIfNull(inventory);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(output);
@@ -58,7 +58,7 @@ public static class InventoryDuplicateExport
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var page = await ledger.Inventories.ListDuplicateGroupsAsync(inventory.Partition, checkId, null, after, GroupsPage, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
+                var page = await inventories.ListDuplicateGroupsAsync(inventory.Partition, checkId, null, after, GroupsPage, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
                 foreach (var group in page)
                 {
                     if (group.Group.Copies <= InventoryDuplicates.MaxCopiesPicked)
@@ -72,7 +72,7 @@ public static class InventoryDuplicateExport
                     while (true)
                     {
                         ct.ThrowIfCancellationRequested();
-                        var copies = await ledger.Inventories.ListDuplicateMembersAsync(inventory.Partition, checkId, group.Group.GroupNumber, afterCopy, CopiesPage, ct).ConfigureAwait(false);
+                        var copies = await inventories.ListDuplicateMembersAsync(inventory.Partition, checkId, group.Group.GroupNumber, afterCopy, CopiesPage, ct).ConfigureAwait(false);
                         rows += await WriteCopiesAsync(writer, group.Group, copies, paths).ConfigureAwait(false);
                         if (copies.Count < CopiesPage)
                         {
