@@ -3736,41 +3736,47 @@
       "id": "guide-follow-a-data-stream",
       "corpus": "reference",
       "path": "guides/follow-a-data-stream.md",
-      "title": "Following one data stream end to end: what arrived, and what each flow did with it",
+      "title": "Following data on the lineage graph: what arrived, what each flow did with it, and where it stopped",
       "type": "guide",
-      "summary": "A stream's own page: the path its data takes, the fires through it, what each flow's run did in one fire, and the API answer behind it.",
+      "summary": "The lineage graph's data view: what every node moved in a day, charted over the window, with the lines weighed by it.",
       "keywords": [
+        "what moved",
+        "day by day",
+        "follow data",
         "data streams",
-        "follow a stream",
-        "stream path",
         "what did the vendor deliver",
         "pre table",
         "ingestion table",
-        "fire",
-        "run group",
-        "files delivered",
         "where did the data stop",
-        "datastreams path"
+        "fire",
+        "files delivered",
+        "rows read",
+        "rows changed",
+        "lineage graph data",
+        "datastreams activity"
       ],
       "related": [
-        "concept-data-stream-detection",
         "guide-lineage-graph",
+        "concept-data-stream-detection",
         "concept-lineage-graph-and-plan",
         "concept-control-plane"
       ],
       "sourceRefs": [
-        "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.Path.cs",
-        "src/SqlFlow.ControlPlane/Api/StreamPathWalk.cs",
+        "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.Activity.cs",
         "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/RunEndpoints.cs",
-        "gui/src/features/datastreams/StreamPathPage.tsx",
-        "gui/src/features/datastreams/StreamPathCanvas.tsx",
-        "gui/src/features/datastreams/StreamPathPanel.tsx",
-        "gui/src/features/datastreams/StreamFireStrip.tsx",
-        "gui/src/features/datastreams/streamPathModel.ts",
-        "gui/unit/streamPath.test.ts",
-        "tests/SqlFlow.ControlPlane.Tests/StreamPathWalkTests.cs",
-        "tests/SqlFlow.ControlPlane.Tests/StreamPathApiTests.cs"
+        "gui/src/features/lineage/dataLens.ts",
+        "gui/src/features/lineage/LineageGraphPage.tsx",
+        "gui/src/features/lineage/LineageNodeCard.tsx",
+        "gui/src/features/lineage/LensBars.tsx",
+        "gui/src/features/lineage/GraphCanvas.tsx",
+        "gui/src/features/lineage/DataRail.tsx",
+        "gui/src/features/lineage/LensNodeDetail.tsx",
+        "gui/src/features/lineage/LensLegend.tsx",
+        "gui/src/features/lineage/graphUrl.ts",
+        "gui/src/modules/runMeasure.ts",
+        "gui/unit/dataLens.test.ts",
+        "tests/SqlFlow.ControlPlane.Tests/FlowActivityApiTests.cs"
       ]
     },
     {
@@ -4032,7 +4038,8 @@
         "concept-lineage-tiers",
         "concept-control-plane",
         "concept-shadow-catalog",
-        "guide-lineage-demo"
+        "guide-lineage-demo",
+        "guide-follow-a-data-stream"
       ],
       "sourceRefs": [
         "gui/src/features/lineage/LineageGraphPage.tsx",

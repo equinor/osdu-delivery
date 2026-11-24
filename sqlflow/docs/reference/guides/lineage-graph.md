@@ -22,6 +22,7 @@ related:
   - concept-control-plane
   - concept-shadow-catalog
   - guide-lineage-demo
+  - guide-follow-a-data-stream
 sourceRefs:
   - gui/src/features/lineage/LineageGraphPage.tsx
   - gui/src/features/lineage/graphModel.ts
@@ -148,14 +149,22 @@ further away stay collapsed: the trace is exact where you are looking and coarse
 
 A click selects a node: its producers light up in violet, its consumers in green, the rest fades, and the details
 panel opens with what the node is, how many nodes are upstream and downstream of it, its delivery verdict from the data
-streams board (**Open data stream** follows that stream end to end on its own page, see
-[following one data stream](follow-a-data-stream.md)), and the lists of what it reads and writes (or, for a folder or
-a stack, what it holds). A double click
+streams board (**Follow its data** traces the flow and turns the data view on, see [What moved](#what-moved)), and the
+lists of what it reads and writes (or, for a folder or a stack, what it holds). A double click
 opens what the node stands for: a folder's flows, a stack's nodes, a flow's pipeline page, an object in the explorer.
 The right-click menu offers the same, the node's YAML or SQL, and running a flow of the scope's own repository.
 
 A node wears a mark only when something needs a look: a delivery verdict other than healthy, or lineage that could not
 be derived (a dashed warning edge, with the reason on hover and in the panel).
+
+## What moved
+
+**What moved: Day by day** in the bar turns on the graph's data view. The drawing stays the same and every node says
+what happened to it: a card leads with what its node did in the day looked at (the files that arrived, the rows a flow
+read and changed, what landed in a table) and charts it over the window, and every line is inked and weighed by what
+it carried, so a delivery is followed from where it enters to where it stopped. A rail under the canvas picks the day,
+and one start of it. A row of the Data streams board opens here, on its flow's trace.
+[Following data on the lineage graph](follow-a-data-stream.md) explains every part of it.
 
 ## The line under the bar
 
@@ -182,6 +191,7 @@ The whole drawing is in the address, so it can be shared and survives a reload.
 | `trace`, `hops`, `dir` | The traced node, how many hops (left out: all), and `up` or `down` for one side. |
 | `layout` | `right` draws left to right. Left out, the graph runs top to bottom. |
 | `expand` | A node the walk was continued past; repeated. |
+| `data`, `day`, `fire` | `data=on` shows what moved; `day` (`2026-01-31`) is the day looked at, the latest day anything drawn ran when left out; `fire` is one start of that day. |
 
 Links written for the earlier page still open: `view=objects` is `show=objects`, and `wave=3` is `waves=3-3`.
 

@@ -7,16 +7,21 @@ import {
   ReactFlow,
   useNodesState,
   useReactFlow,
+  useStoreApi,
+  type Viewport,
   type Edge as FlowEdge,
   type Node as FlowNode,
   type OnNodesChange,
 } from "@xyflow/react";
 import type { StreamStatus } from "../../api/types";
-import { NODE_HEIGHT, NODE_WIDTH, type Orientation, type Position } from "./graphLayout";
+import { edgeWidth, type Outcome } from "./dataLens";
+import { type CardSize, type Orientation, type Position } from "./graphLayout";
 import type { Lane } from "./graphBands";
 import type { View, ViewEdge } from "./graphModel";
 import { LANE_LABEL_ROOM, LANE_LABEL_ROOM_DESCRIBED, LaneBand, type LaneNode } from "./LaneBand";
-import { CardActionsContext, LineageNodeCard, type CardActions, type CardNode, type CardRole } from "./LineageNodeCard";
+import {
+  CardActionsContext, LineageNodeCard, type CardActions, type CardLens, type CardNode, type CardRole,
+} from "./LineageNodeCard";
 
 const nodeTypes = { card: LineageNodeCard, lane: LaneBand };
 
@@ -25,20 +30,106 @@ const LANE_MARGIN = 16;
 
 /** A drawing this small is seen whole, so a map of it would only cover part of it. */
 const MINIMAP_ABOVE = 60;
+/** An arrowhead's size on the data view's lines, in pixels at full zoom, whatever the line's weight. */
+const ARROW_SIZE = 18;
+/** The data view's cards are larger and placed for reading, so far fewer of them fill a window. */
+const MAP_DATA_ABOVE = 6;
+/** The data view's map, in the canvas's top left corner, and the room a drawing placed for reading leaves it. */
+const MAP_WIDTH = 132;
+const MAP_HEIGHT = 164;
+const MAP_ROOM = MAP_WIDTH + 24;
 
 /** Up to this many edges, each one names the flows it stands for; past it the names would bury the drawing. */
 const LABEL_EVERY_EDGE_UP_TO = 30;
 /** The selected node's own edges say what they pass through, unless it has more of them than can be read. */
 const LABEL_SELECTED_EDGES_UP_TO = 10;
-/** The width the details panel covers on the right, kept clear when a drawing is fitted with a node selected. */
-const DETAILS_WIDTH = 324;
+/** The room kept clear beside the details panel when a drawing is fitted with a node selected. */
+const DETAILS_MARGIN = 24;
 
-function fitOptions(detailsOpen: boolean) {
+function fitOptions(detailsWidth: number) {
   return {
     maxZoom: 1,
-    padding: { top: "24px", bottom: "24px", left: "32px", right: `${detailsOpen ? DETAILS_WIDTH : 32}px` },
+    padding: { top: "24px", bottom: "24px", left: "32px", right: `${detailsWidth > 0 ? detailsWidth + DETAILS_MARGIN : 32}px` },
   } as const;
 }
+
+/** The least zoom the data view places a drawing at: below it a card's figure and name are no longer read. */
+const READABLE_ZOOM = 0.74;
+
+/**
+ * Where the data view places a drawing: whole and centred when that leaves it readable, otherwise at the least
+ * readable zoom from its top, where data enters, with the node asked for (the traced or selected one) in view.
+ * A chain of seven steps is taller than a window is high; shrunk to fit, none of its figures could be read, so
+ * the page shows the start of it at a size that can and the reader moves down it.
+ */
+function readableViewport(
+  positions: ReadonlyMap<string, Position>,
+  size: CardSize,
+  canvas: { width: number; height: number },
+  room: { left: number; right: number },
+  anchorId: string | null,
+): Viewport | null {
+  if (positions.size === 0 || canvas.width <= 0 || canvas.height <= 0) {
+    return null;
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const at of positions.values()) {
+    minX = Math.min(minX, at.x);
+    minY = Math.min(minY, at.y);
+    maxX = Math.max(maxX, at.x + size.width);
+    maxY = Math.max(maxY, at.y + size.height);
+  }
+  minX -= room.left;
+
+  const pad = 24;
+  const wide = canvas.width - pad - room.right;
+  const high = canvas.height - pad * 2;
+  const zoom = Math.max(READABLE_ZOOM, Math.min(1, wide / (maxX - minX), high / (maxY - minY)));
+  const anchor = anchorId === null ? undefined : positions.get(anchorId);
+  // Along one axis: centred when the drawing fits; otherwise from its start, moved only as far as brings the
+  // anchor a third of the way in, and never past either end of the drawing.
+  const along = (start: number, end: number, space: number, offset: number, anchorAt: number | undefined, anchorSize: number) => {
+    const length = (end - start) * zoom;
+    if (length <= space) {
+      return offset + (space - length) / 2 - start * zoom;
+    }
+    const fromStart = offset - start * zoom;
+    if (anchorAt === undefined || (anchorAt + anchorSize - start) * zoom <= space) {
+      return fromStart;
+    }
+    const toEnd = offset + space - end * zoom;
+    return Math.max(toEnd, Math.min(fromStart, offset + space / 3 - anchorAt * zoom));
+  };
+  return {
+    x: along(minX, maxX, wide, pad, anchor?.x, size.width),
+    y: along(minY, maxY, high, pad, anchor?.y, size.height),
+    zoom,
+  };
+}
+
+/**
+ * What the data view puts on the canvas: each card's figure and chart, and how each line is inked and weighed by
+ * what it carried in the day looked at.
+ */
+export interface CanvasLens {
+  cards: ReadonlyMap<string, CardLens>;
+  edges: ReadonlyMap<string, { outcome: Outcome; volume: number }>;
+  /** The most any line of the drawing carried, which its widest line stands for. */
+  largest: number;
+}
+
+/** A line's ink by what happened on it: carried data, ran and carried none, failed, under way, or no run at all. */
+const LENS_INK: Readonly<Record<Outcome, { stroke: string; dash?: string; opacity: number }>> = {
+  moved: { stroke: "var(--chart-1)", opacity: 0.95 },
+  empty: { stroke: "var(--muted-foreground)", dash: "6 5", opacity: 0.8 },
+  failed: { stroke: "var(--destructive)", opacity: 0.95 },
+  running: { stroke: "var(--primary)", dash: "2 4", opacity: 0.9 },
+  absent: { stroke: "var(--muted-foreground)", dash: "1 6", opacity: 0.4 },
+};
 
 export interface CanvasSelection {
   id: string;
@@ -66,6 +157,14 @@ interface CanvasProps {
   /** The names the hidden nodes an edge passes through go by. */
   nameOf: (baseId: string) => string;
   colorMode: "light" | "dark";
+  /** The size of the cards the positions were laid out for. */
+  size: CardSize;
+  /** The data view's figures; null when the graph shows how nodes connect and nothing else. */
+  lens: CanvasLens | null;
+  /** The width the details panel covers on the right while a node is selected. */
+  detailsWidth: number;
+  /** The node a drawing placed for reading keeps in view: the one traced or selected. */
+  anchorId: string | null;
   centerRequest: CenterRequest | null;
   actions: CardActions;
   onSelect: (id: string | null) => void;
@@ -92,47 +191,77 @@ function edgeLabel(edge: ViewEdge, nameOf: (id: string) => string): string {
  * their places instead of jumping, so the reader keeps their bearings through a change of scope.
  */
 export function GraphCanvas({
-  view, positions, orientation, lanes, laneReach, selection, statuses, previewWaves, nameOf, colorMode, centerRequest, actions,
+  view, positions, orientation, lanes, laneReach, selection, statuses, previewWaves, nameOf, colorMode, size, lens, detailsWidth,
+  anchorId, centerRequest, actions,
   onSelect, onActivate, onNodeContextMenu, children,
 }: CanvasProps) {
   const flow = useReactFlow();
+  const store = useStoreApi();
   const seeded = useMemo<CardNode[]>(
     () => view.nodes.map((node) => ({
       id: node.id,
       type: "card" as const,
       position: positions.get(node.id) ?? { x: 0, y: 0 },
-      data: { node, orientation, role: null, leaving: false, status: null },
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
+      data: { node, orientation, role: null, leaving: false, status: null, lens: null },
+      width: size.width,
+      height: size.height,
     })),
-    [view, positions, orientation],
+    [view, positions, orientation, size],
   );
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<CardNode>(seeded);
   const [moving, setMoving] = useState(false);
   const firstLayout = useRef(true);
   // Read when a drawing is fitted, never a reason to fit: selecting a node must not move the canvas.
-  const detailsOpen = useRef(selection !== null);
+  const detailsOpen = useRef(selection !== null ? detailsWidth : 0);
   useEffect(() => {
-    detailsOpen.current = selection !== null;
-  }, [selection]);
+    detailsOpen.current = selection !== null ? detailsWidth : 0;
+  }, [selection, detailsWidth]);
+
+  // How a drawing is placed on the canvas. The graph of how nodes connect is fitted whole, as it always was. The
+  // data view is placed for reading: its cards carry figures, and a chain shrunk until it fits shows none of them.
+  // Read when a drawing is placed, never a reason to place one, so selecting a node does not move the canvas.
+  const mapped = lens !== null && view.nodes.length > MAP_DATA_ABOVE;
+  const placing = useRef({ readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation });
+  useEffect(() => {
+    placing.current = { readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation };
+  }, [lens, mapped, anchorId, positions, size, lanes, orientation]);
+  const place = useRef((duration: number) => {
+    const now = placing.current;
+    if (!now.readable) {
+      void flow.fitView({ duration, ...fitOptions(detailsOpen.current) });
+      return;
+    }
+    const { width, height } = store.getState();
+    // The bands' names stand beside the cards (top to bottom), so the drawing reaches that much further left.
+    const labelRoom = now.lanes.length > 0 && now.orientation === "down"
+      ? (now.lanes.some((lane) => lane.described) ? LANE_LABEL_ROOM_DESCRIBED : LANE_LABEL_ROOM) + LANE_MARGIN
+      : 0;
+    const viewport = readableViewport(
+      now.positions, now.size, { width, height },
+      // The map stands in the top left corner, so the drawing starts beside it and not under it.
+      { left: labelRoom + (now.mapped ? MAP_ROOM : 0), right: detailsOpen.current > 0 ? detailsOpen.current + DETAILS_MARGIN : 24 },
+      now.anchorId,
+    );
+    if (viewport !== null) {
+      void flow.setViewport(viewport, { duration });
+    }
+  });
 
   useEffect(() => {
     setFlowNodes(seeded);
-    // The first drawing appears in place; later ones slide, and the canvas is fitted once they have landed.
+    // The first drawing appears in place; later ones slide, and the canvas is placed once they have landed.
     if (firstLayout.current) {
       firstLayout.current = false;
       return;
     }
     setMoving(true);
     const settle = window.setTimeout(() => setMoving(false), 260);
-    const fit = window.requestAnimationFrame(() => {
-      void flow.fitView({ duration: 240, ...fitOptions(detailsOpen.current) });
-    });
+    const fit = window.requestAnimationFrame(() => place.current(240));
     return () => {
       window.clearTimeout(settle);
       window.cancelAnimationFrame(fit);
     };
-  }, [seeded, setFlowNodes, flow]);
+  }, [seeded, setFlowNodes]);
 
   // A request is answered once, by the first drawing that holds its node: a node picked from a list may only be
   // drawn by the render after the one that asked for it (its folder opens, its stack unstacks).
@@ -148,13 +277,13 @@ export function GraphCanvas({
     // After the fit a new drawing asks for, so the node asked for is what the canvas ends on.
     const handle = window.setTimeout(() => {
       answered.current = centerRequest.nonce;
-      void flow.setCenter(target.x + NODE_WIDTH / 2, target.y + NODE_HEIGHT / 2, {
+      void flow.setCenter(target.x + size.width / 2, target.y + size.height / 2, {
         zoom: Math.max(flow.getZoom(), 0.9),
         duration: 400,
       });
     }, 300);
     return () => window.clearTimeout(handle);
-  }, [centerRequest, positions, flow]);
+  }, [centerRequest, positions, flow, size]);
 
   const styledNodes = useMemo<CardNode[]>(() => flowNodes.map((flowNode) => {
     const node = flowNode.data.node;
@@ -171,9 +300,9 @@ export function GraphCanvas({
     return {
       ...flowNode,
       zIndex: role === "selected" ? 10 : undefined,
-      data: { node, orientation, role, leaving, status: statuses.get(node.id) ?? null },
+      data: { node, orientation, role, leaving, status: statuses.get(node.id) ?? null, lens: lens?.cards.get(node.id) ?? null },
     };
-  }), [flowNodes, orientation, selection, previewWaves, statuses]);
+  }), [flowNodes, orientation, selection, previewWaves, statuses, lens]);
 
   // The bands sit behind the cards and take no part in anything: no click, no selection, no drag.
   const laneNodes = useMemo<LaneNode[]>(() => lanes.map((lane, index) => {
@@ -225,6 +354,33 @@ export function GraphCanvas({
       // An edge is named where the name can be read: on a small drawing the flows it stands for, and on the
       // selected node's own edges what they pass through. Everything else is in the details panel.
       const touchesSelected = selection !== null && (edge.source === selection.id || edge.target === selection.id);
+      const dotted = described.has(edge.source) || described.has(edge.target) ? "2 5" : undefined;
+      if (lens !== null) {
+        // The data view inks a line by what it carried and weighs it by how much, so the eye follows the data down
+        // the chain and sees where it thinned out or stopped. The selection only fades what is beside it.
+        const carried = lens.edges.get(edge.id) ?? { outcome: "absent" as Outcome, volume: 0 };
+        const ink = LENS_INK[carried.outcome];
+        const faded = selection !== null && !related;
+        // No number rides on a line: the cards at its ends say what was written and what was read, and a
+        // third copy between them would only cover the line. An arrowhead is sized in units of its line's
+        // width, so it is given fewer of them on a heavier line: it stays near one size, a little wider than
+        // the line it ends, and a heavy line reads as much data rather than as a large arrow.
+        const weight = carried.outcome === "moved" ? edgeWidth(carried.volume, lens.largest) : 1.5;
+        const head = Math.max(ARROW_SIZE, weight * 5.5) / weight;
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          zIndex: carried.outcome === "moved" || carried.outcome === "failed" ? 5 : 0,
+          markerEnd: { type: MarkerType.ArrowClosed, color: ink.stroke, width: head, height: head },
+          style: {
+            stroke: ink.stroke,
+            strokeWidth: weight,
+            opacity: faded ? 0.08 : ink.opacity,
+            strokeDasharray: dotted ?? ink.dash,
+          },
+        };
+      }
       const label = touchesSelected && own <= LABEL_SELECTED_EDGES_UP_TO
         ? edgeLabel(edge, nameOf)
         : labelAll && selection === null && edge.labels.length > 0 ? edgeLabel(edge, nameOf) : "";
@@ -237,12 +393,12 @@ export function GraphCanvas({
         markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
         style: {
           stroke, strokeWidth: edge.weight > 1 ? 2 : 1.25, opacity,
-          strokeDasharray: described.has(edge.source) || described.has(edge.target) ? "2 5" : undefined,
+          strokeDasharray: dotted,
         },
         labelStyle: { fontSize: 11, opacity },
       };
     });
-  }, [view.edges, view.nodes, selection, nameOf]);
+  }, [view.edges, view.nodes, selection, nameOf, lens]);
 
   return (
     <CardActionsContext.Provider value={actions}>
@@ -260,8 +416,14 @@ export function GraphCanvas({
         }}
         onPaneClick={() => onSelect(null)}
         colorMode={colorMode}
-        fitView
-        fitViewOptions={fitOptions(selection !== null)}
+        // The data view's first drawing is placed for reading once the canvas knows its size; the graph's is fitted.
+        onInit={() => {
+          if (placing.current.readable) {
+            place.current(0);
+          }
+        }}
+        fitView={lens === null}
+        fitViewOptions={fitOptions(selection !== null ? detailsWidth : 0)}
         minZoom={0.05}
         nodesConnectable={false}
         nodesDraggable
@@ -269,8 +431,27 @@ export function GraphCanvas({
       >
         <Background />
         <Controls showInteractive={false} />
-        {view.nodes.length > MINIMAP_ABOVE && (
+        {lens === null && view.nodes.length > MINIMAP_ABOVE && (
           <MiniMap pannable zoomable nodeColor={(node) => (node.type === "lane" ? "transparent" : "var(--input)")} />
+        )}
+        {/* The data view is placed for reading, so a chain often runs past the window: its map shows the whole of
+            it at once, each node in the ink of what happened there, which is where the data stopped at a glance. */}
+        {lens !== null && mapped && (
+          <MiniMap
+            pannable
+            zoomable
+            position="top-left"
+            style={{ width: MAP_WIDTH, height: MAP_HEIGHT }}
+            ariaLabel="The whole drawing, each node in the ink of what happened there"
+            nodeBorderRadius={6}
+            nodeColor={(node) => {
+              if (node.type === "lane") {
+                return "transparent";
+              }
+              const outcome = lens.cards.get(node.id)?.figure.outcome ?? "absent";
+              return outcome === "absent" ? "var(--input)" : LENS_INK[outcome].stroke;
+            }}
+          />
         )}
         {children}
       </ReactFlow>

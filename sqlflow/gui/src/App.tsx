@@ -15,7 +15,6 @@ const ChatPage = lazyRoute("ChatPage", () => import("./features/chat/ChatPage"))
 const QueryResultPage = lazyRoute("QueryResultPage", () => import("./features/chat/QueryResultPage"));
 const InsightsPage = lazyRoute("InsightsPage", () => import("./features/insights/InsightsPage"));
 const DataStreamsPage = lazyRoute("DataStreamsPage", () => import("./features/datastreams/DataStreamsPage"));
-const StreamPathPage = lazyRoute("StreamPathPage", () => import("./features/datastreams/StreamPathPage"));
 const RunsPage = lazyRoute("RunsPage", () => import("./features/runs/RunsPage"));
 const RunDetailPage = lazyRoute("RunDetailPage", () => import("./features/runs/RunDetailPage"));
 const RunGroupPage = lazyRoute("RunGroupPage", () => import("./features/runs/RunGroupPage"));
@@ -85,7 +84,6 @@ export function workbenchPages() {
       <Route path="/insights" element={<InsightsPage />} />
       {/* Which tables have stopped receiving data, from the run history's own write statistics. */}
       <Route path="/datastreams" element={<DataStreamsPage />} />
-      <Route path="/datastreams/:pipelineId" element={<StreamPathPage />} />
       <Route path="/runs" element={<RunsPage />} />
       <Route path="/runs/groups/:groupId" element={<RunGroupPage />} />
       <Route path="/runs/:runId" element={<RunDetailPage />} />

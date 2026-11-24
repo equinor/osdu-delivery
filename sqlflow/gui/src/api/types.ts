@@ -3343,6 +3343,9 @@ export interface StreamSparkline {
  * on the single-stream endpoint; sparkline is always present and is what a board row draws. */
 export interface DataStream {
   pipelineId: string;
+  /** The repository the flow belongs to, for opening its trace in the lineage graph; null for a flow the catalog no
+   * longer holds. */
+  repoId: string | null;
   flowName: string;
   flowKind: string;
   batch: string | null;
@@ -3401,42 +3404,45 @@ export interface DataStreams {
   streams: DataStream[];
 }
 
-/** What a node of a stream's path stands for without drawing it, counted where it was cut. "producers": flows writing
- * what this flow reads, past the ones drawn; "inputs": objects this flow reads that are not on the path; "outputs":
- * objects it writes that are not; "readers": flows reading this object that are not drawn (checks and reports, which
- * write nothing, and those past the ones drawn); "upstream" and "downstream": flows past the depth the path is walked
- * to. count is the whole number; names lists at most fifty, flows by name and objects by qualified name. */
-export interface StreamPathOmission {
-  what: "producers" | "inputs" | "outputs" | "readers" | "upstream" | "downstream";
-  count: number;
-  names: string[];
+/** One day of one flow's runs, totalled (GET /api/v1/datastreams/activity). day counts days from the answer's fromUtc,
+ * the day a run's result was written. runs are the runs that finished and failed the failed among them; a run still
+ * queued or running is in neither, and is found among the day's fires. rowsRead is what the runs took in; the three
+ * counts after it are what they did to their target, and breakdown says whether any run reported those at all (a run
+ * that reports only a row count wrote what it read). counts sums the counts the runs' own results report, for a kind
+ * that counts something other than rows; null when no run reported any. */
+export interface FlowActivityDay {
+  day: number;
+  runs: number;
+  failed: number;
+  rowsRead: number;
+  breakdown: boolean;
+  rowsInserted: number;
+  rowsUpdated: number;
+  rowsDeleted: number;
+  files: number;
+  fileRows: number;
+  fileBytes: number;
+  seconds: number;
+  counts: Record<string, number> | null;
 }
 
-/** One node of a stream's path: a flow (pipelineId, kind, wave) or an object (objectKey, its kind as the lineage graph
- * captions it, its qualified name). role is the side of the selected flow it was reached from; external marks an object
- * nothing in the estate writes, which is where data enters it. */
-export interface StreamPathNode {
-  id: string;
-  type: "flow" | "object";
-  role: "selected" | "upstream" | "downstream";
-  name: string;
-  kind: string;
-  pipelineId: string | null;
-  wave: number | null;
-  objectKey: string | null;
-  qualifiedName: string | null;
-  external: boolean;
-  omitted: StreamPathOmission[];
+/** One flow's days with at least one run in the window, oldest first. */
+export interface FlowActivityFlow {
+  pipelineId: string;
+  days: FlowActivityDay[];
 }
 
-/** Data moving from one node of a path to the next: a flow writing an object, or an object read by a flow. */
-export interface StreamPathEdge {
-  from: string;
-  to: string;
+/** What the named flows did, day by day, over windowDays days from fromUtc (a UTC midnight). A flow with no run in the
+ * window is left out. */
+export interface FlowActivity {
+  windowDays: number;
+  fromUtc: string;
+  asOfUtc: string;
+  flows: FlowActivityFlow[];
 }
 
 /** The files one run took in, totalled; newestModified is when the source last changed what the run read. */
-export interface StreamPathFiles {
+export interface RunFilesTotal {
   files: number;
   rows: number;
   bytes: number;
@@ -3445,40 +3451,28 @@ export interface StreamPathFiles {
 
 /** One flow's run in a fire: the run as the runs list shows it (resultCounts included), how many parts it split its
  * work into over the fleet (0 when none), and the files it took in (null when none). */
-export interface StreamPathRun {
+export interface FlowFireRun {
   run: RunSummary;
   parts: number;
-  files: StreamPathFiles | null;
+  files: RunFilesTotal | null;
 }
 
-/** One fire through a path: the runs of its flows one start set going, in execution order. A run group (a schedule's
- * fire, a flow run with its descendants) is keyed by its group id; a run started on its own is a fire of one, keyed by
- * its run id. startedUtc is when its first run started or was queued. */
-export interface StreamPathFire {
+/** One fire: the runs of the named flows one start set going, in execution order. A run group (a schedule's fire, a
+ * flow run with its descendants) is keyed by its group id; a run started on its own is a fire of one, keyed by its run
+ * id. startedUtc is when its first run started or was queued. */
+export interface FlowFire {
   key: string;
   groupId: string | null;
   startedUtc: string;
-  runs: StreamPathRun[];
+  runs: FlowFireRun[];
 }
 
-/** One stream followed end to end (GET /api/v1/datastreams/{pipelineId}/path): the path its data takes, each flow's
- * verdict over the window as the board judges it, and the latest fires through the path, newest first. totalFires
- * counts every fire in the window; olderThanUtc, when set, is the `before` that reads the fires older than these.
- * lineageKnown is false for a flow with no lineage, whose path is the flow alone. */
-export interface StreamPath {
-  pipelineId: string;
-  flowName: string;
-  windowDays: number;
-  fromUtc: string;
-  asOfUtc: string;
-  includeBackfills: boolean;
-  lineageKnown: boolean;
-  nodes: StreamPathNode[];
-  edges: StreamPathEdge[];
-  streams: DataStream[];
-  fires: StreamPathFire[];
+/** The fires of one UTC day through the named flows (GET /api/v1/datastreams/activity/fires), newest first and capped;
+ * totalFires counts every fire of the day. */
+export interface FlowFires {
+  dayUtc: string;
+  fires: FlowFire[];
   totalFires: number;
-  olderThanUtc: string | null;
 }
 
 // ---- Warehouse health probe results (compute-task result shapes) ---------------------------------------------------------------

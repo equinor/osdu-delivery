@@ -379,8 +379,8 @@ public static class RunEndpoints
     /// <summary>
     /// The summaries of the runs named, in the shape the runs list serves them (<see cref="RunSummaryDto"/>, with what
     /// started each and, when asked, the counts its result reports), for a surface that picks its runs by its own rule
-    /// and shows them as the runs list would: a data stream's path, which groups the runs of several flows by the fire
-    /// that started them. Unordered; a run id that names no run is left out.
+    /// and shows them as the runs list would: the fires of a day on the lineage graph, which group the runs of several
+    /// flows by what started them. Unordered; a run id that names no run is left out.
     /// </summary>
     internal static async Task<List<RunSummaryDto>> SummariesOfAsync(
         CatalogDbContext db, IReadOnlyCollection<Guid> runIds, bool resultCounts, CancellationToken ct)
@@ -1154,7 +1154,7 @@ public static class RunEndpoints
     /// value (how query-string binding materializes an ISO instant with a 'Z' suffix) is converted, an already-UTC
     /// value is kept, and an unspecified-kind value is taken to be UTC (every timestamp in the API is UTC by
     /// contract).</summary>
-    internal static DateTime ToUtc(DateTime value)
+    private static DateTime ToUtc(DateTime value)
         => value.Kind switch
         {
             DateTimeKind.Utc => value,

@@ -27,6 +27,28 @@ export const COLUMN_SPACING = NODE_WIDTH + 110;
 /** Left-to-right: the distance between the cards of a column. */
 export const COLUMN_NODE_SPACING = NODE_HEIGHT + 20;
 
+/**
+ * How large the cards a layout places are, and (for a banded layout) how much room it leaves between the lines of
+ * one band and between two bands. The rooms across a line stay as they are, whatever the card.
+ */
+export interface CardSize {
+  width: number;
+  height: number;
+  /** Between two lines of one band; the banded layout's own room when left out. */
+  lineGap?: number;
+  /** Between two bands; the banded layout's own room when left out. */
+  bandGap?: number;
+}
+
+/** The card the graph draws when it shows how nodes connect: a name and a caption. */
+export const CARD_SIZE: CardSize = { width: NODE_WIDTH, height: NODE_HEIGHT };
+/**
+ * The taller, wider card of the data view, which adds a figure and a day-by-day chart under the name. Its lines and
+ * bands stand closer than the graph's: a chain is read down the page, and every row that fits without scrolling is
+ * a step of it seen beside the others.
+ */
+export const DATA_CARD_SIZE: CardSize = { width: 280, height: 92, lineGap: 44, bandGap: 72 };
+
 /** Which way data runs on the canvas. */
 export type Orientation = "down" | "right";
 
@@ -80,8 +102,15 @@ export function layeredLayout(
   ids: readonly string[],
   edges: readonly LayoutEdge[],
   orientation: Orientation = "down",
+  size: CardSize = CARD_SIZE,
 ): Map<string, Position> {
   const position = new Map<string, Position>();
+  // The same rooms between cards whatever their size: a taller or wider card pushes its neighbours out by as much.
+  const nodeSpacing = NODE_SPACING + size.width - NODE_WIDTH;
+  const lineSpacing = LINE_SPACING + size.height - NODE_HEIGHT;
+  const layerSpacing = LAYER_SPACING + size.height - NODE_HEIGHT;
+  const columnSpacing = COLUMN_SPACING + size.width - NODE_WIDTH;
+  const columnNodeSpacing = COLUMN_NODE_SPACING + size.height - NODE_HEIGHT;
   if (ids.length === 0) {
     return position;
   }
@@ -209,9 +238,9 @@ export function layeredLayout(
   if (orientation === "right") {
     levels.forEach((row, index) => {
       const group = rows.get(row)!;
-      const height = (group.length - 1) * COLUMN_NODE_SPACING;
+      const height = (group.length - 1) * columnNodeSpacing;
       group.forEach((id, i) => {
-        position.set(id, { x: index * COLUMN_SPACING, y: i * COLUMN_NODE_SPACING - height / 2 });
+        position.set(id, { x: index * columnSpacing, y: i * columnNodeSpacing - height / 2 });
       });
     });
     return position;
@@ -222,15 +251,15 @@ export function layeredLayout(
     const group = rows.get(row)!;
     const lines = Math.ceil(group.length / MAX_ROW_NODES);
     const slots = Math.ceil(group.length / lines);
-    const width = (slots - 1 + (lines - 1) / lines) * NODE_SPACING;
+    const width = (slots - 1 + (lines - 1) / lines) * nodeSpacing;
     group.forEach((id, i) => {
       const line = i % lines;
       position.set(id, {
-        x: (Math.floor(i / lines) + line / lines) * NODE_SPACING - width / 2,
-        y: top + line * LINE_SPACING,
+        x: (Math.floor(i / lines) + line / lines) * nodeSpacing - width / 2,
+        y: top + line * lineSpacing,
       });
     });
-    top += (lines - 1) * LINE_SPACING + LAYER_SPACING;
+    top += (lines - 1) * lineSpacing + layerSpacing;
   }
 
   return position;

@@ -1,11 +1,13 @@
 import {
   backEdges,
+  CARD_SIZE,
   COLUMN_NODE_SPACING,
   LINE_SPACING,
   MAX_ROW_NODES,
   NODE_HEIGHT,
   NODE_SPACING,
   NODE_WIDTH,
+  type CardSize,
   type LayoutEdge,
   type Orientation,
   type Position,
@@ -85,6 +87,7 @@ export function bandedLayout(
   nodes: readonly BandNode[],
   edges: readonly LayoutEdge[],
   orientation: Orientation = "down",
+  size: CardSize = CARD_SIZE,
 ): BandedLayout {
   const positions = new Map<string, Position>();
   if (nodes.length === 0) {
@@ -385,8 +388,12 @@ export function bandedLayout(
   let crossStart = Number.POSITIVE_INFINITY;
   let crossEnd = Number.NEGATIVE_INFINITY;
   const down = orientation === "down";
-  const thickness = down ? NODE_HEIGHT : NODE_WIDTH;
-  const breadth = down ? NODE_WIDTH : NODE_HEIGHT;
+  const thickness = down ? size.height : size.width;
+  const breadth = down ? size.width : size.height;
+  // The same rooms between cards whatever their size: a taller or wider card pushes its neighbours out by as much.
+  const nodeSpacing = NODE_SPACING + size.width - NODE_WIDTH;
+  const lineSpacing = LINE_SPACING + size.height - NODE_HEIGHT;
+  const columnNodeSpacing = COLUMN_NODE_SPACING + size.height - NODE_HEIGHT;
   const put = (id: string, along: number, across: number) => {
     positions.set(id, down ? { x: across, y: along } : { x: along, y: across });
     crossStart = Math.min(crossStart, across);
@@ -396,7 +403,7 @@ export function bandedLayout(
   ordered.forEach((line, index) => {
     const previous = ordered[index - 1];
     if (previous !== undefined) {
-      cursor += thickness + (previous.band === line.band ? BAND_LINE_GAP : BAND_GAP);
+      cursor += thickness + (previous.band === line.band ? size.lineGap ?? BAND_LINE_GAP : size.bandGap ?? BAND_GAP);
     }
     let lane = lanes[lanes.length - 1];
     if (lane === undefined || lane.rank !== line.band) {
@@ -410,15 +417,15 @@ export function bandedLayout(
       // an arrow leaving an upper row runs down through the gaps of the rows under it instead of behind their cards.
       const rows = Math.ceil(line.ids.length / MAX_ROW_NODES);
       const slots = Math.ceil(line.ids.length / rows);
-      const width = (slots - 1 + (rows - 1) / rows) * NODE_SPACING;
+      const width = (slots - 1 + (rows - 1) / rows) * nodeSpacing;
       line.ids.forEach((id, i) => {
         const row = i % rows;
-        put(id, cursor + row * LINE_SPACING, (Math.floor(i / rows) + row / rows) * NODE_SPACING - width / 2 - NODE_WIDTH / 2);
+        put(id, cursor + row * lineSpacing, (Math.floor(i / rows) + row / rows) * nodeSpacing - width / 2 - size.width / 2);
       });
-      cursor += (rows - 1) * LINE_SPACING;
+      cursor += (rows - 1) * lineSpacing;
     } else {
-      const height = (line.ids.length - 1) * COLUMN_NODE_SPACING;
-      line.ids.forEach((id, i) => put(id, cursor, i * COLUMN_NODE_SPACING - height / 2 - NODE_HEIGHT / 2));
+      const height = (line.ids.length - 1) * columnNodeSpacing;
+      line.ids.forEach((id, i) => put(id, cursor, i * columnNodeSpacing - height / 2 - size.height / 2));
     }
     lane.end = cursor + thickness;
   });

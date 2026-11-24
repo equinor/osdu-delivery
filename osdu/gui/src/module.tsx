@@ -22,6 +22,9 @@ import { RemovalTriggerFields } from "./features/delivery/removals/RemovalTrigge
 import { DownloadTriggerFields } from "./features/delivery/downloads/DownloadTriggerFields";
 import { DeliveryTriggerFields } from "./features/delivery/DeliveryTriggerFields";
 import { activePartition } from "./features/delivery/activePartition";
+import {
+  assertionMeasure, cacheMeasure, deliveryMeasure, dimensionMeasure, inventoryMeasure,
+} from "./features/delivery/runMeasures";
 import { PartitionSwitcher } from "./features/delivery/PartitionSwitcher";
 import { shortId } from "./features/delivery/idTail";
 
@@ -271,6 +274,7 @@ const deliveryKind: FlowKindContribution = {
   pipelineFacts: (pipeline) => <Deferred placeholder={false}><DeliveryTargetFacts pipelineId={pipeline.id} /></Deferred>,
   runColumns: deliveryRunColumns,
   runCountColumns: deliveryRunCountColumns,
+  runMeasure: deliveryMeasure,
   run: runPanels({
     headerActions: (run) => <DeliveryRunActions run={run} />,
     headerMeta: (run) => <DeliveryRunMeta run={run} />,
@@ -300,6 +304,7 @@ const retrievalKind: FlowKindContribution = {
 const cacheKind: FlowKindContribution = {
   kind: "cache",
   identity: { label: "Cache", icon: DatabaseZap, tone: "orange" },
+  runMeasure: cacheMeasure,
   pipelineTabs: [
     {
       value: "versions",
@@ -320,6 +325,7 @@ const cacheKind: FlowKindContribution = {
 const assertionKind: FlowKindContribution = {
   kind: "assertion",
   identity: { label: "Assertion", icon: ListChecks, tone: "neutral" },
+  runMeasure: assertionMeasure,
   pipelineTabs: [
     {
       value: "tests",
@@ -354,6 +360,7 @@ const assertionKind: FlowKindContribution = {
 const dimensionKind: FlowKindContribution = {
   kind: "dimension",
   identity: { label: "Dimension", icon: Shapes, tone: "violet" },
+  runMeasure: dimensionMeasure,
   pipelineTabs: [
     {
       value: "dimensions",
@@ -377,6 +384,7 @@ const dimensionKind: FlowKindContribution = {
 const inventoryKind: FlowKindContribution = {
   kind: "inventory",
   identity: { label: "Inventory", icon: ClipboardList, tone: "neutral" },
+  runMeasure: inventoryMeasure,
   pipelineTabs: [
     {
       value: "inventories",

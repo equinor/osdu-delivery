@@ -39,6 +39,15 @@ export interface GraphParams {
    * the lineage the estate computed.
    */
   described: boolean;
+  /**
+   * Whether the drawing shows what moved through it: every card says what its node did in the day looked at and
+   * charts it over the window, and every line is inked and weighed by what it carried.
+   */
+  data: boolean;
+  /** The UTC day the data view looks at (`2026-01-31`); empty looks at the latest day anything drawn ran. */
+  day: string;
+  /** The one fire of that day looked at, by its key; empty looks at the whole day. */
+  fire: string;
 }
 
 const LEVELS: readonly GraphLevel[] = ["flows", "handovers", "all", "objects"];
@@ -98,6 +107,9 @@ export function readGraphParams(search: URLSearchParams): GraphParams {
     stacked: search.get("stacks") !== "off",
     orientation: search.get("layout") === "right" ? "right" : "down",
     described: search.get("described") === "on",
+    data: search.get("data") === "on",
+    day: /^\d{4}-\d{2}-\d{2}$/.test(search.get("day") ?? "") ? search.get("day") as string : "",
+    fire: search.get("fire") ?? "",
   };
 }
 
@@ -143,7 +155,29 @@ export function writeGraphParams(params: GraphParams): URLSearchParams {
   if (params.described) {
     search.set("described", "on");
   }
+  if (params.data) {
+    search.set("data", "on");
+    set("day", params.day);
+    // A fire belongs to its day: without the day it names nothing.
+    set("fire", params.day === "" ? "" : params.fire);
+  }
   return search;
+}
+
+/**
+ * The address that follows one flow's data: its trace, drawn with every object on it and with the data view on, so
+ * the page opens on what arrived and what each flow after it did. Within its repository a flow is traced; a flow
+ * whose repository is not known seeds the drawing on itself.
+ */
+export function followDataPath(pipelineId: string, repoId: string | null): string {
+  const params: GraphParams = {
+    ...readGraphParams(new URLSearchParams()),
+    repoId: repoId ?? "",
+    focus: pipelineId,
+    level: "all",
+    data: true,
+  };
+  return `/lineage?${writeGraphParams(params).toString()}`;
 }
 
 /** What the graph is seeded from. */

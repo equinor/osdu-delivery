@@ -43,8 +43,8 @@ Every run the platform records carries how many rows it inserted, updated, and d
 It is exposed in four places, all computing the same analysis on each request (nothing is stored):
 
 - The control plane's `GET /api/v1/datastreams` (the board, ranked most urgent first) and `GET /api/v1/datastreams/{pipelineId}` (one stream with its full day-by-day series), in `src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs`. The board also takes a repeatable `pipelineId` query parameter (at most `MaxNamedStreams`, 200) for a caller that already knows which streams it is asking about; the other filters still apply on top of it, so such a caller normally sends `scope=all&includeUnscheduled=true` with it.
-- The GUI's **Data streams** page, which renders the board with a two-week sparkline per row; a row opens the stream's own page, which follows it end to end with every flow's verdict on its path ([following one data stream](../guides/follow-a-data-stream.md), served by `GET /api/v1/datastreams/{pipelineId}/path`).
-- The GUI's **Lineage graph**, which names the flows it has drawn on the board endpoint and shows their verdicts in its Details panel: the counts over the whole drawing, a glyph beside each flow in the wave list and the edge legend, and, for whichever node is focused, the verdict of the flow that writes it (a table, view or landed file is judged by its producer). **Open data stream** there opens the same stream page.
+- The GUI's **Data streams** page, which renders the board with a two-week sparkline per row; a row opens the flow's trace in the lineage graph with the data view on, which follows its data end to end: what arrived, what each flow on the trace did with it day by day, and where it stopped ([following data on the lineage graph](../guides/follow-a-data-stream.md), served by `GET /api/v1/datastreams/activity`).
+- The GUI's **Lineage graph**, which names the flows it has drawn on the board endpoint and shows their verdicts in its Details panel: the counts over the whole drawing, a glyph beside each flow in the wave list and the edge legend, and, for whichever node is focused, the verdict of the flow that writes it (a table, view or landed file is judged by its producer). **Follow its data** there traces the flow and turns the graph's data view on.
 - The MCP tool `detect_stream_anomalies`, which returns the board or, given `pipelineId` or `flowName`, the single-stream drill-down with every detector's reasoning.
 
 ## What is analysed, and what is not
@@ -184,4 +184,4 @@ flow runs: it wrote rows on 1 of the 23 day(s) its flow ran and succeeded".
 - [Health-check detection engine internals](healthcheck-engine.md): the trend, imputation, ESD, PELT and robust statistics this detector reuses.
 - [Health-check flow (flowType: hc)](../flow/hc.md): the per-table health check for the tables that warrant one.
 - [Control plane](control-plane.md): the API surface the board and the MCP tool read.
-- [Following one data stream end to end](../guides/follow-a-data-stream.md): one stream's path, fire by fire, with these verdicts on every flow of it.
+- [Following data on the lineage graph](../guides/follow-a-data-stream.md): what every node of a trace moved, day by day, with these verdicts beside it.

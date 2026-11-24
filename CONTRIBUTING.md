@@ -70,6 +70,13 @@ any terminal that has it):
   fragment adds to the record, the chain's preflight, and one write for any change to the chain. Run it after a change
   to enrichment. A new suite is named in `on_demand_suites` in `tools/test.sh` and left out in CI's two test steps.
 
+Each tier runs as stages (`tools/lib/stages.sh`): the build, the .NET tests, each GUI's install, build, lint and unit
+tests, the VS Code extension's, the MCP server's clippy and tests, and the end-to-end suite. Every stage runs whatever the
+ones before it did, so one failure never hides another; a stage that needs one that did not pass (the tests need the
+build, a GUI's checks its install) is reported as not run, naming it. The run ends with a summary, one line per stage,
+and fails when any stage failed (exit 1, or 130 when it was interrupted). CI's two test jobs run their checks the same
+way: each runs unless one it needs did not pass, and the job fails when any of them failed.
+
 A test that needs SQL Server, a host or another process carries `[Trait("Category", "Integration")]`, which puts it in
 the full tier. The OSDU module's SQL Server tests are the classes in `[Collection(SqlServerSuite.Name)]`, and a guard
 test fails one there without the trait. The unit tier points the suites at a server that does not exist, so any other

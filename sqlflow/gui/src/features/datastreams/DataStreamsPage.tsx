@@ -22,6 +22,7 @@ import { RelativeTime } from "../../components/RelativeTime";
 import { RichTooltip } from "../../components/RichTooltip";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { pollingInterval } from "../../hooks/usePolling";
+import { followDataPath } from "../lineage/graphUrl";
 import { StreamSparkline } from "./StreamSparkline";
 import { StreamStatusBadge, StreamStatusCounts } from "./StreamStatusBadge";
 import {
@@ -155,8 +156,9 @@ function missedCaption(profile: StreamProfile): string {
  * underneath. Then the proof: the last two weeks drawn as bars against the expectation, so "less data than
  * usual" is a shape rather than a claim; when data last arrived against how often it is expected; and how many
  * expected days went by with nothing, always as "n of m days" so a zero can never be mistaken for zero rows.
- * Clicking a row follows that stream end to end on its own page: what the vendor delivered and what each flow
- * after it did with it, fire by fire, with the statistics behind every verdict on the path.
+ * Clicking a row follows that stream's data on the lineage graph: its flow's trace with the data view on, which says
+ * what the vendor delivered and what each flow after it did with it, day by day, beside the statistics behind the
+ * verdict.
  *
  * Two switches change what the numbers MEAN rather than just what is shown, which is why they sit on the page
  * rather than in a menu. "Include backfills" puts operator-driven reprocessing back into the baseline, and a
@@ -195,8 +197,8 @@ export default function DataStreamsPage() {
    * Re-run the analysis against the catalog as it stands right now. Every verdict on this page is computed
    * from run history on each request, so a load that landed since the last poll is invisible until something
    * asks again, and the two-minute poll is far too slow for the "I just ran it, did it help" loop. Invalidating
-   * the whole "datastreams" key deliberately takes every stream's path with it: a board that says one thing and a
-   * stream's page that says another is worse than either alone.
+   * the whole "datastreams" key deliberately takes every stream's own analysis with it: a board that says one thing
+   * and a stream's panel that says another is worse than either alone.
    */
   const recheck = () => {
     void queryClient.invalidateQueries({ queryKey: ["datastreams"] });
@@ -571,7 +573,7 @@ export default function DataStreamsPage() {
               columns={columns}
               rows={board.streams}
               rowKey={(s) => s.pipelineId}
-              onRowClick={(s) => navigate(`/datastreams/${s.pipelineId}`)}
+              onRowClick={(s) => navigate(followDataPath(s.pipelineId, s.repoId))}
               grouping={grouping}
               emptyMessage="No tables to show."
               // Below this the columns would compress and clip their content instead of the card scrolling.

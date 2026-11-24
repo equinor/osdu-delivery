@@ -224,6 +224,56 @@ test.describe.serial("lineage", () => {
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("layout")).toBeNull();
   });
 
+  test("the graph shows what moved, day by day, and takes it back", async ({ adminPage }) => {
+    await adminPage.goto("/lineage");
+    await adminPage.getByTestId("graph-project-select").click();
+    await adminPage.getByTestId("graph-scope-repo").first().click();
+
+    const graph = adminPage.getByTestId("page-lineage-graph");
+    const figures = graph.getByTestId("lens-figure");
+    await expect(graph.getByTestId("graph-node").first()).toBeVisible({ timeout: 30_000 });
+    // Every flow one by one, so the delivery flow has a card of its own whatever the estate would have stacked.
+    const repoId = new URL(adminPage.url()).searchParams.get("repoId");
+    await adminPage.goto(`/lineage?repoId=${repoId}&group=off&stacks=off`);
+    await expect(graph.getByTestId("graph-node").filter({ hasText: DELIVERY_FLOW })).toHaveCount(1, { timeout: 30_000 });
+
+    // The graph says how nodes connect until it is asked what moved: no card carries a figure, and there is no rail.
+    await expect(figures).toHaveCount(0);
+    await expect(graph.getByTestId("data-rail")).toHaveCount(0);
+
+    // Day by day puts a figure and a chart on every card and a rail of days under the canvas, and is in the address.
+    await graph.getByTestId("graph-data-toggle").click();
+    const rail = graph.getByTestId("data-rail");
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await expect(graph.getByTestId("graph-status-data")).toContainText("what moved on");
+    expect(new URL(adminPage.url()).searchParams.get("data")).toBe("on");
+    await expect(figures.first()).toBeVisible();
+    await expect(figures.filter({ hasText: "Reading" })).toHaveCount(0);
+    await expect(graph.getByTestId("lens-bars").first()).toBeVisible();
+    await expect(graph.getByTestId("lens-legend")).toContainText("data moved");
+    // The seed ran the estate's flows, so the latest day anything ran is one some flow moved data on.
+    await expect(rail.getByTestId("data-rail-caption")).toContainText("moved data");
+    await expect(graph.locator('[data-testid="lens-figure"][data-outcome="moved"]').first()).toBeVisible();
+
+    // Looking at another day names it in the address, and Latest lets go of it again.
+    await rail.getByTestId("data-rail-column").first().click();
+    await expect.poll(() => new URL(adminPage.url()).searchParams.get("day")).not.toBeNull();
+    await rail.getByTestId("data-rail-latest").click();
+    await expect.poll(() => new URL(adminPage.url()).searchParams.get("day")).toBeNull();
+
+    // A flow's panel says what it did that day beside what it reads and writes.
+    await graph.getByTestId("graph-node").filter({ hasText: DELIVERY_FLOW }).first().click();
+    const panel = graph.getByTestId("graph-focus-panel");
+    await expect(panel.getByTestId("lens-detail")).toBeVisible();
+    await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
+
+    // Taking it back from the line under the bar draws the graph as it was.
+    await graph.getByTestId("graph-status-remove-data").click();
+    await expect(rail).toHaveCount(0);
+    await expect(figures).toHaveCount(0);
+    expect(new URL(adminPage.url()).searchParams.get("data")).toBeNull();
+  });
+
   test("a mapping's row jumps to its node in the graph", async ({ adminPage }) => {
     await adminPage.goto("/delivery/documents");
     const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: WELL_LOG_MAPPING }).first();

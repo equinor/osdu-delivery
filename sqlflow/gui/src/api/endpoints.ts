@@ -7,7 +7,7 @@ import type {
   AccessToken, AllSearchResult, Attention, AuthProviders,
   ChatAskRequest, ChatCapabilities, ChatConversation, ChatConversationsPurged, ChatMessage, ChatTranscription,
   ColumnHit, ComputeTask, ComputeTaskAccepted, ComputeTaskRequest,
-  DataStream, DataStreams, DispatchSnapshot, EstateEnvironments, StreamPath,
+  DataStream, DataStreams, DispatchSnapshot, EstateEnvironments, FlowActivity, FlowFires,
   ComputeTaskSummary, CreateAccessTokenRequest, CreateNotificationSubscriptionRequest, CreateScheduleRequest, CreatedAccessToken,
   CheckRepoAccessRequest, CreateUserRequest, Dashboard, Datasource, DefinitionHit, DiscoveredFlow,
   GitCredentialsStatus, GitHubAppCheck,
@@ -122,21 +122,28 @@ export interface DataStreamQuery {
   pipelineIds?: string[];
 }
 
+/** Flows named in a query string: repeated params, which the single-value query builder cannot express. */
+function namedFlows(pipelineIds: readonly string[]): string {
+  return pipelineIds.map((id) => `pipelineId=${encodeURIComponent(id)}`).join("&");
+}
+
 export const dataStreamApi = {
   /** The board: every stream's verdict, ranked most urgent first. No per-stream series (too large). */
   list: ({ pipelineIds, ...query }: DataStreamQuery = {}) => {
     // Repeated query params, which the single-value query builder cannot express, so they are folded into the
     // path the way the lineage graph's `expand` is.
-    const named = (pipelineIds ?? []).map((id) => `pipelineId=${encodeURIComponent(id)}`).join("&");
+    const named = namedFlows(pipelineIds ?? []);
     return get<DataStreams>(`/api/v1/datastreams${named === "" ? "" : `?${named}`}`, query as QueryParams);
   },
   /** One stream in full: the day-by-day series the chart draws, and every detector's reasoning. */
   get: (pipelineId: string, days?: number, includeBackfills?: boolean) =>
     get<DataStream>(`/api/v1/datastreams/${pipelineId}`, { days, includeBackfills }),
-  /** One stream followed end to end: the path its data takes, each flow's verdict, and the latest fires through it.
-   * `before` is the previous answer's olderThanUtc, to read the fires older than those it held. */
-  path: (pipelineId: string, query: { days?: number; includeBackfills?: boolean; before?: string } = {}) =>
-    get<StreamPath>(`/api/v1/datastreams/${pipelineId}/path`, query as QueryParams),
+  /** What the named flows moved, day by day over the window: the totals the lineage graph's data view draws. */
+  activity: (pipelineIds: readonly string[], days?: number) =>
+    get<FlowActivity>(`/api/v1/datastreams/activity?${namedFlows(pipelineIds)}`, { days }),
+  /** The fires of one UTC day (`2026-01-31`) through the named flows, each with its runs. */
+  fires: (pipelineIds: readonly string[], day: string) =>
+    get<FlowFires>(`/api/v1/datastreams/activity/fires?${namedFlows(pipelineIds)}`, { day }),
 };
 
 // ---- Repos and pipelines ----------------------------------------------------------------------------------------------

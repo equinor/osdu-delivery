@@ -5,14 +5,14 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.6]
 
-### Data streams
+### Lineage
 
-- **A data stream has a page of its own.** A row on the Data streams board, or **Open data stream** in the lineage graph,
-  opens the stream followed end to end: where its data enters, the `pre` table, the ingestion flow and what it keys into,
-  and every flow after it, with a strip of fires to pick one from and each card saying what happened in that fire (the
-  files that arrived, what each run took in and changed, what a delivery delivered, where the data stopped). A node opens
-  on the right with its run in the fire and its verdict over the window
-  ([following one data stream](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/guides/follow-a-data-stream.md)).
+- **The lineage graph shows what moved.** **What moved: Day by day** in the graph's bar makes every card say what its
+  node did in the day looked at (the files that arrived, the rows a flow read and changed, what landed in a table, the
+  records a delivery flow delivered) and chart it over the window, and inks and weighs every line by what it carried, so
+  a delivery is followed from where it enters to where it stopped. A rail under the canvas picks the day, or one start
+  of it, and a node's panel lists its runs that day. A row on the Data streams board opens its flow's trace this way
+  ([following data on the lineage graph](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/guides/follow-a-data-stream.md)).
 
 ### Saving an environment
 

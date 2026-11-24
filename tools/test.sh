@@ -24,6 +24,11 @@
 #                                       fragment adds to the record, the chain's preflight, and one write for any change to the chain
 #                                       (osdu/docs/reference/flow/enrich.md).
 #
+# A tier runs as stages (tools/lib/stages.sh): every stage runs whatever the ones before it did, so one failure never
+# hides another, except a stage that needs one that did not pass (the build a suite tests, the install a GUI's checks
+# read), which is reported as not run. The run ends with a summary of every stage, and exits 1 when a stage failed, 130
+# when it was interrupted.
+#
 # The unit tier points the suites at a server that does not exist, so a test that needs SQL Server without carrying
 # [Trait("Category", "Integration")] fails here, as it would in CI, rather than passing on this machine's database.
 # The full tier uses SQLFLOW_TEST_DB: from the environment, else from .sqlflow/env, else (on Windows) the local default
@@ -62,7 +67,7 @@ case "${1:-}" in
     fi
     ;;
   -h | --help)
-    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
@@ -91,18 +96,15 @@ if [ "$mode" = install-hook ]; then
   exit 0
 fi
 
-started=$(date +%s)
-step() {
-  echo
-  echo "== $1"
-}
+# shellcheck source=lib/stages.sh
+. "$root/tools/lib/stages.sh"
 
 on_windows=false
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) on_windows=true ;;
 esac
 
-# --- The tools each tier needs, named before anything runs ---
+# --- What each tier needs, named before anything runs, so a run never fails on it hours in ---
 missing=""
 command -v dotnet > /dev/null 2>&1 || missing="$missing .NET SDK (dotnet),"
 if [ "$mode" != suite ]; then
@@ -113,6 +115,13 @@ if [ "$mode" = full ]; then
 fi
 if [ -n "$missing" ]; then
   echo "tools/test.sh: the $mode tier needs${missing%,}, which this terminal cannot find." >&2
+  exit 1
+fi
+
+# The end-to-end suite keeps its estate in a database of its own, which Windows finds on the local server by itself.
+if [ "$mode" = full ] && [ "$on_windows" = false ] && [ -z "${SQLFLOW_E2E_CATALOG_DB:-}" ]; then
+  echo "tools/test.sh: the end-to-end suite keeps its estate in a database of its own, and SQLFLOW_E2E_CATALOG_DB is not set." >&2
+  echo "Point it at a disposable database on the same server, for example OsduDeliveryE2E." >&2
   exit 1
 fi
 
@@ -138,6 +147,8 @@ else
   fi
 fi
 export SQLFLOW_TEST_DB="$test_db"
+# The database as a stage's name shows it: never its password.
+shown_db="$(printf '%s' "$test_db" | sed -e 's/;[Pp]assword=[^;]*/;Password=***/')"
 
 # The GitHub App live suite's test App: from the environment, else from .sqlflow/env (one line per value, so the key is
 # its .pem file's path, or the base64 of the PEM). With none of them the suite is skipped; with only some of them it
@@ -176,85 +187,116 @@ fi
 # the suites' to use.
 export SQLFLOW_LOCAL_ENV_FILE=false
 
-# --- .NET ---
-step "Build (Release, warnings as errors)"
-dotnet build OsduDelivery.sln -c Release -nologo -v q -warnaserror -warnnotaserror:NU1903
+# --- What the stages run. Each runs in a stage's own subshell, so a folder it enters stays the stage's. ---
 
-if [ "$mode" = unit ]; then
-  step "Unit tests (everything but Category=Integration and the on-demand suites)"
-  dotnet test OsduDelivery.sln -c Release --no-build -nologo --filter "Category!=Integration&$leave_out"
-elif [ "$mode" = suite ]; then
-  # One project at a time: the SQL Server suites share the test database.
-  step "The $suite suite, against $(printf '%s' "$test_db" | sed -e 's/;[Pp]assword=[^;]*/;Password=***/')"
-  dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1 --filter "Suite=$suite"
-  elapsed=$(( $(date +%s) - started ))
-  echo
-  echo "The $suite suite passed in $(( elapsed / 60 ))m $(( elapsed % 60 ))s."
-  exit 0
-else
-  # One project at a time: the SQL Server suites share the test database.
-  step "Every .NET test but the on-demand suites, against $(printf '%s' "$test_db" | sed -e 's/;[Pp]assword=[^;]*/;Password=***/')"
-  dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1 --filter "$leave_out"
-fi
+# Runs a command in a folder.
+in_dir() {
+  cd "$1"
+  shift
+  "$@"
+}
 
-# --- The GUI ---
-# osdu/gui compiles the vendored sqlflow/gui sources in place, so its build covers both trees' TypeScript.
+# Installs a GUI's packages when there is no install, or the lock file moved on since the last one.
 gui_install() {
-  # Installs when there is no install, or the lock file moved on since the last one.
   if [ ! -f "$1/node_modules/.package-lock.json" ] || [ "$1/package-lock.json" -nt "$1/node_modules/.package-lock.json" ]; then
-    (cd "$1" && npm ci --no-audit --no-fund)
+    in_dir "$1" npm ci --no-audit --no-fund
   fi
 }
-# The hosted build is the pages and the side bar the VS Code extension shows, a second build of the same sources.
-step "OSDU GUI: build, the hosted build, lint and unit tests"
-gui_install osdu/gui
-(cd osdu/gui && npm run build && npm run build:hosted && npm run lint && npm run test:unit)
 
-# SQLFlow's GUI on its own, as CI builds it, when this branch changes it.
-base="$(git merge-base HEAD origin/main 2> /dev/null || true)"
-if [ "$mode" = full ] || [ -z "$base" ] || [ -n "$(git diff --name-only "$base" -- sqlflow/gui; git status --porcelain -- sqlflow/gui)" ]; then
-  step "SQLFlow GUI: build and unit tests"
-  gui_install sqlflow/gui
-  (cd sqlflow/gui && npm run build && npm run build:hosted && npm run test:unit)
-else
-  step "SQLFlow GUI: unchanged on this branch, not built"
-fi
+# A GUI's build, and its hosted build: the pages and the side bar its VS Code extension shows, a second build of the
+# same sources.
+gui_builds() {
+  cd "$1"
+  npm run build
+  npm run build:hosted
+}
 
-# The VS Code extension: both trees' type check and unit tests. The host compiles SQLFlow's sources in place, with its own packages.
-step "VS Code extension: type check and unit tests"
-gui_install osdu/hosts/osdu-delivery-vscode
-(cd osdu/hosts/osdu-delivery-vscode && npm run compile && npm test)
-node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
-
-step "GitHub action: unit tests"
-node --test "sqlflow/integrations/github/test/*.test.mjs"
-
-if [ "$mode" = full ]; then
-  # --- The MCP server ---
-  export CARGO_TARGET_DIR="$root/.sqlflow/test/cargo-target"
-  step "MCP server: clippy and tests"
-  cargo clippy --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp --all-targets -- -D warnings
-  cargo test --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp
-  cargo clippy --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml --all-targets -- -D warnings
-  cargo test --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
-
-  # --- The GUI end-to-end suite ---
-  # It starts the control plane on 5299 and the GUI on 5173 from the Release build above. A dev GUI on 5173 would answer
-  # for it, so the suite takes 5174 then.
-  step "OSDU GUI end-to-end suite"
+# The GUI end-to-end suite. It starts the control plane on 5299 and the GUI on 5173 from the Release build; a dev GUI on
+# 5173 would answer for it, so the suite takes 5174 then.
+osdu_gui_e2e() {
   if [ -z "${SQLFLOW_E2E_GUI_PORT:-}" ] && { (echo > /dev/tcp/127.0.0.1/5173) > /dev/null 2>&1; }; then
     export SQLFLOW_E2E_GUI_PORT=5174
     echo "Port 5173 is taken (a dev GUI?), so the suite's GUI runs on 5174."
   fi
-  if [ "$on_windows" = false ] && [ -z "${SQLFLOW_E2E_CATALOG_DB:-}" ]; then
-    echo "tools/test.sh: the end-to-end suite keeps its estate in a database of its own, and SQLFLOW_E2E_CATALOG_DB is not set." >&2
-    echo "Point it at a disposable database on the same server, for example OsduDeliveryE2E." >&2
-    exit 1
-  fi
   export SQLFLOW_E2E_DOTNET_CONFIGURATION=Release
-  (cd osdu/gui && npx playwright install chromium && npm run e2e)
+  cd osdu/gui
+  npx playwright install chromium
+  npm run e2e
+}
+
+stages_begin
+
+# --- .NET ---
+build="Build (Release, warnings as errors)"
+stage_run "$build" -- dotnet build OsduDelivery.sln -c Release -nologo -v q -warnaserror -warnnotaserror:NU1903
+
+case "$mode" in
+  unit)
+    stage_run "Unit tests (everything but Category=Integration and the on-demand suites)" --needs "$build" -- \
+      dotnet test OsduDelivery.sln -c Release --no-build -nologo --filter "Category!=Integration&$leave_out"
+    ;;
+  suite)
+    # One project at a time: the SQL Server suites share the test database.
+    stage_run "The $suite suite, against $shown_db" --needs "$build" -- \
+      dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1 --filter "Suite=$suite"
+    status=0
+    stages_end "The $suite suite" || status=$?
+    exit "$status"
+    ;;
+  full)
+    # One project at a time: the SQL Server suites share the test database.
+    stage_run "Every .NET test but the on-demand suites, against $shown_db" --needs "$build" -- \
+      dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1 --filter "$leave_out"
+    ;;
+esac
+
+# --- The GUI ---
+# osdu/gui compiles the vendored sqlflow/gui sources in place, so its build covers both trees' TypeScript. Its build,
+# lint and unit tests are stages of their own: a failing build hides neither the lint nor the tests.
+stage_run "OSDU GUI: install" -- gui_install osdu/gui
+stage_run "OSDU GUI: build and the hosted build" --needs "OSDU GUI: install" -- gui_builds osdu/gui
+stage_run "OSDU GUI: lint" --needs "OSDU GUI: install" -- in_dir osdu/gui npm run lint
+stage_run "OSDU GUI: unit tests" --needs "OSDU GUI: install" -- in_dir osdu/gui npm run test:unit
+
+# SQLFlow's GUI on its own, as CI builds it, when this branch changes it.
+base="$(git merge-base HEAD origin/main 2> /dev/null || true)"
+if [ "$mode" = full ] || [ -z "$base" ] || [ -n "$(git diff --name-only "$base" -- sqlflow/gui; git status --porcelain -- sqlflow/gui)" ]; then
+  stage_run "SQLFlow GUI: install" -- gui_install sqlflow/gui
+  stage_run "SQLFlow GUI: build and the hosted build" --needs "SQLFlow GUI: install" -- gui_builds sqlflow/gui
+  stage_run "SQLFlow GUI: unit tests" --needs "SQLFlow GUI: install" -- in_dir sqlflow/gui npm run test:unit
+else
+  stage_skip "SQLFlow GUI" "unchanged on this branch, so not built"
 fi
 
-elapsed=$(( $(date +%s) - started ))
-echo
-echo "The $mode tier passed in $(( elapsed / 60 ))m $(( elapsed % 60 ))s."
+# The VS Code extension: both trees' type check and unit tests. The host compiles SQLFlow's sources in place, with its
+# own packages; SQLFlow's extension tools' tests need none.
+stage_run "VS Code extension: install" -- gui_install osdu/hosts/osdu-delivery-vscode
+stage_run "VS Code extension: type check" --needs "VS Code extension: install" -- in_dir osdu/hosts/osdu-delivery-vscode npm run compile
+stage_run "VS Code extension: unit tests" --needs "VS Code extension: install" -- in_dir osdu/hosts/osdu-delivery-vscode npm test
+stage_run "SQLFlow's VS Code tools: unit tests" -- node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
+
+stage_run "GitHub action: unit tests" -- node --test "sqlflow/integrations/github/test/*.test.mjs"
+stage_run "Test tooling: unit tests" -- node --test "tools/lib/*.test.mjs"
+
+if [ "$mode" = full ]; then
+  # --- The MCP server ---
+  # SQLFlow's server as a library, and the product's host that composes it, each built as its committed lock file names.
+  # Clippy and the tests are stages of their own, and the tests run every target past a failing one, so a failing
+  # library test never hides the server's.
+  export CARGO_TARGET_DIR="$root/.sqlflow/test/cargo-target"
+  stage_run "MCP server (SQLFlow): clippy" -- \
+    cargo clippy --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp --all-targets -- -D warnings
+  stage_run "MCP server (SQLFlow): tests" -- \
+    cargo test --locked --no-fail-fast --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp
+  stage_run "MCP server (OSDU Delivery): clippy" -- \
+    cargo clippy --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml --all-targets -- -D warnings
+  stage_run "MCP server (OSDU Delivery): tests" -- \
+    cargo test --locked --no-fail-fast --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
+
+  # --- The GUI end-to-end suite, on the Release build ---
+  stage_run "OSDU GUI end-to-end suite" --needs "$build" --needs "OSDU GUI: install" -- osdu_gui_e2e
+fi
+
+status=0
+stages_end "The $mode tier" || status=$?
+exit "$status"

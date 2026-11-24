@@ -15,6 +15,7 @@ import { registerCensus, type CensusSource } from "../lib/lsp/sqlflowLsp";
 import { installModuleDesigns, type DesignContribution } from "../theme/designs";
 import { installModuleBranding, type BrandingContribution } from "./branding";
 import { checkHomePrompts } from "./homePrompts";
+import type { RunMeasureOf } from "./runMeasure";
 
 /**
  * Where a module's page renders: inside the workbench like every page, or in a window of its own, with nothing of the
@@ -233,6 +234,12 @@ export interface FlowKindContribution {
    * `RunSummary.resultCounts`. An empty list leaves the counts out.
    */
   runCountColumns?: readonly Column<RunSummary>[];
+  /**
+   * How much a run of this kind moved, read from the counts its result reports: for a kind whose runs count something
+   * other than rows. The lineage graph's data view leads the kind's cards with it, charts it day by day and weighs the
+   * lines out of its flows by it. Without it a run of the kind moved the rows it loaded.
+   */
+  runMeasure?: RunMeasureOf;
   run?: RunDetailContribution;
   trigger?: TriggerContribution;
 }

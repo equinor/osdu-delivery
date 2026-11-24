@@ -27,6 +27,7 @@ related:
   - delivery-guide-operations-runbook
 sourceRefs:
   - osdu/gui/src/module.tsx
+  - osdu/gui/src/features/delivery/runMeasures.ts
   - osdu/gui/src/features/delivery/PartitionSwitcher.tsx
   - osdu/gui/src/features/delivery/useLinkedPartition.ts
   - osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx
@@ -282,6 +283,26 @@ flow's **Delivery** tab names it in its status card, under the actions, and the 
 above their content: what it performs (**Delete ledger**, **Sync timelines**, **Deliver**), how long it has run or that
 it waits for a node, what it is doing now, **Trace** and **Open run**, and how many more runs are under way (the parts of
 a delivery split over nodes, a run queued behind another), leading to the **Runs** tab. Nothing is shown while no run is.
+
+## What the lineage graph says the module's flows moved
+
+SQLFlow's lineage graph has a data view (**What moved: Day by day**) in which every flow's card leads with what the
+flow did in the day looked at and every line is weighed by it
+([following data on the lineage graph](../../../../sqlflow/docs/reference/guides/follow-a-data-stream.md)). The
+module's kinds count something other than rows, so each says what a run of it moved, read from the counts its result
+reports (`runMeasures.ts`):
+
+| Kind | Its card leads with | Beside it |
+| --- | --- | --- |
+| `delivery` | The records it delivered. | What failed; otherwise what it planned, when that is more. |
+| `dimension` | The rows it built. | Dimensions or views that failed. |
+| `cache` | The items it cached. | |
+| `assertion` | The checks that passed. | Checks that failed or could not run; otherwise how many ran. |
+| `inventory` | The inventories it completed. | Inventories that failed. |
+
+A node's panel lists the kind's other counts for the day (a delivery flow's unchanged, held, blocked and waiting
+records). A flow of a kind with no measure of its own (`retrieval`, `download`, `removal`) is said to have moved the
+rows its run loaded.
 
 ## Runs and the trigger dialog
 

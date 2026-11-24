@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import {
-  ArrowDown, ArrowDownToLine, ArrowLeftToLine, ArrowRight, ArrowRightToLine, ArrowUpToLine, Eye, EyeOff, FoldHorizontal, Layers,
+  Activity, ArrowDown, ArrowDownToLine, ArrowLeftToLine, ArrowRight, ArrowRightToLine, ArrowUpToLine, Eye, EyeOff, FoldHorizontal, Layers,
   MoveHorizontal, MoveVertical, SlidersHorizontal, Waypoints, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -347,6 +347,37 @@ export function DescribedControl({ value, onChange }: { value: boolean; onChange
         {value
           ? "Steps other systems run are drawn too, with dotted arrows: where a landed file comes from, and what reads a table after this estate. They are stated in lineage descriptions, never run or observed here. Turn off for the lineage this estate computed."
           : "Also draw the steps other systems run, as lineage descriptions state them: where a landed file comes from, and what reads a table after this estate. Nothing here runs or observes them."}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Whether the drawing shows what moved through it. Off, the graph says how nodes connect: what a flow should read
+ * and write. On, it says what happened: every card leads with what its node did in the day looked at and charts it
+ * over the window, and every line is inked and weighed by what it carried, so a delivery is followed from the
+ * files that arrived to where it stopped.
+ */
+export function DataControl({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Toggle
+          variant="outline"
+          size="sm"
+          pressed={value}
+          onPressedChange={onChange}
+          data-testid="graph-data-toggle"
+          className={cn("h-8 gap-1.5 px-2.5 text-xs", PRESSED)}
+        >
+          <Activity aria-hidden />
+          Day by day
+        </Toggle>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {value
+          ? "Every card says what its node did in the day looked at, and charts it over the window; every line is inked and weighed by what it carried. Turn off to draw only how the nodes connect."
+          : "Show what moved through this drawing, day by day: the files that arrived, the rows each flow read and changed, what landed in each table, and where the data stopped."}
       </TooltipContent>
     </Tooltip>
   );

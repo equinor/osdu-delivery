@@ -8,13 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Follow one data stream end to end.** A row on the Data streams board opens the stream's own page: the path its data
-  takes, from where it enters (the files a pre-ingestion flow lands) through the `pre` table, the ingestion flow and the
-  table it keys into, to every flow that carries it on, drawn top to bottom in wave order. A strip of fires, one row of
-  dots per flow, shows each stage over time, and picking a fire tells every card what happened in it: the files that
-  arrived, what each run took in and changed, what a delivery flow delivered, and where the data stopped. A node opens
-  its run in that fire and its verdict over the window; `GET /api/v1/datastreams/{pipelineId}/path` answers the same
-  ([following one data stream](sqlflow/docs/reference/guides/follow-a-data-stream.md)).
+- **The lineage graph shows what moved.** **What moved: Day by day** turns the graph into a view of what happened on
+  it: every card leads with what its node did in the day looked at (the files that arrived, the rows a flow read and
+  changed, what landed in a table, the records a delivery flow delivered) and charts it over the window, and every line
+  is inked and weighed by what it carried, so a delivery is followed from where it enters to where it stopped. A rail
+  under the canvas picks the day, or one start of it, and a node's panel lists its runs that day with their errors and
+  files beside its verdict. A row on the Data streams board opens its flow's trace this way;
+  `GET /api/v1/datastreams/activity` and `/activity/fires` answer the same
+  ([following data on the lineage graph](sqlflow/docs/reference/guides/follow-a-data-stream.md)).
 - **Every row of a dimension's table says how fresh it is.** `osdu.dim_<dimension>` carries SQLFlow's audit columns,
   `InsertedDate_DW` (when a build first wrote the row) and `UpdatedDate_DW` (when a build last changed it), in UTC; a build
   that finds a row as it was leaves both, so a reader takes what changed since a time by `UpdatedDate_DW`. A table built

@@ -89,7 +89,11 @@ public sealed record StreamPointDto(
 /// board carries the two-week <see cref="Sparkline"/> instead, which is what a row draws.
 /// </summary>
 public sealed record DataStreamDto(
-    Guid PipelineId, string FlowName, string FlowKind, string? Batch, bool Active, string? TargetObject,
+    Guid PipelineId,
+    // The repository the flow belongs to, so a stream can be opened where its flow is drawn: the lineage graph
+    // traces a flow within its repository. Null for a flow the catalog no longer holds.
+    Guid? RepoId,
+    string FlowName, string FlowKind, string? Batch, bool Active, string? TargetObject,
     // The lineage key of that same target, so a verdict can open the object's graph. The qualified name above
     // is for reading; the key is the identity the lineage endpoints index on, and deriving one from the other
     // in the client would be a second spelling of the estate's naming rules.
@@ -230,7 +234,8 @@ public static partial class DataStreamEndpoints
         var streams = group.MapGroup("/datastreams").WithTags("DataStreams");
         streams.MapGet(string.Empty, GetDataStreamsAsync).WithName("GetDataStreams");
         streams.MapGet("/{pipelineId:guid}", GetDataStreamAsync).WithName("GetDataStream");
-        streams.MapGet("/{pipelineId:guid}/path", GetStreamPathAsync).WithName("GetStreamPath");
+        streams.MapGet("/activity", GetFlowActivityAsync).WithName("GetFlowActivity");
+        streams.MapGet("/activity/fires", GetFlowFiresAsync).WithName("GetFlowFires");
 
         return group;
     }
@@ -332,7 +337,7 @@ public static partial class DataStreamEndpoints
     private static async Task<DataStreamsDto> ComputeAsync(
         CatalogDbContext db, TimeProvider clock, DataStreamOptions classification, int windowDays, Guid? repoId,
         string? batch, bool includeBackfills, bool includeUnscheduled, string scope,
-        IReadOnlyList<Guid>? pipelineIds, bool includeSeries, CancellationToken ct, ScopeGraph? loadedGraph = null)
+        IReadOnlyList<Guid>? pipelineIds, bool includeSeries, CancellationToken ct)
     {
         var now = clock.GetUtcNow().UtcDateTime;
         var fromUtc = now.Date.AddDays(-(windowDays - 1));
@@ -383,13 +388,13 @@ public static partial class DataStreamEndpoints
             .ToList();
         var meta = await db.Pipelines.AsNoTracking()
             .Where(p => candidateIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name, p.Kind, p.Batch, p.Active, p.RelativePath })
+            .Select(p => new { p.Id, p.RepoId, p.Name, p.Kind, p.Batch, p.Active, p.RelativePath })
             .ToDictionaryAsync(p => p.Id, ct).ConfigureAwait(false);
 
         // The written object and its SCHEMA, for every candidate. Resolved before the analysis rather than
         // after the ranking, because which side of the source/internal split a stream falls on decides whether
         // it is analysed at all.
-        var graph = loadedGraph ?? await LoadScopeGraphAsync(db, repoId, ct).ConfigureAwait(false);
+        var graph = await LoadScopeGraphAsync(db, repoId, ct).ConfigureAwait(false);
         var classifier = new ScopeClassifier(
             graph,
             meta.ToDictionary(m => m.Key, m => m.Value.Kind),
@@ -506,7 +511,7 @@ public static partial class DataStreamEndpoints
 
             var pipeline = meta.GetValueOrDefault(id);
             results.Add(new DataStreamDto(
-                id, pipeline?.Name ?? id.ToString(), pipeline?.Kind ?? "?", pipeline?.Batch,
+                id, pipeline?.RepoId, pipeline?.Name ?? id.ToString(), pipeline?.Kind ?? "?", pipeline?.Batch,
                 pipeline?.Active ?? false, graph.Targets.GetValueOrDefault(id).Name,
                 graph.Targets.GetValueOrDefault(id).Key, graph.Targets.GetValueOrDefault(id).Kind,
                 SourceOf(pipeline?.RelativePath, schedule?.Name, pipeline?.Name ?? string.Empty),
@@ -637,17 +642,14 @@ public static partial class DataStreamEndpoints
     }
 
     /// <summary>
-    /// The lineage a stream is classified from: what each pipeline writes (its target, with the schema for the
-    /// override), what each pipeline reads, and which pipelines produce each object, all over the objects the registry
-    /// holds; and, for following a stream's path, every object each pipeline writes, registered or not (an export's
-    /// file location has no registry row, and is still where that flow's data goes). Two queries over the repo's
-    /// edges, the write side joined to the object registry.
+    /// The lineage a stream is classified from: what each pipeline writes (with the schema, for the override),
+    /// what each pipeline reads, and which pipelines produce each object. Two queries over the repo's edges,
+    /// joined to the object registry for the write side.
     /// </summary>
     private sealed record ScopeGraph(
         Dictionary<Guid, (string? Name, string? Schema, string? Key, string? Kind)> Targets,
         Dictionary<Guid, List<string>> Reads,
-        Dictionary<string, List<Guid>> Producers,
-        Dictionary<Guid, List<string>> Writes);
+        Dictionary<string, List<Guid>> Producers);
 
     /// <summary>
     /// The target's QUALIFIED name. The bare object name is not an identity: one dataset routinely exists as a
@@ -665,22 +667,14 @@ public static partial class DataStreamEndpoints
     private static async Task<ScopeGraph> LoadScopeGraphAsync(
         CatalogDbContext db, Guid? repoId, CancellationToken ct)
     {
-        var allWrites = await (
-                from e in db.LineageEdges.AsNoTracking()
-                where e.PipelineId != null && e.Relation == "Writes" && (repoId == null || e.RepoId == repoId)
-                join o in db.Objects.AsNoTracking() on e.ObjectKey equals o.Key into registered
-                from o in registered.DefaultIfEmpty()
-                select new
-                {
-                    PipelineId = e.PipelineId!.Value, e.ObjectKey, e.ObjectName, e.Tier,
-                    Database = o != null ? o.Database : null,
-                    Schema = o != null ? o.Schema : null,
-                    ObjectRealName = o != null ? o.Name : null,
-                    Kind = o != null ? o.Kind : null,
-                    Registered = o != null,
-                })
+        var writes = await db.LineageEdges.AsNoTracking()
+            .Where(e => e.PipelineId != null && e.Relation == "Writes" && (repoId == null || e.RepoId == repoId))
+            .Join(db.Objects.AsNoTracking(), e => e.ObjectKey, o => o.Key, (e, o) => new
+            {
+                PipelineId = e.PipelineId!.Value, e.ObjectKey, e.ObjectName, e.Tier,
+                o.Database, o.Schema, ObjectRealName = o.Name, o.Kind,
+            })
             .ToListAsync(ct).ConfigureAwait(false);
-        var writes = allWrites.Where(w => w.Registered).ToList();
 
         var reads = await db.LineageEdges.AsNoTracking()
             .Where(e => e.PipelineId != null && e.Relation == "Reads" && (repoId == null || e.RepoId == repoId))
@@ -704,7 +698,7 @@ public static partial class DataStreamEndpoints
                         .ThenBy(w => w.ObjectKey, StringComparer.Ordinal)
                         .First();
                     return ((string?)Qualify(best.Database, best.Schema, best.ObjectRealName ?? best.ObjectName),
-                        (string?)best.Schema, (string?)best.ObjectKey, (string?)best.Kind);
+                        best.Schema, (string?)best.ObjectKey, (string?)best.Kind);
                 });
 
         return new ScopeGraph(
@@ -713,15 +707,7 @@ public static partial class DataStreamEndpoints
                 .ToDictionary(g => g.Key, g => g.Select(r => r.ObjectKey).Distinct().ToList()),
             writes.GroupBy(w => w.ObjectKey, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Select(w => w.PipelineId).Distinct().ToList(),
-                    StringComparer.OrdinalIgnoreCase),
-            allWrites.GroupBy(w => w.PipelineId)
-                .ToDictionary(
-                    g => g.Key,
-                    g => g.OrderBy(w => w.Tier == "Declared" ? 0 : 1)
-                        .ThenBy(w => w.ObjectKey, StringComparer.Ordinal)
-                        .Select(w => w.ObjectKey)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList()));
+                    StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>

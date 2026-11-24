@@ -71,7 +71,7 @@ function neighbours(base: BaseGraph, id: string, side: "incoming" | "outgoing"):
  * and selects its node, so a detail is one click from being on the canvas.
  */
 export function GraphDetails({
-  node, base, upstream, downstream, traced, openLabel, canViewScript, canViewYaml, stream,
+  node, base, upstream, downstream, traced, openLabel, canViewScript, canViewYaml, stream, data, width,
   onClose, onTrace, onOpen, onUnfold, onPick, onViewScript, onViewYaml,
 }: {
   node: ViewNode;
@@ -86,6 +86,10 @@ export function GraphDetails({
   canViewScript: boolean;
   canViewYaml: boolean;
   stream: ReactNode;
+  /** The data view's section: what the node did in the day looked at. Absent when the graph shows no data. */
+  data?: ReactNode;
+  /** The panel's width: wider while it also says what the node did, which holds figures and file names. */
+  width: number;
   onClose: () => void;
   onTrace: () => void;
   onOpen: () => void;
@@ -106,7 +110,8 @@ export function GraphDetails({
   return (
     <div
       data-testid="graph-focus-panel"
-      className="flex max-h-[calc(100%-16px)] w-[300px] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+      style={{ width }}
+      className="flex max-h-[calc(100%-16px)] max-w-[85%] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
     >
       <div className="flex shrink-0 items-start gap-2 border-b border-border px-3 py-2">
         <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${look.iconClass}`} />
@@ -184,6 +189,8 @@ export function GraphDetails({
             {node.incompleteReasons[0]}
           </p>
         )}
+
+        {data}
 
         {stream}
 

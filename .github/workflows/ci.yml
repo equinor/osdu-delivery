@@ -149,7 +149,9 @@ jobs:
 
   # The unit tier (bash tools/test.sh runs the same): the build with warnings as errors, every .NET test but the ones
   # that carry Category=Integration, and both GUIs. No SQL Server runs here, so a test that needs one and does not carry
-  # the category fails, naming the trait.
+  # the category fails, naming the trait. Each check runs whatever the checks before it did, unless one it needs did not
+  # pass (the build its tests read, the install its GUI reads), as tools/test.sh runs its stages: one failure never hides
+  # another, and the job fails when any check failed.
   build-test:
     name: Build and test
     if: vars.CI_ENABLED != 'false'
@@ -167,6 +169,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Setup Node
+        id: setup-node
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -181,77 +184,106 @@ jobs:
       # Zero warnings is a project rule, so a warning fails the build. The SSH.NET advisory in vendored
       # SQLFlow stays a warning until SQLFlow takes the fix.
       - name: Build
+        id: build
         run: dotnet build OsduDelivery.sln --no-restore -c Release -warnaserror -warnnotaserror:NU1903
 
       # The on-demand suites (tools/test.sh, on_demand_suites) are run by hand, never by CI.
       - name: Unit tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration&Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers&Suite!=Enrichment"
 
       - name: Install OSDU GUI dependencies
+        id: osdu-gui-install
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
         working-directory: osdu/gui
         run: npm ci
 
       # The OSDU GUI compiles the vendored sqlflow/gui sources in place, so this build covers
       # both trees' TypeScript.
       - name: Build OSDU GUI
+        if: ${{ !cancelled() && steps.osdu-gui-install.outcome == 'success' }}
         working-directory: osdu/gui
         run: npm run build
 
       # The pages and the side bar the VS Code extension shows are a second build of the same sources
       # (osdu/gui/vite.hosted.config.ts), so a change that breaks them is caught here and not when a package is made.
       - name: Build the pages the VS Code extension shows
+        if: ${{ !cancelled() && steps.osdu-gui-install.outcome == 'success' }}
         working-directory: osdu/gui
         run: npm run build:hosted
 
       - name: Lint OSDU GUI
+        if: ${{ !cancelled() && steps.osdu-gui-install.outcome == 'success' }}
         working-directory: osdu/gui
         run: npm run lint
 
       - name: OSDU GUI unit tests
+        if: ${{ !cancelled() && steps.osdu-gui-install.outcome == 'success' }}
         working-directory: osdu/gui
         run: npm run test:unit
 
       - name: Install SQLFlow GUI dependencies
+        id: sqlflow-gui-install
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
         working-directory: sqlflow/gui
         run: npm ci
 
       # SQLFlow's GUI is built on its own as well, so an extension point added to sqlflow/gui is
       # proven to keep SQLFlow's own build working.
       - name: Build SQLFlow GUI
+        if: ${{ !cancelled() && steps.sqlflow-gui-install.outcome == 'success' }}
         working-directory: sqlflow/gui
         run: npm run build
 
       # SQLFlow's own hosted build as well, for the same reason.
       - name: Build the pages SQLFlow's VS Code extension shows
+        if: ${{ !cancelled() && steps.sqlflow-gui-install.outcome == 'success' }}
         working-directory: sqlflow/gui
         run: npm run build:hosted
 
       # The chat's answer reading, result charting and report naming are plain modules with suites of their own,
       # run by Node's test runner on the sources as they are.
       - name: Unit test SQLFlow GUI
+        if: ${{ !cancelled() && steps.sqlflow-gui-install.outcome == 'success' }}
         working-directory: sqlflow/gui
         run: npm run test:unit
 
-      # SQLFlow's GitHub action is plain JavaScript with no dependencies, so its suite runs on the sources as they are.
       - name: Install the VS Code extension's dependencies
+        id: vscode-install
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
         working-directory: osdu/hosts/osdu-delivery-vscode
         run: npm ci
 
       - name: Type check the VS Code extension
+        if: ${{ !cancelled() && steps.vscode-install.outcome == 'success' }}
         working-directory: osdu/hosts/osdu-delivery-vscode
         run: npm run compile
 
       - name: Unit test the VS Code extension
-        run: |
-          (cd osdu/hosts/osdu-delivery-vscode && npm test)
-          node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
+        if: ${{ !cancelled() && steps.vscode-install.outcome == 'success' }}
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: npm test
 
+      # SQLFlow's extension tools need no packages, so their suite runs on the sources as they are.
+      - name: Unit test SQLFlow's VS Code tools
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
+        run: node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
+
+      # SQLFlow's GitHub action is plain JavaScript with no dependencies, so its suite runs on the sources as they are.
       - name: Unit test the GitHub action
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
         run: node --test "sqlflow/integrations/github/test/*.test.mjs"
+
+      # How tools/test.sh runs its stages (tools/lib/stages.sh), driven through bash.
+      - name: Unit test the test tooling
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
+        run: node --test "tools/lib/*.test.mjs"
 
   # Everything the unit tier leaves out, and the unit tier again with it (bash tools/test.sh --full runs the same): the
   # whole .NET suite against SQL Server, the MCP server's crates and the GUI end-to-end suite. It runs on a v* tag, whose
-  # release waits for it, on a pull request labelled full-tests, and when the workflow is run by hand.
+  # release waits for it, on a pull request labelled full-tests, and when the workflow is run by hand. Each check runs
+  # whatever the checks before it did, unless one it needs did not pass, as in the unit tier, so a failing suite never
+  # hides the MCP server's or the end-to-end suite's results.
   full-tests:
     name: Full test suite
     if: >-
@@ -273,6 +305,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Setup Node
+        id: setup-node
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -294,6 +327,7 @@ jobs:
         run: dotnet restore OsduDelivery.sln
 
       - name: Build
+        id: build
         run: dotnet build OsduDelivery.sln --no-restore -c Release -warnaserror -warnnotaserror:NU1903
 
       # The DB-backed suites run against a SQL Server started for this job, whose password is made
@@ -301,6 +335,7 @@ jobs:
       # snapshot isolation, which the delivery chain reads under; the GUI end-to-end suite creates
       # a database of its own on the same server.
       - name: Start SQL Server
+        id: sql-server
         run: |
           password="Ci-$(openssl rand -hex 16)-Aa1"
           echo "::add-mask::$password"
@@ -332,6 +367,7 @@ jobs:
       # writing nothing (sqlflow/docs/reference/guides/github-app.md). The App is optional: where the repository sets
       # none of these, the suite is skipped.
       - name: Test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.sql-server.outcome == 'success' }}
         env:
           SQLFLOW_PBIX_EXTRACT: ${{ github.workspace }}/sqlflow/tools/pbix-extract/build/pbix-extract
           SQLFLOW_TEST_GITHUB_APP_ID: ${{ vars.SQLFLOW_TEST_GITHUB_APP_ID }}
@@ -341,21 +377,35 @@ jobs:
 
       # The MCP server is Rust: SQLFlow's server as a library, and the product's host that composes it with the
       # delivery module. Their suites call control planes of their own, so they need nothing this job started. Zero
-      # warnings holds here as it does for the solution, and each build is the one its committed lock file names.
-      - name: Test the MCP server
-        run: |
-          cargo clippy --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp --all-targets -- -D warnings
-          cargo test --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp
-          cargo clippy --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml --all-targets -- -D warnings
-          cargo test --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
+      # warnings holds here as it does for the solution, and each build is the one its committed lock file names. Clippy
+      # and the tests are checks of their own, and the tests run every target past a failing one.
+      - name: Clippy SQLFlow's MCP server
+        if: ${{ !cancelled() }}
+        run: cargo clippy --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp --all-targets -- -D warnings
+
+      - name: Test SQLFlow's MCP server
+        if: ${{ !cancelled() }}
+        run: cargo test --locked --no-fail-fast --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp
+
+      - name: Clippy the OSDU Delivery MCP server
+        if: ${{ !cancelled() }}
+        run: cargo clippy --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test the OSDU Delivery MCP server
+        if: ${{ !cancelled() }}
+        run: cargo test --locked --no-fail-fast --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
 
       - name: Install OSDU GUI dependencies
+        id: osdu-gui-install
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
         working-directory: osdu/gui
         run: npm ci
 
       # The suite's setup batches call sqlcmd, which the runner image does not carry; the one in the
       # SQL Server container serves them, reached through a wrapper on the PATH.
       - name: Prepare the OSDU GUI end-to-end suite
+        id: e2e-prepare
+        if: ${{ !cancelled() && steps.osdu-gui-install.outcome == 'success' }}
         working-directory: osdu/gui
         run: |
           wrapper="$RUNNER_TEMP/sqlcmd-wrapper"
@@ -370,13 +420,15 @@ jobs:
       # and drives the pages over the sample estate. Its runs only plan, and a plan's wellbore searches are
       # answered by the stand-in, so nothing reaches an OSDU. The hosts run from the Release build above.
       - name: OSDU GUI end-to-end suite
+        id: e2e
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.sql-server.outcome == 'success' && steps.e2e-prepare.outcome == 'success' }}
         working-directory: osdu/gui
         env:
           SQLFLOW_E2E_DOTNET_CONFIGURATION: Release
         run: npm run e2e
 
       - name: Keep the end-to-end report
-        if: failure()
+        if: ${{ !cancelled() && steps.e2e.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: osdu-gui-e2e-report

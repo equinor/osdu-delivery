@@ -20,8 +20,9 @@ interface StreamVerdictCardProps {
   known?: DataStream;
   windowDays: number;
   includeBackfills: boolean;
-  /** Open the stream's own page: its path end to end, fire by fire, with every verdict on it. */
-  onOpen: (pipelineId: string, flowName: string) => void;
+  /** Follow the flow's data on the lineage graph: its trace, with what every node on it moved day by day. Left out
+   * where the card already sits in that drawing. */
+  onFollow?: (pipelineId: string) => void;
 }
 
 /**
@@ -33,7 +34,7 @@ interface StreamVerdictCardProps {
  * table two different answers because they quietly measured different spans of history.
  */
 export function StreamVerdictCard({
-  pipelineId, caption, known, windowDays, includeBackfills, onOpen,
+  pipelineId, caption, known, windowDays, includeBackfills, onFollow,
 }: StreamVerdictCardProps) {
   const query = useQuery({
     queryKey: ["datastreams", "detail", pipelineId, windowDays, includeBackfills],
@@ -69,21 +70,23 @@ export function StreamVerdictCard({
             <StreamStatusBadge status={stream.status} severity={stream.severity} />
             <span className="text-[11px] text-muted-foreground">{finding(stream)}</span>
           </div>
-          {/* How much to trust it, in the same words the stream's page uses: a verdict a reader cannot
+          {/* How much to trust it, in the same words the stream's full analysis uses: a verdict a reader cannot
               weigh is a verdict they either over-trust or ignore. */}
           <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground/80">{evidence(stream)}</p>
           <div className="mt-1.5">
             <StreamSparkline sparkline={stream.sparkline} width={260} height={24} />
           </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            className="mt-1 px-1"
-            onClick={() => onOpen(stream.pipelineId, stream.flowName)}
-            data-testid="stream-verdict-open"
-          >
-            Open data stream
-          </Button>
+          {onFollow !== undefined && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="mt-1 px-1"
+              onClick={() => onFollow(stream.pipelineId)}
+              data-testid="stream-verdict-follow"
+            >
+              Follow its data
+            </Button>
+          )}
         </>
       )}
     </div>
