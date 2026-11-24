@@ -16,7 +16,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.DimensionViews.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.Views.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs

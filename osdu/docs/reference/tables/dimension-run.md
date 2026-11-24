@@ -21,7 +21,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStates.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
 ---
@@ -98,7 +98,7 @@ through the search cursor) is in [the dimension flow](../flow/dimension.md).
 ## Written and read by
 
 - **Written** by the dimension runner as a build opens and closes (`DimensionRunner.cs`, through
-  `OsduLedger.Dimensions.cs`).
+  `DimensionStore.cs`).
 - **Read** by the dimension's builds page, `sqlflow dimensions`, the next incremental load, and the blueprint, which reads
   the last build's kinds.
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the

@@ -17,7 +17,7 @@ related:
   - delivery-table-download-scan
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs
 ---
 
 # osdu.Download: each download of a download flow in a partition, and the folder its last run wrote
@@ -55,6 +55,6 @@ wrote stay accounted for.
 
 ## Written and read by
 
-- **Written** by a run of the flow, when it registers the download and when it completes (`OsduLedger.Download.cs`), and by
+- **Written** by a run of the flow, when it registers the download and when it completes (`DownloadStore.cs`), and by
   a move of the flow's ledger, which takes the rows with it.
 - **Read** by the flow's Downloads tab and the API (`/api/v1/delivery/flows/{pipelineId}/downloads`).

@@ -63,8 +63,8 @@ internal static class DeliveryRecordVerbs
             "export" => await ExportAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
             "show" => await ShowAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "issues" => await IssuesAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
-            "release" => await ReleaseAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
-            "adopt" => await AdoptAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
+            "release" => await ReleaseAsync(ModuleCommand.Of(context), engine, flow, label, ct).ConfigureAwait(false),
+            "adopt" => await AdoptAsync(ModuleCommand.Of(context), engine, flow, label, ct).ConfigureAwait(false),
             "reverse" => await DeliveryReversalVerbs.ReverseAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
             "reversals" => await DeliveryReversalVerbs.ListAsync(context, ledger, flow, label, ct).ConfigureAwait(false),
             "artifacts" => await DeliveryArtifactVerbs.ArtifactsAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
@@ -429,14 +429,16 @@ internal static class DeliveryRecordVerbs
 
     /// <summary>
     /// Releases the interface's blocked records (held, failed, reverted, or removed by a reversal) and its held or failed ones
-    /// nothing moves: every one, the ones named by <c>--key</c>, or every one an issue keeps blocked (<c>--issue</c>). A
-    /// record that still holds a rendered document goes back to pending and is sent as it is; the rest are planned again
-    /// from their rows by the next run, which holds a record again if its row still calls for it. Fixing what blocked them is the operator's job; this is the verb that says "try again". It is recorded
-    /// on the audit trail as <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s (<see cref="RunActors.LocalAccount"/>), with every
-    /// record it released named under it.
+    /// nothing moves: the ones named by <c>--key</c>, every one an issue keeps blocked (<c>--issue</c>), or with <c>--all</c>
+    /// every one. Exactly one of the three is given: a command that names none is refused rather than taken for every
+    /// record, as the API and the MCP server refuse it. A record that still holds a rendered document goes back to pending
+    /// and is sent as it is; the rest are planned again from their rows by the next run, which holds a record again if its
+    /// row still calls for it. Fixing what blocked them is the operator's job; this is the verb that says "try again". It is
+    /// recorded on the audit trail as <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s (<see cref="RunActors.LocalAccount"/>), with
+    /// every record it released named under it.
     /// </summary>
-    private static async Task<int> ReleaseAsync(
-        CliVerbContext context, ILedger ledger, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
+    internal static async Task<int> ReleaseAsync(
+        ModuleCommand context, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
     {
         var asked = context.Arguments.GetOptions("--key").ToList();
         var keys = new List<DeliveryKey>(asked.Count);
@@ -448,23 +450,34 @@ internal static class DeliveryRecordVerbs
         }
 
         var problem = Issue(context.Arguments.GetOption("--issue"));
-        if (problem is not null && keys.Count > 0)
+        var all = context.Arguments.HasFlag("--all");
+        var ways = (keys.Count > 0 ? 1 : 0) + (problem is null ? 0 : 1) + (all ? 1 : 0);
+        if (ways > 1)
         {
-            return context.UsageError("release the records --key names or the ones --issue keeps blocked, not both.");
+            return context.UsageError("release the records --key names, the ones --issue keeps blocked, or every one with --all: one of them.");
         }
 
-        // The pattern the release records is the issue as the ledger names it now, which is what was listed.
-        var group = problem is { } hash
-            ? await ledger.GetProblemAsync(flow.Id, hash, ct).ConfigureAwait(false)
-                ?? throw new FlowValidationException(
-                    $"{label} has no record blocked by issue {ProblemSignature.Format(hash)}; 'records issues' lists the issues it has.")
-            : null;
+        if (ways == 0)
+        {
+            return context.UsageError(
+                "name the records to release: --key for each one, --issue for the ones an issue keeps blocked, or --all for every blocked record.");
+        }
 
-        using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
-        runtime.Actor = RunActors.LocalAccount();
-        var released = group is not null
-            ? await runtime.ReleaseProblemAsync(group.Problem, group.Pattern, ct).ConfigureAwait(false)
-            : await runtime.ReleaseAsync(keys.Count > 0 ? keys : null, ct).ConfigureAwait(false);
+        using var runtime = CliInterventions.Runtime(engine, flow);
+        ProblemGroup? group = null;
+        int released;
+        try
+        {
+            // The pattern the release records is the issue as the ledger names it now, which is what was listed.
+            group = problem is { } hash ? await runtime.IssueAsync(hash, ct).ConfigureAwait(false) : null;
+            var reach = group is not null ? RecordReach.Of(group) : keys.Count > 0 ? RecordReach.Named(keys) : RecordReach.Every;
+            released = await runtime.ReleaseAsync(reach, ct).ConfigureAwait(false);
+        }
+        catch (InterventionRefusedException refused)
+        {
+            return CliInterventions.Refused(refused, reason => context.UsageError(reason));
+        }
+
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -490,12 +503,12 @@ internal static class DeliveryRecordVerbs
     /// <c>sqlflow records adopt</c>: asks the records held because OSDU already holds a record at the id each one's key makes to
     /// adopt that record (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): every such
     /// record of the interface, the ones <c>--issue</c> keeps held, or the ones <c>--key</c> names. The flow's next run takes
-    /// them over, each at the version OSDU holds then. Asking every record or an issue's takes the partition typed back with
-    /// <c>--confirm</c>. It is recorded on the audit trail as <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s, with every record it
-    /// asked named under it.
+    /// them over, each at the version OSDU holds then. Every adoption takes the partition typed back with <c>--confirm</c>, as
+    /// the API's flow routes do (<see cref="FlowRuntime.ConfirmAdoptionAsync"/>). It is recorded on the audit trail as
+    /// <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s, with every record it asked named under it.
     /// </summary>
-    private static async Task<int> AdoptAsync(
-        CliVerbContext context, ILedger ledger, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
+    internal static async Task<int> AdoptAsync(
+        ModuleCommand context, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
     {
         var given = context.Arguments.GetOptions("--key").ToList();
         var keys = new List<DeliveryKey>(given.Count);
@@ -512,35 +525,20 @@ internal static class DeliveryRecordVerbs
             return context.UsageError("adopt the records --key names or the ones --issue keeps held, not both; name neither to adopt every record held for an id OSDU holds.");
         }
 
-        var group = problem is { } hash
-            ? await ledger.GetProblemAsync(flow.Id, hash, ct).ConfigureAwait(false)
-                ?? throw new FlowValidationException(
-                    $"{label} has no record held by issue {ProblemSignature.Format(hash)}; 'records issues' lists the issues it has.")
-            : null;
-        if (keys.Count == 0)
+        using var runtime = CliInterventions.Runtime(engine, flow);
+        ProblemGroup? group = null;
+        IReadOnlyList<DeliveryKey> asked;
+        try
         {
-            var kept = (await ledger.GetLedgerAsync(flow.Id, ct).ConfigureAwait(false))?.Partition;
-            if (kept is null)
-            {
-                throw new FlowValidationException($"{label} keeps no records in a partition yet, so there is nothing to adopt.");
-            }
-
-            var typed = context.Arguments.GetOption("--confirm")?.Trim();
-            if (string.IsNullOrEmpty(typed) || !string.Equals(typed, kept, StringComparison.OrdinalIgnoreCase))
-            {
-                var what = group is null ? "every record held for an id OSDU holds" : $"the records of issue {ProblemSignature.Format(group.Problem)}";
-                return context.UsageError(
-                    $"adopting {what} takes over the records OSDU holds at their ids in partition {kept}; type the partition back with --confirm {kept}.");
-            }
+            group = problem is { } hash ? await runtime.IssueAsync(hash, ct).ConfigureAwait(false) : null;
+            var reach = group is not null ? RecordReach.Of(group) : keys.Count > 0 ? RecordReach.Named(keys) : RecordReach.Every;
+            asked = await runtime.AdoptAsync(reach, context.Arguments.GetOption("--confirm"), ct).ConfigureAwait(false);
+        }
+        catch (InterventionRefusedException refused)
+        {
+            return CliInterventions.Refused(refused, reason => context.UsageError(reason));
         }
 
-        using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
-        runtime.Actor = RunActors.LocalAccount();
-        var asked = group is not null
-            ? await runtime.AdoptProblemAsync(group.Problem, group.Pattern, ct).ConfigureAwait(false)
-            : keys.Count > 0
-                ? await runtime.AdoptAsync(keys, ct).ConfigureAwait(false)
-                : await runtime.AdoptEveryAsync(ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -562,10 +560,6 @@ internal static class DeliveryRecordVerbs
         return 0;
     }
 
-    /// <summary>
-    /// What a try's result records, one line each: the steps it took with what the target answered, for an undo what became
-    /// of each artifact, and what a try that sent nothing had to say.
-    /// </summary>
     /// <summary>
     /// What an attempt's verdict says, as the terminal shows it under the attempt: one line for the check of its document,
     /// then each failure of the mapping's assertions it lists (osdu/docs/reference/flow/mapping-assertions.md); nothing for a

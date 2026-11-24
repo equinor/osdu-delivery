@@ -194,7 +194,7 @@ public sealed class StagedAccountingRunTests : IDisposable
         var flow = new DeliveryDocumentLoader().ParseAssertion(File.ReadAllText(file), file).ForPartition(Samples.SamplePartition);
         var runner = new AssertionRunner(Engine(), flow, new Dictionary<string, string>(StringComparer.Ordinal), Samples.Logger<AssertionRunner>(), _platform, allowLoopback: true);
         var outcome = await runner.TestAsync([], [], Guid.CreateVersion7(), "tests", CancellationToken.None);
-        return TestResults.Deserialize(Assert.Single(await _ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).Detail)!;
+        return TestResults.Deserialize(Assert.Single(await _ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).Detail)!;
     }
 
     private static AssertionOutcome Staged(TestResult result) => Assert.Single(result.Assertions, a => a.Type == "delivered");

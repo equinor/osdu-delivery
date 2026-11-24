@@ -59,7 +59,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/Evaluators.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs
   - osdu/gui/src/features/delivery/assertions/dashboard/dashboardModel.ts
   - osdu/gui/src/features/delivery/assertions/dashboard/AssertionDashboard.tsx

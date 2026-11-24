@@ -56,7 +56,7 @@ public sealed partial class InventoryRunner
 
         var spec = _flow.Inventory(inventoryName)
             ?? throw new DeliveryException($"Inventory flow '{_flow.Name}' has no inventory named '{inventoryName}'. Nothing was restored.");
-        var state = (await ledger.ListInventoriesAsync(partition, ct).ConfigureAwait(false))
+        var state = (await ledger.Inventories.ListAsync(partition, ct).ConfigureAwait(false))
             .FirstOrDefault(i => i.FlowId == _flow.LedgerId && string.Equals(i.Name, spec.Name, StringComparison.OrdinalIgnoreCase));
         if (state?.LastReconcileRunId is null)
         {
@@ -106,7 +106,7 @@ public sealed partial class InventoryRunner
     {
         if (request.Removal is { } removalId)
         {
-            var removal = await ledger.GetInventoryRemovalAsync(partition, removalId, ct).ConfigureAwait(false);
+            var removal = await ledger.Inventories.GetRemovalAsync(partition, removalId, ct).ConfigureAwait(false);
             if (removal is null || removal.InventoryId != state.InventoryId)
             {
                 throw new DeliveryException($"Inventory '{state.Name}' holds no removal {removalId}. Nothing was restored.");
@@ -135,7 +135,7 @@ public sealed partial class InventoryRunner
 
         if (request.NamesIds)
         {
-            var held = await ledger.InventoryRecordsOfAsync(partition, state.InventoryId, request.Ids, ct).ConfigureAwait(false);
+            var held = await ledger.Inventories.RecordsOfAsync(partition, state.InventoryId, request.Ids, ct).ConfigureAwait(false);
             var unknown = request.Ids.Except(held.Select(r => r.TargetId), StringComparer.Ordinal).ToList();
             if (unknown.Count > 0)
             {
@@ -147,7 +147,7 @@ public sealed partial class InventoryRunner
             return;
         }
 
-        var holds = (await ledger.InventoryCountsAsync(_flow.LedgerId, state.InventoryId, ct).ConfigureAwait(false)).Of(InventoryFindings.Gone);
+        var holds = (await ledger.Inventories.CountsAsync(_flow.LedgerId, state.InventoryId, ct).ConfigureAwait(false)).Of(InventoryFindings.Gone);
         if (holds != request.Expected)
         {
             throw new DeliveryException(string.Create(
@@ -169,7 +169,7 @@ public sealed partial class InventoryRunner
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var round = await ledger.InventoryRestoreCandidatesAsync(
+            var round = await ledger.Inventories.RestoreCandidatesAsync(
                 _flow.LedgerId, state.InventoryId, request.NamesIds ? request.Ids : null, request.Removal, owners, after, InventoryRemovals.RestoreChunk, ct).ConfigureAwait(false);
             if (round.Count == 0)
             {
@@ -178,7 +178,7 @@ public sealed partial class InventoryRunner
 
             after = round[^1].Order;
             var (items, refusal) = await RestoreRoundAsync(client, round, request, ct).ConfigureAwait(false);
-            await ledger.RecordInventoryRestoreAsync(_flow.LedgerId, state.InventoryId, restoreId, items, owners, restoredDetail, Now, ct).ConfigureAwait(false);
+            await ledger.Inventories.RecordRestoreAsync(_flow.LedgerId, state.InventoryId, restoreId, items, owners, restoredDetail, Now, ct).ConfigureAwait(false);
             tally = tally.Add(items);
             if (refusal is not null)
             {

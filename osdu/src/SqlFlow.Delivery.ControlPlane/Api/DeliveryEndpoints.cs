@@ -428,10 +428,12 @@ public sealed record DeliveryRunAccepted(Guid RunId, string Status);
 public sealed record ComputeTaskAccepted(Guid TaskId, string Status);
 
 /// <summary>
-/// A release of a flow's blocked records: those <c>Keys</c> names, or every one. <c>Run</c> also queues a deliver run of the
-/// flow under the parameter values its last submission ran with, which sends what the release queued and plans the rest.
+/// A release of a flow's blocked records: those <c>Keys</c> names, or with <c>All</c> every one. A request that names
+/// neither is refused rather than taken for every record, and one that names both is refused too. <c>Run</c> also queues a
+/// deliver run of the flow under the parameter values its last submission ran with, which sends what the release queued and
+/// plans the rest.
 /// </summary>
-public sealed record DeliveryReleaseRequest(IReadOnlyList<Guid>? Keys, bool Run = false, string? Pool = null);
+public sealed record DeliveryReleaseRequest(IReadOnlyList<Guid>? Keys, bool Run = false, string? Pool = null, bool All = false);
 
 /// <summary>How many records a release released, and the run it queued when asked to.</summary>
 public sealed record DeliveryReleaseResult(int Released, Guid? RunId = null);
@@ -539,20 +541,22 @@ public sealed record DeliverySyncRequest(IReadOnlyList<Guid>? Keys, DeliveryReco
 
 /// <summary>
 /// A redelivery of many of a flow's records: those <c>Keys</c> names, every one <c>Filter</c> matches (resolved when it is
-/// asked for, and refused when it no longer matches the <c>Expected</c> count the operator was shown), or, with neither,
-/// every record the flow has delivered. <c>Scope</c> is the part to send again, as the flow's route sends it (all when it
+/// asked for, and refused when it no longer matches the <c>Expected</c> count the operator was shown), or, with <c>All</c>,
+/// every record the flow has delivered. Exactly one of the three names the records: a request that names none is refused
+/// rather than taken for every record. <c>Scope</c> is the part to send again, as the flow's route sends it (all when it
 /// names none). The records are marked under the caller's name, and with <c>Run</c> a deliver run is queued that plans
 /// and sends them; without it the flow's next run does.
 /// </summary>
 public sealed record DeliveryFlowRedeliverRequest(
-    string? Scope, IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool Run = true, string? Pool = null);
+    string? Scope, IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool Run = true, string? Pool = null, bool All = false);
 
 /// <summary>
 /// A request to bring many of a flow's records up to date: rendered again under the rules of now and sent only where they
 /// render differently. The records are named as a redelivery of many names them (<see cref="DeliveryFlowRedeliverRequest"/>):
-/// by <c>Keys</c>, by <c>Filter</c> with the <c>Expected</c> count, or with neither every record the flow has delivered.
+/// by <c>Keys</c>, by <c>Filter</c> with the <c>Expected</c> count, or with <c>All</c> every record the flow has delivered.
 /// </summary>
-public sealed record DeliveryRerenderRequest(IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool Run = true, string? Pool = null);
+public sealed record DeliveryRerenderRequest(
+    IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool Run = true, string? Pool = null, bool All = false);
 
 /// <summary>How many records were asked to be brought up to date, and the deliver run that brings them, when one was queued.</summary>
 public sealed record DeliveryRerenderResult(int Marked, Guid? RunId);
@@ -579,10 +583,10 @@ public sealed record DeliveryRemovalAccepted(Guid RunId, string Status, string S
 
 /// <summary>
 /// Records already removed from OSDU to delete from the ledger: those <c>Keys</c> names, every one <c>Filter</c> matches (refused
-/// when it no longer matches the <c>Expected</c> count the operator was shown), or, with neither, every record the ledger marks
-/// deleted.
+/// when it no longer matches the <c>Expected</c> count the operator was shown), or, with <c>All</c>, every record the ledger
+/// marks deleted. Exactly one of the three names the records: a request that names none is refused.
 /// </summary>
-public sealed record DeliveryLedgerPurgeRequest(IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected);
+public sealed record DeliveryLedgerPurgeRequest(IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool All = false);
 
 /// <summary>What deleting from the ledger did: records asked about, deleted, and left as they were (not removed from OSDU, or busy).</summary>
 public sealed record DeliveryLedgerPurgeResult(int Selected, int Purged, int Left, string Summary);
@@ -2269,6 +2273,10 @@ public static class DeliveryEndpoints
 
     // ---- Interventions -------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Releases a flow's blocked records: the ones the request names by keys, or every one when it says <c>all</c>. A request
+    /// that names neither is refused, so a missing body or a client that dropped its keys never releases the whole flow.
+    /// </summary>
     private static async Task<Results<Ok<DeliveryReleaseResult>, Accepted<DeliveryReleaseResult>, ProblemHttpResult>> ReleaseFlowAsync(
         Guid pipelineId, DeliveryReleaseRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine,
         DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
@@ -2279,10 +2287,14 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        var keys = request?.Keys is { Count: > 0 } k ? k.Select(g => new DeliveryKey(g)).ToList() : null;
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
-        var released = await runtime.ReleaseAsync(keys, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, null, null, request?.All ?? false, Intervention.Release, ledger, ct).ConfigureAwait(false);
+        if (unselected is not null)
+        {
+            return unselected;
+        }
+
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
+        var released = await runtime.ReleaseAsync(keys is null ? RecordReach.Every : RecordReach.Named(keys), ct).ConfigureAwait(false);
         if (request is not { Run: true })
         {
             return TypedResults.Ok(new DeliveryReleaseResult(released));
@@ -2321,7 +2333,7 @@ public static class DeliveryEndpoints
             return Invalid($"scope: {ex.Message}");
         }
 
-        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Redelivery, ledger, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, request?.All ?? false, Intervention.Redelivery, ledger, ct).ConfigureAwait(false);
         if (unselected is not null)
         {
             return unselected;
@@ -2341,8 +2353,7 @@ public static class DeliveryEndpoints
             return TypedResults.Accepted($"/api/v1/runs/{all}", new DeliveryRedeliverResult(0, all));
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var marked = await runtime.RedeliverAsync(keys, selection, ct).ConfigureAwait(false);
         if (request is { Run: false })
         {
@@ -2370,7 +2381,7 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, request?.All ?? false, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
         if (unselected is not null)
         {
             return unselected;
@@ -2389,8 +2400,7 @@ public static class DeliveryEndpoints
             return TypedResults.Accepted($"/api/v1/runs/{all}", new DeliveryRerenderResult(0, all));
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var marked = await runtime.BringUpToDateAsync(keys, ct).ConfigureAwait(false);
         if (request is { Run: false })
         {
@@ -2416,10 +2426,16 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, request?.All ?? false, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
+        if (unselected is not null)
+        {
+            return unselected;
+        }
+
         long selected;
         bool capped;
         IReadOnlyList<DeliveryKey> candidates;
-        if (request?.Keys is not { Count: > 0 } && request?.Filter is null)
+        if (keys is null)
         {
             // Every record the flow has delivered: the ledger's own count of them, however many, and the first of them in the
             // listing's order to stand for the rest.
@@ -2435,13 +2451,7 @@ public static class DeliveryEndpoints
         }
         else
         {
-            var (keys, unselected) = await SelectedAsync(db, flow, request.Keys, request.Filter, request.Expected, Intervention.Rerender, ledger, ct).ConfigureAwait(false);
-            if (unselected is not null)
-            {
-                return unselected;
-            }
-
-            (selected, capped) = (keys!.Count, false);
+            (selected, capped) = (keys.Count, false);
             candidates = keys.Take(DeliveryRerender.PreviewRecords).ToList();
         }
 
@@ -2468,16 +2478,24 @@ public static class DeliveryEndpoints
         return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryRerenderPreviewAccepted(runId, checkable.Count, selected, capped));
     }
 
-    /// <summary>What a many-record intervention is called in what it answers.</summary>
-    private sealed record Intervention(string Noun, string Verb)
+    /// <summary>
+    /// What a many-record intervention is called in what it answers: its noun and verb, the records <c>all</c> reaches
+    /// (<paramref name="Every"/>), and whether it names records by a filter as well as by keys.
+    /// </summary>
+    private sealed record Intervention(string Noun, string Verb, string Every, bool Filters = true)
     {
-        public static Intervention Redelivery { get; } = new("A redelivery", "redeliver");
+        public static Intervention Release { get; } = new("A release", "release", "every blocked record of the interface", Filters: false);
 
-        public static Intervention Rerender { get; } = new("A request to bring records up to date", "bring up to date");
+        public static Intervention Redelivery { get; } = new("A redelivery", "redeliver", "every record the flow has delivered");
 
-        public static Intervention Purge { get; } = new("Deleting from the ledger", "delete from the ledger");
+        public static Intervention Rerender { get; } = new("A request to bring records up to date", "bring up to date", "every record the flow has delivered");
 
-        public static Intervention Adoption { get; } = new("An adoption", "adopt");
+        public static Intervention Purge { get; } = new("Deleting from the ledger", "delete from the ledger", "every record the ledger marks deleted");
+
+        public static Intervention Adoption { get; } = new("An adoption", "adopt", "every record held because OSDU holds one at its id");
+
+        /// <summary>The ways it names its records, as a refusal lists them.</summary>
+        public string Ways => Filters ? "by keys, by a filter, or all: true" : "by keys or all: true";
     }
 
     /// <summary>
@@ -2524,7 +2542,9 @@ public static class DeliveryEndpoints
         List<DeliveryKey>? keys = null;
         if (selects)
         {
-            var (selected, unselected) = await SelectedAsync(db, ledgers[0], request?.Keys, request?.Filter, request?.Expected, Intervention.Adoption, ledger, ct).ConfigureAwait(false);
+            // An adoption of every such record is asked with neither keys nor filter and confirmed by the partition typed back
+            // below, so only a selection is resolved here.
+            var (selected, unselected) = await SelectedAsync(db, ledgers[0], request?.Keys, request?.Filter, request?.Expected, all: false, Intervention.Adoption, ledger, ct).ConfigureAwait(false);
             if (unselected is not null)
             {
                 return unselected;
@@ -2533,33 +2553,52 @@ public static class DeliveryEndpoints
             keys = selected;
         }
 
-        // The partition the ledgers are kept in, which the operator types back: one for every interface of a source bound to it.
-        string? kept = null;
-        foreach (var flow in ledgers)
-        {
-            kept ??= (await ledger.GetLedgerAsync(flow.FlowId, ct).ConfigureAwait(false))?.Partition is { Length: > 0 } named ? named : null;
-        }
-
-        var label = ledgers.Count == 1 ? ledgers[0].Flow.Label : ledgers[0].Pipeline.Name;
-        if (kept is null)
-        {
-            return TypedResults.Problem(
-                detail: $"{label} keeps no records in a partition yet, so there is nothing to adopt.",
-                statusCode: StatusCodes.Status409Conflict, title: "Nothing to adopt");
-        }
-
-        var what = keys is null ? $"Adopting every record of {label} held for an id OSDU holds" : $"Adopting {keys.Count} record(s) of {label}";
-        if (AdoptionUnconfirmed(request?.Confirm, kept, what, label) is { } unconfirmed)
-        {
-            return unconfirmed;
-        }
-
+        // Every interface whose ledger keeps records is confirmed before any record is asked, so a confirmation that does not
+        // match leaves every interface as it was; an interface no run has kept records of yet has nothing to adopt.
+        var reach = keys is null ? RecordReach.Every : RecordReach.Named(keys);
+        var runtimes = new List<FlowRuntime>(ledgers.Count);
         var asked = 0;
-        foreach (var flow in ledgers)
+        try
         {
-            using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-            runtime.Actor = RequestActor.Label(user);
-            asked += (keys is null ? await runtime.AdoptEveryAsync(ct).ConfigureAwait(false) : await runtime.AdoptAsync(keys, ct).ConfigureAwait(false)).Count;
+            var kept = new List<FlowRuntime>(ledgers.Count);
+            foreach (var flow in ledgers)
+            {
+                var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
+                runtimes.Add(runtime);
+                if (await runtime.KeptPartitionAsync(ct).ConfigureAwait(false) is not null)
+                {
+                    kept.Add(runtime);
+                }
+            }
+
+            if (kept.Count == 0)
+            {
+                var label = ledgers.Count == 1 ? ledgers[0].Flow.Label : ledgers[0].Pipeline.Name;
+                return TypedResults.Problem(
+                    detail: $"{label} keeps no records in a partition yet, so there is nothing to adopt.",
+                    statusCode: StatusCodes.Status409Conflict, title: "Nothing to adopt");
+            }
+
+            foreach (var runtime in kept)
+            {
+                await runtime.ConfirmAdoptionAsync(reach, request?.Confirm, ct).ConfigureAwait(false);
+            }
+
+            foreach (var runtime in kept)
+            {
+                asked += (await runtime.AdoptAsync(reach, request?.Confirm, ct).ConfigureAwait(false)).Count;
+            }
+        }
+        catch (InterventionRefusedException refused)
+        {
+            return Refused(refused);
+        }
+        finally
+        {
+            foreach (var runtime in runtimes)
+            {
+                runtime.Dispose();
+            }
         }
 
         var selectedCount = keys?.Count ?? asked;
@@ -2580,27 +2619,6 @@ public static class DeliveryEndpoints
     }
 
     /// <summary>
-    /// Why an adoption of many records is refused before anything is adopted: no partition typed back, or another one than
-    /// <paramref name="kept"/>, the partition the flow's ledger is kept in (case ignored); null when it is confirmed.
-    /// <paramref name="what"/> names what would be adopted, as the refusal says it.
-    /// </summary>
-    internal static ProblemHttpResult? AdoptionUnconfirmed(string? confirm, string kept, string what, string flowLabel)
-    {
-        if (confirm?.Trim() is not { Length: > 0 } typed)
-        {
-            return TypedResults.Problem(
-                detail: $"{what} takes over every record OSDU holds at their ids in partition {kept}, which no ledger owned, and the next run writes them there. Type the partition back as confirm.",
-                statusCode: StatusCodes.Status400BadRequest, title: "Confirmation required");
-        }
-
-        return string.Equals(typed, kept, StringComparison.OrdinalIgnoreCase)
-            ? null
-            : TypedResults.Problem(
-                detail: $"The adoption confirms partition '{typed}', and the records of {flowLabel} are kept in '{kept}'. Nothing was adopted.",
-                statusCode: StatusCodes.Status400BadRequest, title: "Confirmation does not match");
-    }
-
-    /// <summary>
     /// Deletes records already removed from OSDU from the ledger, in this process and asking nothing of OSDU
     /// (osdu/docs/reference/concepts/removal-and-reversal.md, Deleting removed records from the ledger): those
     /// <c>keys</c> names, every one <c>filter</c> matches (refused when it no longer matches the <c>expected</c> count
@@ -2617,14 +2635,13 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, Intervention.Purge, ledger, ct).ConfigureAwait(false);
+        var (keys, unselected) = await SelectedAsync(db, flow, request?.Keys, request?.Filter, request?.Expected, request?.All ?? false, Intervention.Purge, ledger, ct).ConfigureAwait(false);
         if (unselected is not null)
         {
             return unselected;
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var summary = await runtime.PurgeFromLedgerAsync(keys, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryLedgerPurgeResult(summary.Selected, summary.Purged, summary.Left, summary.Describe()));
     }
@@ -2666,8 +2683,7 @@ public static class DeliveryEndpoints
                 title: "Undo unfinished");
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var summary = await runtime.PurgeFromLedgerAsync([new DeliveryKey(key)], ct).ConfigureAwait(false);
         if (summary.Purged == 0)
         {
@@ -2683,35 +2699,46 @@ public static class DeliveryEndpoints
     /// <summary>
     /// The records a many-record intervention names: those <paramref name="keys"/> lists, or every one <paramref name="filter"/>
     /// matches, refused when it no longer matches the <paramref name="expected"/> count the operator was shown, at most
-    /// <see cref="RemovalLimits.MaxSelection"/> either way. With neither, null keys: every record the intervention reaches.
+    /// <see cref="RemovalLimits.MaxSelection"/> either way; or, with <paramref name="all"/>, null keys: every record the
+    /// intervention reaches. Exactly one of the three is given: a request that names none is refused rather than taken for
+    /// every record, so a missing body or a client that dropped its selection acts on nothing.
     /// </summary>
     private static async Task<(List<DeliveryKey>? Keys, ProblemHttpResult? Problem)> SelectedAsync(
-        CatalogDbContext db, FlowContext flow, IReadOnlyList<Guid>? keys, DeliveryRecordFilterDto? filter, int? expected, Intervention intervention, ILedger ledger, CancellationToken ct)
+        CatalogDbContext db, FlowContext flow, IReadOnlyList<Guid>? keys, DeliveryRecordFilterDto? filter, int? expected, bool all, Intervention intervention, ILedger ledger,
+        CancellationToken ct)
     {
-        if (keys is { Count: > 0 })
+        var byKeys = keys is { Count: > 0 };
+        var ways = (byKeys ? 1 : 0) + (filter is null ? 0 : 1) + (all ? 1 : 0);
+        if (ways > 1)
         {
-            if (filter is not null)
-            {
-                return (null, Invalid($"{intervention.Noun} names its records either by keys or by filter, not both."));
-            }
+            return (null, Invalid($"{intervention.Noun} names its records one way only: {intervention.Ways}."));
+        }
 
-            var named = keys.Distinct().Select(k => new DeliveryKey(k)).ToList();
+        if (ways == 0)
+        {
+            return (null, Invalid($"{intervention.Noun} names no records. Name them {intervention.Ways} for {intervention.Every}."));
+        }
+
+        if (all)
+        {
+            return (null, null);
+        }
+
+        if (byKeys)
+        {
+            var named = keys!.Distinct().Select(k => new DeliveryKey(k)).ToList();
             if (named.Count > RemovalLimits.MaxSelection)
             {
                 return (null, TypedResults.Problem(
-                    detail: $"{intervention.Noun} names at most {RemovalLimits.MaxSelection} records; {named.Count} were selected. Ask it of every record of the flow, or narrow the selection.",
+                    detail: $"{intervention.Noun} names at most {RemovalLimits.MaxSelection} records; {named.Count} were selected. Ask it of {intervention.Every} with all: true, or narrow the selection.",
                     statusCode: StatusCodes.Status400BadRequest, title: "Too many records"));
             }
 
             return (named, null);
         }
 
-        if (filter is null)
-        {
-            return (null, null);
-        }
-
-        var (query, invalid) = await BuildQueryAsync(db, filter, ct).ConfigureAwait(false);
+        // Neither keys nor all, and exactly one way given: the filter names them.
+        var (query, invalid) = await BuildQueryAsync(db, filter!, ct).ConfigureAwait(false);
         if (query is null)
         {
             return (null, invalid!);
@@ -2730,7 +2757,7 @@ public static class DeliveryEndpoints
         if (!matched.Exact || matched.Count > RemovalLimits.MaxSelection)
         {
             return (null, TypedResults.Problem(
-                detail: $"The filter matches more than {RemovalLimits.MaxSelection} records as far as the listing counts; ask it of every record of the flow, or narrow the filter.",
+                detail: $"The filter matches more than {RemovalLimits.MaxSelection} records as far as the listing counts; ask it of {intervention.Every} with all: true, or narrow the filter.",
                 statusCode: StatusCodes.Status409Conflict, title: "Too many records"));
         }
 
@@ -2773,9 +2800,8 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
-        var released = await runtime.ReleaseAsync([record.DeliveryKey], ct).ConfigureAwait(false);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
+        var released = await runtime.ReleaseAsync(RecordReach.Named([record.DeliveryKey]), ct).ConfigureAwait(false);
         if (request is not { Run: true })
         {
             return TypedResults.Ok(new DeliveryReleaseResult(released));
@@ -2810,8 +2836,7 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var lift = await runtime.LiftRemovalsAsync([record.DeliveryKey], ct).ConfigureAwait(false);
         if (lift.Lifted.Count == 0)
         {
@@ -2858,8 +2883,7 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var lift = await runtime.LiftRemovalsAsync(named.Distinct().Select(g => new DeliveryKey(g)).ToList(), ct).ConfigureAwait(false);
         if (request is not { Run: true } || lift.Lifted.Count == 0)
         {
@@ -2887,30 +2911,14 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        if (!OccupiedHolds.Adoptable(record))
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
+        try
         {
-            var why = record switch
-            {
-                { ClaimedTargetId: { } claimed } => $"it claimed {claimed} already, and a record keeps the OSDU id it claimed",
-                { AdoptRequestedUtc: not null, Blocked: false } => "its adoption is asked already, and the flow's next run takes it over",
-                { AdoptRequestedUtc: not null } =>
-                    "its adoption is asked already, and a run held it since for another reason (its error says which); release it, and the run after takes it over",
-                { LeaseOwner: not null } => "a delivery holds it now",
-                _ => "it is not held because OSDU already holds a record at the OSDU id its key makes",
-            };
-            return TypedResults.Problem(
-                detail: $"Record {record.SourceKey} of {flow.Flow.Label} has nothing to adopt: {why}. An adoption takes over the record OSDU holds at the id a held record's key makes.",
-                statusCode: StatusCodes.Status409Conflict, title: "Nothing to adopt");
+            await runtime.AdoptRecordAsync(record, ct).ConfigureAwait(false);
         }
-
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
-        var asked = await runtime.AdoptAsync([record.DeliveryKey], ct).ConfigureAwait(false);
-        if (asked.Count == 0)
+        catch (InterventionRefusedException refused)
         {
-            return TypedResults.Problem(
-                detail: $"Record {record.SourceKey} of {flow.Flow.Label} moved on since it was shown (a run planned it, or a delivery holds it), so no adoption was asked. Look at the record again.",
-                statusCode: StatusCodes.Status409Conflict, title: "Not asked");
+            return Refused(refused);
         }
 
         if (request is not { Run: true })
@@ -2970,8 +2978,7 @@ public static class DeliveryEndpoints
             return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryRedeliverResult(1, runId));
         }
 
-        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
+        using var runtime = await InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
         var marked = await runtime.RedeliverAsync([record.DeliveryKey], scope, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryRedeliverResult(marked, null));
     }
@@ -2986,6 +2993,33 @@ public static class DeliveryEndpoints
     {
         var configuration = await config.ConfigurationAsync(flow.Pipeline.RepoId, ct).ConfigureAwait(false);
         return engine.WithSuppliedReferences(configuration.For(flow.Flow.Partition));
+    }
+
+    /// <summary>
+    /// The runtime an operator's action on <paramref name="flow"/>'s records runs in (<see cref="FlowRuntime.ForTarget"/>),
+    /// configured as the flow's repository is, with what it does recorded under <paramref name="user"/>'s name.
+    /// </summary>
+    internal static async Task<FlowRuntime> InterventionAsync(EngineContext engine, DeliveryConfigStore config, FlowContext flow, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
+        runtime.Actor = RequestActor.Label(user);
+        return runtime;
+    }
+
+    /// <summary>The answer to a release or an adoption refused before it changed anything (<see cref="InterventionRefusedException"/>).</summary>
+    internal static ProblemHttpResult Refused(InterventionRefusedException refused)
+    {
+        ArgumentNullException.ThrowIfNull(refused);
+        return refused.Refusal switch
+        {
+            InterventionRefusal.UnknownIssue => TypedResults.Problem(detail: refused.Message, statusCode: StatusCodes.Status404NotFound, title: "Not found"),
+            InterventionRefusal.Unconfirmed => TypedResults.Problem(
+                detail: $"{refused.Message} Type the partition back as confirm.", statusCode: StatusCodes.Status400BadRequest, title: "Confirmation required"),
+            InterventionRefusal.ConfirmationDiffers => TypedResults.Problem(
+                detail: refused.Message, statusCode: StatusCodes.Status400BadRequest, title: "Confirmation does not match"),
+            InterventionRefusal.MovedOn => TypedResults.Problem(detail: refused.Message, statusCode: StatusCodes.Status409Conflict, title: "Not asked"),
+            _ => TypedResults.Problem(detail: refused.Message, statusCode: StatusCodes.Status409Conflict, title: "Nothing to adopt"),
+        };
     }
 
     /// <summary>

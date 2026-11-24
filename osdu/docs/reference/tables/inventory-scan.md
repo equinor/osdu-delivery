@@ -19,7 +19,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs
 ---
 
 # osdu.InventoryScan: each id a build listed, staged until the read is whole and merged into the inventory

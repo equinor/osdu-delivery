@@ -18,7 +18,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
 ---
 
 # osdu.DimensionCollectedText: each text a dimension's records hold at a collected attribute's path

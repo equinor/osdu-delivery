@@ -21,7 +21,7 @@ related:
   - delivery-wiki-0014-inventory-removals
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRestore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryRemovals.cs
@@ -72,7 +72,7 @@ A `restore` run keeps its restore of gone ids here the same way, with scope `res
 
 ## Written and read by
 
-- **Written** by a `remove` or `restore` run of the inventory flow (`OsduLedger.InventoryRemoval.cs`,
+- **Written** by a `remove` or `restore` run of the inventory flow (`InventoryStore.Removal.cs`,
   `SqlServerLedgerBulk.InventoryRemoval.cs`, `SqlServerLedgerBulk.InventoryRestore.cs`).
 - **Read** by an inventory's **Removals** tab, `GET /api/v1/delivery/inventories/{partition}/{inventoryId}/removals` and
   `GET /api/v1/delivery/inventories/{partition}/removals/{removalId}`, and by a restore of what one removal removed.

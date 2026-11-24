@@ -166,10 +166,10 @@ public sealed partial class OsduLedger
     /// </summary>
     private async Task<LedgerDeleteRefusal?> DimensionDeleteRefusalAsync(Guid ledger, string flow, CancellationToken ct)
     {
-        var own = (await ListDimensionViewsAsync(flow, ct).ConfigureAwait(false)).Select(v => v.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var dimension in await ListDimensionsAsync(null, ledger, ct).ConfigureAwait(false))
+        var own = (await Dimensions.ListViewsAsync(flow, ct).ConfigureAwait(false)).Select(v => v.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var dimension in await Dimensions.ListAsync(null, ledger, ct).ConfigureAwait(false))
         {
-            var captures = await DimensionCapturesAsync(dimension.DimensionId, ct).ConfigureAwait(false);
+            var captures = await Dimensions.CapturesAsync(dimension.DimensionId, ct).ConfigureAwait(false);
             if (captures.Count > 0)
             {
                 return new LedgerDeleteRefusal(
@@ -179,7 +179,7 @@ public sealed partial class OsduLedger
 
             if (dimension.TableName is { } table)
             {
-                var reading = (await DimensionViewsReadingAsync(table, ct).ConfigureAwait(false)).Where(v => !own.Contains(v)).ToList();
+                var reading = (await Dimensions.ViewsReadingAsync(table, ct).ConfigureAwait(false)).Where(v => !own.Contains(v)).ToList();
                 if (reading.Count > 0)
                 {
                     return new LedgerDeleteRefusal(
@@ -320,7 +320,7 @@ public sealed partial class OsduLedger
 
     /// <summary>
     /// Deletes the dimensions of an orphaned ledger, each as a dimension its flow no longer declares is removed
-    /// (<see cref="ILedger.RemoveDimensionAsync"/>): everything kept of it in the partition, and its table with the last
+    /// (<see cref="DimensionStore.RemoveAsync"/>): everything kept of it in the partition, and its table with the last
     /// partition writing it. The missing flow's views, which read tables every partition's builds wrote, go first when this
     /// is the last of the flow's ledgers that holds a dimension.
     /// </summary>
@@ -338,17 +338,17 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
         if (holding.Count == 0)
         {
-            foreach (var view in await ListDimensionViewsAsync(asked.Flow, ct).ConfigureAwait(false))
+            foreach (var view in await Dimensions.ListViewsAsync(asked.Flow, ct).ConfigureAwait(false))
             {
                 ct.ThrowIfCancellationRequested();
-                await RemoveDimensionViewAsync(view.Name, ct).ConfigureAwait(false);
+                await Dimensions.RemoveViewAsync(view.Name, ct).ConfigureAwait(false);
             }
         }
 
-        foreach (var dimension in await ListDimensionsAsync(null, asked.Ledger, ct).ConfigureAwait(false))
+        foreach (var dimension in await Dimensions.ListAsync(null, asked.Ledger, ct).ConfigureAwait(false))
         {
             ct.ThrowIfCancellationRequested();
-            await RemoveDimensionAsync(dimension.DimensionId, ct).ConfigureAwait(false);
+            await Dimensions.RemoveAsync(dimension.DimensionId, ct).ConfigureAwait(false);
         }
     }
 

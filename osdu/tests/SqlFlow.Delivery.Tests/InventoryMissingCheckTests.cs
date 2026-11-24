@@ -45,14 +45,14 @@ public sealed class InventoryMissingCheckTests : IDisposable
             LedgerName = "welllog-inventory@" + Partition,
         });
         await ledger.RegisterAsync(_deliveryFlow);
-        return (ledger, await ledger.RegisterInventoryAsync(_inventoryFlow, "welllog-inventory", "WellLogs", Kind, null, "search", "latest"));
+        return (ledger, await ledger.Inventories.RegisterAsync(_inventoryFlow, "welllog-inventory", "WellLogs", Kind, null, "search", "latest"));
     }
 
     private async Task BuildAsync(OsduLedger ledger, InventoryState inventory, params InventoryScanRow[] rows)
     {
-        var run = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
-        await ledger.AppendInventoryScanAsync(_inventoryFlow, run, rows);
-        await ledger.MergeInventoryAsync(_inventoryFlow, inventory.InventoryId, run, Now);
+        var run = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
+        await ledger.Inventories.AppendScanAsync(_inventoryFlow, run, rows);
+        await ledger.Inventories.MergeAsync(_inventoryFlow, inventory.InventoryId, run, Now);
     }
 
     /// <summary>A record of the delivery flow's ledger delivered at version 5 under <paramref name="key"/>'s id.</summary>
@@ -73,8 +73,8 @@ public sealed class InventoryMissingCheckTests : IDisposable
     /// <summary>One reconcile's bounded check, as a build makes it: at most <paramref name="max"/> candidates, none of which storage holds.</summary>
     private async Task<IReadOnlyList<string>> CheckAsync(OsduLedger ledger, InventoryState inventory, int max)
     {
-        var candidates = await ledger.InventoryCandidatesAsync(_inventoryFlow, inventory.InventoryId, null, max);
-        await ledger.RecordInventoryChecksAsync(_inventoryFlow, inventory.InventoryId, candidates.Select(c => new InventoryCheck(c, false, null)).ToList(), Now);
+        var candidates = await ledger.Inventories.CandidatesAsync(_inventoryFlow, inventory.InventoryId, null, max);
+        await ledger.Inventories.RecordChecksAsync(_inventoryFlow, inventory.InventoryId, candidates.Select(c => new InventoryCheck(c, false, null)).ToList(), Now);
         return candidates.Select(c => c.TargetId).ToList();
     }
 
@@ -143,8 +143,8 @@ public sealed class InventoryMissingCheckTests : IDisposable
         Assert.Equal(InventoryFindings.Missing, (await RecordsAsync(inventory))[Id("kept")].Finding);
 
         // maxMissingChecks: 0 asks storage for nothing (the ledger hands no candidate), and an earlier check does not stand.
-        Assert.Empty(await ledger.InventoryCandidatesAsync(_inventoryFlow, inventory.InventoryId, null, 0));
-        await ledger.RecordInventoryChecksAsync(_inventoryFlow, inventory.InventoryId, [], Now);
+        Assert.Empty(await ledger.Inventories.CandidatesAsync(_inventoryFlow, inventory.InventoryId, null, 0));
+        await ledger.Inventories.RecordChecksAsync(_inventoryFlow, inventory.InventoryId, [], Now);
 
         var records = await RecordsAsync(inventory);
         Assert.Equal(

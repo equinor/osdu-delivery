@@ -81,7 +81,7 @@ public sealed class OsduStorageContributor : IStorageContributor
         {
             AttemptsArea => await ledger.CountPrunableAttemptsAsync(olderThanUtc, ct).ConfigureAwait(false),
             ActivityLogsArea => await ledger.CountActivityLogsAsync(olderThanUtc, ct).ConfigureAwait(false),
-            AssertionRunsArea => await ledger.CountPrunableAssertionRunsAsync(olderThanUtc, ct).ConfigureAwait(false),
+            AssertionRunsArea => await ledger.Assertions.CountPrunableRunsAsync(olderThanUtc, ct).ConfigureAwait(false),
             _ => throw NotCleanable(area),
         };
     }
@@ -99,7 +99,7 @@ public sealed class OsduStorageContributor : IStorageContributor
         {
             AttemptsArea => await ledger.PruneAttemptsAsync(olderThanUtc, ct).ConfigureAwait(false),
             ActivityLogsArea => await ledger.ClearActivityLogsAsync(olderThanUtc, ct).ConfigureAwait(false),
-            AssertionRunsArea => await ledger.PruneAssertionRunsAsync(olderThanUtc, ct).ConfigureAwait(false),
+            AssertionRunsArea => await ledger.Assertions.PruneRunsAsync(olderThanUtc, ct).ConfigureAwait(false),
             _ => throw NotCleanable(area),
         };
     }

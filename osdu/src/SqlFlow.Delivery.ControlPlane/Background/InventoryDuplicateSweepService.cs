@@ -114,7 +114,7 @@ public sealed partial class InventoryDuplicateSweepService : BackgroundService
                 .ToListAsync(ct).ConfigureAwait(false);
             foreach (var checkId in underWay)
             {
-                if (await ledger.GetInventoryDuplicateCheckAsync(partition.Name, checkId, ct).ConfigureAwait(false) is not { } check)
+                if (await ledger.Inventories.GetDuplicateCheckAsync(partition.Name, checkId, ct).ConfigureAwait(false) is not { } check)
                 {
                     continue;
                 }
@@ -126,7 +126,7 @@ public sealed partial class InventoryDuplicateSweepService : BackgroundService
                 }
             }
 
-            var swept = await ledger.SweepInventoryDuplicateChecksAsync(partition.Name, _clock.GetUtcNow().UtcDateTime - InventoryDuplicates.KeptFor, ct)
+            var swept = await ledger.Inventories.SweepDuplicateChecksAsync(partition.Name, _clock.GetUtcNow().UtcDateTime - InventoryDuplicates.KeptFor, ct)
                 .ConfigureAwait(false);
             deleted += swept.Deleted;
             expired += swept.Expired;

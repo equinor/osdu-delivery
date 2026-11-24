@@ -225,7 +225,7 @@ public sealed class AssertionRunTests : IDisposable
         Assert.Equal(AssertionRunStatus.Passed, early.Status);
         Assert.Equal((4, 2, 2), (early.Tests, early.Passed, early.Skipped));
         Assert.Contains("every test evaluated passed; 2 skipped (wellbore-by-id, wellbores)", early.Describe(), StringComparison.Ordinal);
-        var results = (await ledger.ListAssertionResultsAsync(early.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        var results = (await ledger.Assertions.ListResultsAsync(early.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
         foreach (var name in new[] { "wellbores", "wellbore-by-id" })
         {
             var skipped = results[name];
@@ -244,7 +244,7 @@ public sealed class AssertionRunTests : IDisposable
         var settled = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal(0, settled.Skipped);
-        var judged = (await ledger.ListAssertionResultsAsync(settled.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        var judged = (await ledger.Assertions.ListResultsAsync(settled.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
         Assert.Equal(TestOutcomes.Failed, judged["wellbores"].Outcome);
         Assert.Equal("dev:master-data--Wellbore:w5", Assert.Single(Of(judged["wellbores"], "delivered").Examples).Id);
         Assert.Equal(TestOutcomes.Passed, judged["wellbore-by-id"].Outcome);
@@ -270,7 +270,7 @@ public sealed class AssertionRunTests : IDisposable
 
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
-        var result = TestResults.Deserialize(Assert.Single(await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).Detail)!;
+        var result = TestResults.Deserialize(Assert.Single(await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).Detail)!;
         Assert.Equal(TestOutcomes.Errored, result.Outcome);
         Assert.Contains("did you mean 'data.FacilityName'", Assert.Single(result.Problems), StringComparison.Ordinal);
     }
@@ -290,7 +290,7 @@ public sealed class AssertionRunTests : IDisposable
         Assert.Equal(8, outcome.Tests);
         Assert.Equal(1, outcome.Skipped);
         Assert.Equal(7, outcome.RowsLoaded);
-        var results = (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        var results = (await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
         Assert.Equal(8, results.Count);
 
         var wellbores = results["wellbores"];
@@ -385,7 +385,7 @@ public sealed class AssertionRunTests : IDisposable
         Assert.Contains(sampled.Notes, n => n.Contains("the first 2 were evaluated as a sample", StringComparison.Ordinal));
 
         // The run's row adds the results up, and every request went as the services' contracts say.
-        var run = (await ledger.GetAssertionRunAsync(outcome.AssertionRunId))!;
+        var run = (await ledger.Assertions.GetRunAsync(outcome.AssertionRunId))!;
         Assert.Equal("dev", run.Partition);
         Assert.Equal(new AssertionCounts(8, 2, 2, 1, 2, 1), run.Counts);
         Assert.NotNull(run.CompletedUtc);
@@ -403,7 +403,7 @@ public sealed class AssertionRunTests : IDisposable
         await DeliveredAsync(ledger);
         _clock.Advance(TimeSpan.FromMinutes(10));
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        var results = (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        var results = (await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
         var wellbores = results["wellbores"];
 
         // What a check tests is kept whole: what it reads and what that has to be, where Expected is the second half alone.
@@ -538,8 +538,8 @@ public sealed class AssertionRunTests : IDisposable
         // The run comes once the search index has had the time its settle window gives it to list what was delivered.
         _clock.Advance(TimeSpan.FromMinutes(10));
         var outcome = await runner.TestAsync([], ["smoke", "bulk"], Guid.NewGuid(), "gui:someone", CancellationToken.None);
-        var run = (await ledger.GetAssertionRunAsync(outcome.AssertionRunId))!;
-        var results = (await ledger.ListAssertionResultsAsync(run.AssertionRunId)).Select(r => TestResults.Deserialize(r.Detail)!).ToList();
+        var run = (await ledger.Assertions.GetRunAsync(outcome.AssertionRunId))!;
+        var results = (await ledger.Assertions.ListResultsAsync(run.AssertionRunId)).Select(r => TestResults.Deserialize(r.Detail)!).ToList();
         var report = new AssertionReport(run, results, _clock.GetUtcNow().UtcDateTime);
 
         var junit = report.Render(ReportFormat.JUnit);
@@ -584,34 +584,34 @@ public sealed class AssertionRunTests : IDisposable
         Assert.Equal(1, second.Tests);
         Assert.Equal(AssertionRunStatus.Passed, second.Status);
 
-        var latest = (await ledger.LatestAssertionResultsAsync([flow.LedgerId])).ToDictionary(r => r.TestName);
+        var latest = (await ledger.Assertions.LatestResultsAsync([flow.LedgerId])).ToDictionary(r => r.TestName);
         Assert.Equal(second.AssertionRunId, latest["names"].AssertionRunId);
         Assert.Equal(first.AssertionRunId, latest["wellbores"].AssertionRunId);
         Assert.False(latest.ContainsKey("in-test-only"));
         Assert.Equal(string.Empty, latest["names"].Detail);
 
-        var history = await ledger.AssertionHistoryAsync(flow.LedgerId, "names", 10, withDetail: true);
+        var history = await ledger.Assertions.HistoryAsync(flow.LedgerId, "names", 10, withDetail: true);
         Assert.Equal([second.AssertionRunId, first.AssertionRunId], history.Select(h => h.AssertionRunId));
         Assert.NotNull(TestResults.Deserialize(history[0].Detail));
-        Assert.Equal(2, (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Count);
+        Assert.Equal(2, (await ledger.Assertions.ListRunsAsync(flow.LedgerId, 10)).Count);
 
         // Pruning takes a run whole once a later result superseded every one of its results: the first run still holds the
         // latest result of wellbores, so it stays, and its report stays whole, the superseded result of names included.
         _clock.Advance(TimeSpan.FromDays(10));
-        Assert.Equal(0, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
-        var pruned = await ledger.PruneAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime);
+        Assert.Equal(0, await ledger.Assertions.CountPrunableRunsAsync(_clock.GetUtcNow().UtcDateTime));
+        var pruned = await ledger.Assertions.PruneRunsAsync(_clock.GetUtcNow().UtcDateTime);
         Assert.Equal(0, pruned);
-        var afterFirst = (await ledger.ListAssertionResultsAsync(first.AssertionRunId)).Select(r => r.TestName).ToList();
+        var afterFirst = (await ledger.Assertions.ListResultsAsync(first.AssertionRunId)).Select(r => r.TestName).ToList();
         Assert.Contains("names", afterFirst);
         Assert.Contains("wellbores", afterFirst);
         // A run that completes keeps what the latest status needs and removes the rest itself: the third ran every test, so
         // the first and the second hold no latest result any more and are gone, each whole, before any cut-off takes them.
         var third = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal([third.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
-        Assert.Empty(await ledger.ListAssertionResultsAsync(first.AssertionRunId));
-        Assert.Empty(await ledger.ListAssertionResultsAsync(second.AssertionRunId));
+        Assert.Equal([third.AssertionRunId], (await ledger.Assertions.ListRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
+        Assert.Empty(await ledger.Assertions.ListResultsAsync(first.AssertionRunId));
+        Assert.Empty(await ledger.Assertions.ListResultsAsync(second.AssertionRunId));
         _clock.Advance(TimeSpan.FromDays(10));
-        Assert.Equal(0, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
+        Assert.Equal(0, await ledger.Assertions.CountPrunableRunsAsync(_clock.GetUtcNow().UtcDateTime));
     }
 
     /// <summary>
@@ -632,14 +632,14 @@ public sealed class AssertionRunTests : IDisposable
         Assert.NotEqual(Flow, disabled);
         var (later, _, _) = Runner(disabled);
         var second = await later.TestAsync(["names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal([second.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
-        Assert.Empty(await ledger.ListAssertionResultsAsync(first.AssertionRunId));
+        Assert.Equal([second.AssertionRunId], (await ledger.Assertions.ListRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
+        Assert.Empty(await ledger.Assertions.ListResultsAsync(first.AssertionRunId));
 
         // Run as it was, a run of names alone keeps the run holding the latest result of wellbores.
         var third = await runner.TestAsync(["names", "wellbores"], [], Guid.NewGuid(), "tests", CancellationToken.None);
         _clock.Advance(TimeSpan.FromMinutes(5));
         var fourth = await runner.TestAsync(["names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal([fourth.AssertionRunId, third.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
+        Assert.Equal([fourth.AssertionRunId, third.AssertionRunId], (await ledger.Assertions.ListRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
     }
 
     [Fact]
@@ -651,7 +651,7 @@ public sealed class AssertionRunTests : IDisposable
             : null;
         var (runner, ledger, _) = Runner();
         var outcome = await runner.TestAsync(["logs", "names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        var results = (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        var results = (await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
         Assert.Equal(TestOutcomes.Errored, results["logs"].Outcome);
         Assert.Contains("500", results["logs"].Error);
         Assert.All(results["logs"].Assertions, a => Assert.Equal(TestOutcomes.Errored, a.Outcome));
@@ -673,7 +673,7 @@ public sealed class AssertionRunTests : IDisposable
         Assert.NotNull(tests["in-test-only"].Skipped);
         Assert.Contains("did you mean", Assert.Single(tests["misspelled"].Problems));
         Assert.Contains("more than the 2 the test reads", tests["too-many"].Error);
-        Assert.Empty(await ledger.ListAssertionRunsAsync(flow.LedgerId, 10));
+        Assert.Empty(await ledger.Assertions.ListRunsAsync(flow.LedgerId, 10));
         Assert.All(_platform.Calls, c => Assert.EndsWith("/api/search/v2/query", c.Uri.AbsolutePath));
     }
 

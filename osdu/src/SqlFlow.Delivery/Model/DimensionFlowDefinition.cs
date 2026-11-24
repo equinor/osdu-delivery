@@ -54,14 +54,21 @@ public sealed record DimensionFlowDefinition
     /// </summary>
     public string? Partition { get; init; }
 
+    /// <summary>The partitions the flow works in, and the one a run takes (<see cref="PartitionScope"/>).</summary>
+    [JsonIgnore]
+    public PartitionScope Scope => new(Partitions, FollowsRegistry, Partition, Words, Name);
+
+    /// <summary>How a dimension flow says what it does in a partition, in the words its refusals use.</summary>
+    private static readonly PartitionWords Words = new("Dimension", "build in", "builds in", "a run's builds describe one partition");
+
     /// <summary>True when the flow names the partitions it builds in.</summary>
-    public bool DeclaresPartitions => Partitions.Count > 0;
+    public bool DeclaresPartitions => Scope.DeclaresPartitions;
 
     /// <summary>True for a flow that names neither its partitions nor a <c>data-partition-id</c> header: it builds in every registered partition.</summary>
     public bool FollowsRegistry { get; init; }
 
     /// <summary>True when the flow builds in partitions, named or registered, rather than the one its header names.</summary>
-    public bool Partitioned => DeclaresPartitions || FollowsRegistry;
+    public bool Partitioned => Scope.Partitioned;
 
     /// <summary>The dimensions, in the order the document declares them; names are unique within the flow.</summary>
     public required IReadOnlyList<DimensionSpec> Dimensions { get; init; }
@@ -97,27 +104,20 @@ public sealed record DimensionFlowDefinition
     /// </summary>
     /// <exception cref="InvalidOperationException">The flow works in partitions and is bound to none.</exception>
     [JsonIgnore]
-    public Guid LedgerId => Partitioned
-        ? Identity.FlowId.Of(Name, BoundPartition())
-        : Identity.FlowId.Of(Name);
+    public Guid LedgerId => Scope.LedgerId;
 
     /// <summary>The ledger's name as pages show it: <c>name@partition</c> for a flow that works in partitions, the name otherwise.</summary>
     [JsonIgnore]
-    public string LedgerName => Partitioned ? $"{Name}@{BoundPartition()}" : Name;
+    public string LedgerName => Scope.LedgerName;
 
     /// <summary>
     /// Whether settling the partition a run builds in (<paramref name="requested"/>, or none) needs the registry: always for a
     /// flow that follows it, and for one that names several partitions when none is named.
     /// </summary>
-    public bool NeedsRegistry(string? requested)
-        => FollowsRegistry || (DeclaresPartitions && string.IsNullOrWhiteSpace(requested) && Partitions.Count > 1);
+    public bool NeedsRegistry(string? requested) => Scope.NeedsRegistry(requested);
 
     /// <summary>The partitions the flow builds in: those it names, every registered one for a flow that follows the registry, none for a header flow.</summary>
-    public IReadOnlyList<string> Served(RegisteredPartitions registry)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        return DeclaresPartitions ? Partitions : FollowsRegistry ? registry.Names : [];
-    }
+    public IReadOnlyList<string> Served(RegisteredPartitions registry) => Scope.Served(registry);
 
     /// <summary>
     /// This definition bound to <paramref name="partition"/>: its requests carry the partition as <c>data-partition-id</c>, its
@@ -126,20 +126,7 @@ public sealed record DimensionFlowDefinition
     /// <exception cref="DeliveryException">The flow's partition is its header's, or the flow does not build in this partition.</exception>
     public DimensionFlowDefinition ForPartition(string partition)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(partition);
-        var wanted = partition.Trim();
-        if (!Partitioned)
-        {
-            throw new DeliveryException(
-                $"Dimension flow '{Name}' names no partitions; it builds in the partition its source.headers name, so it cannot be bound to '{wanted}'.");
-        }
-
-        var declared = DeclaresPartitions
-            ? Partitions.FirstOrDefault(p => string.Equals(p, wanted, StringComparison.OrdinalIgnoreCase))
-                ?? throw new DeliveryException($"Dimension flow '{Name}' does not build in partition '{wanted}'; it names {PartitionNames.Listed(Partitions)}.")
-            : CacheScope.IsPartitionId(wanted)
-                ? wanted
-                : throw new DeliveryException($"Dimension flow '{Name}' cannot build in '{wanted}': a partition is a data-partition-id (letters, digits, underscore, hyphen and dot).");
+        var declared = Scope.Bind(partition);
         var headers = new Dictionary<string, string>(Source.Headers, StringComparer.OrdinalIgnoreCase)
         {
             [CacheScope.PartitionHeader] = declared,
@@ -155,43 +142,7 @@ public sealed record DimensionFlowDefinition
     /// </summary>
     /// <exception cref="DeliveryException">The partition cannot be settled, or is not one the flow builds in.</exception>
     public DimensionFlowDefinition ForRun(string? requested, RegisteredPartitions registry)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        var wanted = string.IsNullOrWhiteSpace(requested) ? null : requested.Trim();
-        if (!Partitioned)
-        {
-            return wanted is null
-                ? this
-                : throw new DeliveryException(
-                    $"Dimension flow '{Name}' names no partitions; it builds in the partition its source.headers name, so a run cannot target '{wanted}'. Leave the partition out, or take the header out so the flow builds in every registered partition.");
-        }
-
-        if (wanted == PartitionNames.Every)
-        {
-            throw new DeliveryException(
-                $"Dimension flow '{Name}' builds in one partition per run, since a run's builds describe one partition; name the partition to build in instead of '{PartitionNames.Every}'.");
-        }
-
-        if (wanted is not null)
-        {
-            return ForPartition(FollowsRegistry ? registry.Find(wanted) ?? throw new DeliveryException(registry.NotRegistered(wanted)) : wanted);
-        }
-
-        var served = Served(registry);
-        if (registry.Default is { } fallback && served.Contains(fallback, StringComparer.OrdinalIgnoreCase))
-        {
-            return ForPartition(fallback);
-        }
-
-        if (DeclaresPartitions && Partitions.Count == 1)
-        {
-            return ForPartition(Partitions[0]);
-        }
-
-        throw new DeliveryException(FollowsRegistry && registry.All.Count == 0
-            ? $"No partition is registered with the catalog, so dimension flow '{Name}' has none to build in. Name one in the control plane's configuration (Osdu:Partitions:<name>), or register one with 'sqlflow partition add <name>'."
-            : $"Dimension flow '{Name}' builds in {PartitionNames.Listed(served)}, and {(registry.Default is null ? "no partition is the default" : $"the default partition '{registry.Default}' is not one of them")}; name the partition this run builds in.");
-    }
+        => Scope.Settle(requested, registry) is { } partition ? ForPartition(partition) : this;
 
     /// <summary>The dimension named <paramref name="name"/> (case-insensitively), or null.</summary>
     public DimensionSpec? Dimension(string name)
@@ -259,11 +210,6 @@ public sealed record DimensionFlowDefinition
         }
     }
 
-    private string BoundPartition() => Partition
-        ?? throw new InvalidOperationException(
-            DeclaresPartitions
-                ? $"Dimension flow '{Name}' builds in each of {PartitionNames.Listed(Partitions)}; bind it to the partition a run builds in before asking for its ledger."
-                : $"Dimension flow '{Name}' builds in every registered partition; bind it to the partition a run builds in before asking for its ledger.");
 
     private static bool IsReference(string value) => value.Contains("${", StringComparison.Ordinal);
 }

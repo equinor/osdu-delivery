@@ -315,7 +315,7 @@ public static partial class DeliveryInventoryEndpoints
 
         if (ids.Count == 0)
         {
-            var holds = (await ledger.InventoryCountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(InventoryRepairs.Finding);
+            var holds = (await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(InventoryRepairs.Finding);
             if (holds != expected)
             {
                 return Problem(StatusCodes.Status409Conflict, "Count changed",
@@ -326,7 +326,7 @@ public static partial class DeliveryInventoryEndpoints
             long? after = null;
             while (true)
             {
-                var page = await ledger.ListInventoryRecordsAsync(inventory.Partition, inventory.InventoryId, InventoryRepairs.Finding, after, MaxPage, ct).ConfigureAwait(false);
+                var page = await ledger.Inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, InventoryRepairs.Finding, after, MaxPage, ct).ConfigureAwait(false);
                 foreach (var row in page)
                 {
                     Take(row);
@@ -342,7 +342,7 @@ public static partial class DeliveryInventoryEndpoints
         }
         else
         {
-            var held = (await ledger.InventoryRecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false))
+            var held = (await ledger.Inventories.RecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false))
                 .Where(r => r.Finding == InventoryRepairs.Finding)
                 .ToDictionary(r => r.TargetId, StringComparer.Ordinal);
             var not = ids.Where(i => !held.ContainsKey(i)).ToList();
@@ -463,14 +463,13 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         // A new id is for good: the records are written under it from then on, and records that name the old one keep naming it.
-        var confirm = request.Confirm?.Trim();
-        if (string.IsNullOrEmpty(confirm))
+        if (PartitionConfirmation.Typed(request.Confirm) is not { } confirm)
         {
             return Problem(StatusCodes.Status400BadRequest, "Confirmation required",
                 "New OSDU ids are for good: name the partition the inventory is kept in as 'confirm'; nothing is repaired without it.");
         }
 
-        return string.Equals(confirm, inventory.Partition, StringComparison.OrdinalIgnoreCase)
+        return PartitionConfirmation.Names(confirm, inventory.Partition)
             ? null
             : Problem(StatusCodes.Status400BadRequest, "Confirmation does not match",
                 $"The confirmation names '{confirm}', and inventory '{inventory.Name}' is kept in partition '{inventory.Partition}'. Nothing was repaired.");
@@ -563,7 +562,7 @@ public static partial class DeliveryInventoryEndpoints
                     : $"Inventory '{inventory.Name}' was built again since selection {selectionId} was matched: match its conditions again, and remove what the new match holds. Nothing was queued.");
             }
 
-            var selected = (await ledger.InventorySelectionCountsAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)).Of(finding);
+            var selected = (await ledger.Inventories.SelectionCountsAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)).Of(finding);
             if (selected != expected)
             {
                 return Problem(StatusCodes.Status409Conflict, "Count changed",
@@ -572,7 +571,7 @@ public static partial class DeliveryInventoryEndpoints
         }
         else if (ids.Count == 0)
         {
-            var holds = (await ledger.InventoryCountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(finding);
+            var holds = (await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(finding);
             if (holds != expected)
             {
                 return Problem(StatusCodes.Status409Conflict, "Count changed",
@@ -584,7 +583,7 @@ public static partial class DeliveryInventoryEndpoints
             // A gone id is one OSDU no longer serves, so it is picked as gone whether the inventory ever listed it or not; any
             // other is picked only while OSDU serves it.
             var gone = finding == InventoryFindings.Gone;
-            var held = await ledger.InventoryRecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false);
+            var held = await ledger.Inventories.RecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false);
             var removable = held.Where(r => r.Finding == finding && (gone || r.GoneUtc is null)).Select(r => r.TargetId).ToHashSet(StringComparer.Ordinal);
             var not = ids.Where(i => !removable.Contains(i)).ToList();
             if (not.Count > 0)
@@ -684,7 +683,7 @@ public static partial class DeliveryInventoryEndpoints
             return problem!;
         }
 
-        var removals = await ledger.ListInventoryRemovalsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
+        var removals = await ledger.Inventories.ListRemovalsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
         var selections = await SelectionsOfAsync(ledger, inventory.Partition, removals, ct).ConfigureAwait(false);
         return TypedResults.Json<IReadOnlyList<DeliveryInventoryRemovalDto>>(removals.Select(r => ToDto(r, selections)).ToList(), Json);
     }
@@ -696,7 +695,7 @@ public static partial class DeliveryInventoryEndpoints
         var selections = new Dictionary<long, DeliveryInventorySelectionSummaryDto>();
         foreach (var selectionId in removals.Select(r => r.SelectionId).OfType<long>().Distinct())
         {
-            if (await ledger.GetInventorySelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { } selection)
+            if (await ledger.Inventories.GetSelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { } selection)
             {
                 selections[selectionId] = Summary(selection, await DuplicateKeyOfAsync(ledger, partition, selection, ct).ConfigureAwait(false));
             }
@@ -714,7 +713,7 @@ public static partial class DeliveryInventoryEndpoints
             return bad;
         }
 
-        var removal = await ledger.GetInventoryRemovalAsync(partition.Trim(), removalId, ct).ConfigureAwait(false);
+        var removal = await ledger.Inventories.GetRemovalAsync(partition.Trim(), removalId, ct).ConfigureAwait(false);
         if (removal is null)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"No inventory removal {removalId} in partition '{partition.Trim()}'.");
@@ -750,7 +749,7 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         var take = limit ?? DefaultPage;
-        var read = await ledger.ListInventoryRemovalItemsAsync(partition.Trim(), removalId, chosen, after, take + 1, ct).ConfigureAwait(false);
+        var read = await ledger.Inventories.ListRemovalItemsAsync(partition.Trim(), removalId, chosen, after, take + 1, ct).ConfigureAwait(false);
         var page = read.Count > take ? read.Take(take).ToList() : read;
         return TypedResults.Json(
             new DeliveryInventoryRemovalItemPageDto(page.Select(ToDto).ToList(), read.Count > take ? page[^1].InventoryRemovalItemId : null),
@@ -767,7 +766,7 @@ public static partial class DeliveryInventoryEndpoints
             return bad;
         }
 
-        var inventories = await ledger.ListInventoriesAsync(named, ct).ConfigureAwait(false);
+        var inventories = await ledger.Inventories.ListAsync(named, ct).ConfigureAwait(false);
         var listed = new List<DeliveryInventoryDto>(inventories.Count);
         foreach (var inventory in inventories)
         {
@@ -788,7 +787,7 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         var runs = await InventoryReport.RecentRunsAsync(ledger, inventory, ct).ConfigureAwait(false);
-        var counts = await ledger.InventoryCountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
+        var counts = await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
         var (pipeline, flow, declared) = await DeclaringFlowAsync(db, documents, inventory, ct).ConfigureAwait(false);
         var spec = declared == true ? flow?.Inventory(inventory.Name) : null;
         var owners = InventoryReport.Owners(inventory.OwnersJson, inventory.OwnersSource);
@@ -844,7 +843,7 @@ public static partial class DeliveryInventoryEndpoints
                 return missing!;
             }
 
-            var selected = await ledger.ListInventorySelectionRecordsAsync(inventory.Partition, selectionId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
+            var selected = await ledger.Inventories.ListSelectionRecordsAsync(inventory.Partition, selectionId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
             var shown = selected.Count > take ? selected.Take(take).ToList() : selected;
             var ledgerNames = await LedgerNamesAsync(ledger, shown.Select(s => s.Record).ToList(), ct).ConfigureAwait(false);
             return TypedResults.Json(
@@ -854,7 +853,7 @@ public static partial class DeliveryInventoryEndpoints
                 Json);
         }
 
-        var read = await ledger.ListInventoryRecordsAsync(inventory.Partition, inventory.InventoryId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
+        var read = await ledger.Inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
         var page = read.Count > take ? read.Take(take).ToList() : read;
         var names = await LedgerNamesAsync(ledger, page, ct).ConfigureAwait(false);
         return TypedResults.Json(
@@ -877,7 +876,7 @@ public static partial class DeliveryInventoryEndpoints
             return problem!;
         }
 
-        var runs = await ledger.ListInventoryRunsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
+        var runs = await ledger.Inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
         return TypedResults.Json<IReadOnlyList<DeliveryInventoryRunDto>>(runs.Select(r => ToDto(r, withFindings: true)).ToList(), Json);
     }
 
@@ -910,7 +909,7 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Id too long", $"An OSDU id is at most {MaxIdLength} characters.");
         }
 
-        var records = await ledger.LookupInventoryRecordsAsync(named, wanted, ct).ConfigureAwait(false);
+        var records = await ledger.Inventories.LookupRecordsAsync(named, wanted, ct).ConfigureAwait(false);
         var names = await LedgerNamesAsync(ledger, records, ct).ConfigureAwait(false);
         var inventories = new Dictionary<int, InventoryState?>();
         var hits = new List<DeliveryInventoryHitDto>(records.Count);
@@ -918,7 +917,7 @@ public static partial class DeliveryInventoryEndpoints
         {
             if (!inventories.TryGetValue(record.InventoryId, out var inventory))
             {
-                inventory = await ledger.GetInventoryAsync(named, record.InventoryId, ct).ConfigureAwait(false);
+                inventory = await ledger.Inventories.GetAsync(named, record.InventoryId, ct).ConfigureAwait(false);
                 inventories[record.InventoryId] = inventory;
             }
 
@@ -928,7 +927,7 @@ public static partial class DeliveryInventoryEndpoints
             }
         }
 
-        var removed = await ledger.LookupInventoryRemovalItemsAsync(named, wanted, ct).ConfigureAwait(false);
+        var removed = await ledger.Inventories.LookupRemovalItemsAsync(named, wanted, ct).ConfigureAwait(false);
         return TypedResults.Json(new DeliveryInventoryLookupDto(named, wanted, hits, removed.Select(ToDto).ToList()), Json);
     }
 
@@ -1025,7 +1024,7 @@ public static partial class DeliveryInventoryEndpoints
                 Json);
         }
 
-        var held = (await ledger.ListInventoriesAsync(kept, ct).ConfigureAwait(false)).Where(i => i.FlowId == bound.LedgerId).ToList();
+        var held = (await ledger.Inventories.ListAsync(kept, ct).ConfigureAwait(false)).Where(i => i.FlowId == bound.LedgerId).ToList();
         var summaries = new Dictionary<int, DeliveryInventoryDto>();
         foreach (var inventory in held)
         {
@@ -1127,7 +1126,7 @@ public static partial class DeliveryInventoryEndpoints
             return (null, bad);
         }
 
-        var inventory = await ledger.GetInventoryAsync(partition.Trim(), inventoryId, ct).ConfigureAwait(false);
+        var inventory = await ledger.Inventories.GetAsync(partition.Trim(), inventoryId, ct).ConfigureAwait(false);
         return inventory is null
             ? (null, Problem(StatusCodes.Status404NotFound, "Not found", $"No inventory {inventoryId} in partition '{partition.Trim()}'."))
             : (inventory, null);

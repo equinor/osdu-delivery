@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using SqlFlow.Catalog;
@@ -12,8 +13,8 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// The rule in CLAUDE.md that the OSDU module's migrations touch only the <c>osdu</c> schema and that none of SQLFlow's
-/// migrations touches it (osdu/docs/reference/cli/db.md, For contributors: adding a migration), checked on the
-/// migrations' operations and on the SQL scripts they generate, without a database.
+/// migrations touches it (osdu/docs/reference/cli/db.md, For contributors: adding a migration), checked on the two
+/// models, on the migrations' operations and on the SQL scripts they generate, without a database.
 /// </summary>
 public sealed partial class MigrationScriptTests
 {
@@ -77,6 +78,35 @@ public sealed partial class MigrationScriptTests
 
         var script = catalog.GetService<IMigrator>().GenerateScript();
         Assert.DoesNotMatch(OsduReference(), script);
+    }
+
+    [Fact]
+    public void The_osdu_model_holds_the_module_s_own_entities_alone()
+    {
+        // A navigation to one of SQLFlow's entities would pull that entity into this model under the osdu schema, where the
+        // schema checks would pass it: the entity's own type is what says the model reaches into SQLFlow's tables.
+        using var context = new OsduDbContext(OsduDbContext.SqlServerOptions(Placeholder));
+        var entities = context.GetService<IDesignTimeModel>().Model.GetEntityTypes().ToList();
+        Assert.NotEmpty(entities);
+
+        var module = typeof(OsduDbContext).Assembly;
+        var foreign = entities.Where(e => e.ClrType.Assembly != module).Select(e => $"{e.DisplayName()} ({e.ClrType.FullName})").ToList();
+        Assert.True(foreign.Count == 0, "The osdu model holds entities that are not the module's own: " + string.Join(", ", foreign));
+    }
+
+    [Fact]
+    public void SQLFlow_s_catalog_model_holds_no_osdu_table()
+    {
+        using var catalog = CatalogDatabase.Create(Placeholder);
+        var entities = catalog.GetService<IDesignTimeModel>().Model.GetEntityTypes().ToList();
+        Assert.NotEmpty(entities);
+
+        var module = typeof(OsduDbContext).Assembly;
+        var osdu = entities
+            .Where(e => string.Equals(e.GetSchema(), DeliveryModel.SchemaName, StringComparison.OrdinalIgnoreCase) || e.ClrType.Assembly == module)
+            .Select(e => $"{e.DisplayName()} ([{e.GetSchema()}].[{e.GetTableName()}])")
+            .ToList();
+        Assert.True(osdu.Count == 0, "SQLFlow's catalog model holds OSDU tables: " + string.Join(", ", osdu));
     }
 
     [Fact]

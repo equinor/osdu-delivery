@@ -112,8 +112,8 @@ public sealed class DeliveryDimensionApiTests
                 ("GR", "GR", 6), ("gr", "GR", 3), ("DT", "DT", 4), ("RHOB", "RHOB", 9), ("   ", null, 1));
 
             // The third failed before it wrote, which leaves the dimension as the second left it.
-            var (_, failed) = await ledger.StartDimensionRunAsync(Declaration(flow, spec), Guid.NewGuid(), "dimension api tests", now.AddHours(-1));
-            await ledger.CloseDimensionRunAsync(failed.DimensionRunId, DimensionRunStatus.Failed, DimensionReadCounts.None, "search answered 503", now.AddHours(-1).AddMinutes(1));
+            var (_, failed) = await ledger.Dimensions.StartRunAsync(Declaration(flow, spec), Guid.NewGuid(), "dimension api tests", now.AddHours(-1));
+            await ledger.Dimensions.CloseRunAsync(failed.DimensionRunId, DimensionRunStatus.Failed, DimensionReadCounts.None, "search answered 503", now.AddHours(-1).AddMinutes(1));
 
             // The wellbores are keyed by the id each log refers to, and valued by the name read from the wellbore; one wellbore
             // the label search did not find is valued by its id.
@@ -190,9 +190,9 @@ public sealed class DeliveryDimensionApiTests
             Assert.Equal(["GR", "gr"], value.GetProperty("keys").EnumerateArray().Select(o => o.GetProperty("key").GetString()));
             var valueFilter = value.GetProperty("filter");
             var field = OsduField.Text("data.Curves.Mnemonic", "data.Curves");
-            var expected = DimensionFilters.Of(field, ["GR", "gr"]);
-            Assert.Equal(expected, valueFilter.GetProperty("filters").EnumerateArray().Select(f => f.GetString()));
-            Assert.Equal(expected[0], gr.GetProperty("filter").GetString());
+            const string grFilter = """(nested(data.Curves, (Mnemonic.keyword:"GR"))) OR (nested(data.Curves, (Mnemonic.keyword:"gr")))""";
+            Assert.Equal([grFilter], valueFilter.GetProperty("filters").EnumerateArray().Select(f => f.GetString()));
+            Assert.Equal(grFilter, gr.GetProperty("filter").GetString());
             var history = Assert.Single(value.GetProperty("history").EnumerateArray());
             Assert.Equal(("Gamma Ray", DimensionChangeKinds.Removed), (history.GetProperty("key").GetString(), history.GetProperty("change").GetString()));
 
@@ -409,9 +409,9 @@ public sealed class DeliveryDimensionApiTests
             // A dimension the flow no longer declares is removed for good, by an admin alone; one it declares is not.
             var retiredFlow = new DeliveryDocumentLoader().ParseDimension(
                 yaml + "\n  - name: Retired\n    kind: \"" + WellLog + "\"\n    path: data.Name\n", "flows/" + flowName + ".yaml").ForRun(partition, RegisteredPartitions.None);
-            var (_, retiredRun) = await ledger.StartDimensionRunAsync(Declaration(retiredFlow, retiredFlow.Dimension("Retired")!), Guid.NewGuid(), "dimension api tests", now.AddMinutes(-5));
+            var (_, retiredRun) = await ledger.Dimensions.StartRunAsync(Declaration(retiredFlow, retiredFlow.Dimension("Retired")!), Guid.NewGuid(), "dimension api tests", now.AddMinutes(-5));
             var retiredField = OsduField.Keyword("data.Name");
-            var retired = await WriteAsync(ledger, retiredFlow, (await ledger.GetDimensionAsync(retiredRun.DimensionId))!, retiredRun,
+            var retired = await WriteAsync(ledger, retiredFlow, (await ledger.Dimensions.GetAsync(retiredRun.DimensionId))!, retiredRun,
                 new DimensionFieldState("keyword", null, "data.Name", Repeats: false), retiredField,
                 [new DimensionOriginalWrite("Log A", "Log A", null, null, 2, Filterable: true, Filter: DimensionFilters.Of(retiredField, ["Log A"])[0])],
                 new DimensionReadCounts { Records = 2, WithValue = 2, Aggregations = 1, Slices = 1 }, now.AddMinutes(-5));
@@ -558,7 +558,7 @@ public sealed class DeliveryDimensionApiTests
     private static async Task<DimensionRunState> BuildAsync(
         OsduLedger ledger, DimensionFlowDefinition flow, Guid runId, DateTime startedUtc, params (string Key, string? Value, long Count)[] found)
     {
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(flow, flow.Dimensions[0]), runId, "dimension api tests", startedUtc);
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(flow, flow.Dimensions[0]), runId, "dimension api tests", startedUtc);
         var field = OsduField.Text("data.Curves.Mnemonic", "data.Curves");
         var keys = found
             .Select(f => new DimensionOriginalWrite(f.Key, f.Value, f.Value is null ? DimensionLeftOut.Empty : null, null, f.Count, Filterable: true,
@@ -574,7 +574,7 @@ public sealed class DeliveryDimensionApiTests
     private static async Task<DimensionRunState> WellboresAsync(
         OsduLedger ledger, DimensionFlowDefinition flow, DateTime startedUtc, params (string Key, string? Label, long Count, string? Country)[] found)
     {
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(flow, flow.Dimensions[1]), Guid.NewGuid(), "dimension api tests", startedUtc);
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(flow, flow.Dimensions[1]), Guid.NewGuid(), "dimension api tests", startedUtc);
         var field = OsduField.Text("data.WellboreID");
         var keys = found
             .Select(f => new DimensionOriginalWrite(f.Key, f.Label ?? f.Key, null, null, f.Count, Filterable: true,
@@ -596,7 +596,7 @@ public sealed class DeliveryDimensionApiTests
             .GroupBy(o => o.CleanValue!, StringComparer.Ordinal)
             .Select(g => new DimensionMemberWrite(g.Key, g.Sum(o => o.Count), RecordsExact: false, g.Count(), 0, DimensionFilters.Of(field, g.Select(o => o.Original).ToList())[0], 1))
             .ToList();
-        return await ledger.WriteDimensionAsync(new DimensionWrite
+        return await ledger.Dimensions.WriteAsync(new DimensionWrite
         {
             DimensionRunId = run.DimensionRunId,
             DimensionId = dimension.DimensionId,

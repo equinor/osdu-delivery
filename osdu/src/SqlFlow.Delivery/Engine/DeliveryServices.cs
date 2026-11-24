@@ -191,8 +191,11 @@ public static class DeliveryServices
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(contexts);
         services.AddSingleton(new DeliveryLedgerSource(contexts));
-        services.AddSingleton<ILedger>(sp => sp.GetRequiredService<DeliveryLedgerSource>().Open(sp)
+
+        // One ledger, reached by its contract or, by the services that maintain its own tables (an index backfill), as itself.
+        services.AddSingleton(sp => sp.GetRequiredService<DeliveryLedgerSource>().Open(sp)
             ?? throw new DeliveryException(NoLedgerMessage));
+        services.AddSingleton<ILedger>(sp => sp.GetRequiredService<OsduLedger>());
         services.AddSingleton<ICacheStore>(sp => sp.GetRequiredService<DeliveryLedgerSource>().Cache(sp)
             ?? throw new DeliveryException(NoLedgerMessage));
 
@@ -296,7 +299,7 @@ public sealed class DeliveryLedgerSource
     private readonly Lock _gate = new();
     private bool _resolved;
     private Func<OsduDbContext>? _factory;
-    private ILedger? _ledger;
+    private OsduLedger? _ledger;
     private OsduCacheStore? _cache;
     private DeliveryPartitionRegistry? _partitions;
     private Ordering.SchemaLineageStore? _lineage;
@@ -309,7 +312,7 @@ public sealed class DeliveryLedgerSource
     }
 
     /// <summary>The ledger, or null when the host has no osdu database connection.</summary>
-    public ILedger? Open(IServiceProvider provider)
+    public OsduLedger? Open(IServiceProvider provider)
     {
         ArgumentNullException.ThrowIfNull(provider);
         Resolve(provider);

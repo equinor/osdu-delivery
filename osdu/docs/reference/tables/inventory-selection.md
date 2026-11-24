@@ -20,7 +20,7 @@ related:
   - delivery-concept-search-terms
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Selection.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs
@@ -84,6 +84,6 @@ than a week: each is deleted with its ids, or kept `expired` without them when a
 
 - **Written** by the control plane when an operator asks for a match, or makes a selection of a duplicate check's picks
   (`SqlServerLedgerBulk.InventoryDuplicates.cs`, in one transaction with its ids), and by the `match` run of the inventory flow
-  (`OsduLedger.InventorySelection.cs`, `SqlServerLedgerBulk.InventorySelection.cs`).
+  (`InventoryStore.Selection.cs`, `SqlServerLedgerBulk.InventorySelection.cs`).
 - **Read** by the inventory report's selection, `GET /api/v1/delivery/inventories/{partition}/{inventoryId}/selections/{selectionId}`,
   a removal by the selection, and the **Removals** tab.

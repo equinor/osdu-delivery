@@ -81,7 +81,7 @@ public sealed record RemovalRunOutcome
 }
 
 /// <summary>A removal run in which a removal failed, or held what it found for approval: the run ends failed, with its outcome.</summary>
-public sealed class RemovalRunFailedException : DeliveryException
+public sealed class RemovalRunFailedException : DeliveryException, IFailureWithOutcome
 {
     public RemovalRunFailedException(RemovalRunOutcome outcome)
         : base(Summary(outcome))
@@ -90,6 +90,8 @@ public sealed class RemovalRunFailedException : DeliveryException
     }
 
     public RemovalRunOutcome Outcome { get; }
+
+    object IFailureWithOutcome.Outcome => Outcome;
 
     private static string Summary(RemovalRunOutcome outcome)
     {

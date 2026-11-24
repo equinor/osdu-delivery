@@ -100,7 +100,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Rendering/SearchFields.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionViews.cs

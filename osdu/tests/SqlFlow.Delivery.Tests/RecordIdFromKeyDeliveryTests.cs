@@ -170,7 +170,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
             }
 
             // Released, a record meets the same refusal: the id a record claimed is its id for good.
-            await codes.ReleaseAsync(null);
+            await codes.ReleaseAsync(RecordReach.Every);
             _clock.Advance(TimeSpan.FromMinutes(1));
             Assert.Equal(0, (await RunAsync(codes, codeProtocol, ledger, force: true)).Work.Processed);
             Assert.Empty(codeProtocol.Deliveries);
@@ -261,7 +261,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
             // Once OSDU holds nothing at either id, a release delivers both, each to its own id.
             protocol.VerifyWith = _ => new VerifyResult(VerifyOutcome.Missing, null, "record not found");
             protocol.Deliveries.Clear();
-            await runtime.ReleaseAsync(null);
+            await runtime.ReleaseAsync(RecordReach.Every);
             _clock.Advance(TimeSpan.FromMinutes(1));
             runtime.Selection = SourceSelection.Full();
             Assert.Equal(2, (await RunAsync(runtime, protocol, ledger, force: true)).Work.Delivered);
@@ -304,7 +304,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
 
             // One batch asks every record held so, and nothing else; nothing is claimed or sent until the run.
             runtime.Actor = "gui:tahir";
-            var asked = await runtime.AdoptEveryAsync();
+            var asked = await runtime.AdoptAsync(RecordReach.Every, Samples.SamplePartition);
             Assert.Equal(new[] { SampleEstate.Key(0), SampleEstate.Key(1) }.OrderBy(k => k.Value), asked.OrderBy(k => k.Value));
             var waiting = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0));
             Assert.Equal((RecordStatus.Held, false, (string?)null), (waiting!.Status, waiting.Blocked, waiting.ClaimedTargetId));
@@ -340,7 +340,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
             }
 
             // In step now: nothing is left to adopt, and the record held because OSDU could not say is still held for it.
-            Assert.Empty(await runtime.AdoptEveryAsync());
+            Assert.Empty(await runtime.AdoptAsync(RecordReach.Every, Samples.SamplePartition));
             var still = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(2));
             Assert.Equal((RecordStatus.Held, true), (still!.Status, still.Blocked));
         }
@@ -363,8 +363,8 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
         var issue = (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0)))!.ProblemHash!.Value;
         Assert.Equal(issue, (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(2)))!.ProblemHash);
         runtime.Actor = "cli:tahir@host";
-        Assert.Empty(await runtime.AdoptAsync([SampleEstate.Key(3)]));
-        Assert.Equal(3, (await runtime.AdoptProblemAsync(issue, OccupiedHolds.Prefix + "<osdu id>")).Count);
+        Assert.Empty(await runtime.AdoptAsync(RecordReach.Named([SampleEstate.Key(3)]), Samples.SamplePartition));
+        Assert.Equal(3, (await runtime.AdoptAsync(RecordReach.Of(await runtime.IssueAsync(issue)), Samples.SamplePartition)).Count);
         var byIssue = (await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = runtime.Flow.Id, Kind = "adopt" }))
             .Single(a => a.Summary!.Contains(" issue ", StringComparison.Ordinal));
         Assert.StartsWith("asked 3 record(s) issue ", byIssue.Summary, StringComparison.Ordinal);
@@ -393,7 +393,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
         Assert.Contains($"OSDU id {second} is already claimed by flow", taken.LastError, StringComparison.Ordinal);
         Assert.DoesNotContain(await ledger.ListAttemptsAsync(runtime.Flow.Id, SampleEstate.Key(1), 10), a => a.Phase == AttemptPhases.Adopt);
         Assert.False(OccupiedHolds.Adoptable(taken));
-        Assert.Empty(await runtime.AdoptAsync([SampleEstate.Key(1)]));
+        Assert.Empty(await runtime.AdoptAsync(RecordReach.Named([SampleEstate.Key(1)]), Samples.SamplePartition));
     }
 
     [Fact]
@@ -407,7 +407,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
             var answer = new VerifyResult(VerifyOutcome.Match, 7, null);
             protocol.VerifyWith = asked => asked == id ? answer : new VerifyResult(VerifyOutcome.Missing, null, "record not found");
             await RunAsync(runtime, protocol, ledger);
-            Assert.Equal([SampleEstate.Key(0)], await runtime.AdoptEveryAsync());
+            Assert.Equal([SampleEstate.Key(0)], await runtime.AdoptAsync(RecordReach.Every, Samples.SamplePartition));
 
             // OSDU does not answer for the id at the run: the record is held for that, claiming nothing, and the request stands.
             answer = new VerifyResult(VerifyOutcome.Error, null, "HTTP 503 Service Unavailable");
@@ -421,13 +421,13 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
             Assert.Contains($"OSDU could not say whether it holds a record at {id}", held.LastError, StringComparison.Ordinal);
             Assert.NotNull(held.AdoptRequestedUtc);
             Assert.False(OccupiedHolds.Adoptable(held));
-            Assert.Empty(await runtime.AdoptEveryAsync());
+            Assert.Empty(await runtime.AdoptAsync(RecordReach.Every, Samples.SamplePartition));
             Assert.Equal(0, (await ledger.StatsAsync(runtime.Flow.Id, Now)).Adoptable);
             Assert.DoesNotContain(await ledger.ListAttemptsAsync(runtime.Flow.Id, SampleEstate.Key(0), 10), a => a.Phase == AttemptPhases.Adopt);
 
             // Released once OSDU answers again, the record is taken over at the version OSDU holds then.
             answer = new VerifyResult(VerifyOutcome.Match, 8, null);
-            await runtime.ReleaseAsync([SampleEstate.Key(0)]);
+            await runtime.ReleaseAsync(RecordReach.Named([SampleEstate.Key(0)]));
             _clock.Advance(TimeSpan.FromMinutes(1));
             Assert.Equal(1, (await RunAsync(runtime, protocol, ledger, force: true)).Work.Delivered);
             var write = Assert.Single(protocol.Deliveries);
@@ -468,7 +468,7 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
             Assert.False(OccupiedHolds.Adoptable((await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(1)))!));
             Assert.Equal(1, (await ledger.StatsAsync(runtime.Flow.Id, Now)).Adoptable);
 
-            Assert.Equal([SampleEstate.Key(0)], await runtime.AdoptEveryAsync());
+            Assert.Equal([SampleEstate.Key(0)], await runtime.AdoptAsync(RecordReach.Every, Samples.SamplePartition));
             protocol.Deliveries.Clear();
             _clock.Advance(TimeSpan.FromMinutes(1));
             runtime.Selection = SourceSelection.Full();

@@ -35,18 +35,18 @@ public static class DimensionTable
     public static Task<bool> EnsureAsync(ILedger ledger, DimensionState dimension, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
-        return ledger.EnsureDimensionTableAsync(dimension.DimensionId, SpecOf(dimension), ct);
+        return ledger.Dimensions.EnsureTableAsync(dimension.DimensionId, SpecOf(dimension), ct);
     }
 
     /// <summary>The table's name, the names of the columns that hold its key and its value, and its attribute columns.</summary>
     public static async Task<DimensionTableShape> ShapeAsync(ILedger ledger, DimensionState dimension, CancellationToken ct)
-        => await WithTableAsync(ledger, dimension, () => ledger.DimensionTableShapeAsync(dimension.DimensionId, ct), ct).ConfigureAwait(false)
+        => await WithTableAsync(ledger, dimension, () => ledger.Dimensions.TableShapeAsync(dimension.DimensionId, ct), ct).ConfigureAwait(false)
             ?? throw Gone(dimension);
 
     /// <summary>A page of the dimension's table, as <paramref name="query"/> narrows and orders it.</summary>
     /// <exception cref="DeliveryException">The query names a column the table does not have, or the dimension is gone.</exception>
     public static async Task<DimensionTablePage> ReadAsync(ILedger ledger, DimensionState dimension, DimensionTableQuery query, CancellationToken ct)
-        => await WithTableAsync(ledger, dimension, () => ledger.ReadDimensionTableAsync(dimension.DimensionId, query, ct), ct).ConfigureAwait(false)
+        => await WithTableAsync(ledger, dimension, () => ledger.Dimensions.ReadTableAsync(dimension.DimensionId, query, ct), ct).ConfigureAwait(false)
             ?? throw Gone(dimension);
 
     /// <summary>Every row of the dimension's table, by value then row number, one at a time.</summary>
@@ -54,7 +54,7 @@ public static class DimensionTable
     {
         // The shape is read first, which makes the table when it is missing, so the rows are read from a table that is there.
         _ = await ShapeAsync(ledger, dimension, ct).ConfigureAwait(false);
-        await foreach (var row in ledger.StreamDimensionTableAsync(dimension.DimensionId, ct).ConfigureAwait(false))
+        await foreach (var row in ledger.Dimensions.StreamTableAsync(dimension.DimensionId, ct).ConfigureAwait(false))
         {
             yield return row;
         }

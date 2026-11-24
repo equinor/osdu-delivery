@@ -600,7 +600,7 @@ public sealed class ReversalTests : IDisposable
             }
 
             // A release plans record 0 from its row, still naming a wellbore nobody holds: held again, nothing sent.
-            Assert.Equal(1, await runtime.ReleaseAsync([SampleEstate.Key(0)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([SampleEstate.Key(0)])));
             await DeliverAsync(runtime);
             Assert.Equal(RecordStatus.Held, (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0)))!.Status);
             Assert.Equal(versions[0], LatestVersion(TargetOf(runtime, 0)));

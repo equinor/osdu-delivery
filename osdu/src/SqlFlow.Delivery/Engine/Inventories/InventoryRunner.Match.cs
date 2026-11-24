@@ -35,7 +35,7 @@ public sealed record InventoryMatchOutcome(
 }
 
 /// <summary>A match that stopped: the run ends failed, carrying what it came to, its selection failed and holding no id.</summary>
-public sealed class InventoryMatchFailedException : DeliveryException
+public sealed class InventoryMatchFailedException : DeliveryException, IFailureWithOutcome
 {
     public InventoryMatchFailedException(InventoryMatchOutcome outcome)
         : base((outcome ?? throw new ArgumentNullException(nameof(outcome))).Describe())
@@ -44,6 +44,8 @@ public sealed class InventoryMatchFailedException : DeliveryException
     }
 
     public InventoryMatchOutcome Outcome { get; }
+
+    object IFailureWithOutcome.Outcome => Outcome;
 }
 
 public sealed partial class InventoryRunner
@@ -68,24 +70,24 @@ public sealed partial class InventoryRunner
         var flowId = _flow.LedgerId;
         var state = spec is null
             ? null
-            : (await ledger.ListInventoriesAsync(partition, ct).ConfigureAwait(false))
+            : (await ledger.Inventories.ListAsync(partition, ct).ConfigureAwait(false))
                 .FirstOrDefault(i => i.FlowId == flowId && string.Equals(i.Name, spec.Name, StringComparison.OrdinalIgnoreCase));
         if (spec is null || state?.LastBuildRunId is null)
         {
             var why = spec is null
                 ? $"Inventory flow '{_flow.Name}' has no inventory named '{inventoryName}'. Nothing was matched."
                 : $"Inventory '{spec.Name}' has not been built in '{partition}', so it holds no id to match; build it first. Nothing was matched.";
-            await ledger.FailInventorySelectionAsync(partition, selectionId, why, Now, CancellationToken.None).ConfigureAwait(false);
+            await ledger.Inventories.FailSelectionAsync(partition, selectionId, why, Now, CancellationToken.None).ConfigureAwait(false);
             throw new DeliveryException(why);
         }
 
-        if (await ledger.GetInventorySelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { DuplicateCheckId: { } check })
+        if (await ledger.Inventories.GetSelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { DuplicateCheckId: { } check })
         {
             throw new DeliveryException(
                 $"Selection {selectionId} of '{partition}' holds the copies duplicate check {check} picked to remove; a match fills only a selection opened with conditions. Nothing was matched.");
         }
 
-        var selection = await ledger.StartInventorySelectionAsync(flowId, state.InventoryId, selectionId, runId, state.LastBuildRunId, Now, ct).ConfigureAwait(false)
+        var selection = await ledger.Inventories.StartSelectionAsync(flowId, state.InventoryId, selectionId, runId, state.LastBuildRunId, Now, ct).ConfigureAwait(false)
             ?? throw new DeliveryException(
                 $"Inventory '{spec.Name}' in '{partition}' holds no selection {selectionId}: it was opened for another inventory, or retired since. Nothing was matched.");
         _log.LogInformation(
@@ -113,7 +115,7 @@ public sealed partial class InventoryRunner
             query = RecordExplorer.Compose(null, asked.Filters);
             columns = SelectionColumns(asked.Filters);
             IReadOnlyList<string> returned = ["id", "version", .. columns];
-            var candidates = await ledger.CountInventoryServedAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
+            var candidates = await ledger.Inventories.CountServedAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
 
             // The records the conditions find among those the inventory reads: its own query narrows them, as its build did.
             var narrowed = Query(spec, partition);
@@ -121,7 +123,7 @@ public sealed partial class InventoryRunner
             var found = candidates == 0 ? 0 : await search.CountAsync(new OsduSearchQuery { Kind = spec.Kind, Query = scope, ReturnedFields = ["id"] }, ct).ConfigureAwait(false);
             var perSearch = InventorySelections.IdsPerSearch(Clauses(asked.Filters));
             direction = InventorySelections.Direction(found, candidates, OsduSearch.MaxPage, perSearch);
-            await ledger.PlanInventorySelectionAsync(
+            await ledger.Inventories.PlanSelectionAsync(
                 flowId, selectionId, candidates, direction == InventorySelections.ByConditions ? found : candidates, direction, query, counter.Take(), ct).ConfigureAwait(false);
             _log.LogInformation(
                 "selection {Selection}: the conditions find {Found} record(s) of {Kind}, and the inventory serves {Candidates} id(s); reading by {Direction}{PerSearch}",
@@ -141,8 +143,8 @@ public sealed partial class InventoryRunner
             }
 
             // What the last write left unsaid is counted with the end, so every request sent is in the selection's count.
-            await ledger.AddInventorySelectionItemsAsync(flowId, state.InventoryId, selectionId, [], 0, counter.Take(), ct).ConfigureAwait(false);
-            await ledger.CompleteInventorySelectionAsync(
+            await ledger.Inventories.AddSelectionItemsAsync(flowId, state.InventoryId, selectionId, [], 0, counter.Take(), ct).ConfigureAwait(false);
+            await ledger.Inventories.CompleteSelectionAsync(
                 flowId, selectionId, new InventorySelectionEnd(InventorySelections.Completed, query, direction, notes, columns, null), Now, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -158,11 +160,11 @@ public sealed partial class InventoryRunner
         if (error is not null)
         {
             _log.LogError("selection {Selection}: the match stopped: {Error}", selectionId, error);
-            await ledger.CompleteInventorySelectionAsync(
+            await ledger.Inventories.CompleteSelectionAsync(
                 flowId, selectionId, new InventorySelectionEnd(InventorySelections.Failed, query, direction, notes, columns, error), Now, CancellationToken.None).ConfigureAwait(false);
         }
 
-        var ended = await ledger.GetInventorySelectionAsync(partition, selectionId, CancellationToken.None).ConfigureAwait(false);
+        var ended = await ledger.Inventories.GetSelectionAsync(partition, selectionId, CancellationToken.None).ConfigureAwait(false);
         var outcome = new InventoryMatchOutcome(
             DeliveryOperations.Match, _flow.Name, partition, spec.Name, selectionId, ended?.Status ?? InventorySelections.Failed, direction, query,
             ended?.Candidates ?? 0, ended?.Matched ?? 0, ended?.Outside ?? 0, ended?.Changed ?? 0, ended?.Requests ?? counter.Sent, notes, error);
@@ -198,7 +200,7 @@ public sealed partial class InventoryRunner
                 }
             }
 
-            await ledger.AddInventorySelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, page.Hits.Count, counter.Take(), ct).ConfigureAwait(false);
+            await ledger.Inventories.AddSelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, page.Hits.Count, counter.Take(), ct).ConfigureAwait(false);
             read += page.Hits.Count;
             reported = Progress(selectionId, read, reported);
         }
@@ -221,7 +223,7 @@ public sealed partial class InventoryRunner
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var chunk = await ledger.InventoryServedAsync(_flow.LedgerId, inventoryId, after, perSearch, ct).ConfigureAwait(false);
+            var chunk = await ledger.Inventories.ServedAsync(_flow.LedgerId, inventoryId, after, perSearch, ct).ConfigureAwait(false);
             if (chunk.Count == 0)
             {
                 break;
@@ -257,7 +259,7 @@ public sealed partial class InventoryRunner
                 }
             }
 
-            await ledger.AddInventorySelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, chunk.Count, counter.Take(), ct).ConfigureAwait(false);
+            await ledger.Inventories.AddSelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, chunk.Count, counter.Take(), ct).ConfigureAwait(false);
             read += chunk.Count;
             reported = Progress(selectionId, read, reported);
             if (chunk.Count < perSearch)

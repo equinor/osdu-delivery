@@ -44,8 +44,7 @@ internal static class DeliveryReversalVerbs
             return WritePreview(context, label, preview);
         }
 
-        using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
-        runtime.Actor = RunActors.LocalAccount();
+        using var runtime = CliInterventions.Runtime(engine, flow);
         var summary = await runtime.ReverseAsync(source, ct).ConfigureAwait(false);
         if (context.Json)
         {

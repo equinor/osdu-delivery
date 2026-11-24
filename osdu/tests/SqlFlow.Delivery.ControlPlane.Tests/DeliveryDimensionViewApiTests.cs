@@ -98,7 +98,7 @@ public sealed class DeliveryDimensionViewApiTests
             });
 
             // The view written as a build writes it: its tables made empty, since no dimension of this flow was built.
-            var written = await ledger.WriteDimensionViewsAsync(new DimensionViewWrite
+            var written = await ledger.Dimensions.WriteViewsAsync(new DimensionViewWrite
             {
                 Flow = flow.Name,
                 FlowLedgerId = flow.LedgerId,

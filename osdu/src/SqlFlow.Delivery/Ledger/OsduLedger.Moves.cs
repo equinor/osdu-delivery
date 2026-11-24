@@ -236,7 +236,7 @@ public sealed partial class OsduLedger
                 ? string.Create(CultureInfo.InvariantCulture, $"; {superseded} record(s) '{move.ToFlow}' had held, which claimed no OSDU id, gave way to them")
                 : string.Empty);
         await SqlServerLedgerBulk.FinishMoveAsync(db, partition, activityId, from, to, LedgerMoves.Completed, summary, Now, ct).ConfigureAwait(false);
-        _ledgerPartitions.TryRemove(from, out _);
+        Partitions.Forget(from);
         return Result(activityId, name, move, LedgerMoves.Completed, moved, superseded, summary);
     }
 
@@ -300,7 +300,7 @@ public sealed partial class OsduLedger
             CultureInfo.InvariantCulture,
             $"moved {moved} {kind.Noun} of '{move.FromFlow}' to '{move.ToFlow}', {Why(move)}, with their history");
         await SqlServerLedgerBulk.FinishMoveAsync(db, partition, activityId, from, to, LedgerMoves.Completed, summary, Now, ct).ConfigureAwait(false);
-        _ledgerPartitions.TryRemove(from, out _);
+        Partitions.Forget(from);
         return Result(activityId, name, move, LedgerMoves.Completed, moved, 0, summary);
     }
 

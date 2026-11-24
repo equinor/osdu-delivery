@@ -3,16 +3,30 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// The inventories of inventory flows (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory keeps): every id an
-// OSDU kind holds in a partition, kept under the inventory flow's ledger and compared with every ledger of the
-// partition. The rows are the flow's; the comparisons read the other ledgers' records, artifacts and purged records,
-// never write them.
-public sealed partial class OsduLedger
+/// <summary>
+/// The inventories of inventory flows (osdu/docs/reference/flow/inventory.md): every id an OSDU kind holds in a partition
+/// with what each build and reconcile found of it, the selections a removal or a match reads
+/// (osdu/docs/reference/flow/inventory-selections.md), the duplicate checks across an inventory
+/// (osdu/docs/reference/flow/inventory-duplicates.md), and the removals and restores of its ids
+/// (osdu/docs/reference/flow/inventory-removals.md). A store beside the ledger (<see cref="LedgerStore"/>), since an
+/// inventory keeps tables of its own and writes no delivered record.
+/// </summary>
+public sealed partial class InventoryStore : LedgerStore
 {
+    internal InventoryStore(LedgerDatabase database, LedgerDirectory partitions)
+        : base(database, partitions)
+    {
+    }
+
     /// <summary>The most identities an inventory's owners are inferred from.</summary>
     private const int MaxInferredOwners = 200;
 
-    public async Task<InventoryState> RegisterInventoryAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, string versions, CancellationToken ct = default)
+    /// <summary>
+    /// The inventory <paramref name="name"/> of the inventory flow whose ledger is <paramref name="flowId"/>, created on its first
+    /// build and kept in step with what the flow declares (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory
+    /// keeps).
+    /// </summary>
+    public async Task<InventoryState> RegisterAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, string versions, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(flowName);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -47,7 +61,11 @@ public sealed partial class OsduLedger
         return await ToInventoryStateAsync(row, ct).ConfigureAwait(false);
     }
 
-    public async Task<long> StartInventoryRunAsync(Guid flowId, int inventoryId, string operation, Guid? runId, string actor, string readMode, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Starts a build or a reconcile of an inventory: an earlier one its process left running is closed as failed, and what it
+    /// staged is deleted, since a run of a flow is the only one of it.
+    /// </summary>
+    public async Task<long> StartRunAsync(Guid flowId, int inventoryId, string operation, Guid? runId, string actor, string readMode, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -77,7 +95,8 @@ public sealed partial class OsduLedger
         return run.InventoryRunId;
     }
 
-    public async Task AppendInventoryScanAsync(Guid flowId, long inventoryRunId, IReadOnlyList<InventoryScanRow> rows, CancellationToken ct = default)
+    /// <summary>Stages one chunk of a build's read; nothing of the inventory changes until <see cref="MergeAsync"/>.</summary>
+    public async Task AppendScanAsync(Guid flowId, long inventoryRunId, IReadOnlyList<InventoryScanRow> rows, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
         if (rows.Count == 0)
@@ -90,14 +109,16 @@ public sealed partial class OsduLedger
         await RetryDeadlockAsync(() => SqlServerLedgerBulk.AppendInventoryScanAsync(db, partition, inventoryRunId, rows, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryMerge> MergeInventoryAsync(Guid flowId, int inventoryId, long inventoryRunId, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Merges a build's whole read into its inventory: ids added, changed, served again, and those it did not list marked gone.</summary>
+    public async Task<InventoryMerge> MergeAsync(Guid flowId, int inventoryId, long inventoryRunId, DateTime nowUtc, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         await using var db = Open();
         return await RetryDeadlockAsync(() => SqlServerLedgerBulk.MergeInventoryAsync(db, partition, inventoryId, inventoryRunId, nowUtc, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryVersionsDue>> InventoryVersionsDueAsync(Guid flowId, int inventoryId, int max, CancellationToken ct = default)
+    /// <summary>The records of an inventory keeping every version whose versions are to be read: new, or moved since they were read.</summary>
+    public async Task<IReadOnlyList<InventoryVersionsDue>> VersionsDueAsync(Guid flowId, int inventoryId, int max, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -112,7 +133,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task WriteInventoryVersionsAsync(Guid flowId, IReadOnlyList<InventoryVersionsRead> reads, CancellationToken ct = default)
+    /// <summary>Replaces the versions kept of each record read.</summary>
+    public async Task WriteVersionsAsync(Guid flowId, IReadOnlyList<InventoryVersionsRead> reads, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(reads);
         if (reads.Count == 0)
@@ -125,14 +147,16 @@ public sealed partial class OsduLedger
         await RetryDeadlockAsync(() => SqlServerLedgerBulk.WriteInventoryVersionsAsync(db, partition, reads, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryOwner>> InventoryOwnersAsync(Guid flowId, int inventoryId, CancellationToken ct = default)
+    /// <summary>The identities that created ids of the inventory a ledger of the partition claims, each with how many.</summary>
+    public async Task<IReadOnlyList<InventoryOwner>> OwnersAsync(Guid flowId, int inventoryId, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         await using var db = Open();
         return await SqlServerLedgerBulk.InventoryOwnersAsync(db, partition, inventoryId, MaxInferredOwners, ct).ConfigureAwait(false);
     }
 
-    public async Task ReconcileInventoryAsync(Guid flowId, int inventoryId, IReadOnlyList<string> owners, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Sets the finding of every id of the inventory OSDU serves, comparing it with every ledger of the partition.</summary>
+    public async Task ReconcileAsync(Guid flowId, int inventoryId, IReadOnlyList<string> owners, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(owners);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -140,7 +164,12 @@ public sealed partial class OsduLedger
         await RetryDeadlockAsync(() => SqlServerLedgerBulk.ReconcileInventoryAsync(db, partition, inventoryId, owners, nowUtc, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryCandidate>> InventoryCandidatesAsync(Guid flowId, int inventoryId, string? typePrefix, int max, CancellationToken ct = default)
+    /// <summary>
+    /// The ids a ledger of the partition expects that the inventory's read did not list, at most <paramref name="max"/>, the
+    /// least recently asked of storage first; with <paramref name="typePrefix"/> (an inventory covering its entity type whole),
+    /// the ledgers' ids of the type too.
+    /// </summary>
+    public async Task<IReadOnlyList<InventoryCandidate>> CandidatesAsync(Guid flowId, int inventoryId, string? typePrefix, int max, CancellationToken ct = default)
     {
         if (max < 1)
         {
@@ -152,7 +181,8 @@ public sealed partial class OsduLedger
         return await SqlServerLedgerBulk.InventoryCandidatesAsync(db, partition, inventoryId, typePrefix, max, ct).ConfigureAwait(false);
     }
 
-    public async Task RecordInventoryChecksAsync(Guid flowId, int inventoryId, IReadOnlyList<InventoryCheck> checks, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Settles the ids OSDU no longer serves: gone, or what storage answered for the ones a ledger expects (missing, unlisted).</summary>
+    public async Task RecordChecksAsync(Guid flowId, int inventoryId, IReadOnlyList<InventoryCheck> checks, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(checks);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -160,13 +190,18 @@ public sealed partial class OsduLedger
         await RetryDeadlockAsync(() => SqlServerLedgerBulk.RecordInventoryChecksAsync(db, partition, inventoryId, checks, nowUtc, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryCounts> InventoryCountsAsync(Guid flowId, int inventoryId, CancellationToken ct = default)
+    /// <summary>An inventory's ids by finding, read from its rows.</summary>
+    public async Task<InventoryCounts> CountsAsync(Guid flowId, int inventoryId, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         return await CountsAsync(partition, inventoryId, ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteInventoryRunAsync(Guid flowId, long inventoryRunId, InventoryRunState outcome, string? ownersSource, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Closes a build or a reconcile with what it did and found; a completed one becomes its inventory's last of its kind, and a
+    /// failed one's staged read is discarded.
+    /// </summary>
+    public async Task CompleteRunAsync(Guid flowId, long inventoryRunId, InventoryRunState outcome, string? ownersSource, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(outcome);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -214,7 +249,8 @@ public sealed partial class OsduLedger
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryState>> ListInventoriesAsync(string? partition, CancellationToken ct = default)
+    /// <summary>The inventories of a partition (or of every partition), with their flows.</summary>
+    public async Task<IReadOnlyList<InventoryState>> ListAsync(string? partition, CancellationToken ct = default)
     {
         short? id = null;
         if (!string.IsNullOrWhiteSpace(partition))
@@ -241,7 +277,8 @@ public sealed partial class OsduLedger
         return states;
     }
 
-    public async Task<InventoryState?> GetInventoryAsync(string partition, int inventoryId, CancellationToken ct = default)
+    /// <summary>One inventory by its partition and number, or null.</summary>
+    public async Task<InventoryState?> GetAsync(string partition, int inventoryId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -253,7 +290,8 @@ public sealed partial class OsduLedger
         return row is null ? null : await ToInventoryStateAsync(row, ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryCounts> InventoryCountsAsync(string partition, int inventoryId, CancellationToken ct = default)
+    /// <summary>An inventory's counts by finding, read from its rows.</summary>
+    public async Task<InventoryCounts> CountsAsync(string partition, int inventoryId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         return await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is { } id
@@ -261,7 +299,8 @@ public sealed partial class OsduLedger
             : new InventoryCounts(new Dictionary<string, long>(StringComparer.Ordinal));
     }
 
-    public async Task<IReadOnlyList<InventoryRecordState>> ListInventoryRecordsAsync(string partition, int inventoryId, string? finding, long? after, int limit, CancellationToken ct = default)
+    /// <summary>A page of an inventory's ids, of one finding or all, in id order after <paramref name="after"/>.</summary>
+    public async Task<IReadOnlyList<InventoryRecordState>> ListRecordsAsync(string partition, int inventoryId, string? finding, long? after, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -286,7 +325,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryRecordState>> LookupInventoryRecordsAsync(string partition, string targetId, CancellationToken ct = default)
+    /// <summary>What every inventory of the partition holds of one OSDU id.</summary>
+    public async Task<IReadOnlyList<InventoryRecordState>> LookupRecordsAsync(string partition, string targetId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
@@ -305,7 +345,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryRunState>> ListInventoryRunsAsync(string partition, int inventoryId, int limit, CancellationToken ct = default)
+    /// <summary>An inventory's latest builds and reconciles, the newest first.</summary>
+    public async Task<IReadOnlyList<InventoryRunState>> ListRunsAsync(string partition, int inventoryId, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -324,7 +365,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryRunState?> GetInventoryRunAsync(string partition, long inventoryRunId, CancellationToken ct = default)
+    /// <summary>One build or reconcile by its partition and number, or null: the run an inventory names as its last build or reconcile.</summary>
+    public async Task<InventoryRunState?> GetRunAsync(string partition, long inventoryRunId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -363,18 +405,6 @@ public sealed partial class OsduLedger
         OwnersJson = r.OwnersJson,
         Error = r.Error,
     };
-
-    /// <summary>A run's error as the ledger keeps it: redacted, and cut to its column.</summary>
-    private static string? RunError(string? error)
-    {
-        if (error is null)
-        {
-            return null;
-        }
-
-        var redacted = Http.HeaderRedaction.RedactMessage(error);
-        return redacted.Length <= 4000 ? redacted : redacted[..4000];
-    }
 
     private async Task<InventoryCounts> CountsAsync(short partition, int inventoryId, CancellationToken ct)
     {

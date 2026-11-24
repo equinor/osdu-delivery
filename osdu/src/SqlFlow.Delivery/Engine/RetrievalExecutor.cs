@@ -22,85 +22,27 @@ namespace SqlFlow.Delivery.Engine;
 /// force restarts an incremental flow at its declared start. The engine's log becomes the run log and the live
 /// trace, the outcome becomes <c>run.json</c>, and the ledger row the run opens carries the run id.
 /// </summary>
-public sealed class RetrievalExecutor : IFlowDocumentExecutor
+public sealed class RetrievalExecutor : KindExecutor<RetrievalFlowDocument, RetrievalDefinition>
 {
-    private readonly IServiceProvider _provider;
-
     public RetrievalExecutor(IServiceProvider provider)
+        : base(provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
-        _provider = provider;
     }
 
-    public bool CanExecute(RegisteredFlowDocument document) => document is RetrievalFlowDocument;
+    protected override string FlowType => RetrievalDefinition.FlowTypeName;
 
-    public async Task<DocumentExecutionResult> ExecuteAsync(RegisteredFlowDocument document, string flowFile, DocumentExecutionOptions options, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(document);
-        ArgumentException.ThrowIfNullOrWhiteSpace(flowFile);
-        ArgumentNullException.ThrowIfNull(options);
-        if (document is not RetrievalFlowDocument retrieval)
-        {
-            throw new SqlFlowException($"The retrieval executor cannot run a '{document.Kind}' document.");
-        }
+    protected override RetrievalDefinition FlowOf(RetrievalFlowDocument document, string sourcePath) => document.Flow with { SourcePath = sourcePath };
 
-        var flow = retrieval.Flow with { SourcePath = Path.GetFullPath(flowFile) };
-        var parameters = options.Parameters;
-        parameters.Validate();
-        var operation = Operation(parameters);
-        var runId = options.RunId ?? Guid.CreateVersion7();
-        var actor = string.IsNullOrWhiteSpace(options.Actor) ? "unknown" : options.Actor.Trim();
-        var (runLogger, events, _) = RunArtifacts.BuildEventPlumbing(options, flow.Name);
-        var loggers = new RunLogLoggerFactory(runLogger, events, runId, flow.Name);
-        var log = loggers.CreateLogger("run");
-        // A cache and a retrieval flow name their platform and partition the same way a delivery flow does, so a run
-        // of one resolves them from the central configuration the control plane supplied before the node's own.
-        var context = _provider.GetRequiredService<EngineContext>()
-            .ForRun(loggers)
-            .WithSuppliedReferences(DeliveryRunPayload.Parse(options.Parameters).References);
-        var warningSink = options.Echo;
+    protected override string FlowName(RetrievalDefinition flow) => flow.Name;
 
-        var stopwatch = Stopwatch.StartNew();
-        object result;
-        string? error = null;
-        var success = false;
-        LogStart(log, flow.Name, operation, parameters.Describe(), actor, runId);
-        try
-        {
-            // Before anything else: every OSDU request the run sends carries the run's correlation id.
-            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, flow.TelemetryOperation, runId, log);
-            result = await ExecuteOperationAsync(context, flow, operation, parameters, runId, actor, log, ct).ConfigureAwait(false);
-            success = true;
-            LogDone(log, operation, stopwatch.Elapsed.TotalSeconds);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // The run boundary: every failure ends the run as a recorded one. An unexpected kind is a defect, so its
-            // stack goes to the run log as well.
-            error = RunFailure.Describe(ex);
-            LogFailed(log, operation, error, RunFailure.IsExpected(ex) ? null : ex);
-            result = new OperationFailure(operation, error);
-        }
+    protected override string TelemetryOperation(RetrievalDefinition flow) => flow.TelemetryOperation;
 
-        stopwatch.Stop();
-        var artifact = RunArtifacts.Artifact(RetrievalDefinition.FlowTypeName, flow.Name, runId, success, error, result, events.Records);
-        var directory = RunArtifacts.Write(flowFile, flow.Name, runId, artifact, runLogger.Render(), null, warningSink);
-        return new DocumentExecutionResult
-        {
-            FlowName = flow.Name,
-            FlowKind = RetrievalDefinition.FlowTypeName,
-            Success = success,
-            Error = error,
-            RunId = runId,
-            RunDirectory = directory,
-            DurationSeconds = stopwatch.Elapsed.TotalSeconds,
-            Result = result,
-        };
-    }
+    protected override string OperationOf(RunParameters parameters) => Operation(parameters);
+
+    // A cache and a retrieval flow name their platform and partition the same way a delivery flow does, so a run
+    // of one resolves them from the central configuration the control plane supplied before the node's own.
+    protected override EngineContext ContextFor(EngineContext context, DocumentExecutionOptions options)
+        => context.WithSuppliedReferences(DeliveryRunPayload.Parse(options.Parameters).References);
 
     /// <summary>The operation a retrieval flow runs: retrieve (its default) or plan.</summary>
     public static string Operation(RunParameters parameters)
@@ -142,7 +84,7 @@ public sealed class RetrievalExecutor : IFlowDocumentExecutor
             ct).ConfigureAwait(false);
     }
 
-    private static async Task<object> ExecuteOperationAsync(EngineContext context, RetrievalDefinition flow, string operation, RunParameters parameters, Guid runId, string actor, ILogger log, CancellationToken ct)
+    protected override async Task<object> ExecuteOperationAsync(EngineContext context, RetrievalDefinition flow, string operation, RunParameters parameters, Guid runId, string actor, ILogger log, CancellationToken ct)
     {
         var forced = RetrievalFlowKind.Forced(parameters);
 
@@ -183,14 +125,8 @@ public sealed class RetrievalExecutor : IFlowDocumentExecutor
         return RetrieveOutcome.From(result);
     }
 
-    private static void LogStart(ILogger log, string flow, string operation, string parameters, string actor, Guid runId)
-        => log.LogInformation("retrieval flow '{Flow}': {Operation} (parameters: {Parameters}) requested by {Actor}, run {RunId}", flow, operation, parameters, actor, runId);
 
-    private static void LogDone(ILogger log, string operation, double seconds)
-        => log.LogInformation("{Operation} completed in {Seconds:0.###}s", operation, seconds);
 
-    private static void LogFailed(ILogger log, string operation, string error, Exception? unexpected)
-        => log.LogError(unexpected, "{Operation} failed: {Error}", operation, error);
 }
 
 /// <summary>The <c>result</c> of a retrieve run: where the files went, the window, and the counts the ledger row carries.</summary>

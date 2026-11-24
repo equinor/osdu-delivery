@@ -7,12 +7,16 @@ namespace SqlFlow.Delivery.Ledger;
 // Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds):
 // the selections an operator's conditions make, kept under the inventory's partition with every id their match found. The
 // control plane opens a selection and reads it; the inventory flow's match run fills it.
-public sealed partial class OsduLedger
+public sealed partial class InventoryStore
 {
     /// <summary>The most selection ids one statement of a sweep deletes, so a sweep never holds a lock on the whole table.</summary>
     private const int SweepBatch = 5000;
 
-    public async Task<long> CreateInventorySelectionAsync(string partition, InventorySelectionStart start, CancellationToken ct = default)
+    /// <summary>
+    /// Opens a selection of an inventory's ids (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds),
+    /// queued for the match a run of the inventory flow makes. Returns the selection's number.
+    /// </summary>
+    public async Task<long> CreateSelectionAsync(string partition, InventorySelectionStart start, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentNullException.ThrowIfNull(start);
@@ -44,7 +48,12 @@ public sealed partial class OsduLedger
         return row.InventorySelectionId;
     }
 
-    public async Task<InventorySelectionState?> FindInventorySelectionAsync(string partition, int inventoryId, string conditionsKey, long? buildRunId, CancellationToken ct = default)
+    /// <summary>
+    /// The newest selection of an inventory made of the same conditions (<paramref name="conditionsKey"/>) that still says what
+    /// they match: one whose match is under way, or one that completed against the inventory's build
+    /// <paramref name="buildRunId"/>; null when there is none.
+    /// </summary>
+    public async Task<InventorySelectionState?> FindSelectionAsync(string partition, int inventoryId, string conditionsKey, long? buildRunId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentException.ThrowIfNullOrWhiteSpace(conditionsKey);
@@ -64,7 +73,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventorySelectionState?> GetInventorySelectionAsync(string partition, long selectionId, CancellationToken ct = default)
+    /// <summary>One selection by its partition and number, or null.</summary>
+    public async Task<InventorySelectionState?> GetSelectionAsync(string partition, long selectionId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -80,7 +90,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task SetInventorySelectionRunAsync(string partition, long selectionId, Guid runId, CancellationToken ct = default)
+    /// <summary>Names the run a selection's match was queued as.</summary>
+    public async Task SetSelectionRunAsync(string partition, long selectionId, Guid runId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         var id = await PartitionIdOfAsync(partition, ct).ConfigureAwait(false)
@@ -92,7 +103,11 @@ public sealed partial class OsduLedger
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.RunId, runId), ct).ConfigureAwait(false);
     }
 
-    public async Task FailInventorySelectionAsync(string partition, long selectionId, string why, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Ends a selection whose match never ran as failed, with why (redacted): its run could not be queued, or ended before the
+    /// match did. A selection that ended already keeps how it ended.
+    /// </summary>
+    public async Task FailSelectionAsync(string partition, long selectionId, string why, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentException.ThrowIfNullOrWhiteSpace(why);
@@ -112,7 +127,12 @@ public sealed partial class OsduLedger
         await DeleteSelectionItemsAsync(db, id, selectionId, ct).ConfigureAwait(false);
     }
 
-    public async Task<InventorySelectionState?> StartInventorySelectionAsync(
+    /// <summary>
+    /// Starts a selection's match as the run <paramref name="runId"/>, against the inventory's build <paramref name="buildRunId"/>:
+    /// running, with every count and id an earlier attempt of the match left cleared, so a run tried again matches afresh.
+    /// Returns the selection as it starts; null when the partition holds no such selection of the inventory.
+    /// </summary>
+    public async Task<InventorySelectionState?> StartSelectionAsync(
         Guid flowId, int inventoryId, long selectionId, Guid runId, long? buildRunId, DateTime nowUtc, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -148,7 +168,8 @@ public sealed partial class OsduLedger
         return ToInventorySelectionState(row);
     }
 
-    public async Task<long> CountInventoryServedAsync(Guid flowId, int inventoryId, CancellationToken ct = default)
+    /// <summary>How many ids the inventory serves now, which a match judges.</summary>
+    public async Task<long> CountServedAsync(Guid flowId, int inventoryId, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         return await ReadAsync(
@@ -157,7 +178,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryServedId>> InventoryServedAsync(Guid flowId, int inventoryId, long after, int limit, CancellationToken ct = default)
+    /// <summary>The next ids the inventory serves, at most <paramref name="limit"/>, in its own order after <paramref name="after"/>.</summary>
+    public async Task<IReadOnlyList<InventoryServedId>> ServedAsync(Guid flowId, int inventoryId, long after, int limit, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(after);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -172,7 +194,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task PlanInventorySelectionAsync(Guid flowId, long selectionId, long candidates, long toCheck, string direction, string? query, long requests, CancellationToken ct = default)
+    /// <summary>Notes what a match has to read and how it reads it, so a page following it can say how far it got.</summary>
+    public async Task PlanSelectionAsync(Guid flowId, long selectionId, long candidates, long toCheck, string direction, string? query, long requests, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(candidates);
         ArgumentOutOfRangeException.ThrowIfNegative(toCheck);
@@ -194,7 +217,13 @@ public sealed partial class OsduLedger
                 .SetProperty(r => r.Requests, r => r.Requests + requests), ct).ConfigureAwait(false);
     }
 
-    public async Task<InventorySelectionWrite> AddInventorySelectionItemsAsync(
+    /// <summary>
+    /// Keeps what one page or chunk of a match found, in one transaction: each record the search found that the inventory serves
+    /// a row of, once, with the version the index holds and its values; how many records it holds no row of, and how many are at
+    /// another version than the inventory listed; and the match's progress (<paramref name="checkedCount"/> more read,
+    /// <paramref name="requests"/> more sent).
+    /// </summary>
+    public async Task<InventorySelectionWrite> AddSelectionItemsAsync(
         Guid flowId, int inventoryId, long selectionId, IReadOnlyList<InventorySelectionHit> hits, long checkedCount, long requests, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(hits);
@@ -212,7 +241,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteInventorySelectionAsync(Guid flowId, long selectionId, InventorySelectionEnd outcome, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Ends a selection's match: completed with its query, direction, notes and columns, or failed with why, its ids deleted.</summary>
+    public async Task CompleteSelectionAsync(Guid flowId, long selectionId, InventorySelectionEnd outcome, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(outcome);
         if (outcome.Status is not (InventorySelections.Completed or InventorySelections.Failed))
@@ -248,7 +278,8 @@ public sealed partial class OsduLedger
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryCounts> InventorySelectionCountsAsync(string partition, long selectionId, CancellationToken ct = default)
+    /// <summary>How many of a selection's ids have each finding now, as the inventory holds them.</summary>
+    public async Task<InventoryCounts> SelectionCountsAsync(string partition, long selectionId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -267,7 +298,8 @@ public sealed partial class OsduLedger
         return new InventoryCounts(rows.ToDictionary(r => r.Finding, r => r.Count, StringComparer.Ordinal));
     }
 
-    public async Task<IReadOnlyList<InventorySelectionRecord>> ListInventorySelectionRecordsAsync(
+    /// <summary>A page of a selection's ids, of one finding or every one, in the inventory's order after <paramref name="after"/>, each with what the match read of it.</summary>
+    public async Task<IReadOnlyList<InventorySelectionRecord>> ListSelectionRecordsAsync(
         string partition, long selectionId, string? finding, long? after, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
@@ -295,7 +327,11 @@ public sealed partial class OsduLedger
         return rows.Select(r => new InventorySelectionRecord(ToInventoryRecordState(r.Record), r.MatchedVersion, r.ValuesJson)).ToList();
     }
 
-    public async Task<InventorySelectionSweep> SweepInventorySelectionsAsync(string partition, DateTime olderThanUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Retires a partition's selections made before <paramref name="olderThanUtc"/>: deleted whole, or, when a removal took
+    /// their ids, kept as expired with their ids deleted, so a removal still says what it removed by.
+    /// </summary>
+    public async Task<InventorySelectionSweep> SweepSelectionsAsync(string partition, DateTime olderThanUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)

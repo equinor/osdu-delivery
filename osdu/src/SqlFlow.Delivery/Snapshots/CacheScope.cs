@@ -51,6 +51,28 @@ public static partial class CacheScope
     }
 
     /// <summary>
+    /// The cache scope <paramref name="declared"/> names as a run of its flow reaches it: its references resolved by
+    /// <paramref name="secrets"/> and normalized; or, when this host cannot resolve them (a variable only the nodes hold, a
+    /// vault it does not reach), <paramref name="declared"/> as it is written, which still names the scope a cache is kept
+    /// under. Only an unresolvable reference falls back: any other failure is a defect and propagates.
+    /// </summary>
+    public static async Task<string> ResolvedAsync(string declared, Core.Secrets.ISecretResolver secrets, string where, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(declared);
+        ArgumentNullException.ThrowIfNull(secrets);
+        try
+        {
+            return Normalize(await secrets.ResolveAsync(declared, ct).ConfigureAwait(false), where);
+        }
+        catch (SqlFlowException)
+        {
+            // Every secret provider, and the resolver's own refusal of an unknown scheme, fails with a SqlFlowException; so
+            // does a resolved value that names no partition.
+            return declared;
+        }
+    }
+
+    /// <summary>
     /// Whether <paramref name="value"/> is a partition id written literally: letters, digits, underscore, hyphen and dot, at
     /// most <see cref="MaxLength"/> characters. A reference is not one: it names a partition only once a host resolves it.
     /// </summary>

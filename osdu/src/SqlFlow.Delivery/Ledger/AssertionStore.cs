@@ -4,19 +4,26 @@ using SqlFlow.Delivery.Data;
 namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
-/// The report of assertion flows (osdu/docs/reference/flow/assertion.md, The report): a row per run of a flow's tests
-/// in a partition, and a row per test and run with the whole result. Both are ledger tables, written under the ledger
-/// identity the run registered, so a partition's reports are kept together and read in one range of it.
+/// The runs and results of assertion flows (osdu/docs/reference/flow/assertion.md): each run of a flow in its partition, the
+/// result of every test it ran as soon as the test came out, and the history a test's trend and a board across flows are
+/// drawn from. A store beside the ledger (<see cref="LedgerStore"/>), since an assertion run keeps tables of its own and
+/// writes no delivered record.
 /// </summary>
-public sealed partial class OsduLedger
+public sealed class AssertionStore : LedgerStore
 {
+    internal AssertionStore(LedgerDatabase database, LedgerDirectory partitions)
+        : base(database, partitions)
+    {
+    }
+
     /// <summary>The widest detail one result keeps; a larger one is refused by the engine before it reaches here.</summary>
     public const int MaxAssertionDetail = 4 * 1024 * 1024;
 
     /// <summary>The most old runs one prune statement takes up at a time.</summary>
     private const int PruneRunBatch = 100;
 
-    public async Task<AssertionRunState> StartAssertionRunAsync(AssertionRunState run, CancellationToken ct = default)
+    /// <summary>Opens the row of an assertion run and returns it with its id.</summary>
+    public async Task<AssertionRunState> StartRunAsync(AssertionRunState run, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(run);
         var partition = await WritePartitionAsync(run.FlowId, ct).ConfigureAwait(false);
@@ -46,7 +53,8 @@ public sealed partial class OsduLedger
         return run with { AssertionRunId = entity.AssertionRunId, Partition = await PartitionNameAsync(partition, ct).ConfigureAwait(false) };
     }
 
-    public async Task<AssertionResultState> RecordAssertionResultAsync(AssertionResultState result, CancellationToken ct = default)
+    /// <summary>Records one test's result in a run, as soon as the test has come out, and returns it with its id.</summary>
+    public async Task<AssertionResultState> RecordResultAsync(AssertionResultState result, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(result);
         if (result.Detail.Length > MaxAssertionDetail)
@@ -83,7 +91,8 @@ public sealed partial class OsduLedger
         return result with { ResultId = entity.ResultId };
     }
 
-    public async Task CompleteAssertionRunAsync(long assertionRunId, string status, AssertionCounts counts, string? failure, DateTime completedUtc, CancellationToken ct = default)
+    /// <summary>Closes an assertion run with its status, its counts and, for a run that stopped, why.</summary>
+    public async Task CompleteRunAsync(long assertionRunId, string status, AssertionCounts counts, string? failure, DateTime completedUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(status);
         ArgumentNullException.ThrowIfNull(counts);
@@ -102,14 +111,16 @@ public sealed partial class OsduLedger
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<AssertionRunState?> GetAssertionRunAsync(long assertionRunId, CancellationToken ct = default)
+    /// <summary>The assertion run <paramref name="assertionRunId"/> names, naming its partition, or null.</summary>
+    public async Task<AssertionRunState?> GetRunAsync(long assertionRunId, CancellationToken ct = default)
     {
         var entity = await ReadAsync(db => db.DeliveryAssertionRuns.AsNoTracking().FirstOrDefaultAsync(r => r.AssertionRunId == assertionRunId, ct), ct)
             .ConfigureAwait(false);
         return entity is null ? null : ToState(entity) with { Partition = await PartitionNameAsync(entity.PartitionId, ct).ConfigureAwait(false) };
     }
 
-    public async Task<IReadOnlyList<AssertionRunState>> ListAssertionRunsAsync(Guid flowId, int max, CancellationToken ct = default)
+    /// <summary>A flow's assertion runs in its partition, newest first.</summary>
+    public async Task<IReadOnlyList<AssertionRunState>> ListRunsAsync(Guid flowId, int max, CancellationToken ct = default)
     {
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -127,7 +138,8 @@ public sealed partial class OsduLedger
         return rows.Select(r => ToState(r) with { Partition = name }).ToList();
     }
 
-    public async Task<IReadOnlyList<AssertionResultState>> ListAssertionResultsAsync(long assertionRunId, CancellationToken ct = default)
+    /// <summary>The results a run recorded, in the order it recorded them.</summary>
+    public async Task<IReadOnlyList<AssertionResultState>> ListResultsAsync(long assertionRunId, CancellationToken ct = default)
     {
         var run = await ReadAsync(
             db => db.DeliveryAssertionRuns.AsNoTracking().Where(r => r.AssertionRunId == assertionRunId).Select(r => (short?)r.PartitionId).FirstOrDefaultAsync(ct),
@@ -146,7 +158,12 @@ public sealed partial class OsduLedger
         return rows.Select(ToState).ToList();
     }
 
-    public async Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, bool withDetail = false, CancellationToken ct = default)
+    /// <summary>
+    /// Each test's most recent result of each flow in <paramref name="flowIds"/>, the latest run that ran it; a test no run
+    /// has run has none. The summary columns alone, what a board across flows reads; with <paramref name="withDetail"/>, each
+    /// whole, what a set's report reads.
+    /// </summary>
+    public async Task<IReadOnlyList<AssertionResultState>> LatestResultsAsync(IReadOnlyCollection<Guid> flowIds, bool withDetail = false, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(flowIds);
         var byPartition = new Dictionary<short, List<Guid>>();
@@ -182,7 +199,12 @@ public sealed partial class OsduLedger
         return results;
     }
 
-    public async Task<IReadOnlyList<AssertionResultState>> AssertionHistoryAsync(Guid flowId, string? testName, int runs, bool withDetail, CancellationToken ct = default)
+    /// <summary>
+    /// The results of a flow's <paramref name="runs"/> most recent runs, newest run first, for one test or (null) every test:
+    /// the history a matrix of tests against runs, or one test's trend, is drawn from. With <paramref name="withDetail"/> each
+    /// result carries its detail; without, an empty one.
+    /// </summary>
+    public async Task<IReadOnlyList<AssertionResultState>> HistoryAsync(Guid flowId, string? testName, int runs, bool withDetail, CancellationToken ct = default)
     {
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -214,7 +236,8 @@ public sealed partial class OsduLedger
         return rows.Select(ToState).ToList();
     }
 
-    public async Task<long> CountPrunableAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default)
+    /// <summary>How many runs <see cref="PruneRunsAsync"/> would remove at the cut-off; changes nothing.</summary>
+    public async Task<long> CountPrunableRunsAsync(DateTime olderThanUtc, CancellationToken ct = default)
     {
         await using var db = Open();
         // The prune's own test, as one query: a finished run started before the cut-off none of whose results is the latest
@@ -228,7 +251,12 @@ public sealed partial class OsduLedger
             .ConfigureAwait(false);
     }
 
-    public async Task<int> PruneAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Removes the finished assertion runs that started before <paramref name="olderThanUtc"/> and whose every result a later
+    /// result of the same test superseded, each run with all its results, so a report that is kept is whole. A run holding a
+    /// test's latest result stays however old, so a board always shows where each test stands. Returns the runs removed.
+    /// </summary>
+    public async Task<int> PruneRunsAsync(DateTime olderThanUtc, CancellationToken ct = default)
     {
         var removed = 0;
         long after = 0;
@@ -283,7 +311,11 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<IReadOnlyList<AssertionResultState>> GetAssertionResultsAsync(IReadOnlyCollection<long> resultIds, CancellationToken ct = default)
+    /// <summary>
+    /// The results <paramref name="resultIds"/> name, each whole with its detail, in no set order; an id no result has is
+    /// left out. What the dashboard opens an assertion on: its latest result, by the id the board gave it.
+    /// </summary>
+    public async Task<IReadOnlyList<AssertionResultState>> GetResultsAsync(IReadOnlyCollection<long> resultIds, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(resultIds);
         var results = new List<AssertionResultState>(resultIds.Count);
@@ -299,7 +331,13 @@ public sealed partial class OsduLedger
         return results;
     }
 
-    public async Task<int> PruneReplacedAssertionRunsAsync(Guid flowId, IReadOnlyDictionary<string, string> current, CancellationToken ct = default)
+    /// <summary>
+    /// Removes the runs of a flow in its partition that its latest status no longer needs, each whole with its results
+    /// (osdu/docs/reference/flow/assertion.md, The report): every finished run but the latest, unless it holds a test's latest
+    /// judged result of the version <paramref name="current"/> names for that test (test name to definition hash). A run under
+    /// way is left alone. Returns how many runs went.
+    /// </summary>
+    public async Task<int> PruneReplacedRunsAsync(Guid flowId, IReadOnlyDictionary<string, string> current, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(current);
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)

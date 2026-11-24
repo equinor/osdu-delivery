@@ -57,7 +57,7 @@ function requestFor(selection: RedeliverSelection, run: boolean): DeliveryManyRe
     case "filter":
       return { filter: selection.filter, expected: selection.expected, run };
     case "all":
-      return { run };
+      return { all: true, run };
   }
 }
 

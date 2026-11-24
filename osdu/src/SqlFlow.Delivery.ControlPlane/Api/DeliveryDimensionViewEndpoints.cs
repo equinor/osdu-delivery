@@ -136,7 +136,7 @@ public static class DeliveryDimensionViewEndpoints
     private static async Task<Results<Ok<DeliveryDimensionViewDetailDto>, ProblemHttpResult>> GetAsync(
         string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders repositories, CancellationToken ct)
     {
-        var detail = await ledger.GetDimensionViewAsync(name, ct).ConfigureAwait(false);
+        var detail = await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false);
         var flowName = detail?.View.FlowName;
         var (pipeline, declared, _) = flowName is null
             ? await FindDeclaringAsync(db, documents, name, ct).ConfigureAwait(false)
@@ -217,7 +217,7 @@ public static class DeliveryDimensionViewEndpoints
     private static async Task<Results<Ok<DeliveryDimensionViewRemovedDto>, ProblemHttpResult>> RemoveAsync(
         string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
     {
-        if (await ledger.GetDimensionViewAsync(name, ct).ConfigureAwait(false) is not { } detail)
+        if (await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false) is not { } detail)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"No build wrote a view named '{name}'.");
         }
@@ -255,7 +255,7 @@ public static class DeliveryDimensionViewEndpoints
     private static async Task<IReadOnlyList<DeliveryDimensionViewDto>> MergeAsync(
         IReadOnlyList<CatalogPipeline> pipelines, string? flow, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
     {
-        var recorded = await ledger.ListDimensionViewsAsync(flow, ct).ConfigureAwait(false);
+        var recorded = await ledger.Dimensions.ListViewsAsync(flow, ct).ConfigureAwait(false);
         var views = new List<DeliveryDimensionViewDto>();
         var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pipeline in pipelines)
@@ -280,7 +280,7 @@ public static class DeliveryDimensionViewEndpoints
 
                 var state = recorded.FirstOrDefault(r => string.Equals(r.Name, declared.Name, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(r.FlowName, pipeline.Name, StringComparison.OrdinalIgnoreCase));
-                var detail = state is null ? null : await ledger.GetDimensionViewAsync(state.Name, ct).ConfigureAwait(false);
+                var detail = state is null ? null : await ledger.Dimensions.GetViewAsync(state.Name, ct).ConfigureAwait(false);
                 views.Add(ToDto(declared, pipeline, detail));
             }
         }
@@ -288,7 +288,7 @@ public static class DeliveryDimensionViewEndpoints
         foreach (var state in recorded.Where(r => !named.Contains(r.Name)))
         {
             views.Add(ToDto(null, pipelines.FirstOrDefault(p => string.Equals(p.Name, state.FlowName, StringComparison.OrdinalIgnoreCase)),
-                await ledger.GetDimensionViewAsync(state.Name, ct).ConfigureAwait(false)));
+                await ledger.Dimensions.GetViewAsync(state.Name, ct).ConfigureAwait(false)));
         }
 
         return views;

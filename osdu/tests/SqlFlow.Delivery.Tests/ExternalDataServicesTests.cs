@@ -495,6 +495,25 @@ public sealed class ExternalDataServicesTests
     }
 
     [Fact]
+    public void The_hash_of_a_flow_s_own_content_is_the_one_the_ledger_already_holds()
+    {
+        // The ledger keeps each delivery's hash and the next delivery compares against it, so the hash of the same content
+        // never changes: were it to, every record a flow wrote would look changed by someone else.
+        var record = (JsonObject)JsonNode.Parse("""
+            {
+              "id": "dev:master-data--Well:w-1",
+              "kind": "osdu:wks:master-data--Well:1.0.0",
+              "acl": { "owners": ["data.default.owners@dev.example.com"], "viewers": ["data.default.viewers@dev.example.com"] },
+              "legal": { "legaltags": ["dev-public"], "otherRelevantDataCountries": ["US"], "status": "compliant" },
+              "data": { "FacilityName": "W-1", "LastSuccessfulRunDateUTC": "2026-01-01T00:00:00Z" }
+            }
+            """)!;
+
+        Assert.Equal("9653b0a0a64a3f84c70d10c8a8cd71d18efe0d4ee4c9d8f115bcabb6f1411db6", OwnedContent.Hash(record, ["LastSuccessfulRunDateUTC"]));
+        Assert.Equal("3b47678778c5963237163d6e37b496e37cf5fc5aaf8a2515fefcd34e89113075", OwnedContent.Hash(record, []));
+    }
+
+    [Fact]
     public void A_delivery_records_the_hash_only_when_it_carries_keys_and_clears_one_it_no_longer_stands_behind()
     {
         var returned = new Dictionary<string, string>(StringComparer.Ordinal);

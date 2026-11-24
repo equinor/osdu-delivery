@@ -20,7 +20,7 @@ related:
   - delivery-table-inventory-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs
 ---
 
@@ -68,5 +68,5 @@ closed `failed` (`the run ended without finishing: its process stopped before it
 ## Written and read by
 
 - **Written** by the inventory runner as a build or reconcile opens and closes (`InventoryRunner.cs`, through
-  `OsduLedger.Inventory.cs`).
+  `InventoryStore.cs`).
 - **Read** by an inventory's **Runs** tab and `GET /api/v1/delivery/inventories/{partition}/{inventoryId}/runs`.

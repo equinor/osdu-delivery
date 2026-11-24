@@ -212,7 +212,7 @@ public sealed class DeliveryAssertionSourceSqlApiTests
             StartedUtc = startedUtc.AddSeconds(-2),
             CompletedUtc = startedUtc,
         };
-        var run = await ledger.StartAssertionRunAsync(new AssertionRunState
+        var run = await ledger.Assertions.StartRunAsync(new AssertionRunState
         {
             FlowId = flow.LedgerId,
             FlowName = flow.Name,
@@ -223,7 +223,7 @@ public sealed class DeliveryAssertionSourceSqlApiTests
             DefinitionsHash = new string('a', 32),
             StartedUtc = startedUtc,
         });
-        await ledger.RecordAssertionResultAsync(new AssertionResultState
+        await ledger.Assertions.RecordResultAsync(new AssertionResultState
         {
             AssertionRunId = run.AssertionRunId,
             FlowId = flow.LedgerId,
@@ -241,7 +241,7 @@ public sealed class DeliveryAssertionSourceSqlApiTests
             StartedUtc = result.StartedUtc,
             CompletedUtc = result.CompletedUtc,
         });
-        await ledger.CompleteAssertionRunAsync(run.AssertionRunId, AssertionRunStatus.Failed, AssertionCounts.Of([TestOutcomes.Failed]), "a test did not pass", startedUtc.AddMinutes(1));
+        await ledger.Assertions.CompleteRunAsync(run.AssertionRunId, AssertionRunStatus.Failed, AssertionCounts.Of([TestOutcomes.Failed]), "a test did not pass", startedUtc.AddMinutes(1));
         return run.AssertionRunId;
     }
 

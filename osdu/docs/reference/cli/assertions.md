@@ -32,7 +32,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionReport.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery/Json/CanonicalJson.cs
   - sqlflow/src/SqlFlow.Cli/Hosting/CliVerbContext.cs
   - sqlflow/src/SqlFlow.Cli/Hosting/CliModuleSet.cs

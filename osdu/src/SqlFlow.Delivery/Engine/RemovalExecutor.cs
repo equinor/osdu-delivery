@@ -20,94 +20,28 @@ namespace SqlFlow.Delivery.Engine;
 /// <c>run.json</c>. A run in which a removal failed, or held what it found for approval, ends failed, still carrying its outcome,
 /// with every other removal done.
 /// </summary>
-public sealed class RemovalExecutor : IFlowDocumentExecutor
+public sealed class RemovalExecutor : KindExecutor<RemovalFlowDocument, RemovalFlowDefinition>
 {
-    private readonly IServiceProvider _provider;
-
     public RemovalExecutor(IServiceProvider provider)
+        : base(provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
-        _provider = provider;
     }
 
-    public bool CanExecute(RegisteredFlowDocument document) => document is RemovalFlowDocument;
+    protected override string FlowType => RemovalFlowDefinition.FlowTypeName;
 
-    public async Task<DocumentExecutionResult> ExecuteAsync(RegisteredFlowDocument document, string flowFile, DocumentExecutionOptions options, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(document);
-        ArgumentException.ThrowIfNullOrWhiteSpace(flowFile);
-        ArgumentNullException.ThrowIfNull(options);
-        if (document is not RemovalFlowDocument removals)
-        {
-            throw new SqlFlowException($"The removal executor cannot run a '{document.Kind}' document.");
-        }
+    protected override RemovalFlowDefinition FlowOf(RemovalFlowDocument document, string sourcePath) => document.Flow with { SourcePath = sourcePath };
 
-        var flow = removals.Flow with { SourcePath = Path.GetFullPath(flowFile) };
-        var parameters = options.Parameters;
-        parameters.Validate();
-        var operation = RemovalFlowKind.Operation(parameters);
-        var runId = options.RunId ?? Guid.CreateVersion7();
-        var actor = string.IsNullOrWhiteSpace(options.Actor) ? "unknown" : options.Actor.Trim();
-        var (runLogger, events, _) = RunArtifacts.BuildEventPlumbing(options, flow.Name);
-        var loggers = new RunLogLoggerFactory(runLogger, events, runId, flow.Name);
-        var log = loggers.CreateLogger("run");
-        var context = _provider.GetRequiredService<EngineContext>().ForRun(loggers);
-        var sources = _provider.GetRequiredService<RemovalKeySources>();
+    protected override string FlowName(RemovalFlowDefinition flow) => flow.Name;
 
-        var stopwatch = Stopwatch.StartNew();
-        object result;
-        string? error = null;
-        var success = false;
-        log.LogInformation("removal flow '{Flow}': {Operation} (parameters: {Parameters}) requested by {Actor}, run {RunId}", flow.Name, operation, parameters.Describe(), actor, runId);
-        try
-        {
-            // Before anything else: every OSDU request the run sends carries the run's correlation id.
-            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, flow.TelemetryOperation, runId, log);
-            result = await ExecuteOperationAsync(context, sources, flow, operation, parameters, runId, actor, log, ct).ConfigureAwait(false);
-            success = true;
-            log.LogInformation("{Operation} completed in {Seconds:0.###}s", operation, stopwatch.Elapsed.TotalSeconds);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (RemovalRunFailedException failed)
-        {
-            // Every removal was taken up, and one failed or held what it found for approval: the run ends failed, so a
-            // run-failed notification goes out, and its outcome still says how each removal came out.
-            error = failed.Message;
-            log.LogError("{Operation} failed: {Error}", operation, error);
-            result = failed.Outcome;
-        }
-        catch (Exception ex)
-        {
-            // The run boundary: every failure ends the run as a recorded one. An unexpected kind is a defect, so its stack
-            // goes to the run log as well.
-            error = RunFailure.Describe(ex);
-            log.LogError(RunFailure.IsExpected(ex) ? null : ex, "{Operation} failed: {Error}", operation, error);
-            result = new OperationFailure(operation, error);
-        }
+    protected override string TelemetryOperation(RemovalFlowDefinition flow) => flow.TelemetryOperation;
 
-        stopwatch.Stop();
-        var artifact = RunArtifacts.Artifact(RemovalFlowDefinition.FlowTypeName, flow.Name, runId, success, error, result, events.Records);
-        var directory = RunArtifacts.Write(flowFile, flow.Name, runId, artifact, runLogger.Render(), null, options.Echo);
-        return new DocumentExecutionResult
-        {
-            FlowName = flow.Name,
-            FlowKind = RemovalFlowDefinition.FlowTypeName,
-            Success = success,
-            Error = error,
-            RunId = runId,
-            RunDirectory = directory,
-            DurationSeconds = stopwatch.Elapsed.TotalSeconds,
-            Result = result,
-        };
-    }
+    protected override string OperationOf(RunParameters parameters) => RemovalFlowKind.Operation(parameters);
 
-    private static async Task<object> ExecuteOperationAsync(
-        EngineContext context, RemovalKeySources sources, RemovalFlowDefinition flow, string operation, RunParameters parameters, Guid runId, string actor, ILogger log,
+    protected override async Task<object> ExecuteOperationAsync(
+        EngineContext context, RemovalFlowDefinition flow, string operation, RunParameters parameters, Guid runId, string actor, ILogger log,
         CancellationToken ct)
     {
+        var sources = Services.GetRequiredService<RemovalKeySources>();
         var payload = DeliveryRunPayload.Parse(parameters);
         var (partition, supplied) = PartitionNames.SplitRunValues(parameters.Values, keptAsParameter: false);
         var values = FlowParameters.Resolve(flow.Parameters, flow.SourcePath ?? flow.Name, supplied);

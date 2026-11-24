@@ -41,7 +41,7 @@ public static class DimensionViewRemoval
             ct).ConfigureAwait(false);
         try
         {
-            var removed = await ledger.RemoveDimensionViewAsync(view.Name, ct).ConfigureAwait(false)
+            var removed = await ledger.Dimensions.RemoveViewAsync(view.Name, ct).ConfigureAwait(false)
                 ?? throw new DeliveryException($"View {view.Name} of {view.FlowName} is no longer recorded: another removal, or its flow's build, took it first.");
             await ledger.CompleteActivityAsync(activity.ActivityId, "completed", removed.Describe(), null, clock.GetUtcNow().UtcDateTime, ct: CancellationToken.None).ConfigureAwait(false);
             return removed;

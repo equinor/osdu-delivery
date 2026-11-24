@@ -197,13 +197,13 @@ are left out. Follow with delivery_flow_records for the records behind a count."
     }
 
     #[tool(
-        description = "A delivery flow at a glance. `stats`: records per custody state (pending, delivering, delivered, \
-held, failed, deleted, waiting), drifted, accessRestricted (restricted either way, each once, counted under its status \
-too) with restricted (by an operator) and restrictedUntilComplete, delivered in the last 24 hours, last \
-delivery, last verify, last submission. `interfaces`: per interface its mapping, OSDU kind, route, record table, key columns, run parameters, the \
-order a run takes them in and what each waits for. `target`: the OSDU endpoint and data partition it declares. Use it \
-for 'how is this flow doing', 'where does it deliver', 'what does a run of it need'. pipelineId comes from \
-list_pipelines(kind=\"delivery\"). Follow with delivery_flow_records(status=\"failed\") for the records behind a count."
+        description = "A delivery flow at a glance. `stats`: records per custody state (pending, delivering, \
+delivered, held, failed, deleted, waiting), drifted, accessRestricted with restricted (by an operator) and \
+restrictedUntilComplete, delivered in 24 hours, and the last delivery, verify and submission. `interfaces`: per \
+interface its mapping, OSDU kind, route, record table, key columns, run parameters, and its run order with what it \
+waits for. `target`: its OSDU endpoint and data partition. Use it for 'how is this flow doing', 'where does it \
+deliver', 'what does a run of it need'. pipelineId comes from list_pipelines(kind=\"delivery\"). \
+delivery_flow_records(status=\"failed\") lists the records behind a count."
     )]
     async fn delivery_flow(&self, Parameters(i): Parameters<FlowInput>) -> String {
         let pipeline = match guid("pipelineId", &i.pipeline_id, PIPELINE_HINT) {
@@ -243,15 +243,13 @@ list_pipelines(kind=\"delivery\"). Follow with delivery_flow_records(status=\"fa
     }
 
     #[tool(
-        description = "List one delivery flow's records, filtered by custody state, by the submission that planned or \
-delivered them, by run, by drift, by restricted access, or by a search term. Each row has the record's OSDU id and \
-version, attempt count, next attempt time, last error, and source file and row. Use it for 'which records failed and \
-why' (status=failed, read lastError), 'what is held', 'what did last night's run deliver' (deliveredBy or runId), 'what \
-drifted', 'what is restricted' (accessRestricted=true for either kind, restricted=true for those restricted by an \
-operator), 'what is restricted until complete and what is missing' (incomplete=true, read incompleteMissing), 'which \
-records did that run send because the mapping changed' (runId or deliveredBy with trigger=mapping-changed). \
-totalCapped=true means more match than were counted: narrow the filter. When the flow is unknown use \
-delivery_find_records; for one record's full history use delivery_record."
+        description = "List one delivery flow's records, filtered by custody state, submission, run, drift, \
+restricted access or a search term. Each row has the OSDU id and version, attempts, next attempt, last error, and \
+source file and row. Use it for 'which records failed and why' (status=failed, read lastError), 'what is held', \
+'what did last night's run deliver' (deliveredBy or runId), 'what drifted', 'what is restricted' \
+(accessRestricted=true; restricted=true for an operator's), 'what is restricted until complete' (incomplete=true, \
+read incompleteMissing), 'what did a run send because the mapping changed' (runId with trigger=mapping-changed). \
+totalCapped=true: narrow the filter. Flow unknown: delivery_find_records."
     )]
     async fn delivery_flow_records(&self, Parameters(i): Parameters<FlowRecordsInput>) -> String {
         let pipeline = match guid("pipelineId", &i.pipeline_id, PIPELINE_HINT) {
@@ -320,12 +318,12 @@ delivery_find_records; for one record's full history use delivery_record."
     }
 
     #[tool(
-        description = "One run from the id you hold: a run id, or the correlation-id in a platform's log. Returns the run, \
-every run of its execution (a split delivery's coordinating run and its parts, each with its own id), the plans it \
-registered with their counts, `deliveredBy` (the records the execution delivered, counted by what sent them: \
-mapping-changed, cache-changed, requested, ...; a record under every cause its reason names), and, when no run has the \
-id, why. Use it for 'what is this id in the logs', 'which run sent this request', 'why did this run send so many \
-records'. get_run has a run's scope and failed statement; delivery_flow_records(runId, trigger) the records it sent for a cause."
+        description = "One run from an id you hold: a run id, or a correlation-id from a platform's log. Returns the \
+run, every run of its execution (a split delivery's coordinating run and its parts), the plans it registered with \
+their counts, `deliveredBy` (its delivered records counted by what sent them, a record under each cause its reason \
+names), and, when no run has the id, why. Use it for 'what is this id in the logs', 'which run sent this request', \
+'why did this run send so many records'. get_run has a run's scope and failed statement; \
+delivery_flow_records(runId, trigger) lists the records it sent for a cause."
     )]
     async fn delivery_run(&self, Parameters(i): Parameters<RunLookupInput>) -> String {
         let query = Query::new().text("id", Some(i.id));
@@ -334,13 +332,11 @@ records'. get_run has a run's scope and failed statement; delivery_flow_records(
 
     #[tool(
         description = "Submissions: each plan a delivery flow made over its ingestion tables, and what became of it. \
-With pipelineId, lists them newest first: what was selected (incremental, full or keys, the source window, the run \
-parameters), the counts (planned, delivered, held, failed, skipped unchanged, awaiting approval, waiting), status, \
-run and error. With submissionId, reads one with every run that worked on it and `deliveredBy`, its delivered records \
-counted by what sent them (mapping-changed, cache-changed, requested, ...; a record counts under each kind its reason \
-names); add include=[\"batches\"] for its work batches or [\"attempts\"] for its delivery tries. Use it for \
-'what did the last run do', 'why did this run send so many records', 'why is this submission still running', 'which \
-batch is stuck'. For the records of a submission use \
+With pipelineId, newest first: what was selected (incremental, full or keys, the source window, the run parameters), \
+the counts (planned, delivered, held, failed, skipped unchanged, awaiting approval, waiting), status, run and error. \
+With submissionId, one with every run that worked on it and `deliveredBy`, its delivered records counted by what \
+sent them; include=[\"batches\"] or [\"attempts\"] adds its work batches or delivery tries. Use it for 'what did the \
+last run do', 'why did this run send so many records', 'which batch is stuck'. Its records: \
 delivery_flow_records(submissionId or deliveredBy)."
     )]
     async fn delivery_submissions(&self, Parameters(i): Parameters<SubmissionsInput>) -> String {
@@ -445,11 +441,11 @@ list_pipelines(kind=\"retrieval\")."
 
     #[tool(
         description = "The delivery audit trail, newest first: who did what, when, with which parameters, and how it \
-ended. One row per thing a run did to the ledger (deliver, intake, drain, verify, sync) and per operator action \
-(release, redeliver, delete), with its actor, flow, partition, outcome, summary, and the submission, record and run \
-it belongs to. Filter by flow, kind, actor, outcome, time window, submission or run; idle=false hides runs that \
-changed nothing. Use it for 'who deleted these records', 'what ran against prod yesterday', 'did anything fail since \
-Monday'. Pass activityId alone to read one activity with its run log. One record's own trail is in delivery_record."
+ended. A row per thing a run did to the ledger (deliver, intake, drain, verify, sync) and per operator action \
+(release, redeliver, delete), with actor, flow, partition, outcome, summary, and its submission, record and run. \
+Filter by flow, kind, actor, outcome, time window, submission or run; idle=false hides runs that changed nothing. \
+Use it for 'who deleted these records', 'what ran against prod yesterday', 'did anything fail since Monday'. \
+activityId alone reads one activity with its run log. One record's trail: delivery_record."
     )]
     async fn delivery_activities(&self, Parameters(i): Parameters<ActivitiesInput>) -> String {
         if let Some(activity_id) = i.activity_id {

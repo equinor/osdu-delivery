@@ -740,10 +740,10 @@ public static class DeliveryTemplateEndpoints
             {
                 values[name] = await secrets.ResolveAsync(supplied, ct).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (SqlFlowException)
             {
-                // Reported by the value's absence beside its reference; the resolver's message may quote what it read,
-                // so it is not passed on.
+                // A reference this host cannot resolve (every secret provider fails so): reported by the value's absence
+                // beside its reference. The resolver's message may quote what it read, so it is not passed on.
             }
         }
 
@@ -769,14 +769,7 @@ public static class DeliveryTemplateEndpoints
             return null;
         }
 
-        try
-        {
-            return CacheScope.Normalize(await secrets.ResolveAsync(declared, ct).ConfigureAwait(false), where);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return declared;
-        }
+        return await CacheScope.ResolvedAsync(declared, secrets, where, ct).ConfigureAwait(false);
     }
 
     /// <summary>Every partition's cache, with the flows filling it, its current version and its types, for the builder's cache picker.</summary>

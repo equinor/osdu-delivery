@@ -145,7 +145,7 @@ public static class DeliveryDownloadEndpoints
                 Json);
         }
 
-        var held = await ledger.ListDownloadsAsync(bound.LedgerId, ct).ConfigureAwait(false);
+        var held = await ledger.Downloads.ListAsync(bound.LedgerId, ct).ConfigureAwait(false);
         var summaries = new List<DeliveryDownloadDto>(held.Count);
         foreach (var download in held)
         {
@@ -174,7 +174,7 @@ public static class DeliveryDownloadEndpoints
             return problem!;
         }
 
-        var runs = await ledger.ListDownloadRunsAsync(download.Partition, downloadId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
+        var runs = await ledger.Downloads.ListRunsAsync(download.Partition, downloadId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
         return TypedResults.Json<IReadOnlyList<DeliveryDownloadRunDto>>(runs.Select(ToDto).ToList(), Json);
     }
 
@@ -212,7 +212,7 @@ public static class DeliveryDownloadEndpoints
 
         // One more than the page is read, so the answer knows whether another page follows without a read that finds none.
         var take = limit ?? DefaultPage;
-        var rows = await ledger.ListDownloadRecordsAsync(download.Partition, downloadId, asked, q, after, take + 1, ct).ConfigureAwait(false);
+        var rows = await ledger.Downloads.ListRecordsAsync(download.Partition, downloadId, asked, q, after, take + 1, ct).ConfigureAwait(false);
         var shown = rows.Count > take ? rows.Take(take).ToList() : rows;
         return TypedResults.Json(
             new DeliveryDownloadRecordPageDto(shown.Select(ToDto).ToList(), rows.Count > take ? shown[^1].DownloadRecordId : null),
@@ -264,8 +264,8 @@ public static class DeliveryDownloadEndpoints
 
     private static async Task<DeliveryDownloadDto> SummaryAsync(ILedger ledger, DownloadState download, CancellationToken ct)
     {
-        var counts = await ledger.DownloadCountsAsync(download.Partition, download.DownloadId, ct).ConfigureAwait(false);
-        var latest = await ledger.ListDownloadRunsAsync(download.Partition, download.DownloadId, 1, ct).ConfigureAwait(false);
+        var counts = await ledger.Downloads.CountsAsync(download.Partition, download.DownloadId, ct).ConfigureAwait(false);
+        var latest = await ledger.Downloads.ListRunsAsync(download.Partition, download.DownloadId, 1, ct).ConfigureAwait(false);
         var last = latest.Count > 0 ? latest[0] : null;
         return new DeliveryDownloadDto(
             download.DownloadId, download.Partition, download.Name, download.Kind, download.Query, download.ReadMode, download.Location, download.CreatedUtc,
@@ -281,7 +281,7 @@ public static class DeliveryDownloadEndpoints
             return (null, bad);
         }
 
-        var download = await ledger.GetDownloadAsync(partition.Trim(), downloadId, ct).ConfigureAwait(false);
+        var download = await ledger.Downloads.GetAsync(partition.Trim(), downloadId, ct).ConfigureAwait(false);
         return download is null
             ? (null, Problem(StatusCodes.Status404NotFound, "Not found", $"Partition '{partition}' keeps no download {downloadId}."))
             : (download, null);

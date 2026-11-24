@@ -60,7 +60,7 @@ public sealed class DimensionCacheTests : IDisposable
         {
             FlowId = DimensionLedger, Partition = "dev", Kind = LedgerKinds.Dimension, FlowName = DimensionFlowName, LedgerName = DimensionFlowName + "@dev",
         });
-        var (dimension, run) = await ledger.StartDimensionRunAsync(
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(
             new DimensionDeclaration
             {
                 FlowId = DimensionLedger, FlowName = DimensionFlowName, Name = "CurveMnemonic", Kind = "osdu:wks:work-product-component--WellLog:*",
@@ -68,7 +68,7 @@ public sealed class DimensionCacheTests : IDisposable
             },
             Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
         _clock.Advance(TimeSpan.FromMinutes(1));
-        await ledger.WriteDimensionAsync(new DimensionWrite
+        await ledger.Dimensions.WriteAsync(new DimensionWrite
         {
             DimensionRunId = run.DimensionRunId,
             DimensionId = dimension.DimensionId,

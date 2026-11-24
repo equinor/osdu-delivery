@@ -25,7 +25,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs

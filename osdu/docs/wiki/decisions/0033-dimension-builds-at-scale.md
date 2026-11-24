@@ -18,7 +18,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261026181652_DimensionViewCheckReuse.cs

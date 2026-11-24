@@ -103,7 +103,7 @@ public sealed class StagedProofValueRunTests : IDisposable
         var flow = new DeliveryDocumentLoader().ParseAssertion(yaml, "flow.yaml").ForPartition("dev");
         var runner = new AssertionRunner(Samples.Engine(ledger, _clock), flow, new Dictionary<string, string>(StringComparer.Ordinal) { ["system"] = "WellDB" }, Samples.Logger<AssertionRunner>(), _platform, allowLoopback: true);
         var outcome = await runner.TestAsync([], [], Guid.CreateVersion7(), "tests", CancellationToken.None);
-        return TestResults.Deserialize(Assert.Single(await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).Detail)!;
+        return TestResults.Deserialize(Assert.Single(await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).Detail)!;
     }
 
     [Fact]
@@ -225,7 +225,7 @@ public sealed class StagedProofValueRunTests : IDisposable
         var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["system"] = "WellDB", ["name"] = "Other's" };
         var runner = new AssertionRunner(Samples.Engine(ledger, _clock), flow, values, Samples.Logger<AssertionRunner>(), _platform, allowLoopback: true);
         var outcome = await runner.TestAsync([], [], Guid.CreateVersion7(), "tests", CancellationToken.None);
-        var result = TestResults.Deserialize(Assert.Single(await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).Detail)!;
+        var result = TestResults.Deserialize(Assert.Single(await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).Detail)!;
 
         // One row is named Other's; the count of the wellbores OSDU holds is 3, so the comparison fails on 3 against 1.
         Assert.Equal("equals 1 (query other-system)", Assert.Single(result.Assertions).Expected);

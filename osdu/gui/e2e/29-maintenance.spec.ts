@@ -6,8 +6,12 @@ import { adminSession, apiLogin, expect, FIRST_PAGE_MS, seedSession, test } from
 // purge, Clean up. Its counts are previewed for anyone signed in; only an admin cleans up. Nothing here removes anything,
 // since every spec shares the estate's database: the cleanup itself is covered by the API suites.
 
-/** A count the panel shows for an area: how many of its unit would go, or that nothing is that old. */
-const COUNTED = /^(\d[\d\s,.\u202f]*\s+(statements|events|attempts|logs|runs)|nothing older than .+)$/;
+/**
+ * A count the panel shows for an area: how many of its unit would go, or that nothing is that old. The units are the ones
+ * the storage areas count in, SQLFlow's (statements, events, tasks, conversations, runs) and the module's (attempts,
+ * logs, runs).
+ */
+const COUNTED = /^(\d[\d\s,.\u202f]*\s+(statements|events|tasks|conversations|attempts|logs|runs)|nothing older than .+)$/;
 
 const OPERATOR = { username: "e2e-maintenance-operator", password: "E2e-maintenance-operator-1!" };
 

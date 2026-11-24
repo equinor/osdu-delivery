@@ -86,13 +86,7 @@ public sealed partial class RecordIdentityBackfillService : BackgroundService
     public async Task<(int Records, int Pages)> BackfillAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
-        if (ledger is not OsduLedger indexed)
-        {
-            // Another ledger implementation keeps its own index; there is nothing here to fill.
-            return (0, 0);
-        }
-
+        var indexed = scope.ServiceProvider.GetRequiredService<OsduLedger>();
         var records = 0;
         var pages = 0;
         RecordCursor? after = null;

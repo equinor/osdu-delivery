@@ -161,10 +161,10 @@ public sealed class DimensionBuildSpreadTests : IDisposable
         Assert.Equal((3, 0), (outcome.Built, outcome.Failed));
         Assert.Equal(["SpreadCurve", "SpreadLog", "SpreadUnit"], outcome.Dimensions.Select(d => d.Dimension).ToArray());
         Assert.All(outcome.Dimensions, d => Assert.Equal(DimensionRunStatus.Completed, d.Status));
-        Assert.Equal([outcome.Dimensions[0].BuildId], (await ledger.DimensionRunsOfAsync(runId)).Select(b => (long?)b.DimensionRunId).ToArray());
+        Assert.Equal([outcome.Dimensions[0].BuildId], (await ledger.Dimensions.RunsOfAsync(runId)).Select(b => (long?)b.DimensionRunId).ToArray());
         for (var i = 0; i < 2; i++)
         {
-            var built = Assert.Single(await ledger.DimensionRunsOfAsync(dispatcher.Queued[i].RunId));
+            var built = Assert.Single(await ledger.Dimensions.RunsOfAsync(dispatcher.Queued[i].RunId));
             Assert.Equal(outcome.Dimensions[i + 1].BuildId, built.DimensionRunId);
             Assert.Equal(outcome.Dimensions[i + 1].Keys, built.Originals);
         }
@@ -190,7 +190,7 @@ public sealed class DimensionBuildSpreadTests : IDisposable
         Assert.Equal(2, dispatcher.Queued.Count);
         Assert.Equal(1, dispatcher.Cancels);
         Assert.Equal((3, 0), (outcome.Built, outcome.Failed));
-        Assert.Equal(3, (await ledger.DimensionRunsOfAsync(runId)).Count);
+        Assert.Equal(3, (await ledger.Dimensions.RunsOfAsync(runId)).Count);
         Assert.False(Assert.Single(outcome.Views).Failed);
     }
 
@@ -206,12 +206,12 @@ public sealed class DimensionBuildSpreadTests : IDisposable
 
         Assert.Equal((3, 0), (outcome.Built, outcome.Failed));
         Assert.Equal(0, dispatcher.Cancels);
-        var here = await ledger.DimensionRunsOfAsync(runId);
+        var here = await ledger.Dimensions.RunsOfAsync(runId);
         Assert.Equal(
             new[] { outcome.Dimensions[0].BuildId, outcome.Dimensions[1].BuildId }.Order().ToArray(),
             here.Select(b => (long?)b.DimensionRunId).Order().ToArray());
-        Assert.Empty(await ledger.DimensionRunsOfAsync(dispatcher.Queued[0].RunId));
-        Assert.Equal(outcome.Dimensions[2].BuildId, Assert.Single(await ledger.DimensionRunsOfAsync(dispatcher.Queued[1].RunId)).DimensionRunId);
+        Assert.Empty(await ledger.Dimensions.RunsOfAsync(dispatcher.Queued[0].RunId));
+        Assert.Equal(outcome.Dimensions[2].BuildId, Assert.Single(await ledger.Dimensions.RunsOfAsync(dispatcher.Queued[1].RunId)).DimensionRunId);
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public sealed class DimensionBuildSpreadTests : IDisposable
 
         Assert.Empty(dispatcher.Queued);
         Assert.Equal((3, 0), (outcome.Built, outcome.Failed));
-        Assert.Equal(3, (await ledger.DimensionRunsOfAsync(runId)).Count);
+        Assert.Equal(3, (await ledger.Dimensions.RunsOfAsync(runId)).Count);
     }
 
     [Fact]

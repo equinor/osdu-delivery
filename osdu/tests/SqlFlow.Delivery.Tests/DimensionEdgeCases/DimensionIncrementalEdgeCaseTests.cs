@@ -85,7 +85,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
     }
 
     private static async Task<Dictionary<string, DimensionValueState>> KeysAsync(OsduLedger ledger, int dimensionId)
-        => (await ledger.ListDimensionValuesAsync(dimensionId, new DimensionValueQuery(null, null, false, true, null, 100)))
+        => (await ledger.Dimensions.ListValuesAsync(dimensionId, new DimensionValueQuery(null, null, false, true, null, 100)))
             .ToDictionary(k => k.Original, StringComparer.Ordinal);
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
 
         Assert.Equal(DimensionRunModes.Full, full.Load);
         Assert.Contains(full.Notes, n => n.Contains("at least 1 record(s) its last full load read are gone from the index or no longer match its query, and incremental.fullLoadWhenRecordsLeave asks for a full load then", StringComparison.Ordinal));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var keys = await KeysAsync(ledger, dimension.DimensionId);
         Assert.NotNull(keys["dev:master-data--Wellbore:B:"].RemovedRunId);
         Assert.Null(keys["dev:master-data--Wellbore:A:"].RemovedRunId);
@@ -126,7 +126,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
 
         Assert.Equal(DimensionRunModes.Incremental, second.Load);
         Assert.Contains(second.Notes, n => n.Contains("At least 1 record(s) the last full load read", StringComparison.Ordinal));
-        var keys = await KeysAsync(ledger, (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!.DimensionId);
+        var keys = await KeysAsync(ledger, (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!.DimensionId);
         Assert.Null(keys["dev:master-data--Wellbore:B:"].RemovedRunId);
     }
 
@@ -136,7 +136,7 @@ public sealed class DimensionIncrementalEdgeCaseTests : IDisposable
         Estate();
         var (runner, ledger, flow) = Runner(Flow(string.Empty, "lookupKinds: [osdu:wks:master-data--GeoPoliticalEntity:1.0.0]"));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var first = await KeysAsync(ledger, dimension.DimensionId);
 
         // Mexico is of a kind the dimension does not look countries up in: wellbore B has no country at all.

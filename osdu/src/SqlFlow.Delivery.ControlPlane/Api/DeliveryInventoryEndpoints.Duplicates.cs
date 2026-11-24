@@ -134,7 +134,7 @@ public static partial class DeliveryInventoryEndpoints
 
         var hash = key.Hash();
         var now = clock.GetUtcNow().UtcDateTime;
-        var current = await ledger.CurrentInventoryDuplicateCheckAsync(inventory.Partition, inventory.InventoryId, inventory.LastBuildRunId, ct).ConfigureAwait(false);
+        var current = await ledger.Inventories.CurrentDuplicateCheckAsync(inventory.Partition, inventory.InventoryId, inventory.LastBuildRunId, ct).ConfigureAwait(false);
         if (current is not null)
         {
             current = await SettleCheckAsync(db, ledger, inventory.Partition, current, clock, ct).ConfigureAwait(false);
@@ -161,7 +161,7 @@ public static partial class DeliveryInventoryEndpoints
             {
                 try
                 {
-                    await ledger.GroupInventoryDuplicatesAsync(
+                    await ledger.Inventories.GroupDuplicatesAsync(
                         inventory.Partition,
                         current.InventoryDuplicateCheckId,
                         new InventoryDuplicateKeying(key.ToJson(), hash, key.Paths, RequestActor.Label(user), now),
@@ -172,7 +172,7 @@ public static partial class DeliveryInventoryEndpoints
                     return Problem(StatusCodes.Status409Conflict, "Not grouped", ex.Message);
                 }
 
-                var grouped = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, current.InventoryDuplicateCheckId, ct).ConfigureAwait(false) ?? current;
+                var grouped = await ledger.Inventories.GetDuplicateCheckAsync(inventory.Partition, current.InventoryDuplicateCheckId, ct).ConfigureAwait(false) ?? current;
                 return TypedResults.Ok(await ToDtoAsync(ledger, inventory, grouped, ct).ConfigureAwait(false));
             }
         }
@@ -184,14 +184,14 @@ public static partial class DeliveryInventoryEndpoints
             .Distinct(StringComparer.Ordinal)
             .Take(InventoryDuplicates.MaxKeyProperties)
             .ToList();
-        await ledger.SweepInventoryDuplicateChecksAsync(inventory.Partition, now - InventoryDuplicates.KeptFor, ct).ConfigureAwait(false);
-        var checkId = await ledger.CreateInventoryDuplicateCheckAsync(
+        await ledger.Inventories.SweepDuplicateChecksAsync(inventory.Partition, now - InventoryDuplicates.KeptFor, ct).ConfigureAwait(false);
+        var checkId = await ledger.Inventories.CreateDuplicateCheckAsync(
             inventory.Partition,
             new InventoryDuplicateCheckStart(
                 inventory.InventoryId, RequestActor.Label(user), key.ToJson(), hash, InventoryDuplicateTable.AttributesOf(paths), inventory.LastBuildRunId, now),
             ct).ConfigureAwait(false);
         await QueueDuplicatesRunAsync(db, ledger, dispatcher, pipeline, flow, inventory, checkId, request?.Pool, clock, user, ct).ConfigureAwait(false);
-        var created = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false)
+        var created = await ledger.Inventories.GetDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false)
             ?? throw new DeliveryException($"Duplicate check {checkId} of inventory '{inventory.Name}' was opened and is not in partition '{inventory.Partition}'.");
         return TypedResults.Accepted(
             $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/duplicates/{checkId}",
@@ -228,14 +228,14 @@ public static partial class DeliveryInventoryEndpoints
                 $"No flow in the catalog declares inventory '{inventory.Name}' of '{inventory.FlowName}' now, so no pick can run through it.");
         }
 
-        if (!await ledger.RequestInventoryDuplicatePickAsync(inventory.Partition, checkId, inventory.LastBuildRunId, ct).ConfigureAwait(false))
+        if (!await ledger.Inventories.RequestDuplicatePickAsync(inventory.Partition, checkId, inventory.LastBuildRunId, ct).ConfigureAwait(false))
         {
             return Problem(StatusCodes.Status409Conflict, "Nothing to pick",
                 $"Duplicate check {checkId} holds no group waiting to be picked: every group's copies were read, or its groups are too broad to pick from.");
         }
 
         await QueueDuplicatesRunAsync(db, ledger, dispatcher, pipeline, flow, inventory, checkId, request?.Pool, clock, user, ct).ConfigureAwait(false);
-        var asked = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false) ?? check;
+        var asked = await ledger.Inventories.GetDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false) ?? check;
         return TypedResults.Accepted(
             $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/duplicates/{checkId}",
             await ToDtoAsync(ledger, inventory, asked, ct).ConfigureAwait(false));
@@ -274,12 +274,12 @@ public static partial class DeliveryInventoryEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            await ledger.FailInventoryDuplicateCheckAsync(
+            await ledger.Inventories.FailDuplicateCheckAsync(
                 inventory.Partition, checkId, $"its run could not be queued: {DeliveryEndpoints.Redacted(ex)}", clock.GetUtcNow().UtcDateTime, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
-        await ledger.SetInventoryDuplicateCheckRunAsync(inventory.Partition, checkId, runId, ct).ConfigureAwait(false);
+        await ledger.Inventories.SetDuplicateCheckRunAsync(inventory.Partition, checkId, runId, ct).ConfigureAwait(false);
     }
 
     /// <summary>An inventory's duplicate checks, the newest first, each as it stands.</summary>
@@ -297,7 +297,7 @@ public static partial class DeliveryInventoryEndpoints
             return problem!;
         }
 
-        var checks = await ledger.ListInventoryDuplicateChecksAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultChecks, ct).ConfigureAwait(false);
+        var checks = await ledger.Inventories.ListDuplicateChecksAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultChecks, ct).ConfigureAwait(false);
         var answered = new List<DeliveryInventoryDuplicateCheckDto>(checks.Count);
         foreach (var check in checks)
         {
@@ -351,7 +351,7 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         var size = limit ?? DefaultGroups;
-        var page = await ledger.ListInventoryDuplicateGroupsAsync(inventory!.Partition, checkId, named, after, size, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
+        var page = await ledger.Inventories.ListDuplicateGroupsAsync(inventory!.Partition, checkId, named, after, size, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
         var ledgers = await LedgerNamesAsync(ledger, page.SelectMany(g => g.Members).Select(m => m.Record).ToList(), ct).ConfigureAwait(false);
         var groups = page.Select(g => ToDto(g.Group, g.Members, ledgers)).ToList();
         return TypedResults.Json(new DeliveryDuplicateGroupPageDto(groups, groups.Count == size ? groups[^1].GroupNumber : null), Json);
@@ -372,13 +372,13 @@ public static partial class DeliveryInventoryEndpoints
             return problem!;
         }
 
-        if (await ledger.GetInventoryDuplicateGroupAsync(inventory!.Partition, checkId, groupNumber, ct).ConfigureAwait(false) is null)
+        if (await ledger.Inventories.GetDuplicateGroupAsync(inventory!.Partition, checkId, groupNumber, ct).ConfigureAwait(false) is null)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"Duplicate check {checkId} holds no group {groupNumber}.");
         }
 
         var size = limit ?? DefaultPage;
-        var members = await ledger.ListInventoryDuplicateMembersAsync(inventory.Partition, checkId, groupNumber, after, size, ct).ConfigureAwait(false);
+        var members = await ledger.Inventories.ListDuplicateMembersAsync(inventory.Partition, checkId, groupNumber, after, size, ct).ConfigureAwait(false);
         var ledgers = await LedgerNamesAsync(ledger, members.Select(m => m.Record).ToList(), ct).ConfigureAwait(false);
         var copies = members.Select(m => ToDto(m, ledgers)).ToList();
         return TypedResults.Json(new DeliveryDuplicateCopyPageDto(copies, copies.Count == size ? copies[^1].Record.InventoryRecordId : null), Json);
@@ -406,7 +406,7 @@ public static partial class DeliveryInventoryEndpoints
             return undecidable;
         }
 
-        var group = await ledger.GetInventoryDuplicateGroupAsync(inventory!.Partition, checkId, groupNumber, ct).ConfigureAwait(false);
+        var group = await ledger.Inventories.GetDuplicateGroupAsync(inventory!.Partition, checkId, groupNumber, ct).ConfigureAwait(false);
         if (group is null)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"Duplicate check {checkId} holds no group {groupNumber}.");
@@ -431,7 +431,7 @@ public static partial class DeliveryInventoryEndpoints
                 $"No flow in the catalog declares inventory '{inventory.Name}' of '{inventory.FlowName}' now, so what it may remove is not known.");
         }
 
-        var members = await ledger.ListInventoryDuplicateMembersAsync(inventory.Partition, checkId, groupNumber, null, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
+        var members = await ledger.Inventories.ListDuplicateMembersAsync(inventory.Partition, checkId, groupNumber, null, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
         var chosen = request?.InventoryRecordId;
         if (chosen is { } keep)
         {
@@ -459,7 +459,7 @@ public static partial class DeliveryInventoryEndpoints
         var judgement = InventoryDuplicatePicker.Judge(groupNumber, copies, removable, chosen);
         try
         {
-            await ledger.WriteInventoryDuplicateChoiceAsync(
+            await ledger.Inventories.WriteDuplicateChoiceAsync(
                 inventory.Partition, checkId, judgement, chosen is null ? DuplicateChoice.Clear : DuplicateChoice.Choose, RequestActor.Label(user),
                 clock.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
         }
@@ -468,7 +468,7 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status409Conflict, "Not written", ex.Message);
         }
 
-        var written = await ledger.ListInventoryDuplicateGroupsAsync(inventory.Partition, checkId, null, groupNumber - 1, 1, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
+        var written = await ledger.Inventories.ListDuplicateGroupsAsync(inventory.Partition, checkId, null, groupNumber - 1, 1, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
         var page = written.FirstOrDefault(g => g.Group.GroupNumber == groupNumber)
             ?? throw new DeliveryException($"Group {groupNumber} of duplicate check {checkId} was written and is not in partition '{inventory.Partition}'.");
         var ledgers = await LedgerNamesAsync(ledger, page.Members.Select(m => m.Record).ToList(), ct).ConfigureAwait(false);
@@ -506,12 +506,12 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         var now = clock.GetUtcNow().UtcDateTime;
-        await ledger.SweepInventorySelectionsAsync(inventory!.Partition, now - InventorySelections.KeptFor, ct).ConfigureAwait(false);
+        await ledger.Inventories.SweepSelectionsAsync(inventory!.Partition, now - InventorySelections.KeptFor, ct).ConfigureAwait(false);
         var key = InventoryDuplicateKey.Parse(check.KeyJson);
         long selectionId;
         try
         {
-            selectionId = await ledger.CreateInventoryDuplicateSelectionAsync(
+            selectionId = await ledger.Inventories.CreateDuplicateSelectionAsync(
                 inventory.Partition, checkId, RequestActor.Label(user), new ExplorerSearch { Kind = inventory.Kind }.ToJson(),
                 InventoryDuplicateColumns.Of(key.Paths, ExplorerSearch.MaxColumns), now, ct).ConfigureAwait(false);
         }
@@ -520,7 +520,7 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status409Conflict, "Not made", ex.Message);
         }
 
-        var made = await ledger.GetInventorySelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)
+        var made = await ledger.Inventories.GetSelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)
             ?? throw new DeliveryException($"Selection {selectionId} of inventory '{inventory.Name}' was made and is not in partition '{inventory.Partition}'.");
         return TypedResults.Created(
             $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/selections/{selectionId}",
@@ -558,7 +558,7 @@ public static partial class DeliveryInventoryEndpoints
             return (null, null, problem);
         }
 
-        var check = checkId < 1 ? null : await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false);
+        var check = checkId < 1 ? null : await ledger.Inventories.GetDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false);
         return check is null || check.InventoryId != inventory.InventoryId
             ? (inventory, null, Problem(StatusCodes.Status404NotFound, "Not found", $"No duplicate check {checkId} of inventory '{inventory.Name}' in partition '{inventory.Partition}'."))
             : (inventory, check, null);
@@ -589,7 +589,7 @@ public static partial class DeliveryInventoryEndpoints
             return null;
         }
 
-        var selection = await ledger.GetInventorySelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false);
+        var selection = await ledger.Inventories.GetSelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false);
         return selection is { Status: InventorySelections.Completed } && selection.DuplicateCheckId == check.InventoryDuplicateCheckId
             && (check.ChosenUtc is not { } chosen || selection.CreatedUtc >= chosen)
             ? selection
@@ -637,8 +637,8 @@ public static partial class DeliveryInventoryEndpoints
             return check;
         }
 
-        await ledger.FailInventoryDuplicateCheckAsync(partition, check.InventoryDuplicateCheckId, why, now, ct).ConfigureAwait(false);
-        return await ledger.GetInventoryDuplicateCheckAsync(partition, check.InventoryDuplicateCheckId, ct).ConfigureAwait(false) ?? check;
+        await ledger.Inventories.FailDuplicateCheckAsync(partition, check.InventoryDuplicateCheckId, why, now, ct).ConfigureAwait(false);
+        return await ledger.Inventories.GetDuplicateCheckAsync(partition, check.InventoryDuplicateCheckId, ct).ConfigureAwait(false) ?? check;
     }
 
     /// <summary>
@@ -654,9 +654,9 @@ public static partial class DeliveryInventoryEndpoints
         var current = false;
         if (c.Groups > 0 && c.Status is InventoryDuplicates.Completed or InventoryDuplicates.Queued or InventoryDuplicates.Running && c.TableName is not null)
         {
-            var counted = await ledger.InventoryDuplicateOutcomesAsync(inventory.Partition, c.InventoryDuplicateCheckId, ct).ConfigureAwait(false);
+            var counted = await ledger.Inventories.DuplicateOutcomesAsync(inventory.Partition, c.InventoryDuplicateCheckId, ct).ConfigureAwait(false);
             outcomes = InventoryDuplicates.Outcomes.Select(o => new DeliveryDuplicateOutcomeCountDto(o, counted.GetValueOrDefault(o))).ToList();
-            var sized = await ledger.InventoryDuplicateSizesAsync(inventory.Partition, c.InventoryDuplicateCheckId, ct).ConfigureAwait(false);
+            var sized = await ledger.Inventories.DuplicateSizesAsync(inventory.Partition, c.InventoryDuplicateCheckId, ct).ConfigureAwait(false);
             sizes = sized.Sizes.Select(s => new DeliveryDuplicateSizeDto(s.From, s.To, s.Groups, s.Copies)).ToList();
             (pendingGroups, pendingCopies) = (sized.PendingGroups, sized.PendingCopies);
         }

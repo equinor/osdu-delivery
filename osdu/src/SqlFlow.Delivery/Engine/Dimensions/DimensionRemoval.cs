@@ -33,13 +33,13 @@ public static class DimensionRemoval
 
         // A view reading the dimension's table would read a table that is gone: its flow's next build writes it without the
         // dimension, once the flow no longer joins it.
-        if (dimension.TableName is { } table && await ledger.DimensionViewsReadingAsync(table, ct).ConfigureAwait(false) is { Count: > 0 } views)
+        if (dimension.TableName is { } table && await ledger.Dimensions.ViewsReadingAsync(table, ct).ConfigureAwait(false) is { Count: > 0 } views)
         {
             throw new DeliveryException(
                 $"Dimension {dimension.Name} of {dimension.FlowName} is read by view{(views.Count == 1 ? string.Empty : "s")} {string.Join(", ", views)}, so it is not removed: the view would read a table that is gone. Take the dimension out of the view's joins and build the flow, which writes the view without it, then remove the dimension.");
         }
 
-        var captures = await ledger.DimensionCapturesAsync(dimension.DimensionId, ct).ConfigureAwait(false);
+        var captures = await ledger.Dimensions.CapturesAsync(dimension.DimensionId, ct).ConfigureAwait(false);
         if (captures.Count > 0)
         {
             throw new DeliveryException(
@@ -59,7 +59,7 @@ public static class DimensionRemoval
             ct).ConfigureAwait(false);
         try
         {
-            var removed = await ledger.RemoveDimensionAsync(dimension.DimensionId, ct).ConfigureAwait(false)
+            var removed = await ledger.Dimensions.RemoveAsync(dimension.DimensionId, ct).ConfigureAwait(false)
                 ?? throw new DeliveryException($"Dimension {dimension.Name} of {dimension.FlowName} is no longer in the ledger: another removal took it first.");
             await ledger.CompleteActivityAsync(activity.ActivityId, "completed", removed.Describe(), null, clock.GetUtcNow().UtcDateTime, ct: CancellationToken.None).ConfigureAwait(false);
             return removed;

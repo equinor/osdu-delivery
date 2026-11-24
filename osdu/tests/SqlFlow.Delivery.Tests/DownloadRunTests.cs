@@ -93,7 +93,7 @@ public sealed class DownloadRunTests : IDisposable
         long? after = null;
         while (true)
         {
-            var page = await ledger.ListDownloadRecordsAsync(Partition, downloadId, state, null, after, 2);
+            var page = await ledger.Downloads.ListRecordsAsync(Partition, downloadId, state, null, after, 2);
             if (page.Count == 0)
             {
                 return all;
@@ -109,7 +109,7 @@ public sealed class DownloadRunTests : IDisposable
     }
 
     private static async Task<DownloadState> DownloadAsync(OsduLedger ledger, DownloadFlowDefinition flow)
-        => Assert.Single(await ledger.ListDownloadsAsync(flow.LedgerId));
+        => Assert.Single(await ledger.Downloads.ListAsync(flow.LedgerId));
 
     private string FileOf(string location, DownloadRecordState record) => Path.Combine(_root, location, "Wellbores", record.FileName);
 
@@ -148,10 +148,10 @@ public sealed class DownloadRunTests : IDisposable
             Assert.Equal(record.TargetId, DownloadFileNames.IdOf(record.FileName));
         }
 
-        var counts = await ledger.DownloadCountsAsync(Partition, download.DownloadId);
+        var counts = await ledger.Downloads.CountsAsync(Partition, download.DownloadId);
         Assert.Equal((3L, 0L, 0L, 0L, 3L), (counts.Written, counts.Due, counts.Problem, counts.Gone, counts.Served));
         Assert.Equal(records.Values.Sum(r => r.Bytes!.Value), counts.Bytes);
-        var run = Assert.Single(await ledger.ListDownloadRunsAsync(Partition, download.DownloadId, 10));
+        var run = Assert.Single(await ledger.Downloads.ListRunsAsync(Partition, download.DownloadId, 10));
         Assert.Equal((DownloadRunStatus.Completed, 3L, 3L, summary.Bytes), (run.Status, run.Listed, run.Written, run.Bytes));
         await using var db = _db.CreateDbContext();
         Assert.Equal(0, await db.DeliveryDownloadScans.CountAsync());
@@ -202,7 +202,7 @@ public sealed class DownloadRunTests : IDisposable
         Assert.NotNull(record.GoneUtc);
         Assert.True(File.Exists(FileOf("records", record)));
         Assert.Equal([Id("WB-0002")], (await RecordsAsync(ledger, downloadId, DownloadRecordStates.Gone)).Keys);
-        Assert.Equal(1, (await ledger.DownloadCountsAsync(Partition, downloadId)).Gone);
+        Assert.Equal(1, (await ledger.Downloads.CountsAsync(Partition, downloadId)).Gone);
 
         _search.Records.Add(leaving);
         var back = Assert.Single((await RunAsync(runner)).Downloads);
@@ -234,7 +234,7 @@ public sealed class DownloadRunTests : IDisposable
         Assert.Equal("femtotesla", JsonNode.Parse(await File.ReadAllBytesAsync(FileOf("records", femtotesla)))!["data"]!["FacilityName"]!.GetValue<string>());
 
         // The search of the records finds either by the spelling a person knows, whatever its case.
-        var found = await ledger.ListDownloadRecordsAsync(Partition, foot.DownloadId, null, "UNITOFMEASURE~FT", null, 10);
+        var found = await ledger.Downloads.ListRecordsAsync(Partition, foot.DownloadId, null, "UNITOFMEASURE~FT", null, 10);
         Assert.Equal(2, found.Count);
     }
 
@@ -254,7 +254,7 @@ public sealed class DownloadRunTests : IDisposable
         Assert.Equal((DownloadRecordStates.Problem, (long?)null), (missing.State, missing.WrittenVersion));
         Assert.StartsWith("storage named it under invalidRecords", missing.Problem, StringComparison.Ordinal);
         Assert.False(File.Exists(FileOf("records", missing)));
-        Assert.Equal(1, (await ledger.DownloadCountsAsync(Partition, downloadId)).Problem);
+        Assert.Equal(1, (await ledger.Downloads.CountsAsync(Partition, downloadId)).Problem);
 
         _platform.DeletedAfterListing.Clear();
         var second = Assert.Single((await RunAsync(runner)).Downloads);
@@ -283,7 +283,7 @@ public sealed class DownloadRunTests : IDisposable
         Assert.Equal(2, Directory.GetFiles(Path.Combine(_root, "elsewhere", "Wellbores")).Length);
         var download = await DownloadAsync(ledger, flow);
         Assert.Equal(Path.Combine(_root, "elsewhere", "Wellbores"), download.Location);
-        var runs = await ledger.ListDownloadRunsAsync(Partition, download.DownloadId, 10);
+        var runs = await ledger.Downloads.ListRunsAsync(Partition, download.DownloadId, 10);
         Assert.Equal([DownloadRewrite.Moved, DownloadRewrite.Forced, null], runs.Select(r => r.Rewrite));
 
         // Once there, the next run writes only what is new or changed again.
@@ -315,7 +315,7 @@ public sealed class DownloadRunTests : IDisposable
         Assert.Equal((DownloadRunStatus.Failed, 0, 1), (summary.Status, failed.Outcome.Completed, failed.Outcome.Failed));
         Assert.False(string.IsNullOrWhiteSpace(summary.Error));
         Assert.Empty(await RecordsAsync(ledger, downloadId, DownloadRecordStates.Gone));
-        var run = (await ledger.ListDownloadRunsAsync(Partition, downloadId, 5))[0];
+        var run = (await ledger.Downloads.ListRunsAsync(Partition, downloadId, 5))[0];
         Assert.Equal((DownloadRunStatus.Failed, summary.Error), (run.Status, run.Error));
         await using var db = _db.CreateDbContext();
         Assert.Equal(0, await db.DeliveryDownloadScans.CountAsync());
@@ -379,6 +379,6 @@ public sealed class DownloadRunTests : IDisposable
         Assert.Empty(download.Problems);
         Assert.Equal(0, _platform.RecordReads);
         Assert.False(Directory.Exists(_root));
-        Assert.Empty(await ledger.ListDownloadsAsync(flow.LedgerId));
+        Assert.Empty(await ledger.Downloads.ListAsync(flow.LedgerId));
     }
 }

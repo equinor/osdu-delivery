@@ -6,9 +6,15 @@ namespace SqlFlow.Delivery.Ledger;
 // Removing what an inventory found (osdu/docs/reference/flow/inventory-removals.md, What a removal does): the removals an
 // operator asked of an inventory's ids, kept under the inventory flow's ledger with what each did to every id it
 // reached; and the restores of its gone ids (Restoring gone ids), kept with them as the undoing of one.
-public sealed partial class OsduLedger
+public sealed partial class InventoryStore
 {
-    public async Task<long> StartInventoryRemovalAsync(Guid flowId, InventoryRemovalStart start, CancellationToken ct = default)
+    /// <summary>
+    /// Opens a removal of an inventory's ids (osdu/docs/reference/flow/inventory-removals.md, What a removal does), or a restore of
+    /// its gone ids (scope <see cref="InventoryRemovals.Restore"/>, Restoring gone ids): an earlier one of the inventory its process
+    /// left running is closed as failed first, since a removal is a run of the flow and the flow runs one at a time. Returns the
+    /// removal's number.
+    /// </summary>
+    public async Task<long> StartRemovalAsync(Guid flowId, InventoryRemovalStart start, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(start);
         ArgumentException.ThrowIfNullOrWhiteSpace(start.Actor);
@@ -77,7 +83,14 @@ public sealed partial class OsduLedger
         return removal.InventoryRemovalId;
     }
 
-    public async Task<IReadOnlyList<InventoryRemovalCandidate>> InventoryRemovalCandidatesAsync(
+    /// <summary>
+    /// The next ids a removal may act on, at most <paramref name="limit"/>, after <paramref name="after"/>: those of
+    /// <paramref name="finding"/> the inventory holds as served (only those the selection <paramref name="selectionId"/> holds,
+    /// when one is named), or with <paramref name="ids"/> those ids whatever they are now; each with the finding the reconcile's
+    /// rule gives it against the ledgers as they stand now and <paramref name="owners"/>. A removal names its ids or a
+    /// selection, not both.
+    /// </summary>
+    public async Task<IReadOnlyList<InventoryRemovalCandidate>> RemovalCandidatesAsync(
         Guid flowId, int inventoryId, string finding, IReadOnlyList<string>? ids, IReadOnlyList<string> owners, long after, int limit, long? selectionId = null,
         CancellationToken ct = default)
     {
@@ -94,7 +107,12 @@ public sealed partial class OsduLedger
         return await SqlServerLedgerBulk.InventoryRemovalCandidatesAsync(db, partition, inventoryId, finding, ids, selectionId, owners, after, limit, ct).ConfigureAwait(false);
     }
 
-    public async Task RecordInventoryRemovalAsync(
+    /// <summary>
+    /// Keeps what one chunk of a removal came to, in one transaction: every id's outcome and reason, the ids removed from OSDU
+    /// (<paramref name="removedDetail"/>) or found no longer served (<paramref name="goneDetail"/>) marked gone in the inventory,
+    /// and the removal's tallies.
+    /// </summary>
+    public async Task RecordRemovalAsync(
         Guid flowId, int inventoryId, long removalId, IReadOnlyList<InventoryRemovalItem> items, string removedDetail, string goneDetail, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -117,7 +135,13 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryRemovalRound> RemoveFromInventoryAsync(
+    /// <summary>
+    /// One round of a removal of gone ids from the inventory alone (scope <see cref="InventoryRemovals.InventoryOnly"/>), in one
+    /// transaction held against the inventory's merge: the next <paramref name="limit"/> gone ids after <paramref name="after"/>,
+    /// or of <paramref name="ids"/> whatever they are now, removed with the versions kept of them; an id that is not gone now,
+    /// that OSDU serves again, or that a ledger expects is kept and recorded as skipped with why. Nothing is asked of OSDU.
+    /// </summary>
+    public async Task<InventoryRemovalRound> RemoveIdsAsync(
         Guid flowId, int inventoryId, long removalId, IReadOnlyList<string>? ids, long after, int limit, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -134,7 +158,15 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryRestoreCandidate>> InventoryRestoreCandidatesAsync(
+    /// <summary>
+    /// The next ids a restore may bring back (osdu/docs/reference/flow/inventory-removals.md, Restoring gone ids), at most
+    /// <paramref name="limit"/>, after <paramref name="after"/>: the inventory's gone ids, or with <paramref name="ids"/> those
+    /// ids whatever they are now, or with <paramref name="removalId"/> the ids that soft-delete removal of the inventory removed,
+    /// whether or not the inventory still holds a row of them; each with what the inventory and the ledgers hold of it now, and
+    /// the finding the reconcile's rule gives it against them and <paramref name="owners"/> once OSDU serves it again. A restore
+    /// names its ids or a removal, not both.
+    /// </summary>
+    public async Task<IReadOnlyList<InventoryRestoreCandidate>> RestoreCandidatesAsync(
         Guid flowId, int inventoryId, IReadOnlyList<string>? ids, long? removalId, IReadOnlyList<string> owners, long after, int limit, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(owners);
@@ -155,7 +187,12 @@ public sealed partial class OsduLedger
         return await SqlServerLedgerBulk.InventoryRestoreCandidatesAsync(db, partition, inventoryId, ids, removalId, owners, after, limit, ct).ConfigureAwait(false);
     }
 
-    public async Task RecordInventoryRestoreAsync(
+    /// <summary>
+    /// Keeps what one round of a restore came to, in one transaction: every id's outcome and reason, the ids brought back served
+    /// again in the inventory (<paramref name="restoredDetail"/>) with the finding the reconcile's rule gives them against the
+    /// ledgers and <paramref name="owners"/>, and the restore's tallies.
+    /// </summary>
+    public async Task RecordRestoreAsync(
         Guid flowId, int inventoryId, long restoreId, IReadOnlyList<InventoryRemovalItem> items, IReadOnlyList<string> owners, string restoredDetail, DateTime nowUtc,
         CancellationToken ct = default)
     {
@@ -180,7 +217,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteInventoryRemovalAsync(Guid flowId, long removalId, string status, string? stoppedBy, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Closes a removal as completed or failed, with why it stopped (redacted).</summary>
+    public async Task CompleteRemovalAsync(Guid flowId, long removalId, string status, string? stoppedBy, DateTime nowUtc, CancellationToken ct = default)
     {
         if (status is not (InventoryRunStatus.Completed or InventoryRunStatus.Failed))
         {
@@ -201,7 +239,8 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<IReadOnlyList<InventoryRemovalState>> ListInventoryRemovalsAsync(string partition, int inventoryId, int limit, CancellationToken ct = default)
+    /// <summary>An inventory's removals, the newest first.</summary>
+    public async Task<IReadOnlyList<InventoryRemovalState>> ListRemovalsAsync(string partition, int inventoryId, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -220,7 +259,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryRemovalState?> GetInventoryRemovalAsync(string partition, long removalId, CancellationToken ct = default)
+    /// <summary>One removal by its partition and number, or null.</summary>
+    public async Task<InventoryRemovalState?> GetRemovalAsync(string partition, long removalId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -236,7 +276,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryRemovalItemState>> ListInventoryRemovalItemsAsync(
+    /// <summary>A page of what a removal did to each id, of one outcome or all, in order after <paramref name="after"/>.</summary>
+    public async Task<IReadOnlyList<InventoryRemovalItemState>> ListRemovalItemsAsync(
         string partition, long removalId, string? outcome, long? after, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
@@ -262,7 +303,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryRemovalItemState>> LookupInventoryRemovalItemsAsync(string partition, string targetId, CancellationToken ct = default)
+    /// <summary>What every removal of the partition did to one OSDU id, the newest first.</summary>
+    public async Task<IReadOnlyList<InventoryRemovalItemState>> LookupRemovalItemsAsync(string partition, string targetId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
@@ -282,7 +324,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryRecordState>> InventoryRecordsOfAsync(string partition, int inventoryId, IReadOnlyList<string> targetIds, CancellationToken ct = default)
+    /// <summary>The rows an inventory holds of <paramref name="targetIds"/>, at most as many as it names; an id it holds no row of is left out.</summary>
+    public async Task<IReadOnlyList<InventoryRecordState>> RecordsOfAsync(string partition, int inventoryId, IReadOnlyList<string> targetIds, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentNullException.ThrowIfNull(targetIds);

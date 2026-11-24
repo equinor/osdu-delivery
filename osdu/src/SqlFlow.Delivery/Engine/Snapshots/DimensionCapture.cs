@@ -56,10 +56,10 @@ internal static class DimensionCapture
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.ListDimensionMembersAsync(
-                dimension.DimensionId, new DimensionMemberQuery(null, false, after, OsduLedger.MaxDimensionPage), ct).ConfigureAwait(false);
+            var page = await ledger.Dimensions.ListMembersAsync(
+                dimension.DimensionId, new DimensionMemberQuery(null, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
             members.AddRange(page);
-            if (page.Count < OsduLedger.MaxDimensionPage)
+            if (page.Count < DimensionStore.MaxPage)
             {
                 break;
             }
@@ -71,7 +71,7 @@ internal static class DimensionCapture
         foreach (var chunk in members.Select(m => m.MemberId).Chunk(OriginalsChunk))
         {
             ct.ThrowIfCancellationRequested();
-            foreach (var original in await ledger.MemberOriginalsAsync(dimension.DimensionId, chunk, ct).ConfigureAwait(false))
+            foreach (var original in await ledger.Dimensions.MemberOriginalsAsync(dimension.DimensionId, chunk, ct).ConfigureAwait(false))
             {
                 if (original.MemberId is { } memberId)
                 {
@@ -87,7 +87,7 @@ internal static class DimensionCapture
             foreach (var chunk in members.Select(m => m.MemberId).Chunk(OriginalsChunk))
             {
                 ct.ThrowIfCancellationRequested();
-                foreach (var held in await ledger.MemberAttributesAsync(dimension.DimensionId, chunk, MaxAttributeValues, ct).ConfigureAwait(false))
+                foreach (var held in await ledger.Dimensions.MemberAttributesAsync(dimension.DimensionId, chunk, MaxAttributeValues, ct).ConfigureAwait(false))
                 {
                     attributes[held.MemberId] = held.Attributes;
                 }
@@ -149,7 +149,7 @@ internal static class DimensionCapture
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentNullException.ThrowIfNull(type);
-        var kept = await ledger.ListDimensionsAsync(partition, null, ct).ConfigureAwait(false);
+        var kept = await ledger.Dimensions.ListAsync(partition, null, ct).ConfigureAwait(false);
         var dimension = kept.FirstOrDefault(d => string.Equals(d.FlowName, type.DimensionFlow, StringComparison.OrdinalIgnoreCase)
             && string.Equals(d.Name, type.Dimension, StringComparison.OrdinalIgnoreCase));
         if (dimension is null || dimension.LastRunId is null)

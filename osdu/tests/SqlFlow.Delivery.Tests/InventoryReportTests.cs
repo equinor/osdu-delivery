@@ -71,10 +71,10 @@ public sealed class InventoryReportTests : IDisposable
                 $"{Partition}:work-product-component--WellLog:{i:D5}", Kind, 1, i == 7 ? "=HYPERLINK(\"x\")" : "someone@elsewhere.com",
                 new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), null, null, $"WellLog {i:D5}"))
             .ToList();
-        var run = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
-        await ledger.AppendInventoryScanAsync(_inventoryFlow, run, rows);
-        await ledger.MergeInventoryAsync(_inventoryFlow, inventory.InventoryId, run, Now);
-        await ledger.ReconcileInventoryAsync(_inventoryFlow, inventory.InventoryId, [], Now);
+        var run = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
+        await ledger.Inventories.AppendScanAsync(_inventoryFlow, run, rows);
+        await ledger.Inventories.MergeAsync(_inventoryFlow, inventory.InventoryId, run, Now);
+        await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [], Now);
 
         using var all = new StringWriter();
         Assert.Equal(ids, await InventoryExport.WriteAsync(ledger, inventory, null, all, CancellationToken.None));
@@ -102,8 +102,8 @@ public sealed class InventoryReportTests : IDisposable
         var (ledger, inventory) = await InventoryAsync();
         Assert.Equal(new InventoryRecentRuns(null, null, null), await InventoryReport.RecentRunsAsync(ledger, inventory, CancellationToken.None));
 
-        var build = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
-        await ledger.CompleteInventoryRunAsync(
+        var build = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
+        await ledger.Inventories.CompleteRunAsync(
             _inventoryFlow, build,
             new InventoryRunState
             {
@@ -112,16 +112,16 @@ public sealed class InventoryReportTests : IDisposable
             },
             "none", Now);
         _clock.Advance(TimeSpan.FromMinutes(5));
-        var running = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Reconcile, Guid.NewGuid(), "tests", "search", Now);
+        var running = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Reconcile, Guid.NewGuid(), "tests", "search", Now);
 
-        var state = (await ledger.GetInventoryAsync(Partition, inventory.InventoryId))!;
+        var state = (await ledger.Inventories.GetAsync(Partition, inventory.InventoryId))!;
         var runs = await InventoryReport.RecentRunsAsync(ledger, state, CancellationToken.None);
 
         Assert.Equal((running, InventoryRunStatus.Running), (runs.Latest!.InventoryRunId, runs.Latest.Status));
         Assert.Equal(build, runs.LastBuild!.InventoryRunId);
         Assert.Same(runs.LastBuild, runs.LastReconcile);
-        Assert.Null(await ledger.GetInventoryRunAsync(Partition, running + 1000));
-        Assert.Null(await ledger.GetInventoryRunAsync("prod", build));
+        Assert.Null(await ledger.Inventories.GetRunAsync(Partition, running + 1000));
+        Assert.Null(await ledger.Inventories.GetRunAsync("prod", build));
     }
 
     private async Task<(OsduLedger Ledger, InventoryState Inventory)> InventoryAsync()
@@ -131,7 +131,7 @@ public sealed class InventoryReportTests : IDisposable
         {
             FlowId = _inventoryFlow, Partition = Partition, Kind = LedgerKinds.Inventory, FlowName = "report-inventory", LedgerName = "report-inventory@" + Partition,
         });
-        var inventory = await ledger.RegisterInventoryAsync(_inventoryFlow, "report-inventory", "WellLogs", Kind, null, "search", "latest");
+        var inventory = await ledger.Inventories.RegisterAsync(_inventoryFlow, "report-inventory", "WellLogs", Kind, null, "search", "latest");
         return (ledger, inventory);
     }
 }

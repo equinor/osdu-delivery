@@ -1735,7 +1735,7 @@ internal static partial class SqlServerDimensionStore
 
     /// <summary>
     /// Removes every row of dimension <paramref name="dimensionId"/> in partition <paramref name="partitionId"/> and then the
-    /// dimension (<see cref="ILedger.RemoveDimensionAsync"/>).
+    /// dimension (<see cref="DimensionStore.RemoveAsync"/>).
     /// </summary>
     /// <exception cref="DeliveryException">Another write of the dimension held its lock past the timeout.</exception>
     /// <remarks>

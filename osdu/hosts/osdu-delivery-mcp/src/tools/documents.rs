@@ -148,13 +148,12 @@ proposing a changed mapping, run delivery_check_mapping on it."
     }
 
     #[tool(
-        description = "Check a mapping document against the template it fills. Returns whether it loads, every issue \
-found (error or warning, with the variable it concerns), the variables it fills, and requiredAndEmpty: properties the \
-schema requires that nothing fills, which is what makes OSDU refuse a record. Run it on every mapping YAML you write \
-or edit, and fix every error, before showing or proposing it (it is to a mapping what validate_flow is to a flow). \
-Give repoId for a mapping of a synced repository: its template folders settle the template, as its runs do. \
-shape=true also returns the record's structure with placeholders for row and cache values. No row is read and \
-nothing is rendered."
+        description = "Check a mapping document against the template it fills: whether it loads, every issue (error \
+or warning, with its variable), the variables it fills, and requiredAndEmpty, the properties the schema requires \
+that nothing fills, which make OSDU refuse a record. Run it on every mapping YAML you write or edit and fix every \
+error before showing or proposing it (it is to a mapping what validate_flow is to a flow). Give repoId for a mapping \
+of a synced repository: its template folders settle the template, as its runs do. shape=true adds the record's \
+structure with placeholders for row and cache values. Reads no row, renders nothing."
     )]
     async fn delivery_check_mapping(&self, Parameters(i): Parameters<CheckMappingInput>) -> String {
         if i.yaml.trim().is_empty() {
@@ -223,11 +222,11 @@ nothing is rendered."
 
     #[tool(
         description = "Scaffold a mapping for a template file a synced repository holds (repoId and path from \
-delivery_templates). Returns mapping YAML holding the ACL and legal entries to fill and, when a partition is named, a \
-cache lookup for each single-valued reference its cached types can answer, with the issues still to resolve. This is \
-how a new mapping starts; do not write one from scratch. Then add the properties the template requires from the \
-source's columns, fill the ACL and legal lists, finish the lookups, run delivery_check_mapping with the repoId until \
-valid, and propose it with propose_pipelines into the mappings folder beside the template's folder. Writes nothing."
+delivery_templates): mapping YAML holding the ACL and legal entries to fill and, when a partition is named, a cache \
+lookup for each single-valued reference its cached types answer, with the issues left. This is how a new mapping \
+starts; do not write one from scratch. Then add the properties the template requires from the source's columns, fill \
+the ACL and legal lists, finish the lookups, run delivery_check_mapping with the repoId until valid, and propose it \
+with propose_pipelines into the mappings folder beside the template's folder. Writes nothing."
     )]
     async fn delivery_scaffold_mapping(&self, Parameters(i): Parameters<ScaffoldMappingInput>) -> String {
         let required = [
@@ -298,12 +297,12 @@ valid, and propose it with propose_pipelines into the mappings folder beside the
 
     #[tool(
         description = "Templates: the OSDU record schemas mappings fill, held as files in the synced repositories' \
-template folders. Without arguments, lists every file: repoId, repository, path, the kind and version it \
-holds or why none, and the parent kind a custom template is linked to ($parent reads it). With repoId and path, lays \
-that file's template out by variable (path, type, format, required, entity types an id refers to, \
-pattern, description), and its children, kinds linked to it ($child; delivery-guide-linked-records). \
+template folders. Without arguments: every file with repoId, repository, path, the kind and version it holds or why \
+none, and the parent kind a custom template links to ($parent). With repoId and path: that template by variable \
+(path, type, format, required, the entity types an id refers to, pattern, description) and its children ($child). \
 Use it for 'which properties does a Wellbore require' and whenever you write or review a mapping: a variable not in \
-the template cannot be filled. Narrow with search or requiredOnly. A kind no repository holds: delivery_osdu_schemas."
+the template cannot be filled. Narrow with search or requiredOnly. A kind no repository holds: \
+delivery_osdu_schemas."
     )]
     async fn delivery_templates(&self, Parameters(i): Parameters<TemplatesInput>) -> String {
         let repo = match optional_guid("repoId", i.repo_id.as_deref(), "A repository id is the `repoId` of a listed template file.") {

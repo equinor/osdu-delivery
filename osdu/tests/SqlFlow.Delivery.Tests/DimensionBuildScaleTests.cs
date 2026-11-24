@@ -719,7 +719,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{logs} logs, nothing changed: built in {watch.Elapsed.TotalSeconds:N1} s"));
         Assert.Equal(0, second.Failed);
         Assert.All(second.Dimensions, d => Assert.Equal(DimensionRunModes.Incremental, d.Load));
-        var detail = await ledger.GetDimensionViewAsync("ScaleWellLogCurve");
+        var detail = await ledger.Dimensions.GetViewAsync("ScaleWellLogCurve");
         Assert.NotNull(detail!.Checks[0].ReusedFrom);
 
         // An hour on, one log in six saved again with a new run, as a day of deliveries leaves them: the logs' dimensions read
@@ -749,7 +749,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{logs} logs, one in six changed: built in {watch.Elapsed.TotalSeconds:N1} s"));
         Assert.Equal(0, third.Failed);
         Assert.Equal((logs + 5) / 6, third.Dimensions.Single(d => d.Dimension == "LogCurve").ChangedRecords);
-        Assert.Null((await ledger.GetDimensionViewAsync("ScaleWellLogCurve"))!.Checks[0].ReusedFrom);
+        Assert.Null((await ledger.Dimensions.GetViewAsync("ScaleWellLogCurve"))!.Checks[0].ReusedFrom);
     }
 
     /// <summary>The variable naming how many curves each log of the curve dimension's measurement holds.</summary>

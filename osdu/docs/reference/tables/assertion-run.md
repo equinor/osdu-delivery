@@ -20,7 +20,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs
 ---
 
@@ -70,8 +70,8 @@ only once later results of the same tests superseded every one of its results, s
 ## Written and read by
 
 - **Written** by the assertion runner as a run opens and as its results close it (`AssertionRunner.cs`, through
-  `OsduLedger.Assertions.cs`), and counted and removed by the Maintenance page's cleanup of the assertion runs
-  (`CountPrunableAssertionRunsAsync`, `PruneAssertionRunsAsync`).
+  `AssertionStore.cs`), and counted and removed by the Maintenance page's cleanup of the assertion runs
+  (`CountPrunableRunsAsync`, `PruneRunsAsync`).
 - **Read** by the GUI's **Assertions** board and an assertion flow's **Reports** tab, `sqlflow assertions`, and the
   delivery API's `/flows/{pipelineId}/assertion-runs`, `/assertion-runs/{id}` and `/assertion-runs/{id}/report`.
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the

@@ -82,7 +82,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs
   - osdu/specs/core/search/openapi.yaml
   - osdu/specs/core/storage/openapi.yaml

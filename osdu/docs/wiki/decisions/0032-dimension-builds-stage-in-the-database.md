@@ -14,7 +14,7 @@ keywords:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionLabeler.cs

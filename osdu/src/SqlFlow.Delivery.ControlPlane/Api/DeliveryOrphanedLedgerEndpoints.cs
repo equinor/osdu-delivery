@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using SqlFlow.ControlPlane.Api;
+using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Ledger;
 
 namespace SqlFlow.Delivery.ControlPlane.Api;
@@ -141,15 +142,14 @@ public static class DeliveryOrphanedLedgerEndpoints
             return incomplete;
         }
 
-        var confirm = body?.Confirm?.Trim();
-        if (string.IsNullOrEmpty(confirm))
+        if (PartitionConfirmation.Typed(body?.Confirm) is not { } confirm)
         {
             return TypedResults.Problem(
                 detail: $"Name the partition the orphaned ledgers are kept in ('{named.Partition}') as 'confirm'; nothing is deleted without it.",
                 statusCode: StatusCodes.Status400BadRequest, title: "Confirmation required");
         }
 
-        if (!string.Equals(confirm, named.Partition, StringComparison.OrdinalIgnoreCase))
+        if (!PartitionConfirmation.Names(confirm, named.Partition))
         {
             return TypedResults.Problem(
                 detail: $"The confirmation names '{confirm}', but the orphaned ledgers of '{named.Flow}' to delete are kept in partition '{named.Partition}'. Nothing was deleted.",

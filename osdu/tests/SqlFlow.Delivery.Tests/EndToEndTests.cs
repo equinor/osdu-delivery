@@ -1223,7 +1223,7 @@ public class EndToEndTests : IDisposable
             Assert.Empty(copyProtocol.Deletes);
 
             // Released, the copy plans the records again and meets the same owner: held again, still nothing sent.
-            await copy.ReleaseAsync(null);
+            await copy.ReleaseAsync(RecordReach.Every);
             _clock.Advance(TimeSpan.FromMinutes(1));
             copy.Selection = SourceSelection.Full();
             var (again, _) = await RunAsync(copy, copyProtocol, ledger, force: true);

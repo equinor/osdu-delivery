@@ -36,7 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs
   - osdu/src/SqlFlow.Delivery/Ledger/RunTimeTables.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryDuplicates.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Duplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Removal.cs

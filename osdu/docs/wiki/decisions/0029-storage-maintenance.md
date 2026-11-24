@@ -25,7 +25,7 @@ sourceRefs:
   - sqlflow/gui/src/features/maintenance/CleanupSheet.tsx
   - osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs
   - osdu/tests/SqlFlow.Delivery.ControlPlane.Tests/OsduStorageAreasTests.cs

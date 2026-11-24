@@ -132,7 +132,7 @@ internal static class DeliveryTemplateRegister
             return Failed(context, $"'{partition}' is not a partition id.");
         }
 
-        if (confirm is not null && !string.Equals(confirm, partition, StringComparison.OrdinalIgnoreCase))
+        if (confirm is not null && !PartitionConfirmation.Names(confirm, partition))
         {
             return context.UsageError(
                 $"--confirm names '{confirm}', and the schemas would be written in partition {partition}: type the partition back exactly to write without asking.");

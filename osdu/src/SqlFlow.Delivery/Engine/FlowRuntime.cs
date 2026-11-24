@@ -1261,8 +1261,11 @@ public sealed partial class FlowRuntime : IDisposable
             return (summary, summary.ToString(), (Guid?)null, false);
         }, ct);
 
-    /// <summary>Releases held, failed, deleted or reverted records (all of them when <paramref name="keys"/> is null).</summary>
-    public Task<int> ReleaseAsync(IReadOnlyList<DeliveryKey>? keys, CancellationToken ct = default)
+    /// <summary>
+    /// The step of a release by key or of every blocked record (<see cref="ReleaseAsync(RecordReach, CancellationToken)"/>):
+    /// releases held, failed, deleted or reverted records, all of them when <paramref name="keys"/> is null.
+    /// </summary>
+    private Task<int> ReleaseNamedAsync(IReadOnlyList<DeliveryKey>? keys, CancellationToken ct)
         => TrackAsync("release", new { keys = keys?.Select(k => k.ToString()).ToList() }, keys is { Count: 1 } ? keys[0] : null, async activity =>
         {
             var selection = keys is null ? ReleaseSelection.EveryBlocked : ReleaseSelection.Named(keys);
@@ -1337,7 +1340,7 @@ public sealed partial class FlowRuntime : IDisposable
     /// and its pattern, and every record it releases is named under the activity, so each record's history shows the
     /// release. <paramref name="pattern"/> is what the operator was shown, recorded as they saw it.
     /// </summary>
-    public Task<int> ReleaseProblemAsync(long problem, string pattern, CancellationToken ct = default)
+    private Task<int> ReleaseProblemAsync(long problem, string pattern, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pattern);
         var named = ProblemSignature.Format(problem);
@@ -1396,12 +1399,13 @@ public sealed partial class FlowRuntime : IDisposable
     }
 
     /// <summary>
-    /// Asks the named records held because OSDU already holds a record at the id each one's key makes to adopt that record
+    /// The step of an adoption by key (<see cref="AdoptAsync(RecordReach, string?, CancellationToken)"/>): asks the named
+    /// records held because OSDU already holds a record at the id each one's key makes to adopt that record
     /// (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): the flow's next deliver run
     /// takes each over, at the version OSDU holds then, and writes its row there. A named record held for another reason, or
     /// claiming an id already, is left as it is. Returns the records asked.
     /// </summary>
-    public Task<IReadOnlyList<DeliveryKey>> AdoptAsync(IReadOnlyList<DeliveryKey> keys, CancellationToken ct = default)
+    private Task<IReadOnlyList<DeliveryKey>> AdoptNamedAsync(IReadOnlyList<DeliveryKey> keys, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(keys);
         return TrackAsync("adopt", Named(keys, null), keys is { Count: 1 } ? keys[0] : null, async activity =>
@@ -1421,7 +1425,7 @@ public sealed partial class FlowRuntime : IDisposable
     /// records as it keeps held. The activity names the issue and its pattern as the operator was shown it, and every record
     /// asked is named under it.
     /// </summary>
-    public Task<IReadOnlyList<DeliveryKey>> AdoptProblemAsync(long problem, string pattern, CancellationToken ct = default)
+    private Task<IReadOnlyList<DeliveryKey>> AdoptProblemAsync(long problem, string pattern, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pattern);
         var named = ProblemSignature.Format(problem);
@@ -1438,7 +1442,7 @@ public sealed partial class FlowRuntime : IDisposable
     /// the batch an operator runs after a run held them, so that the next run takes them all over and the ledger is in step
     /// with OSDU. The activity names every record asked.
     /// </summary>
-    public Task<IReadOnlyList<DeliveryKey>> AdoptEveryAsync(CancellationToken ct = default)
+    private Task<IReadOnlyList<DeliveryKey>> AdoptEveryAsync(CancellationToken ct)
         => TrackAsync("adopt", new { every = "held for an id OSDU holds" }, null, async activity =>
         {
             var asked = await RequireLedger().RequestAdoptionAsync(Flow.Id, ReleaseSelection.EveryBlocked, activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);

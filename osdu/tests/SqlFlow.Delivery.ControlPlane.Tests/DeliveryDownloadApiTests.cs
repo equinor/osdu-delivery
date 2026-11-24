@@ -85,14 +85,14 @@ public sealed class DeliveryDownloadApiTests
             });
 
             // A run of Wellbores lists four ids, writes three, and storage does not return the fourth; then a later run finds one gone.
-            var wellbores = await ledger.RegisterDownloadAsync(flow.LedgerId, flow.Name, "Wellbores", Wellbore, null, "search");
-            var first = await ledger.StartDownloadRunAsync(flow.LedgerId, wellbores.DownloadId, Guid.NewGuid(), "download api tests", "search", Folder, null, now.AddHours(-2));
-            await ledger.AppendDownloadScanAsync(flow.LedgerId, first, [Row(Id("WB-1"), 10), Row(Id("WB-2"), 10), Row(Id("WB-3"), 10), Row(Id("WB-4"), 10)]);
-            var merge = await ledger.MergeDownloadAsync(flow.LedgerId, wellbores.DownloadId, first, now.AddHours(-2));
+            var wellbores = await ledger.Downloads.RegisterAsync(flow.LedgerId, flow.Name, "Wellbores", Wellbore, null, "search");
+            var first = await ledger.Downloads.StartRunAsync(flow.LedgerId, wellbores.DownloadId, Guid.NewGuid(), "download api tests", "search", Folder, null, now.AddHours(-2));
+            await ledger.Downloads.AppendScanAsync(flow.LedgerId, first, [Row(Id("WB-1"), 10), Row(Id("WB-2"), 10), Row(Id("WB-3"), 10), Row(Id("WB-4"), 10)]);
+            var merge = await ledger.Downloads.MergeAsync(flow.LedgerId, wellbores.DownloadId, first, now.AddHours(-2));
             Assert.Equal(new DownloadMerge(4, 4, 0, 0, 0), merge);
-            var due = await ledger.DownloadsDueAsync(flow.LedgerId, wellbores.DownloadId, every: false, after: 0, max: 100);
+            var due = await ledger.Downloads.DueAsync(flow.LedgerId, wellbores.DownloadId, every: false, after: 0, max: 100);
             Assert.Equal(4, due.Count);
-            await ledger.RecordDownloadWritesAsync(
+            await ledger.Downloads.RecordWritesAsync(
                 flow.LedgerId, first,
                 [
                     DownloadWrite.Written(due[0].DownloadRecordId, 10, 120, new byte[32]),
@@ -101,7 +101,7 @@ public sealed class DeliveryDownloadApiTests
                     DownloadWrite.Missed(due[3].DownloadRecordId, "storage did not return it"),
                 ],
                 now.AddHours(-2));
-            await ledger.CompleteDownloadRunAsync(
+            await ledger.Downloads.CompleteRunAsync(
                 flow.LedgerId, first,
                 new DownloadRunState
                 {
@@ -109,16 +109,16 @@ public sealed class DeliveryDownloadApiTests
                 },
                 now.AddHours(-2).AddMinutes(1));
 
-            var second = await ledger.StartDownloadRunAsync(flow.LedgerId, wellbores.DownloadId, Guid.NewGuid(), "download api tests", "search", Folder, null, now.AddHours(-1));
-            await ledger.AppendDownloadScanAsync(flow.LedgerId, second, [Row(Id("WB-1"), 11), Row(Id("WB-2"), 10), Row(Id("WB-4"), 10)]);
-            Assert.Equal(new DownloadMerge(3, 0, 1, 1, 0), await ledger.MergeDownloadAsync(flow.LedgerId, wellbores.DownloadId, second, now.AddHours(-1)));
-            await ledger.CompleteDownloadRunAsync(
+            var second = await ledger.Downloads.StartRunAsync(flow.LedgerId, wellbores.DownloadId, Guid.NewGuid(), "download api tests", "search", Folder, null, now.AddHours(-1));
+            await ledger.Downloads.AppendScanAsync(flow.LedgerId, second, [Row(Id("WB-1"), 11), Row(Id("WB-2"), 10), Row(Id("WB-4"), 10)]);
+            Assert.Equal(new DownloadMerge(3, 0, 1, 1, 0), await ledger.Downloads.MergeAsync(flow.LedgerId, wellbores.DownloadId, second, now.AddHours(-1)));
+            await ledger.Downloads.CompleteRunAsync(
                 flow.LedgerId, second,
                 new DownloadRunState { Status = DownloadRunStatus.Completed, Location = Folder, Listed = 3, Changed = 1, Gone = 1 },
                 now.AddHours(-1).AddMinutes(1));
 
             // Retired is kept from a declaration the flow no longer makes.
-            await ledger.RegisterDownloadAsync(flow.LedgerId, flow.Name, "Retired", "osdu:wks:master-data--Field:*", null, "search");
+            await ledger.Downloads.RegisterAsync(flow.LedgerId, flow.Name, "Retired", "osdu:wks:master-data--Field:*", null, "search");
 
             await using var factory = Factory(cs);
             using var client = factory.CreateClient();

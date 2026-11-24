@@ -136,9 +136,16 @@ public sealed class DeliveryIssuesApiTests
 
             Assert.Equal(0L, (await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/issues")).GetProperty("totalRecords").GetInt64());
 
-            // Every blocked record of the flow released, with a deliver run queued to plan and send them all.
+            // A release that names no records releases nothing: every record has to be asked for by name, and keys and all
+            // are not asked together.
             await ledger.MarkHeldAsync(flowId, [tag]);
-            var everything = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/release", """{"run":true}""", HttpStatusCode.Accepted);
+            await StatusAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/release", HttpStatusCode.BadRequest, """{"run":true}""");
+            await StatusAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/release", HttpStatusCode.BadRequest,
+                $$"""{"keys":["{{tag.DeliveryKey.Value:D}}"],"all":true}""");
+            Assert.Equal(1L, (await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/issues")).GetProperty("totalRecords").GetInt64());
+
+            // Every blocked record of the flow released, with a deliver run queued to plan and send them all.
+            var everything = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/release", """{"all":true,"run":true}""", HttpStatusCode.Accepted);
             Assert.Equal(1, everything.GetProperty("released").GetInt32());
             var flowRun = everything.GetProperty("runId").GetGuid();
             await using (var db = CatalogDatabase.Create(cs))

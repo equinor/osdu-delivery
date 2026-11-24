@@ -41,7 +41,7 @@ public static class InventoryReport
             return new InventoryRecentRuns(null, null, null);
         }
 
-        var newest = await ledger.ListInventoryRunsAsync(inventory.Partition, inventory.InventoryId, 1, ct).ConfigureAwait(false);
+        var newest = await ledger.Inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, 1, ct).ConfigureAwait(false);
         var read = new Dictionary<long, InventoryRunState?>();
         if (newest.Count > 0)
         {
@@ -57,7 +57,7 @@ public static class InventoryReport
 
             if (!read.TryGetValue(id, out var run))
             {
-                run = await ledger.GetInventoryRunAsync(inventory.Partition, id, ct).ConfigureAwait(false);
+                run = await ledger.Inventories.GetRunAsync(inventory.Partition, id, ct).ConfigureAwait(false);
                 read[id] = run;
             }
 

@@ -34,7 +34,7 @@ public sealed record StagedMemberCount(long Seq, string Filter);
 /// the build's own (<see cref="SqlServerDimensionStage"/>). Rows are kept in memory a batch at a time and copied to the
 /// staging tables as each batch fills, so what a build holds is bounded however large its dimension is; a build that fills
 /// a batch while the one before it is still being copied waits for it. The build's write
-/// (<see cref="ILedger.WriteDimensionAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/>) merges the staging
+/// (<see cref="DimensionStore.WriteAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/>) merges the staging
 /// into the dimension in one transaction, and the build drops its staging when it ends (<see cref="DiscardAsync"/>). Safe to
 /// stage into from several threads at once.
 /// </summary>

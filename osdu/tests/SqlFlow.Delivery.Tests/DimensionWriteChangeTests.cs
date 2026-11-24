@@ -121,8 +121,8 @@ public sealed class DimensionWriteChangeTests : IDisposable
         Assert.Contains(unchanged, l => l.StartsWith("dimension LogCurve: writing its table: osdu.dim_LogCurve, the rows of the keys the write changed", StringComparison.Ordinal));
         Assert.Contains(unchanged, l => l.Contains("dimension LogCurve: writing its table took ", StringComparison.Ordinal) && l.EndsWith(": 0 row(s) added, rewritten or deleted", StringComparison.Ordinal));
         Assert.Equal(hashes, await HashesAsync());
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "LogCurve"))!;
-        var build = (await ledger.ListDimensionRunsAsync(dimension.DimensionId, 1))[0];
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "LogCurve"))!;
+        var build = (await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, 1))[0];
         Assert.StartsWith("Written in ", build.Read.Notes[^1], StringComparison.Ordinal);
         Assert.Contains("; merging ", build.Read.Notes[^1], StringComparison.Ordinal);
         Assert.Contains("; writing its table ", build.Read.Notes[^1], StringComparison.Ordinal);

@@ -116,13 +116,12 @@ running its flow with trigger_run."
     }
 
     #[tool(
-        description = "Write a whole dimension or cache flow file and check it; this is how a new one starts. flowType is dimension (the \
-default) or cache. Without yaml: the catalog's flows of that type, each with its envelope (the document without its \
-dimensions and views, or its types, as written), and the connections the estate's flows write their data through. \
-Copy the nearest flow's envelope, references and all. A dimension flow keeps its tables in the estate's data \
-database under target.connection, not the module's; a cached type goes with the cache flow that declares it \
-already, when one does. With yaml: loads, valid, issues, and the flow it replaces. Run it until valid before \
-showing the file. Writes nothing."
+        description = "Write a whole dimension or cache flow file and check it; this is how a new one starts. \
+flowType: dimension (default) or cache. Without yaml: the catalog's flows of that type, each with its envelope (the \
+document without its dimensions and views, or its types), and the connections the estate's flows write through. Copy \
+the nearest flow's envelope, references and all. A dimension flow keeps its tables in the estate's data database \
+under target.connection, not the module's; a cached type goes with the cache flow already declaring it. With yaml: \
+loads, valid, issues, and the flow it replaces. Run it until valid before showing the file. Writes nothing."
     )]
     async fn delivery_flow_file(&self, Parameters(i): Parameters<FlowFileInput>) -> String {
         let cache = match text(i.flow_type).as_deref() {

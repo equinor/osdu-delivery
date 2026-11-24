@@ -5,15 +5,6 @@ All notable changes to OSDU Delivery are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Changed
-- `reliability.maxRequestBodyBytes` bounds each block of a file going to an Azure location, rather than holding a file that can be split. It still
-  holds a file that has to go in one request ([large files](osdu/docs/reference/flow/large-files.md#a-request-body-ceiling)).
-
-### Fixed
-- A file collection's file on Azure is read once however many parts it goes in, where a file in Azure Storage was read from its start for
-  every part, and each part is sent again by itself when the store fails it ([large files](osdu/docs/reference/flow/large-files.md)).
-- An upload to an Azure account in a DNS zone (`*.blob.storage.azure.net`) carries the blob type Azure requires, as one to `*.blob.core.*` always did.
-
 ## [Unreleased]
 
 ### Added
@@ -800,6 +791,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- **`sqlflow records adopt --key` takes the partition typed back.** Every adoption from the command line now takes
+  `--confirm <partition>`, records named by `--key` as well as every record or an issue's, the rule the API's flow routes
+  already kept; a command without it, or with another partition, asks nothing. The refusals of a release or an adoption
+  are decided once, in the engine, for the API, the CLI and the MCP server alike
+  ([records adopt](osdu/docs/reference/cli/records.md#records-adopt)).
+- `reliability.maxRequestBodyBytes` bounds each block of a file going to an Azure location, rather than holding a file that can be split. It still
+  holds a file that has to go in one request ([large files](osdu/docs/reference/flow/large-files.md#a-request-body-ceiling)).
+- **Acting on every record of a flow has to be asked for by name.** A release, a redelivery, bringing records up to date
+  (and its preview) and deleting from the ledger take `all: true` for every record; a request that names no records
+  (no `keys`, no `filter`, no `all`), such as a missing body, is refused with 400 where it used to act on every record of
+  the flow, and one that names them more than one way is refused too. A release by keys takes at most 25,000, as a
+  redelivery does. `sqlflow records release` needs `--key`, `--issue` or `--all`, where leaving them out released every
+  blocked record. The GUI and the MCP server already said which records they meant and act as before
+  ([interventions](osdu/docs/reference/concepts/api.md#interventions), [records release](osdu/docs/reference/cli/records.md#records-release)).
 - `InsertedDate_DW` and `UpdatedDate_DW` are columns every dimension's table has, so a dimension flow naming an attribute,
   an element field, or its key's or value's column (`columns:`) after either is refused when it loads
   ([labels and attributes](osdu/docs/reference/flow/dimension-attributes.md)).
@@ -1364,6 +1369,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A file collection's file on Azure is read once however many parts it goes in, where a file in Azure Storage was read from its start for
+  every part, and each part is sent again by itself when the store fails it ([large files](osdu/docs/reference/flow/large-files.md)).
+- An upload to an Azure account in a DNS zone (`*.blob.storage.azure.net`) carries the blob type Azure requires, as one to `*.blob.core.*` always did.
 - **Saving an environment in a window that has not loaded the setting says what to do.** When the VS Code extension
   was installed or updated after the window opened, VS Code refused to save `sqlflow.environments` with "not a
   registered configuration". The side bar now says the window has not loaded the setting, and the notification

@@ -3,11 +3,24 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// The downloads of download flows (osdu/docs/reference/flow/download.md, What a run records): every record an OSDU kind holds
-// in a partition, kept under the download flow's ledger with the file it is written to and the version that file holds.
-public sealed partial class OsduLedger
+/// <summary>
+/// The downloads of download flows (osdu/docs/reference/flow/download.md, What a run records): every record an OSDU kind
+/// holds in a partition, kept under the download flow's ledger with the file it is written to and the version that file
+/// holds. A store beside the ledger (<see cref="LedgerStore"/>), since a download keeps tables of its own and writes no
+/// delivered record.
+/// </summary>
+public sealed class DownloadStore : LedgerStore
 {
-    public async Task<DownloadState> RegisterDownloadAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, CancellationToken ct = default)
+    internal DownloadStore(LedgerDatabase database, LedgerDirectory partitions)
+        : base(database, partitions)
+    {
+    }
+
+    /// <summary>
+    /// The download <paramref name="name"/> of the download flow whose ledger is <paramref name="flowId"/>, created on its first
+    /// run and kept in step with what the flow declares (osdu/docs/reference/flow/download.md, What a run records).
+    /// </summary>
+    public async Task<DownloadState> RegisterAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(flowName);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -42,7 +55,11 @@ public sealed partial class OsduLedger
         return await ToDownloadStateAsync(row, ct).ConfigureAwait(false);
     }
 
-    public async Task<long> StartDownloadRunAsync(
+    /// <summary>
+    /// Starts a run of a download: an earlier one its process left running is closed as failed, and what it staged is deleted,
+    /// since a run of a flow is the only one of it. <paramref name="rewrite"/> says why the run writes every record again, or null.
+    /// </summary>
+    public async Task<long> StartRunAsync(
         Guid flowId, int downloadId, Guid? runId, string actor, string readMode, string location, string? rewrite, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -80,7 +97,8 @@ public sealed partial class OsduLedger
         return run.DownloadRunId;
     }
 
-    public async Task AppendDownloadScanAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadScanRow> rows, CancellationToken ct = default)
+    /// <summary>Stages one chunk of a run's listing; nothing of the download changes until <see cref="MergeAsync"/>.</summary>
+    public async Task AppendScanAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadScanRow> rows, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
         if (rows.Count == 0)
@@ -93,14 +111,23 @@ public sealed partial class OsduLedger
         await RetryDeadlockAsync(() => SqlServerLedgerBulk.AppendDownloadScanAsync(db, partition, downloadRunId, rows, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<DownloadMerge> MergeDownloadAsync(Guid flowId, int downloadId, long downloadRunId, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Merges a run's whole listing into its download: ids added with the file name no other id of the download holds whatever its
+    /// case, ids whose version or kind changed, ids served again, and those it did not list marked gone.
+    /// </summary>
+    public async Task<DownloadMerge> MergeAsync(Guid flowId, int downloadId, long downloadRunId, DateTime nowUtc, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         await using var db = Open();
         return await RetryDeadlockAsync(() => SqlServerLedgerBulk.MergeDownloadAsync(db, partition, downloadId, downloadRunId, nowUtc, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<DownloadDue>> DownloadsDueAsync(Guid flowId, int downloadId, bool every, long after, int max, CancellationToken ct = default)
+    /// <summary>
+    /// The next records of a download a run writes, in row order after <paramref name="after"/>, at most <paramref name="max"/>:
+    /// every one OSDU serves whose file holds no version, or an older one than listed; with <paramref name="every"/>, every one
+    /// OSDU serves.
+    /// </summary>
+    public async Task<IReadOnlyList<DownloadDue>> DueAsync(Guid flowId, int downloadId, bool every, long after, int max, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -115,7 +142,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task RecordDownloadWritesAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadWrite> writes, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Records what came of writing each record: the version its file holds with its size and SHA-256, or why nothing was written.</summary>
+    public async Task RecordWritesAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadWrite> writes, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(writes);
         if (writes.Count == 0)
@@ -128,7 +156,11 @@ public sealed partial class OsduLedger
         await RetryDeadlockAsync(() => SqlServerLedgerBulk.RecordDownloadWritesAsync(db, partition, downloadRunId, writes, nowUtc, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteDownloadRunAsync(Guid flowId, long downloadRunId, DownloadRunState outcome, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Closes a run with what it did; a completed one becomes its download's last, and the folder it wrote the download's folder,
+    /// and a failed one's staged listing is discarded.
+    /// </summary>
+    public async Task CompleteRunAsync(Guid flowId, long downloadRunId, DownloadRunState outcome, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(outcome);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -165,7 +197,8 @@ public sealed partial class OsduLedger
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<DownloadState>> ListDownloadsAsync(Guid flowId, CancellationToken ct = default)
+    /// <summary>The downloads the ledger <paramref name="flowId"/> keeps, by name.</summary>
+    public async Task<IReadOnlyList<DownloadState>> ListAsync(Guid flowId, CancellationToken ct = default)
     {
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -187,7 +220,8 @@ public sealed partial class OsduLedger
         return states;
     }
 
-    public async Task<DownloadState?> GetDownloadAsync(string partition, int downloadId, CancellationToken ct = default)
+    /// <summary>One download by its partition and number, or null.</summary>
+    public async Task<DownloadState?> GetAsync(string partition, int downloadId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -199,7 +233,8 @@ public sealed partial class OsduLedger
         return row is null ? null : await ToDownloadStateAsync(row, ct).ConfigureAwait(false);
     }
 
-    public async Task<DownloadCounts> DownloadCountsAsync(string partition, int downloadId, CancellationToken ct = default)
+    /// <summary>How many records of a download stand where, read from its rows.</summary>
+    public async Task<DownloadCounts> CountsAsync(string partition, int downloadId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -226,7 +261,8 @@ public sealed partial class OsduLedger
             : new DownloadCounts(counts.All - counts.Gone - counts.Problem - counts.Due, counts.Due, counts.Problem, counts.Gone, counts.Bytes);
     }
 
-    public async Task<IReadOnlyList<DownloadRunState>> ListDownloadRunsAsync(string partition, int downloadId, int limit, CancellationToken ct = default)
+    /// <summary>A download's latest runs, the newest first.</summary>
+    public async Task<IReadOnlyList<DownloadRunState>> ListRunsAsync(string partition, int downloadId, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -245,7 +281,11 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<DownloadRecordState>> ListDownloadRecordsAsync(
+    /// <summary>
+    /// A page of a download's records in row order after <paramref name="after"/>: of one state or all, and those whose id or
+    /// file name holds <paramref name="search"/>, ignoring case, when it is given.
+    /// </summary>
+    public async Task<IReadOnlyList<DownloadRecordState>> ListRecordsAsync(
         string partition, int downloadId, string? state, string? search, long? after, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);

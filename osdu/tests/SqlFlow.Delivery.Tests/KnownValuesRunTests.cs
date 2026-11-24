@@ -220,7 +220,7 @@ public sealed class KnownValuesRunTests : IDisposable
         Estate();
         var (runner, ledger) = Runner();
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        return (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        return (await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
     }
 
     [Fact]

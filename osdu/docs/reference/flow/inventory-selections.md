@@ -21,7 +21,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Match.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/SearchRequestCounter.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Selection.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Selections.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs

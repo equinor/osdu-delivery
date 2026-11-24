@@ -23,94 +23,29 @@ namespace SqlFlow.Delivery.Engine;
 /// still carrying its outcome, with every other dimension built. A run the platform handed a fan-out spreads a large build
 /// over nodes (osdu/docs/reference/flow/dimension-build.md, Spread over nodes).
 /// </summary>
-public sealed class DimensionExecutor : IFlowDocumentExecutor
+public sealed class DimensionExecutor : KindExecutor<DimensionFlowDocument, DimensionFlowDefinition>
 {
-    private readonly IServiceProvider _provider;
-
     public DimensionExecutor(IServiceProvider provider)
+        : base(provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
-        _provider = provider;
     }
 
-    public bool CanExecute(RegisteredFlowDocument document) => document is DimensionFlowDocument;
+    protected override string FlowType => DimensionFlowDefinition.FlowTypeName;
 
-    public async Task<DocumentExecutionResult> ExecuteAsync(RegisteredFlowDocument document, string flowFile, DocumentExecutionOptions options, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(document);
-        ArgumentException.ThrowIfNullOrWhiteSpace(flowFile);
-        ArgumentNullException.ThrowIfNull(options);
-        if (document is not DimensionFlowDocument dimensions)
-        {
-            throw new SqlFlowException($"The dimension executor cannot run a '{document.Kind}' document.");
-        }
+    protected override DimensionFlowDefinition FlowOf(DimensionFlowDocument document, string sourcePath) => document.Flow with { SourcePath = sourcePath };
 
-        var flow = dimensions.Flow with { SourcePath = Path.GetFullPath(flowFile) };
-        var parameters = options.Parameters;
-        parameters.Validate();
-        var operation = DimensionFlowKind.Operation(parameters);
-        var runId = options.RunId ?? Guid.CreateVersion7();
-        var actor = string.IsNullOrWhiteSpace(options.Actor) ? "unknown" : options.Actor.Trim();
-        var (runLogger, events, _) = RunArtifacts.BuildEventPlumbing(options, flow.Name);
-        var loggers = new RunLogLoggerFactory(runLogger, events, runId, flow.Name);
-        var log = loggers.CreateLogger("run");
-        // The fan-out the platform handed the run, through which a large build is spread over nodes (osdu/docs/reference/flow/
-        // dimension-build.md, Spread over nodes); a run without one builds every dimension itself.
-        var context = _provider.GetRequiredService<EngineContext>()
-            .ForRun(loggers)
-            .WithFanOut(options.FanOut is { } fanOut ? new RunFanOutDispatcher(fanOut) : null);
+    protected override string FlowName(DimensionFlowDefinition flow) => flow.Name;
 
-        var stopwatch = Stopwatch.StartNew();
-        object result;
-        string? error = null;
-        var success = false;
-        log.LogInformation("dimension flow '{Flow}': {Operation} (parameters: {Parameters}) requested by {Actor}, run {RunId}", flow.Name, operation, parameters.Describe(), actor, runId);
-        try
-        {
-            // Before anything else: every OSDU request the run sends carries the run's correlation id.
-            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, flow.TelemetryOperation, runId, log);
-            result = await ExecuteOperationAsync(context, flow, operation, parameters, runId, actor, log, ct).ConfigureAwait(false);
-            success = true;
-            log.LogInformation("{Operation} completed in {Seconds:0.###}s", operation, stopwatch.Elapsed.TotalSeconds);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (DimensionBuildsFailedException failed)
-        {
-            // Every dimension was taken up and at least one failed: the run ends failed, and its outcome still says how each
-            // dimension came out.
-            error = failed.Message;
-            log.LogError("{Operation} failed: {Error}", operation, error);
-            result = failed.Outcome;
-        }
-        catch (Exception ex)
-        {
-            // The run boundary: every failure ends the run as a recorded one. An unexpected kind is a defect, so its stack
-            // goes to the run log as well.
-            error = RunFailure.Describe(ex);
-            log.LogError(RunFailure.IsExpected(ex) ? null : ex, "{Operation} failed: {Error}", operation, error);
-            result = new OperationFailure(operation, error);
-        }
+    protected override string TelemetryOperation(DimensionFlowDefinition flow) => flow.TelemetryOperation;
 
-        stopwatch.Stop();
-        var artifact = RunArtifacts.Artifact(DimensionFlowDefinition.FlowTypeName, flow.Name, runId, success, error, result, events.Records);
-        var directory = RunArtifacts.Write(flowFile, flow.Name, runId, artifact, runLogger.Render(), null, options.Echo);
-        return new DocumentExecutionResult
-        {
-            FlowName = flow.Name,
-            FlowKind = DimensionFlowDefinition.FlowTypeName,
-            Success = success,
-            Error = error,
-            RunId = runId,
-            RunDirectory = directory,
-            DurationSeconds = stopwatch.Elapsed.TotalSeconds,
-            Result = result,
-        };
-    }
+    protected override string OperationOf(RunParameters parameters) => DimensionFlowKind.Operation(parameters);
 
-    private static async Task<object> ExecuteOperationAsync(
+    // The fan-out the platform handed the run, through which a large build is spread over nodes (osdu/docs/reference/flow/
+    // dimension-build.md, Spread over nodes); a run without one builds every dimension itself.
+    protected override EngineContext ContextFor(EngineContext context, DocumentExecutionOptions options)
+        => context.WithFanOut(options.FanOut is { } fanOut ? new RunFanOutDispatcher(fanOut) : null);
+
+    protected override async Task<object> ExecuteOperationAsync(
         EngineContext context, DimensionFlowDefinition flow, string operation, RunParameters parameters, Guid runId, string actor, ILogger log, CancellationToken ct)
     {
         var payload = DeliveryRunPayload.Parse(parameters);

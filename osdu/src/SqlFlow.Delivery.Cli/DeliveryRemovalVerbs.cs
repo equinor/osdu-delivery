@@ -150,8 +150,7 @@ internal static class DeliveryRemovalVerbs
                 : throw new FlowValidationException($"--key '{value}' is not a delivery key; 'records removed' lists them."))
             .Distinct()
             .ToList();
-        using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
-        runtime.Actor = RunActors.LocalAccount();
+        using var runtime = CliInterventions.Runtime(engine, flow);
         var done = await runtime.LiftRemovalsAsync(keys, ct).ConfigureAwait(false);
         var lifted = keys.Where(done.Lifted.Contains).Select(k => k.ToString()).ToList();
         var not = keys.Where(k => !done.Lifted.Contains(k)).Select(k => k.ToString()).ToList();

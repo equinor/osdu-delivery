@@ -21,7 +21,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryDuplicates.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Duplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs
@@ -94,7 +94,7 @@ of the partition, or the control plane's hourly sweep, deletes those older with 
 - **Written** by the control plane when an operator asks for a check or a pick, names its run, groups the check again by
   another key (`KeyJson`, `KeyedBy`, `KeyedUtc` and the counts), or closes one whose run ended without finishing it
   (`DeliveryInventoryEndpoints.Duplicates.cs`); by the `duplicates` run as it downloads, groups and picks
-  (`InventoryRunner.Duplicates.cs`, through `OsduLedger.InventoryDuplicates.cs` and `SqlServerLedgerBulk.InventoryDuplicates.cs`),
+  (`InventoryRunner.Duplicates.cs`, through `InventoryStore.Duplicates.cs` and `SqlServerLedgerBulk.InventoryDuplicates.cs`),
   which also clears `TableName` of the inventory's earlier checks when a download completes; by an operator's choice of the
   copy a group keeps, which moves its counts; by the making of a selection of its picks (`SelectionId`); and by the sweep,
   when a check is asked for and every hour in the control plane (`InventoryDuplicateSweepService.cs`).

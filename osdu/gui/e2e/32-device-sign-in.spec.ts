@@ -91,6 +91,7 @@ test.describe("a client's browser sign-in", () => {
   test("a code the control plane does not hold says so", async ({ adminPage }) => {
     await adminPage.goto("/device?code=NOPE-NOPE");
     await adminPage.getByRole("button", { name: "Approve" }).click();
-    await expect(adminPage.getByTestId("api-error")).toContainText("Unknown or expired code", { timeout: FIRST_PAGE_MS });
+    await expect(adminPage.getByTestId("device-error")).toContainText("Unknown or expired code", { timeout: FIRST_PAGE_MS });
+    await expect(adminPage.getByRole("textbox", { name: "Code" })).toHaveAttribute("aria-invalid", "true");
   });
 });

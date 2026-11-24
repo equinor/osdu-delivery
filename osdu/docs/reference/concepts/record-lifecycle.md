@@ -350,7 +350,11 @@ failed with nothing to move them), both from one index that holds the parked rec
 ```bash
 sqlflow records release flows/welldb-wellbore-03-delivery.yaml --partition dev --key 6f1c2a9e-4b7d-4c1e-9a3f-2d8e5b7c1a40
 sqlflow records release flows/welldb-wellbore-03-delivery.yaml --partition dev --issue 3fa1c09b5d2e7a44
+sqlflow records release flows/welldb-wellbore-03-delivery.yaml --partition dev --all
 ```
+
+A release of every blocked record is asked for by name, `--all` on the command line and `all: true` to the API (the MCP
+server's `allHeld: true`); a release that names no records is refused and releases nothing.
 
 **A record held for an assertion of its mapping** (`onFail: hold`, [mapping assertions](../flow/mapping-assertions.md))
 is held by the check before sending with its document kept, under an error that starts `assertion:` and names the
@@ -431,12 +435,12 @@ interfaces.
 | Every such record of the source, of every interface | **Adopt (N)** on the flow's Delivery tab | `POST /flows/{pipelineId}/adopt` naming no record and no interface | |
 | Every such record of one interface | | the same route with `interface` | `sqlflow records adopt <flow.yaml> --confirm <partition>` |
 | The records one issue keeps held | **Adopt N** on the flow's Issues tab | `POST /flows/{pipelineId}/issues/{issue}/adopt` ([Adopting an issue](#issues)) | `--issue <id> --confirm <partition>` |
-| The records ticked, or every record a filter matches | **Adopt** in the Records tab's selection bar | `POST /flows/{pipelineId}/adopt` with `keys`, or `filter` with `expected` | `--key <delivery key>...` |
-| One record | **Adopt** on a held record's page | `POST /records/{flowId}/{key}/adopt` | `--key <delivery key>` |
+| The records ticked, or every record a filter matches | **Adopt** in the Records tab's selection bar | `POST /flows/{pipelineId}/adopt` with `keys`, or `filter` with `expected` | `--key <delivery key>... --confirm <partition>` |
+| One record | **Adopt** on a held record's page | `POST /records/{flowId}/{key}/adopt` | `--key <delivery key> --confirm <partition>` |
 
 Every adoption through a flow's routes, and so every batch in the GUI, takes the partition the ledgers are kept in typed
 back (`confirm`, case ignored): without it, or with another partition, nothing is asked (400). The CLI asks for it
-(`--confirm`) for every record or an issue's. Each can queue a deliver run straight after (`run`): of the whole source
+(`--confirm`) for every adoption the same way. Only a record's own page asks one record it shows without it. Each can queue a deliver run straight after (`run`): of the whole source
 when every interface was asked, of the interface otherwise, and of the record for one record.
 
 ```bash

@@ -513,7 +513,7 @@ public class YamlDocumentLoaderTests
     }
 
     [Fact]
-    public void Mapping_parse_reads_sources_and_refuses_what_is_malformed()
+    public void Mapping_parse_reads_sources_and_refuses_a_document_that_is_not_a_mapping()
     {
         var loader = new DeliveryDocumentLoader();
         var mapping = loader.ParseMapping(TestSchema.MappingYaml, "m.yaml");
@@ -527,55 +527,60 @@ public class YamlDocumentLoaderTests
         Assert.Equal(new DatasetColumn("curves", "curve_id"), mapping.Entries.Single(e => e.Target.Text == "osdu.data.Curves[].CurveID").Source!.Column);
 
         string Refused(string data) => Assert.Throws<FlowValidationException>(() => loader.ParseMapping(TestSchema.MappingDocument(data), "m.yaml")).Message;
-        Assert.Contains("a $cache node needs $findBy", Refused("Unit: { $cache: UnitOfMeasure.id }"), StringComparison.Ordinal);
-        Assert.Contains("reads its value with $from and $value", Refused("Symbol: { $from: a, $value: b }"), StringComparison.Ordinal);
-        Assert.Contains("record.data.Symbol reads no value", Refused("Symbol: { $required: false }"), StringComparison.Ordinal);
-        Assert.Contains("'column a' is not a column", Refused("Symbol: { $from: column a }"), StringComparison.Ordinal);
-        Assert.Contains("a column of the dataset's own row is $dataset.a", Refused("Symbol: { $from: dataset.a }"), StringComparison.Ordinal);
         // A key is one property name, whatever it holds; the template refuses one it does not take (DottedPropertyNameTests).
         Assert.Contains("osdu.data['Curves[].CurveID']", loader.ParseMapping(TestSchema.MappingDocument("\"Curves[].CurveID\": { $from: a }"), "m.yaml").Entries.Select(e => e.Target.Text));
         Assert.Contains("duplicate key", Refused("Name: { $from: other }"), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("lays out $item, the items of an array whose rows a $forEach node repeats", Refused("Curves: { $item: { CurveID: { $from: curve_id } } }"), StringComparison.Ordinal);
-        Assert.Contains("'curves.curve_id' is not a column", Refused("Symbol: { $from: curves.curve_id }"), StringComparison.Ordinal);
-        Assert.Contains("under the $forEach over curves a bare name reads its row, so write curve_id", Refused("Curves: { $forEach: curves, $item: { CurveID: { $from: curves.curve_id } } }"), StringComparison.Ordinal);
-        Assert.Contains("is not a modifier", Refused("Symbol: { $from: a, $modifiers: [shout] }"), StringComparison.Ordinal);
-        Assert.Contains("the date format 'MM.yyyy' has no day of the month", Refused("When: { $from: a, $modifiers: [{ date: MM.yyyy }] }"), StringComparison.Ordinal);
-        Assert.Contains("reads a two-digit year", Refused("When: { $from: a, $modifiers: [{ date: dd.MM.yy }] }"), StringComparison.Ordinal);
-        Assert.Contains("has no year", Refused("When: { $from: a, $modifiers: [{ date: dd.MM }] }"), StringComparison.Ordinal);
-        Assert.Contains("is one letter", Refused("When: { $from: a, $modifiers: [{ date: d }] }"), StringComparison.Ordinal);
-        Assert.Contains("never closed", Refused("When: { $from: a, $modifiers: [{ date: \"dd.MM.yyyy 'at\" }] }"), StringComparison.Ordinal);
-        Assert.Contains("date takes the input format as text", Refused("When: { $from: a, $modifiers: [{ date: [dd.MM.yyyy] }] }"), StringComparison.Ordinal);
-        Assert.Contains("number takes '.' or ',' as its decimal separator, not ';'", Refused("Weight: { $from: a, $modifiers: [{ number: { decimal: \";\" } }] }"), StringComparison.Ordinal);
-        Assert.Contains("cannot use ',' both between digit groups and before the decimals", Refused("Weight: { $from: a, $modifiers: [{ number: { decimal: \",\", group: \",\" } }] }"), StringComparison.Ordinal);
-        Assert.Contains("cannot use '.' both between digit groups", Refused("Weight: { $from: a, $modifiers: [{ number: { group: \".\" } }] }"), StringComparison.Ordinal);
-        Assert.Contains("as its group separator, not '-'", Refused("Weight: { $from: a, $modifiers: [{ number: { group: \"-\" } }] }"), StringComparison.Ordinal);
-        Assert.Contains("number takes 'decimal' and 'group', not 'thousands'", Refused("Weight: { $from: a, $modifiers: [{ number: { thousands: \",\" } }] }"), StringComparison.Ordinal);
-        Assert.Contains("number takes its separators", Refused("Weight: { $from: a, $modifiers: [{ number: \",\" }] }"), StringComparison.Ordinal);
-        Assert.Contains("is NaN or Infinity, which a JSON record cannot carry", Refused("Weight: .inf"), StringComparison.Ordinal);
-        Assert.Contains("is NaN or Infinity, which a JSON record cannot carry", Refused("Aliases: [a, .nan]"), StringComparison.Ordinal);
-        Assert.Contains("is NaN or Infinity, which a JSON record cannot carry", Refused("Nested: { $value: { Inner: -.inf } }"), StringComparison.Ordinal);
-        Assert.Contains("split needs the part", Refused("Symbol: { $from: a, $modifiers: [{ split: { separator: x } }] }"), StringComparison.Ordinal);
-        Assert.Contains("$when 'a equals b': 'equals' at character 3 is not expected after a complete expression", Refused("Symbol: { $from: a, $when: a equals b }"), StringComparison.Ordinal);
-        Assert.Contains("$when 'a is b' is a condition as the mapping language no longer writes it; a condition is an expression now: $when: a = \"b\"", Refused("Symbol: { $from: a, $when: a is b }"), StringComparison.Ordinal);
-        Assert.Contains("$when 'upper(a)' gives a value, and $when is a condition", Refused("Symbol: { $from: a, $when: upper(a) }"), StringComparison.Ordinal);
-        Assert.Contains("$when '1 = 1' reads no column", Refused("Symbol: { $from: a, $when: 1 = 1 }"), StringComparison.Ordinal);
-        Assert.Contains("$expr 'upper(\"x\")' reads no column, so every record gets the same value", Refused("Symbol: { $expr: upper(\"x\") }"), StringComparison.Ordinal);
-        Assert.Contains("reads $param.missing in 'a & $param.missing', but the mapping declares no parameter 'missing'", Refused("Symbol: { $expr: a & $param.missing }"), StringComparison.Ordinal);
-        Assert.Contains("this node computes its value with $expr", Refused("Symbol: { $expr: trim(a), $findBy: Code = a }"), StringComparison.Ordinal);
-        Assert.Contains("a $forEach node takes $forEach, '$item', '$where', '$when'", Refused("Curves: { $forEach: curves, $findBy: x, $item: { CurveID: { $from: curve_id } } }"), StringComparison.Ordinal);
-        Assert.Contains("$where 'curve_id' gives a value, and $where is a condition", Refused("Curves: { $forEach: curves, $where: curve_id, $item: { CurveID: { $from: curve_id } } }"), StringComparison.Ordinal);
-        Assert.Contains("names 'cache.Wellbore.Code'", Refused("Unit: { $cache: UnitOfMeasure.id, $findBy: cache.Wellbore.Code = a }"), StringComparison.Ordinal);
-        Assert.Contains("uses {$param.missing}", Refused("Symbol: \"{$param.missing}\""), StringComparison.Ordinal);
-        Assert.Contains("a literal $value takes only $when and $description beside it", Refused("Symbol: { $value: b, $required: false }"), StringComparison.Ordinal);
-        Assert.Contains(
-            "a repeated array inside a repeated item is not supported",
-            Refused("Curves: { $forEach: curves, $item: { Points: { $forEach: points, $item: { X: { $from: a } } } } }"),
-            StringComparison.Ordinal);
 
         Assert.Contains("template.version", Assert.Throws<FlowValidationException>(() => loader.ParseMapping(TestSchema.MappingYaml.Replace(TestSchema.Build().Version, "latest", StringComparison.Ordinal), "m")).Message, StringComparison.Ordinal);
         Assert.Throws<FlowValidationException>(() => loader.ParseMapping(TestSchema.MappingYaml.Replace("dataPartition: { required: true }", "other: { required: true }", StringComparison.Ordinal), "m"));
         var wrongKind = Assert.Throws<FlowValidationException>(() => loader.ParseMapping(TestSchema.MappingYaml.Replace("documentType: mapping", "flowType: delivery", StringComparison.Ordinal), "m"));
         Assert.Contains("expected 'documentType: mapping'", wrongKind.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A malformed node is refused when the mapping is read, the refusal saying what is wrong with it.</summary>
+    [Theory]
+    [InlineData("Unit: { $cache: UnitOfMeasure.id }", "a $cache node needs $findBy")]
+    [InlineData("Symbol: { $from: a, $value: b }", "reads its value with $from and $value")]
+    [InlineData("Symbol: { $required: false }", "record.data.Symbol reads no value")]
+    [InlineData("Symbol: { $from: column a }", "'column a' is not a column")]
+    [InlineData("Symbol: { $from: dataset.a }", "a column of the dataset's own row is $dataset.a")]
+    [InlineData("Curves: { $item: { CurveID: { $from: curve_id } } }", "lays out $item, the items of an array whose rows a $forEach node repeats")]
+    [InlineData("Symbol: { $from: curves.curve_id }", "'curves.curve_id' is not a column")]
+    [InlineData("Curves: { $forEach: curves, $item: { CurveID: { $from: curves.curve_id } } }", "under the $forEach over curves a bare name reads its row, so write curve_id")]
+    [InlineData("Symbol: { $from: a, $modifiers: [shout] }", "is not a modifier")]
+    [InlineData("When: { $from: a, $modifiers: [{ date: MM.yyyy }] }", "the date format 'MM.yyyy' has no day of the month")]
+    [InlineData("When: { $from: a, $modifiers: [{ date: dd.MM.yy }] }", "reads a two-digit year")]
+    [InlineData("When: { $from: a, $modifiers: [{ date: dd.MM }] }", "has no year")]
+    [InlineData("When: { $from: a, $modifiers: [{ date: d }] }", "is one letter")]
+    [InlineData("When: { $from: a, $modifiers: [{ date: \"dd.MM.yyyy 'at\" }] }", "never closed")]
+    [InlineData("When: { $from: a, $modifiers: [{ date: [dd.MM.yyyy] }] }", "date takes the input format as text")]
+    [InlineData("Weight: { $from: a, $modifiers: [{ number: { decimal: \";\" } }] }", "number takes '.' or ',' as its decimal separator, not ';'")]
+    [InlineData("Weight: { $from: a, $modifiers: [{ number: { decimal: \",\", group: \",\" } }] }", "cannot use ',' both between digit groups and before the decimals")]
+    [InlineData("Weight: { $from: a, $modifiers: [{ number: { group: \".\" } }] }", "cannot use '.' both between digit groups")]
+    [InlineData("Weight: { $from: a, $modifiers: [{ number: { group: \"-\" } }] }", "as its group separator, not '-'")]
+    [InlineData("Weight: { $from: a, $modifiers: [{ number: { thousands: \",\" } }] }", "number takes 'decimal' and 'group', not 'thousands'")]
+    [InlineData("Weight: { $from: a, $modifiers: [{ number: \",\" }] }", "number takes its separators")]
+    [InlineData("Weight: .inf", "is NaN or Infinity, which a JSON record cannot carry")]
+    [InlineData("Aliases: [a, .nan]", "is NaN or Infinity, which a JSON record cannot carry")]
+    [InlineData("Nested: { $value: { Inner: -.inf } }", "is NaN or Infinity, which a JSON record cannot carry")]
+    [InlineData("Symbol: { $from: a, $modifiers: [{ split: { separator: x } }] }", "split needs the part")]
+    [InlineData("Symbol: { $from: a, $when: a equals b }", "$when 'a equals b': 'equals' at character 3 is not expected after a complete expression")]
+    [InlineData("Symbol: { $from: a, $when: a is b }", "$when 'a is b' is a condition as the mapping language no longer writes it; a condition is an expression now: $when: a = \"b\"")]
+    [InlineData("Symbol: { $from: a, $when: upper(a) }", "$when 'upper(a)' gives a value, and $when is a condition")]
+    [InlineData("Symbol: { $from: a, $when: 1 = 1 }", "$when '1 = 1' reads no column")]
+    [InlineData("Symbol: { $expr: upper(\"x\") }", "$expr 'upper(\"x\")' reads no column, so every record gets the same value")]
+    [InlineData("Symbol: { $expr: a & $param.missing }", "reads $param.missing in 'a & $param.missing', but the mapping declares no parameter 'missing'")]
+    [InlineData("Symbol: { $expr: trim(a), $findBy: Code = a }", "this node computes its value with $expr")]
+    [InlineData("Curves: { $forEach: curves, $findBy: x, $item: { CurveID: { $from: curve_id } } }", "a $forEach node takes $forEach, '$item', '$where', '$when'")]
+    [InlineData("Curves: { $forEach: curves, $where: curve_id, $item: { CurveID: { $from: curve_id } } }", "$where 'curve_id' gives a value, and $where is a condition")]
+    [InlineData("Unit: { $cache: UnitOfMeasure.id, $findBy: cache.Wellbore.Code = a }", "names 'cache.Wellbore.Code'")]
+    [InlineData("Symbol: \"{$param.missing}\"", "uses {$param.missing}")]
+    [InlineData("Symbol: { $value: b, $required: false }", "a literal $value takes only $when and $description beside it")]
+    [InlineData("Curves: { $forEach: curves, $item: { Points: { $forEach: points, $item: { X: { $from: a } } } } }", "a repeated array inside a repeated item is not supported")]
+    public void A_malformed_mapping_node_is_refused_saying_what_is_wrong(string data, string message)
+    {
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseMapping(TestSchema.MappingDocument(data), "m.yaml"));
+        Assert.Contains(message, refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]

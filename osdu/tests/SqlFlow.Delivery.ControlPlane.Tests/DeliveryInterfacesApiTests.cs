@@ -325,6 +325,15 @@ public sealed class DeliveryInterfacesApiTests
             // Once removed from OSDU, the preview counts it, and deleting it from the ledger alone answers what it did.
             await ledger.MarkRemovedAsync(logsLedger, [key], SqlFlow.Delivery.Protocols.RemovalScope.Record, "user:alice", now);
             Assert.Equal(1, (await PreviewAsync(client, token, pipelineId, key.Value)).GetProperty("removed").GetInt32());
+
+            // A request that names no records deletes nothing: every record the ledger marks deleted is asked for with all.
+            using (var unnamed = await SendJsonAsync(
+                client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/records/purge?interface=welllogs", new { }))
+            {
+                Assert.True(unnamed.StatusCode == HttpStatusCode.BadRequest, await unnamed.Content.ReadAsStringAsync());
+            }
+
+            Assert.Equal(1, (await PreviewAsync(client, token, pipelineId, key.Value)).GetProperty("removed").GetInt32());
             using (var deleted = await SendJsonAsync(
                 client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/records/purge?interface=welllogs", new { keys = new[] { key.Value } }))
             {

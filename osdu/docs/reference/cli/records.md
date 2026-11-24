@@ -82,7 +82,7 @@ sqlflow records export    <flow.yaml> --out <file.xlsx> [--search <term>] [--con
                           [--access-restricted] [--restricted] [--incomplete] [--missing <group>]
 sqlflow records show      <flow.yaml> --key <delivery key | source key> [--attempts <n>]
 sqlflow records issues    <flow.yaml> [--issue <id>] [--max <n>]
-sqlflow records release   <flow.yaml> [--key <delivery key>]... | [--issue <id>]
+sqlflow records release   <flow.yaml> (--key <delivery key>... | --issue <id> | --all)
 sqlflow records adopt     <flow.yaml> [--key <delivery key>... | --issue <id>] [--confirm <partition>]
 sqlflow records reverse   <flow.yaml> (--run <id> | --submission <id>) [--preview]
 sqlflow records reversals <flow.yaml> [--run <id> | --submission <id>] [--outcome <outcome>] [--max <n>]
@@ -274,18 +274,22 @@ blocked record under fails with `<flow> has no record blocked by issue <id>; 're
 
 Releases blocked records (held, failed, reverted, or removed by a reversal) once their cause is fixed, and held or failed
 records nothing moves (not blocked, not asked to be planned again, no document to send, which an earlier version could
-leave): every one of the interface, the ones `--key` names (repeat it; delivery keys only), or every one `--issue` keeps
-blocked. A record that still holds a rendered document goes back to pending and is sent as it is; the others are planned
-again from their rows by the flow's next run, which holds a record again if its row still calls for it, sends what renders
-differently, and delivers again with nothing sent a record whose row renders what OSDU already holds.
+leave): the ones `--key` names (repeat it; delivery keys only), every one `--issue` keeps blocked, or with `--all` every
+one of the interface. One of the three is always given: a release that names none is refused and releases nothing, as the
+API and the MCP server refuse one. A record that still holds a rendered document goes back to pending and is sent as it
+is; the others are planned again from their rows by the flow's next run, which holds a record again if its row still calls
+for it, sends what renders differently, and delivers again with nothing sent a record whose row renders what OSDU already
+holds.
 The release is recorded on the audit trail as `cli:<user>@<machine>`'s, with every record it released named under it.
 
 ```text
 welldb-wellbore-03-delivery: <n> record(s) released of the <n> named. The ones that still hold a rendered document are queued now; the rest are planned again by the next run.
 ```
 
-`--key` and `--issue` together are refused (`release the records --key names or the ones --issue keeps blocked, not
-both.`). A key that is not a UUID fails with `--key '<value>' is not a delivery key; 'records list' prints them.`
+With none of them it stops with `name the records to release: --key for each one, --issue for the ones an issue keeps
+blocked, or --all for every blocked record.`, and with more than one with `release the records --key names, the ones
+--issue keeps blocked, or every one with --all: one of them.` A key that is not a UUID fails with `--key '<value>' is not
+a delivery key; 'records list' prints them.`
 
 `--json`: `flow`, `flowId`, `issue` (when `--issue` named one) and `released`.
 
@@ -294,8 +298,8 @@ both.`). A key that is not a UUID fails with `--key '<value>' is not a delivery 
 Asks held records to adopt the record OSDU already holds at the OSDU id each one's key makes, written by another system or
 another instance of the delivery whose ledger this database does not hold ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)):
 every record of the interface held so, every one `--issue` keeps held, or the ones `--key` names (repeat it; delivery keys
-only). Every record or an issue's takes the partition the ledger is kept in typed back as `--confirm`. Nothing is claimed
-yet: the flow's next run takes each record over, at the version OSDU holds then, and writes its row there. A record held
+only). Every adoption takes the partition the ledger is kept in typed back as `--confirm` (case ignored), as the API's flow
+routes do. Nothing is claimed yet: the flow's next run takes each record over, at the version OSDU holds then, and writes its row there. A record held
 for anything else, claiming an id, held by a delivery or asked already is left as it is. The adoption is recorded on the
 audit trail as `cli:<user>@<machine>`'s, with every record it asked named under it.
 
@@ -304,8 +308,9 @@ welldb-namespaces-03-delivery: <n> record(s) held for an id OSDU holds asked to 
 ```
 
 `--key` and `--issue` together are refused (`adopt the records --key names or the ones --issue keeps held, not both; name
-neither to adopt every record held for an id OSDU holds.`), and every record or an issue's without the partition typed back
-is refused (`... type the partition back with --confirm dev.`).
+neither to adopt every record held for an id OSDU holds.`). An adoption without the partition typed back is refused (`...
+Type the partition back with --confirm dev.`), and one with another partition too (`The adoption confirms partition 'prod',
+and the records of <flow> are kept in 'dev'. Nothing was adopted.`); nothing is asked of any record either way.
 
 `--json`: `flow`, `flowId`, `issue` (when `--issue` named one) and `asked`, the delivery keys asked.
 

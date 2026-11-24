@@ -49,8 +49,7 @@ public static class DeliveryLedgerEndpoints
         CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, IRunDispatcher dispatcher, ClaimsPrincipal user,
         CancellationToken ct)
     {
-        var confirm = request?.Confirm?.Trim();
-        if (string.IsNullOrEmpty(confirm))
+        if (PartitionConfirmation.Typed(request?.Confirm) is not { } confirm)
         {
             return TypedResults.Problem(
                 detail: "Name the partition the ledger is kept in as 'confirm'; nothing is removed or deleted without it.",
@@ -79,7 +78,7 @@ public static class DeliveryLedgerEndpoints
                 statusCode: StatusCodes.Status409Conflict, title: "Nothing to delete");
         }
 
-        if (!string.Equals(confirm, kept, StringComparison.OrdinalIgnoreCase))
+        if (!PartitionConfirmation.Names(confirm, kept))
         {
             return TypedResults.Problem(
                 detail: $"The confirmation names '{confirm}', but the ledger of '{source.Pipeline.Name}' is kept in partition '{kept}'. Nothing was queued.",

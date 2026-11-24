@@ -16,7 +16,7 @@ related:
   - delivery-table-download-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs
 ---
 
@@ -62,5 +62,5 @@ history of what each run wrote to the folder ([What a run does](../flow/download
 
 ## Written and read by
 
-- **Written** by a run of the flow, when it starts on a download and when it ends (`OsduLedger.Download.cs`).
+- **Written** by a run of the flow, when it starts on a download and when it ends (`DownloadStore.cs`).
 - **Read** by the flow's Downloads tab and the API (`/api/v1/delivery/downloads/{partition}/{downloadId}/runs`).

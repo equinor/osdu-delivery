@@ -238,7 +238,7 @@ public sealed class DimensionViewRunTests : IDisposable
         // The check counts what each join found and each conversion could not read, with examples, in the run's notes.
         Assert.Contains("CurveUnitID: 1 of 4 rows name no row of TestUnit, for example 'dev:reference-data--UnitOfMeasure:xx'.", view.Notes);
         Assert.Contains("TopDepth: 1 value(s) did not convert, for example '12,5'", string.Join(" ", view.Notes), StringComparison.Ordinal);
-        var detail = (await ledger.GetDimensionViewAsync("testcurveview"))!;
+        var detail = (await ledger.Dimensions.GetViewAsync("testcurveview"))!;
         Assert.True(detail.View.Written);
         Assert.Equal("wells-dimensions", detail.View.FlowName);
         Assert.Equal(["dim_TestCurve", "dim_TestLog", "dim_TestUnit"], detail.View.Tables);
@@ -258,31 +258,31 @@ public sealed class DimensionViewRunTests : IDisposable
         Logs();
         var (runner, ledger, _) = Runner(Flow(CurveView));
         var first = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var read = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0];
+        var read = (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0];
         Assert.Null(read.ReusedFrom);
 
         // The same records built again: every table the view reads holds what it held, so its check is kept, findings and all.
         var again = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal((DimensionViewWriteStatus.Unchanged, DimensionViewCheckStatus.Passed, (long?)4L), (again.Views[0].Status, again.Views[0].Check, again.Views[0].Rows));
         Assert.Equal(first.Views[0].Notes, again.Views[0].Notes);
-        var kept = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks;
+        var kept = (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks;
         Assert.Equal((read.CheckId, read.Rows), (kept[0].ReusedFrom, kept[0].Rows));
         Assert.Equal(read.Joins.Select(j => (j.Alias, j.Matched, j.Unmatched)), kept[0].Joins.Select(j => (j.Alias, j.Matched, j.Unmatched)));
 
         // Built a third time, the check names the one that read the view, not the one that kept it.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal(read.CheckId, (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+        Assert.Equal(read.CheckId, (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
 
         // A unit's code changed: its table's rows change, so the view is read again and finds the new code.
         _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:reference-data--UnitOfMeasure:gAPI")["data"]!["Code"] = "API";
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Null((await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+        Assert.Null((await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
         Assert.Equal(["API", "m"], await SqlAsync("SELECT DISTINCT [Unit] FROM [osdu].[v_dim_TestCurveView] WHERE [Unit] IS NOT NULL ORDER BY [Unit];"));
 
         // A view written anew reads its rows, though its tables hold what they did.
         var (renaming, renamedLedger, _) = Runner(Flow(CurveView.Replace("Log.LogName", "Log.LogTitle", StringComparison.Ordinal), logValue: "LogTitle"));
         await renaming.BuildAsync(["TestLog"], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Null((await renamedLedger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+        Assert.Null((await renamedLedger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
     }
 
     [Fact]
@@ -296,7 +296,7 @@ public sealed class DimensionViewRunTests : IDisposable
 
         var (runner, ledger, _) = Runner(Flow(CurveView).Replace("dimensions:\n", "incremental:\n  keyColumns: [id]\ndimensions:\n", StringComparison.Ordinal));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var read = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0];
+        var read = (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0];
         var rows = await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];");
 
         // A unit saved again as it was: the next build reads its key again and finds what its table holds.
@@ -308,7 +308,7 @@ public sealed class DimensionViewRunTests : IDisposable
         var units = again.Dimensions.Single(d => d.Dimension == "TestUnit");
         Assert.Equal((DimensionRunModes.Incremental, (long?)1L), (units.Load, units.TouchedKeys));
         Assert.Equal(rows, await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];"));
-        Assert.Equal(read.CheckId, (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+        Assert.Equal(read.CheckId, (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
 
         // The unit's code changed in the next window: its row alone is rewritten, and the view is read again.
         unit["data"]!["Code"] = "API";
@@ -318,7 +318,7 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal(
             rows.Select(r => r.EndsWith("|gAPI", StringComparison.Ordinal) ? r[..^4] + "API" : r),
             await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];"));
-        Assert.Null((await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+        Assert.Null((await ledger.Dimensions.GetViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
     }
 
     [Fact]
@@ -341,7 +341,7 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal((DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed), (renamed.Views[0].Status, renamed.Views[0].Check));
         Assert.NotEqual(first, await SqlAsync("SELECT OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
         Assert.Equal(["LOG-1", "LOG-1", "LOG-2", "LOG-3"], await SqlAsync("SELECT [Log] FROM [osdu].[v_dim_TestCurveView] ORDER BY [Log];"));
-        Assert.Null((await ledger.GetDimensionViewAsync("TestCurveView"))!.View.Note);
+        Assert.Null((await ledger.Dimensions.GetViewAsync("TestCurveView"))!.View.Note);
     }
 
     [Fact]
@@ -352,7 +352,7 @@ public sealed class DimensionViewRunTests : IDisposable
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         // A dimension a view reads is not removed: the view would read a table that is gone.
-        var unit = (await ledger.FindDimensionAsync(flow.LedgerId, "TestUnit"))!;
+        var unit = (await ledger.Dimensions.FindAsync(flow.LedgerId, "TestUnit"))!;
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, unit, "user:admin", _clock, CancellationToken.None));
         Assert.Contains("is read by view TestCurveView, so it is not removed", refused.Message, StringComparison.Ordinal);
 
@@ -360,7 +360,7 @@ public sealed class DimensionViewRunTests : IDisposable
         var outcome = await without.BuildAsync(["TestUnit"], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(["TestCurveView"], outcome.ViewsDropped);
         Assert.Equal(["(null)"], await SqlAsync("SELECT OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
-        Assert.Empty(await ledger.ListDimensionViewsAsync(null));
+        Assert.Empty(await ledger.Dimensions.ListViewsAsync(null));
         Assert.Empty(await SqlAsync("SELECT [CheckId] FROM [osdu].[DimensionViewCheck];"));
     }
 
@@ -457,7 +457,7 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal((DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed), (outcome.Views[0].Status, outcome.Views[0].Check));
         Assert.Equal(["(null)"], await SqlAsync("SELECT OBJECT_ID(N'[osdu].[dimv_TestCurveView]');"));
         Assert.Equal(4, (await SqlAsync("SELECT [Log] FROM [osdu].[v_dim_TestCurveView];")).Count);
-        Assert.Equal("v_dim_TestCurveView", (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.ViewName);
+        Assert.Equal("v_dim_TestCurveView", (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.View.ViewName);
     }
 
     [Fact]
@@ -474,7 +474,7 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal(["LOG-1", "LOG-1", "LOG-2"], await SqlAsync("SELECT [Log] FROM [osdu].[v_dim_TestCurveView] ORDER BY [Log];"));
         var written = Assert.Single(outcome.Views);
         Assert.Equal((DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed, (long?)3L), (written.Status, written.Check, written.Rows));
-        Assert.Equal("element IS NOT NULL", (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.Where);
+        Assert.Equal("element IS NOT NULL", (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.View.Where);
 
         // A table made when a field kept 256 characters is widened by the next build, and a field keeps a thousand
         // characters whole, in the ledger, the table and the view.
@@ -514,12 +514,12 @@ public sealed class DimensionViewRunTests : IDisposable
 
         // The module's database keeps the dimensions, and neither their tables nor the view; the ledger says where those are.
         Assert.Equal(["(null)|(null)"], await SqlAsync("SELECT OBJECT_ID(N'[osdu].[dim_TestCurve]'), OBJECT_ID(N'[osdu].[v_dim_TestCurveView]');"));
-        var curve = (await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"))!;
+        var curve = (await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"))!;
         Assert.Equal(elsewhere, curve.TableTarget);
-        var page = (await ledger.ReadDimensionTableAsync(curve.DimensionId, new DimensionTableQuery()))!;
+        var page = (await ledger.Dimensions.ReadTableAsync(curve.DimensionId, new DimensionTableQuery()))!;
         Assert.Equal($"{OtherDatabase}.{OtherSchema}.dim_TestCurve", page.Table);
         Assert.Equal(4, page.Rows.Count);
-        Assert.Equal(elsewhere, (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.TableTarget);
+        Assert.Equal(elsewhere, (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.View.TableTarget);
 
         // A build that finds nothing changed writes nothing there again.
         var (same, _, _) = Runner(Flow(CurveView, target: $"target:\n  database: {OtherDatabase}\n  schema: {OtherSchema}"));
@@ -534,8 +534,8 @@ public sealed class DimensionViewRunTests : IDisposable
         Assert.Equal(((long?)4L, "osdu"), (Assert.Single(again.Views).Rows, again.Views[0].Kept));
         Assert.Equal(["4"], await SqlAsync("SELECT COUNT(*) FROM [osdu].[v_dim_TestCurveView];"));
         Assert.Empty(await OtherSqlAsync($"SELECT o.[name] FROM sys.objects AS o WHERE o.[schema_id] = SCHEMA_ID(N'{OtherSchema}') AND o.[type] IN ('U', 'V');"));
-        Assert.Equal(DimensionTableTarget.Catalog, (await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"))!.TableTarget);
-        Assert.Equal(DimensionTableTarget.Catalog, (await ledger.GetDimensionViewAsync("TestCurveView"))!.View.TableTarget);
+        Assert.Equal(DimensionTableTarget.Catalog, (await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"))!.TableTarget);
+        Assert.Equal(DimensionTableTarget.Catalog, (await ledger.Dimensions.GetViewAsync("TestCurveView"))!.View.TableTarget);
     }
 
     [Fact]
@@ -549,7 +549,7 @@ public sealed class DimensionViewRunTests : IDisposable
 
         Assert.Contains("Flow 'wells-dimensions': the dimension table database could not be opened after 4 attempts (SQL error 4060)", refused.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(_db.ConnectionString, refused.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"));
+        Assert.Null(await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"));
     }
 
     [Fact]
@@ -561,7 +561,7 @@ public sealed class DimensionViewRunTests : IDisposable
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
         Assert.Contains("target.connection ${env:OSDU_VIEW_TESTS_NO_SUCH_DB} could not be resolved on this host", refused.Message, StringComparison.Ordinal);
-        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"));
+        Assert.Null(await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"));
 
         // The plan says so too, and gives the statement a build would write.
         var plan = await runner.PlanAsync([], CancellationToken.None);
@@ -580,7 +580,7 @@ public sealed class DimensionViewRunTests : IDisposable
 
         Assert.Contains("reaches the module's own database, with schema odtarget; in the module's database a dimension's table is kept in schema osdu only", refused.Message, StringComparison.Ordinal);
         Assert.Contains($"${{env:{TargetVariable}}}", refused.Message, StringComparison.Ordinal);
-        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"));
+        Assert.Null(await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"));
     }
 
     [Fact]

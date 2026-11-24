@@ -117,7 +117,7 @@ internal static class DeliveryDimensionVerbs
                 $"{flow.Name} declares dimension {declared.Name}, so it is not removed. Take it out of the flow's file first: only a dimension the flow no longer declares is removed.");
         }
 
-        var held = await ledger.ListDimensionsAsync(null, flow.LedgerId, ct).ConfigureAwait(false);
+        var held = await ledger.Dimensions.ListAsync(null, flow.LedgerId, ct).ConfigureAwait(false);
         var dimension = held.FirstOrDefault(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase))
             ?? throw new FlowValidationException(
                 $"{flow.LedgerName} holds no dimension named '{name}'{(held.Count == 0 ? string.Empty : $"; it holds {string.Join(", ", held.Select(d => d.Name).Order(StringComparer.Ordinal))}")}.");
@@ -152,13 +152,13 @@ internal static class DeliveryDimensionVerbs
     /// </summary>
     private static async Task<int> ViewsAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, CancellationToken ct)
     {
-        var recorded = await ledger.ListDimensionViewsAsync(flow.Name, ct).ConfigureAwait(false);
+        var recorded = await ledger.Dimensions.ListViewsAsync(flow.Name, ct).ConfigureAwait(false);
         if (context.Arguments.GetOption("--view") is { } asked && !string.IsNullOrWhiteSpace(asked))
         {
             var name = asked.Trim();
             var declared = flow.Views.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
             var detail = recorded.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase))
-                ? await ledger.GetDimensionViewAsync(name, ct).ConfigureAwait(false)
+                ? await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false)
                 : null;
             if (declared is null && detail is null)
             {
@@ -179,7 +179,7 @@ internal static class DeliveryDimensionVerbs
         var checks = new Dictionary<string, DimensionViewCheckState>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows.Where(r => r.State is not null))
         {
-            if ((await ledger.GetDimensionViewAsync(row.Name, ct).ConfigureAwait(false))?.Checks is { Count: > 0 } held)
+            if ((await ledger.Dimensions.GetViewAsync(row.Name, ct).ConfigureAwait(false))?.Checks is { Count: > 0 } held)
             {
                 checks[row.Name] = held[0];
             }
@@ -386,7 +386,7 @@ internal static class DeliveryDimensionVerbs
                 $"{flow.Name} declares view {declared.Name}, so it is not removed: its next build would write it again. Take it out of the flow's file and build the flow, which drops it.");
         }
 
-        var detail = await ledger.GetDimensionViewAsync(name, ct).ConfigureAwait(false);
+        var detail = await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false);
         if (detail is null || !string.Equals(detail.View.FlowName, flow.Name, StringComparison.OrdinalIgnoreCase))
         {
             throw new FlowValidationException(
@@ -416,10 +416,10 @@ internal static class DeliveryDimensionVerbs
     /// <summary>Each dimension the flow declares in its partition, with what it holds and its newest build.</summary>
     private static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, CancellationToken ct)
     {
-        var held = (await ledger.ListDimensionsAsync(null, flow.LedgerId, ct).ConfigureAwait(false))
+        var held = (await ledger.Dimensions.ListAsync(null, flow.LedgerId, ct).ConfigureAwait(false))
             .GroupBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var latest = (await ledger.LatestDimensionRunsAsync(held.Values.Select(d => d.DimensionId).ToList(), ct).ConfigureAwait(false))
+        var latest = (await ledger.Dimensions.LatestRunsAsync(held.Values.Select(d => d.DimensionId).ToList(), ct).ConfigureAwait(false))
             .ToDictionary(r => r.DimensionId);
         if (context.Json)
         {
@@ -621,11 +621,11 @@ internal static class DeliveryDimensionVerbs
         };
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
         var matches = AttributeMatches(context, dimension);
-        var members = await ledger.ListDimensionMembersAsync(
+        var members = await ledger.Dimensions.ListMembersAsync(
             dimension.DimensionId,
             new DimensionMemberQuery(context.Arguments.GetOption("--search"), context.Arguments.HasFlag("--removed"), null, max, order, matches),
             ct).ConfigureAwait(false);
-        var top = (await ledger.TopMemberOriginalsAsync(dimension.DimensionId, members.Select(m => m.MemberId).ToList(), ShownKeys, ct).ConfigureAwait(false))
+        var top = (await ledger.Dimensions.TopMemberOriginalsAsync(dimension.DimensionId, members.Select(m => m.MemberId).ToList(), ShownKeys, ct).ConfigureAwait(false))
             .GroupBy(v => v.MemberId ?? 0)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.Count).ThenBy(v => v.ValueId).Select(v => v.Original).ToList());
         if (context.Json)
@@ -693,7 +693,7 @@ internal static class DeliveryDimensionVerbs
         }
 
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var keys = await ledger.ListDimensionValuesAsync(
+        var keys = await ledger.Dimensions.ListValuesAsync(
             dimension.DimensionId,
             new DimensionValueQuery(
                 context.Arguments.GetOption("--search"), memberId, leftOut, context.Arguments.HasFlag("--removed"), null, max, order, AttributeMatches(context, dimension)),
@@ -852,7 +852,7 @@ internal static class DeliveryDimensionVerbs
         {
             var spec = flow.Dimension(name)
                 ?? throw new FlowValidationException($"{flow.Name} declares no dimension named '{name}'; it declares {string.Join(", ", flow.Dimensions.Select(d => d.Name))}.");
-            var dimension = await ledger.FindDimensionAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
+            var dimension = await ledger.Dimensions.FindAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
                 ?? throw new FlowValidationException(
                     $"Dimension {spec.Name} has not been built in {flow.LedgerName} yet. Build it with: sqlflow run <flow.yaml> --payload '{{\"dimensions\":[\"{spec.Name}\"]}}'");
             picks.Add(new DimensionPick(dimension, [], values.Distinct(StringComparer.Ordinal).ToList(), byAttribute.GetValueOrDefault(name)));
@@ -912,7 +912,7 @@ internal static class DeliveryDimensionVerbs
     private static async Task<int> HistoryAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
     {
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var runs = await ledger.ListDimensionRunsAsync(dimension.DimensionId, max, ct).ConfigureAwait(false);
+        var runs = await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, max, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -967,7 +967,7 @@ internal static class DeliveryDimensionVerbs
         }
 
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var changes = await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(build, null, memberId, change, null, max), ct).ConfigureAwait(false);
+        var changes = await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(build, null, memberId, change, null, max), ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -1091,7 +1091,7 @@ internal static class DeliveryDimensionVerbs
         var matches = AttributeMatches(context, dimension);
         var named = context.Arguments.GetOptions("--value");
         var memberIds = named.Count == 0 ? null : (await ValuesNamedAsync(ledger, dimension, named, ct).ConfigureAwait(false)).Select(m => m.MemberId).ToList();
-        var values = await ledger.ListDimensionAttributeValuesAsync(
+        var values = await ledger.Dimensions.ListAttributeValuesAsync(
             dimension.DimensionId, new DimensionAttributeValueQuery(attribute.Name, context.Arguments.GetOption("--search"), max, matches, memberIds), ct).ConfigureAwait(false);
         if (context.Json)
         {
@@ -1165,7 +1165,7 @@ internal static class DeliveryDimensionVerbs
 
         var spec = flow.Dimension(name)
             ?? throw new FlowValidationException($"{flow.Name} declares no dimension named '{name}'; it declares {string.Join(", ", flow.Dimensions.Select(d => d.Name))}.");
-        return await ledger.FindDimensionAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
+        return await ledger.Dimensions.FindAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
             ?? throw new FlowValidationException(
                 $"Dimension {spec.Name} has not been built in {flow.LedgerName} yet. Build it with: sqlflow run <flow.yaml> --payload '{{\"dimensions\":[\"{spec.Name}\"]}}'");
     }
@@ -1173,7 +1173,7 @@ internal static class DeliveryDimensionVerbs
     /// <summary>The values named, each one the dimension holds, in the order named.</summary>
     private static async Task<IReadOnlyList<DimensionMemberState>> ValuesNamedAsync(ILedger ledger, DimensionState dimension, IReadOnlyList<string> values, CancellationToken ct)
     {
-        var found = await ledger.GetDimensionMembersAsync(dimension.DimensionId, [], values, ct).ConfigureAwait(false);
+        var found = await ledger.Dimensions.GetMembersAsync(dimension.DimensionId, [], values, ct).ConfigureAwait(false);
         return values.Select(v => found.FirstOrDefault(m => string.Equals(m.Value, v, StringComparison.Ordinal))
                 ?? throw new FlowValidationException($"Dimension {dimension.Name} has no value '{v}'. Values are named exactly as the dimension holds them."))
             .ToList();
@@ -1225,9 +1225,9 @@ internal static class DeliveryDimensionVerbs
             return fallback;
         }
 
-        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count is > 0 and <= OsduLedger.MaxDimensionPage
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count is > 0 and <= DimensionStore.MaxPage
             ? count
-            : throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture, $"{option} '{value}' is not a count between 1 and {OsduLedger.MaxDimensionPage}."));
+            : throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture, $"{option} '{value}' is not a count between 1 and {DimensionStore.MaxPage}."));
     }
 
     /// <summary>A value as a line shows it: quoted, so an empty value or one with spaces at its ends reads as it is.</summary>

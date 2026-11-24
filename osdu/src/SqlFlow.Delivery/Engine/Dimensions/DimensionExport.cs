@@ -164,10 +164,10 @@ public static class DimensionExport
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.ListDimensionMembersAsync(dimensionId, new DimensionMemberQuery(null, false, after, OsduLedger.MaxDimensionPage), ct).ConfigureAwait(false);
+            var page = await ledger.Dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(null, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
             var held = attributes.Count == 0
                 ? new Dictionary<long, IReadOnlyList<DimensionMemberAttributeValue>>()
-                : (await ledger.MemberAttributesAsync(dimensionId, page.Select(m => m.MemberId).ToList(), MaxAttributeValues, ct).ConfigureAwait(false))
+                : (await ledger.Dimensions.MemberAttributesAsync(dimensionId, page.Select(m => m.MemberId).ToList(), MaxAttributeValues, ct).ConfigureAwait(false))
                     .ToDictionary(m => m.MemberId, m => m.Attributes);
             foreach (var member in page)
             {
@@ -209,7 +209,7 @@ public static class DimensionExport
                 rows++;
             }
 
-            if (page.Count < OsduLedger.MaxDimensionPage)
+            if (page.Count < DimensionStore.MaxPage)
             {
                 return rows;
             }
@@ -233,8 +233,8 @@ public static class DimensionExport
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.ListDimensionValuesAsync(
-                dimensionId, new DimensionValueQuery(null, null, false, false, after, OsduLedger.MaxDimensionPage), ct).ConfigureAwait(false);
+            var page = await ledger.Dimensions.ListValuesAsync(
+                dimensionId, new DimensionValueQuery(null, null, false, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
             foreach (var value in page)
             {
                 var line = format == DimensionExportFormat.Csv
@@ -284,7 +284,7 @@ public static class DimensionExport
                 rows++;
             }
 
-            if (page.Count < OsduLedger.MaxDimensionPage)
+            if (page.Count < DimensionStore.MaxPage)
             {
                 return rows;
             }

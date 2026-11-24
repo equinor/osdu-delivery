@@ -33,6 +33,9 @@ import { outcomeWord } from "./validationModel";
 import { NoteMark } from "./RecordArtifacts";
 import { DeliveryReasonView } from "./DeliveryReasonView";
 import { deliveredTitle, NOT_RECORDED, recordedReason, unchangedTitle } from "./deliveryReason";
+import {
+  actorInitial, actorName, fileSize, ingestionTableName, isArrival, parametersOf, reachOf, reachedTarget, redeliveryOf, refusalOf, runDuration, scopeOf, setAside, statusText, urlPath, type Refusal,
+} from "./recordStory";
 
 type Tone = "success" | "destructive" | "warning" | "info" | "muted";
 
@@ -229,27 +232,6 @@ function between(from: string | null, to: string | null): string | null {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-/** How long a run took, for a run's line. */
-function runDuration(seconds: number | null): string | null {
-  if (seconds === null || !Number.isFinite(seconds)) {
-    return null;
-  }
-
-  return seconds < 1 ? `${Math.round(seconds * 1000)} ms` : seconds < 90 ? `${seconds.toFixed(1)} s` : `${(seconds / 60).toFixed(1)} min`;
-}
-
-function fileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /** JSON the ledger stored as text, pretty-printed when it parses and shown as it is when it does not. */
 function storedJson(text: string): string {
   try {
@@ -259,21 +241,6 @@ function storedJson(text: string): string {
   }
 }
 
-/** The ingestion table as an operator names it: its schema and table, without brackets or the database. */
-function ingestionTableName(sourceTable: string | null): string {
-  if (sourceTable === null) {
-    return "the ingestion table";
-  }
-
-  const parts = sourceTable.split(".").map((part) => part.trim().replace(/^\[/, "").replace(/\]$/, "")).filter((part) => part !== "");
-  return parts.length === 0 ? sourceTable : parts.slice(-2).join(".");
-}
-
-/** Whether a change is the row's arrival as far as the ledger knows it: its insert, a reinsert, or its earliest version. */
-function isArrival(change: DeliverySourceChange): boolean {
-  return change.kind === "loaded" || change.kind === "reloaded" || change.kind === "earliest";
-}
-
 /** The local day a moment fell on, as the timeline names days: "Fri 25 Sep". */
 function dayOf(at: string): string {
   return format(parseUtc(at), "EEE d MMM");
@@ -281,17 +248,6 @@ function dayOf(at: string): string {
 
 function clockOf(at: string): string {
   return format(parseUtc(at), "HH:mm");
-}
-
-/** Who asked, as the ledger names them without the prefix of a signed-in user. */
-function actorName(actor: string): string {
-  return actor.startsWith("user:") ? actor.slice("user:".length) : actor;
-}
-
-/** The letter a person's node carries: the first of their name, past a schedule's or a workstation's prefix. */
-function actorInitial(actor: string): string {
-  const name = actorName(actor).replace(/^(cli|schedule):/, "");
-  return name === "" || name === "unknown" ? "?" : name.charAt(0).toUpperCase();
 }
 
 const CHANGE_SHAPES: Record<DeliverySourceChangeKind, {
@@ -497,64 +453,6 @@ function pickedUpEntry(record: DeliveryRecord): Entry {
   };
 }
 
-/** What OSDU answered a refused request with, read from the error the worker stored. */
-interface Refusal {
-  status: number;
-  reason: string;
-  method: string | null;
-  url: string | null;
-  answer: string | null;
-}
-
-function refusalOf(error: string | null): Refusal | null {
-  if (error === null) {
-    return null;
-  }
-
-  const head = /HTTP (\d{3}) ([A-Za-z]+) from (GET|POST|PUT|PATCH|DELETE|HEAD) (\S+)/.exec(error);
-  if (head === null) {
-    const bare = /^HTTP (\d{3})\b/.exec(error);
-    return bare === null ? null : { status: Number(bare[1]), reason: "", method: null, url: null, answer: null };
-  }
-
-  const answer = /\):\s*(.+)$/s.exec(error)?.[1]?.trim();
-  return {
-    status: Number(head[1]),
-    reason: head[2].replace(/([a-z])([A-Z])/g, "$1 $2"),
-    method: head[3],
-    url: head[4],
-    answer: answer === undefined || answer === "" ? null : answer,
-  };
-}
-
-function urlPath(url: string): string {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Whether a try reached OSDU: a delivery, a removal, a purge, a try that failed, one that took a step, or one OSDU
- * refused. What the intake decided (a hold of a row it could not build, a change that rendered what was delivered, an
- * older version) and the final hash check that found nothing to send are the ledger's decisions. A refused request
- * completes no step, so a refusal is known by the answer the worker stored with its hold.
- */
-function reachedTarget(attempt: DeliveryAttempt): boolean {
-  return attempt.outcome === "delivered"
-    || attempt.outcome === "failed"
-    || attempt.outcome === "deleted"
-    || attempt.outcome === "historypurged"
-    || attempt.outcome === "restored"
-    || attempt.outcome === "undone"
-    || attempt.outcome === "restricted"
-    // A lift asks OSDU only when it holds the record: the ACL it wrote back is named, or none when nothing was asked.
-    || (attempt.outcome === "unrestricted" && attempt.result?.restriction?.acl != null)
-    || (attempt.result?.steps?.length ?? 0) > 0
-    || (attempt.outcome === "held" && attempt.worker !== "intake" && attempt.phase !== "undo-wait" && refusalOf(attempt.error) !== null);
-}
-
 const PHASE_TEXT: Record<string, string> = {
   metadata: "record only",
   payload: "payload only",
@@ -619,23 +517,6 @@ function AclFact({ acl }: { acl: DeliveryAttemptAcl }) {
       ))}
     </span>
   );
-}
-
-function statusText(refusal: Refusal): string {
-  return `HTTP ${refusal.status}${refusal.reason !== "" ? ` ${refusal.reason}` : ""}`;
-}
-
-/** How a try set aside for an unreadable queued document said so before the ledger gave that its own phase. */
-const SET_ASIDE_BEFORE = "the rendered document queued for the record could not be read";
-
-/**
- * Whether a held try was the worker setting the record aside because the document queued for it was not there to read
- * (phase `document-missing`; before it had a phase, its error said so): the record dropped what it had queued and asks to
- * be planned again, unblocked.
- */
-function setAside(attempt: DeliveryAttempt): boolean {
-  return attempt.outcome === "held"
-    && (attempt.phase === "document-missing" || (attempt.phase === "none" && attempt.error?.startsWith(SET_ASIDE_BEFORE) === true));
 }
 
 function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached: boolean): {
@@ -999,138 +880,6 @@ function foldRepeats(entries: Entry[]): Entry[] {
   }
 
   return folded;
-}
-
-/** The activity's parameters, as the ledger stored them; null when they are absent or not an object. */
-function parametersOf(activity: DeliveryActivity): Record<string, unknown> | null {
-  if (activity.parametersJson === null) {
-    return null;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(activity.parametersJson);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-/** How many records a request named: the keys it listed, or this record alone when the ledger tied it to one. */
-function scopeOf(activity: DeliveryActivity, parameters: Record<string, unknown> | null): number | null {
-  const keys = parameters?.keys;
-  if (Array.isArray(keys) && keys.length > 0) {
-    return keys.length;
-  }
-
-  // An intervention on many records names how many rather than each one; the ledger names every record it reached.
-  const count = parameters?.count;
-  if (typeof count === "number" && Number.isFinite(count) && count > 0) {
-    return count;
-  }
-
-  return activity.deliveryKey !== null ? 1 : null;
-}
-
-/**
- * A release that named no record and reached this one among others: a release of every blocked record, or of every record
- * one issue kept blocked. The ledger names each record such a release changed, which is how it is on this record's
- * timeline at all; its summary says how many it released once it is done, and an issue's release names the issue's
- * pattern.
- */
-interface Reach {
-  title: string;
-  count: number | null;
-  pattern: string | null;
-}
-
-function reachOf(activity: DeliveryActivity, parameters: Record<string, unknown> | null): Reach | null {
-  const keys = parameters?.keys;
-  if ((activity.kind !== "release" && activity.kind !== "adopt" && activity.kind !== "redeliver" && activity.kind !== "rerender")
-    || activity.deliveryKey !== null || (Array.isArray(keys) && keys.length > 0) || typeof parameters?.count === "number") {
-    return null;
-  }
-
-  // "released 1,204 record(s) ...", "asked 1204 record(s) ... to adopt ...", or "marked every delivered record, 1204 in all, for
-  // redelivery of ...". An adoption made before adoption was asked of a run said "adopted 1204 record(s) ...".
-  const reached = /^(?:released|adopted|asked) (\d+) record|, (\d+) in all,/.exec(activity.summary ?? "");
-  const said = reached?.[1] ?? reached?.[2];
-  const count = said === undefined ? null : Number(said);
-  if (activity.kind === "rerender") {
-    return {
-      title: count === null
-        ? "Bringing up to date asked for every delivered record, this one among them"
-        : `Bringing up to date asked for every delivered record, ${count.toLocaleString()} in all, this one among them`,
-      count,
-      pattern: null,
-    };
-  }
-
-  if (activity.kind === "redeliver") {
-    return {
-      title: count === null
-        ? "Redelivery asked for every delivered record, this one among them"
-        : `Redelivery asked for every delivered record, ${count.toLocaleString()} in all, this one among them`,
-      count,
-      pattern: null,
-    };
-  }
-
-  const records = count === null ? "the records" : `${count.toLocaleString()} record${count === 1 ? "" : "s"}`;
-  // An adoption that names no record is asked of every record held because OSDU holds a record at the id its key makes,
-  // or of the records one issue kept held for that.
-  if (activity.kind === "adopt") {
-    if (parameters?.every !== undefined) {
-      return {
-        title: count === null
-          ? "Adoption asked for every record held for an id OSDU holds, this one among them"
-          : `Adoption asked for every record held for an id OSDU holds, ${records} in all, this one among them`,
-        count,
-        pattern: null,
-      };
-    }
-
-    return {
-      title: `Adoption asked for ${records} one issue kept held, this one among them`,
-      count,
-      pattern: typeof parameters?.pattern === "string" ? parameters.pattern : null,
-    };
-  }
-
-  // A release of one issue's records names the issue (under "problem" in what the first releases wrote).
-  if (typeof (parameters?.issue ?? parameters?.problem) === "string") {
-    return {
-      title: `Release asked for ${records} one issue kept blocked, this one among them`,
-      count,
-      pattern: typeof parameters?.pattern === "string" ? parameters.pattern : null,
-    };
-  }
-
-  return {
-    title: count === null
-      ? "Release asked for every blocked record, this one among them"
-      : `Release asked for every blocked record, ${records} in all, this one among them`,
-    count,
-    pattern: null,
-  };
-}
-
-/** What a redelivery re-sends, from the scope and parts it was asked with. */
-function redeliveryOf(parameters: Record<string, unknown> | null): string | null {
-  const parts = parameters?.parts;
-  if (Array.isArray(parts) && parts.length > 0) {
-    return `the ${parts.map(String).join(" and ")}`;
-  }
-
-  switch (parameters?.scope) {
-    case "All":
-      return "everything: record and payload";
-    case "Metadata":
-      return "the record";
-    case "Payload":
-      return "the payload";
-    default:
-      return null;
-  }
 }
 
 /** The request each kind of intervention makes, and the button on a record's page that makes it for that record alone. */

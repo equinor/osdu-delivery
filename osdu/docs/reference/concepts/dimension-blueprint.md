@@ -23,7 +23,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionBlueprint.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionYamlSource.cs
   - osdu/src/SqlFlow.Delivery/Templates/SchemaPathReading.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.Blueprint.cs
   - osdu/gui/src/features/delivery/dimensions/DimensionDefinition.tsx
   - osdu/gui/src/features/delivery/dimensions/BlueprintDiagram.tsx

@@ -483,7 +483,7 @@ public sealed partial class DimensionBuildParityTests : IDisposable
         await connection.OpenAsync();
         foreach (var declared in flow.Dimensions)
         {
-            var dimension = await ledger.FindDimensionAsync(flow.LedgerId, declared.Name) ?? throw new InvalidOperationException($"No dimension {declared.Name}.");
+            var dimension = await ledger.Dimensions.FindAsync(flow.LedgerId, declared.Name) ?? throw new InvalidOperationException($"No dimension {declared.Name}.");
             text.Append("# dimension ").Append(declared.Name).Append('\n');
             var names = await NamesAsync(connection, dimension.DimensionId);
             foreach (var table in Tables)

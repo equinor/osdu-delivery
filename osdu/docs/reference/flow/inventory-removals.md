@@ -29,7 +29,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Restore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryRemovals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryRepairs.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRestore.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261008132311_InventoryRemovals.cs

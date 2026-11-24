@@ -21,7 +21,7 @@ related:
   - delivery-wiki-0013-inventory-flows
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs
 ---
 
@@ -66,7 +66,7 @@ in the partition (kind `inventory`), and no table of an inventory has a foreign 
 
 - **Written** by every build and reconcile, which registers the inventory and rewrites its kind, query, read mode and
   versions from the document, and by a completed run, which sets its last build, last reconcile and owners
-  (`OsduLedger.Inventory.cs`).
+  (`InventoryStore.cs`).
 - **Read** by the inventories listing and an inventory's page, `GET /api/v1/delivery/inventories` and `sqlflow inventory`.
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which gives the inventories of an old ledger the identity and the
   name of the flow that replaced it or took it over, all at once, and refuses a flow that holds an inventory of one of their

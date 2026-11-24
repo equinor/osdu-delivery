@@ -57,13 +57,13 @@ public sealed class DimensionStoreTests : IDisposable
     /// <summary>Starts a build and writes it with <paramref name="originals"/> and the members they add up to.</summary>
     private async Task<(DimensionState Dimension, DimensionRunState Run)> BuildAsync(OsduLedger ledger, params DimensionOriginalWrite[] originals)
     {
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
         var members = originals.Where(o => o.CleanValue is not null)
             .GroupBy(o => o.CleanValue!, StringComparer.Ordinal)
             .Select(g => Member(g.Key, g.Sum(o => o.Count), g.Count()))
             .ToList();
         _clock.Advance(TimeSpan.FromMinutes(1));
-        var written = await ledger.WriteDimensionAsync(new DimensionWrite
+        var written = await ledger.Dimensions.WriteAsync(new DimensionWrite
         {
             DimensionRunId = run.DimensionRunId,
             DimensionId = dimension.DimensionId,
@@ -74,11 +74,11 @@ public sealed class DimensionStoreTests : IDisposable
             Read = new DimensionReadCounts { Records = 10, Aggregations = 1, Slices = 1, Notes = ["a note"] },
             CompletedUtc = _clock.GetUtcNow().UtcDateTime,
         });
-        return ((await ledger.GetDimensionAsync(dimension.DimensionId))!, written);
+        return ((await ledger.Dimensions.GetAsync(dimension.DimensionId))!, written);
     }
 
     private static async Task<IReadOnlyList<DimensionMemberState>> MembersAsync(OsduLedger ledger, int dimensionId, bool includeRemoved = false)
-        => await ledger.ListDimensionMembersAsync(dimensionId, new DimensionMemberQuery(null, includeRemoved, null, 1000));
+        => await ledger.Dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(null, includeRemoved, null, 1000));
 
     [Fact]
     public async Task A_first_build_keeps_its_members_and_originals_and_logs_no_arrivals()
@@ -101,9 +101,9 @@ public sealed class DimensionStoreTests : IDisposable
         var members = await MembersAsync(ledger, dimension.DimensionId);
         Assert.Equal(["DT", "GR"], members.Select(m => m.Value));
         Assert.Equal(7, members.Single(m => m.Value == "GR").Records);
-        Assert.Empty(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, null, 100)));
+        Assert.Empty(await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, null, 100)));
 
-        var left = await ledger.ListDimensionValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, LeftOutOnly: true, false, null, 100));
+        var left = await ledger.Dimensions.ListValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, LeftOutOnly: true, false, null, 100));
         Assert.Equal(("---", DimensionLeftOut.Empty), (Assert.Single(left).Original, left[0].LeftOut));
     }
 
@@ -127,7 +127,7 @@ public sealed class DimensionStoreTests : IDisposable
 
         Assert.Equal(new DimensionChangeCounts(0, 0, 0, 0, 0, 0, 0), second.Changes);
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), $"A rebuild of 20,000 keys that changed nothing took {watch.Elapsed.TotalSeconds:N1} s.");
-        var keys = await ledger.ListDimensionValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, false, false, null, 2));
+        var keys = await ledger.Dimensions.ListValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, false, false, null, 2));
         Assert.All(keys, k => Assert.Equal([("Country", "United States"), ("Field", "Not specified")], k.Attributes.Select(a => (a.Name, a.Value))));
     }
 
@@ -148,17 +148,17 @@ public sealed class DimensionStoreTests : IDisposable
         Assert.Equal(run.DimensionRunId, members.Single(m => m.Value == "DT").RemovedRunId);
         Assert.Equal(["GR", "Gr", "RHOB"], (await MembersAsync(ledger, dimension.DimensionId)).Select(m => m.Value));
 
-        var changes = await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(run.DimensionRunId, null, null, null, null, 100));
+        var changes = await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(run.DimensionRunId, null, null, null, null, 100));
         Assert.Equal(
             [("DT", DimensionChangeKinds.Removed, "DT", null), ("RHOB", DimensionChangeKinds.Added, null, "RHOB"), ("gr", DimensionChangeKinds.Moved, "GR", "Gr")],
             changes.Select(c => (c.Original, c.Change, c.FromValue, c.ToValue)).OrderBy(c => c.Original, StringComparer.Ordinal));
 
         // A member's history is every change that took an original from it or brought one to it; a kind narrows the log.
         var gr = members.Single(m => m.Value == "GR").MemberId;
-        Assert.Equal(["gr"], (await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, gr, null, null, 100))).Select(c => c.Original));
-        Assert.Equal(["RHOB"], (await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, DimensionChangeKinds.Added, null, 100))).Select(c => c.Original));
-        var newest = await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, null, 2));
-        var older = await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, newest[^1].ChangeId, 2));
+        Assert.Equal(["gr"], (await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, gr, null, null, 100))).Select(c => c.Original));
+        Assert.Equal(["RHOB"], (await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, DimensionChangeKinds.Added, null, 100))).Select(c => c.Original));
+        var newest = await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, null, 2));
+        var older = await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, newest[^1].ChangeId, 2));
         Assert.Equal(3, newest.Concat(older).Select(c => c.ChangeId).Distinct().Count());
     }
 
@@ -167,12 +167,12 @@ public sealed class DimensionStoreTests : IDisposable
     {
         var ledger = await LedgerAsync();
         var (dimension, completed) = await BuildAsync(ledger, Original("GR", "GR"));
-        var (_, failing) = await ledger.StartDimensionRunAsync(Declaration("fedcba9876543210"), null, "tests", _clock.GetUtcNow().UtcDateTime);
-        await ledger.CloseDimensionRunAsync(failing.DimensionRunId, DimensionRunStatus.Failed, DimensionReadCounts.None, "search answered 503", _clock.GetUtcNow().UtcDateTime);
+        var (_, failing) = await ledger.Dimensions.StartRunAsync(Declaration("fedcba9876543210"), null, "tests", _clock.GetUtcNow().UtcDateTime);
+        await ledger.Dimensions.CloseRunAsync(failing.DimensionRunId, DimensionRunStatus.Failed, DimensionReadCounts.None, "search answered 503", _clock.GetUtcNow().UtcDateTime);
 
-        var latest = Assert.Single(await ledger.LatestDimensionRunsAsync([dimension.DimensionId, 999_999]));
+        var latest = Assert.Single(await ledger.Dimensions.LatestRunsAsync([dimension.DimensionId, 999_999]));
         Assert.Equal((failing.DimensionRunId, DimensionRunStatus.Failed), (latest.DimensionRunId, latest.Status));
-        var named = await ledger.GetDimensionRunsAsync([completed.DimensionRunId, 999_999_999L]);
+        var named = await ledger.Dimensions.GetRunsAsync([completed.DimensionRunId, 999_999_999L]);
         Assert.Equal(DimensionRunStatus.Completed, Assert.Single(named).Status);
     }
 
@@ -192,7 +192,7 @@ public sealed class DimensionStoreTests : IDisposable
         var back = (await MembersAsync(ledger, dimension.DimensionId, includeRemoved: true)).Single(m => m.Value == "DT");
         Assert.NotEqual(dt, back.MemberId);
         Assert.Null(back.RemovedRunId);
-        var removed = Assert.Single(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(removal.DimensionRunId, null, null, null, null, 100)));
+        var removed = Assert.Single(await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(removal.DimensionRunId, null, null, null, null, 100)));
         Assert.Equal(("DT", DimensionChangeKinds.Removed, "DT", (string?)null), (removed.Original, removed.Change, removed.FromValue, removed.ToValue));
         Assert.Contains("1 key(s) and 1 value(s) an earlier build removed were deleted", Assert.Single(run.Read.Notes, n => n.Contains("an earlier build removed", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
@@ -223,7 +223,7 @@ public sealed class DimensionStoreTests : IDisposable
             Assert.Equal(1, await db.DeliveryDimensionAttributeValues.AsNoTracking().CountAsync(a => a.DimensionId == dimension.DimensionId));
         }
 
-        var change = Assert.Single(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, DimensionChangeKinds.Removed, null, 100)));
+        var change = Assert.Single(await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, DimensionChangeKinds.Removed, null, 100)));
         Assert.Equal(("DT", "DT", removal.DimensionRunId), (change.Original, change.FromValue, change.DimensionRunId));
     }
 
@@ -236,7 +236,7 @@ public sealed class DimensionStoreTests : IDisposable
         var (_, run) = await BuildAsync(ledger, Original("GR", "GR", 5), Original("DT", "DT", 3));
 
         Assert.True(run.Changes.IsNone);
-        Assert.Empty(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(run.DimensionRunId, null, null, null, null, 100)));
+        Assert.Empty(await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(run.DimensionRunId, null, null, null, null, 100)));
     }
 
     [Fact]
@@ -260,7 +260,7 @@ public sealed class DimensionStoreTests : IDisposable
         var (dimension, run) = await BuildAsync(ledger, Original("GR", "GR"), Original("gr", "gr"), Original("GR ", "GR"), Original(new string('x', DeliveryDimensionValue.MaxKeyLength), "long"));
 
         Assert.Equal((3L, 4L), (run.Members, run.Originals));
-        var originals = await ledger.MemberOriginalsAsync(dimension.DimensionId, (await MembersAsync(ledger, dimension.DimensionId)).Select(m => m.MemberId).ToList());
+        var originals = await ledger.Dimensions.MemberOriginalsAsync(dimension.DimensionId, (await MembersAsync(ledger, dimension.DimensionId)).Select(m => m.MemberId).ToList());
         Assert.Contains(originals, o => o.Original == "GR " && o.MemberValue == "GR");
         Assert.Contains(originals, o => o.Original == "GR" && o.MemberValue == "GR");
     }
@@ -269,9 +269,9 @@ public sealed class DimensionStoreTests : IDisposable
     public async Task An_original_longer_than_a_dimension_keeps_is_refused_before_anything_is_written()
     {
         var ledger = await LedgerAsync();
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
 
-        await Assert.ThrowsAsync<DeliveryException>(() => ledger.WriteDimensionAsync(new DimensionWrite
+        await Assert.ThrowsAsync<DeliveryException>(() => ledger.Dimensions.WriteAsync(new DimensionWrite
         {
             DimensionRunId = run.DimensionRunId,
             DimensionId = dimension.DimensionId,
@@ -282,7 +282,7 @@ public sealed class DimensionStoreTests : IDisposable
             Read = DimensionReadCounts.None,
             CompletedUtc = _clock.GetUtcNow().UtcDateTime,
         }));
-        Assert.Null((await ledger.GetDimensionAsync(dimension.DimensionId))!.LastRunId);
+        Assert.Null((await ledger.Dimensions.GetAsync(dimension.DimensionId))!.LastRunId);
     }
 
     [Fact]
@@ -290,17 +290,17 @@ public sealed class DimensionStoreTests : IDisposable
     {
         var ledger = await LedgerAsync();
         var (dimension, first) = await BuildAsync(ledger, Original("GR", "GR"));
-        var (_, run) = await ledger.StartDimensionRunAsync(Declaration("fedcba9876543210"), null, "tests", _clock.GetUtcNow().UtcDateTime);
+        var (_, run) = await ledger.Dimensions.StartRunAsync(Declaration("fedcba9876543210"), null, "tests", _clock.GetUtcNow().UtcDateTime);
 
-        await ledger.CloseDimensionRunAsync(run.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts { Aggregations = 3 }, "search answered 503", _clock.GetUtcNow().UtcDateTime);
+        await ledger.Dimensions.CloseRunAsync(run.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts { Aggregations = 3 }, "search answered 503", _clock.GetUtcNow().UtcDateTime);
 
-        var runs = await ledger.ListDimensionRunsAsync(dimension.DimensionId, 10);
+        var runs = await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, 10);
         var failed = runs.Single(r => r.DimensionRunId == run.DimensionRunId);
         Assert.Equal((DimensionRunStatus.Failed, "search answered 503", 3), (failed.Status, failed.Error, failed.Read.Aggregations));
-        var now = (await ledger.GetDimensionAsync(dimension.DimensionId))!;
+        var now = (await ledger.Dimensions.GetAsync(dimension.DimensionId))!;
         Assert.Equal(first.DimensionRunId, now.LastRunId);
         Assert.Equal(["GR"], (await MembersAsync(ledger, dimension.DimensionId)).Select(m => m.Value));
-        await Assert.ThrowsAsync<ArgumentException>(() => ledger.CloseDimensionRunAsync(run.DimensionRunId, DimensionRunStatus.Completed, DimensionReadCounts.None, null, DateTime.UtcNow));
+        await Assert.ThrowsAsync<ArgumentException>(() => ledger.Dimensions.CloseRunAsync(run.DimensionRunId, DimensionRunStatus.Completed, DimensionReadCounts.None, null, DateTime.UtcNow));
     }
 
     [Fact]
@@ -310,15 +310,15 @@ public sealed class DimensionStoreTests : IDisposable
         var (dimension, _) = await BuildAsync(ledger,
             Original("Gamma Ray", "GR"), Original("DT", "DT"), Original("RHOB", "RHOB"), Original("NPHI", "NPHI"));
 
-        var found = await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery("gamma", false, null, 10));
+        var found = await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery("gamma", false, null, 10));
         Assert.Equal(["GR"], found.Select(m => m.Value));
-        Assert.Equal(["RHOB"], (await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery("rho", false, null, 10))).Select(m => m.Value));
+        Assert.Equal(["RHOB"], (await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery("rho", false, null, 10))).Select(m => m.Value));
 
-        var first = await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, null, 2));
-        var second = await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, new DimensionMemberCursor(first[^1].Value, first[^1].Records), 2));
+        var first = await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, null, 2));
+        var second = await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, new DimensionMemberCursor(first[^1].Value, first[^1].Records), 2));
         Assert.Equal(["DT", "GR", "NPHI", "RHOB"], first.Concat(second).Select(m => m.Value));
 
-        var named = await ledger.GetDimensionMembersAsync(dimension.DimensionId, [first[0].MemberId], ["RHOB", "absent"]);
+        var named = await ledger.Dimensions.GetMembersAsync(dimension.DimensionId, [first[0].MemberId], ["RHOB", "absent"]);
         Assert.Equal(["DT", "RHOB"], named.Select(m => m.Value));
     }
 
@@ -334,7 +334,7 @@ public sealed class DimensionStoreTests : IDisposable
         DimensionMemberCursor? after = null;
         for (var page = 0; page < 10; page++)
         {
-            var read = await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, after, 2, DimensionMemberOrder.Records));
+            var read = await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, after, 2, DimensionMemberOrder.Records));
             members.AddRange(read);
             if (read.Count < 2)
             {
@@ -350,7 +350,7 @@ public sealed class DimensionStoreTests : IDisposable
         DimensionValueCursor? next = null;
         for (var page = 0; page < 10; page++)
         {
-            var read = await ledger.ListDimensionValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, false, false, next, 4, DimensionValueOrder.Count));
+            var read = await ledger.Dimensions.ListValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, false, false, next, 4, DimensionValueOrder.Count));
             originals.AddRange(read);
             if (read.Count < 4)
             {
@@ -364,9 +364,9 @@ public sealed class DimensionStoreTests : IDisposable
 
         var gr = members.Single(m => m.Value == "GR").MemberId;
         var dt = members.Single(m => m.Value == "DT").MemberId;
-        var top = await ledger.TopMemberOriginalsAsync(dimension.DimensionId, [gr, dt], perMember: 1);
+        var top = await ledger.Dimensions.TopMemberOriginalsAsync(dimension.DimensionId, [gr, dt], perMember: 1);
         Assert.Equal([("DT", "DT"), ("GR", "GR")], top.Select(v => (v.MemberValue!, v.Original)).Order());
-        Assert.Equal(["GR", "gr"], (await ledger.ListDimensionValuesAsync(dimension.DimensionId, new DimensionValueQuery("g", null, false, false, null, 10, DimensionValueOrder.Count))).Select(v => v.Original));
+        Assert.Equal(["GR", "gr"], (await ledger.Dimensions.ListValuesAsync(dimension.DimensionId, new DimensionValueQuery("g", null, false, false, null, 10, DimensionValueOrder.Count))).Select(v => v.Original));
     }
 
     [Fact]
@@ -375,11 +375,11 @@ public sealed class DimensionStoreTests : IDisposable
         var ledger = await LedgerAsync();
         var (dimension, _) = await BuildAsync(ledger, Original("GR", "GR"));
 
-        Assert.Equal(dimension.DimensionId, (await ledger.FindDimensionAsync(FlowId, "CurveMnemonic"))!.DimensionId);
-        Assert.Null(await ledger.FindDimensionAsync(FlowId, "Nope"));
-        Assert.Single(await ledger.ListDimensionsAsync("dev", null));
-        Assert.Empty(await ledger.ListDimensionsAsync("test", null));
-        Assert.Single(await ledger.ListDimensionsAsync(null, FlowId));
+        Assert.Equal(dimension.DimensionId, (await ledger.Dimensions.FindAsync(FlowId, "CurveMnemonic"))!.DimensionId);
+        Assert.Null(await ledger.Dimensions.FindAsync(FlowId, "Nope"));
+        Assert.Single(await ledger.Dimensions.ListAsync("dev", null));
+        Assert.Empty(await ledger.Dimensions.ListAsync("test", null));
+        Assert.Single(await ledger.Dimensions.ListAsync(null, FlowId));
     }
 
     [Fact]
@@ -402,8 +402,8 @@ public sealed class DimensionStoreTests : IDisposable
     public async Task Two_builds_of_one_dimension_writing_at_once_are_written_one_after_the_other()
     {
         var ledger = await LedgerAsync();
-        var (dimension, first) = await ledger.StartDimensionRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
-        var (_, second) = await ledger.StartDimensionRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
+        var (dimension, first) = await ledger.Dimensions.StartRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
+        var (_, second) = await ledger.Dimensions.StartRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
         DimensionWrite Write(DimensionRunState run, string value) => new()
         {
             DimensionRunId = run.DimensionRunId,
@@ -416,12 +416,12 @@ public sealed class DimensionStoreTests : IDisposable
             CompletedUtc = _clock.GetUtcNow().UtcDateTime,
         };
 
-        var written = await Task.WhenAll(ledger.WriteDimensionAsync(Write(first, "A")), ledger.WriteDimensionAsync(Write(second, "B")));
+        var written = await Task.WhenAll(ledger.Dimensions.WriteAsync(Write(first, "A")), ledger.Dimensions.WriteAsync(Write(second, "B")));
 
         Assert.All(written, w => Assert.Equal(DimensionRunStatus.Completed, w.Status));
         var members = await MembersAsync(ledger, dimension.DimensionId);
         Assert.Single(members);
-        Assert.Equal(5_000, (await ledger.GetDimensionAsync(dimension.DimensionId))!.Originals);
+        Assert.Equal(5_000, (await ledger.Dimensions.GetAsync(dimension.DimensionId))!.Originals);
     }
 
     [Fact]
@@ -430,7 +430,7 @@ public sealed class DimensionStoreTests : IDisposable
         // A write has no time limit, since one of millions of curves takes as long as its rows do: the run's cancellation
         // is what stops it, here while another session holds the dimension's row, which the write has to change.
         var ledger = await LedgerAsync();
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(), null, "tests", _clock.GetUtcNow().UtcDateTime);
         await using var holder = new Microsoft.Data.SqlClient.SqlConnection(OsduTestServer.ConnectionString);
         await holder.OpenAsync();
         await using var held = (Microsoft.Data.SqlClient.SqlTransaction)await holder.BeginTransactionAsync();
@@ -442,7 +442,7 @@ public sealed class DimensionStoreTests : IDisposable
 
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        var cancelled = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ledger.WriteDimensionAsync(new DimensionWrite
+        var cancelled = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ledger.Dimensions.WriteAsync(new DimensionWrite
         {
             DimensionRunId = run.DimensionRunId,
             DimensionId = dimension.DimensionId,
@@ -457,7 +457,7 @@ public sealed class DimensionStoreTests : IDisposable
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(60), $"the cancelled write ended after {watch.Elapsed}");
         Assert.Equal(cancel.Token, cancelled.CancellationToken);
         await held.RollbackAsync();
-        Assert.Equal(0, (await ledger.GetDimensionAsync(dimension.DimensionId))!.Originals);
+        Assert.Equal(0, (await ledger.Dimensions.GetAsync(dimension.DimensionId))!.Originals);
         Assert.Empty(await MembersAsync(ledger, dimension.DimensionId, includeRemoved: true));
     }
 }

@@ -19,7 +19,7 @@ related:
   - delivery-table-inventory-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs
 ---
 

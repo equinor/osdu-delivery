@@ -72,13 +72,12 @@ of every other delivery tool."
     }
 
     #[tool(
-        description = "The partition caches (the reference data deliveries resolve ids against), as metadata. Without a partition, lists \
-every cache: its cache flows and their schedules, the types they declare (origin, paths kept, record count, whether \
-a change needs approval), the current version and retentionDays. \
-With a partition, returns that cache's health: per type, the flows \
-its content passes through with each one's last run, the delivery flows that read it, and its state (fresh, failed \
-or missing, with why), plus `notices` of what needs attention. Use it for 'is the cache fresh', 'why is this type \
-missing', 'what reads this type'. Cached values are never returned. Refresh a cache by running its cache flow with \
+        description = "The partition caches (the reference data deliveries resolve ids against), as metadata. \
+Without a partition: every cache with its cache flows and schedules, the types they declare (origin, paths kept, \
+record count, whether a change needs approval), the current version and retentionDays. With a partition: that \
+cache's health per type (the flows its content passes through with each one's last run, the delivery flows reading \
+it, and fresh, failed or missing with why), plus `notices`. Use it for 'is the cache fresh', 'why is this type \
+missing', 'what reads this type'. Never returns cached values. To refresh a cache, run its cache flow with \
 trigger_run."
     )]
     async fn delivery_caches(&self, Parameters(i): Parameters<CachesInput>) -> String {

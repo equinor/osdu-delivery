@@ -18,7 +18,7 @@ namespace SqlFlow.Delivery.Engine;
 /// write nothing). The engine's log becomes the run log and the live trace, and the outcome becomes <c>run.json</c>; the
 /// version a refresh writes carries the run id, so every cached value can be traced to the run that captured it.
 /// </summary>
-public sealed class CacheExecutor : IFlowDocumentExecutor
+public sealed class CacheExecutor : KindExecutor<CacheFlowDocument, CacheDefinition>
 {
     /// <summary>
     /// What a cache run's payload takes besides the central configuration: the types it refreshes or plans
@@ -26,87 +26,20 @@ public sealed class CacheExecutor : IFlowDocumentExecutor
     /// </summary>
     public static readonly IReadOnlyCollection<string> PayloadTakes = [DeliveryRunPayload.TypesProperty];
 
-    private readonly IServiceProvider _provider;
-
     public CacheExecutor(IServiceProvider provider)
+        : base(provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
-        _provider = provider;
     }
 
-    public bool CanExecute(RegisteredFlowDocument document) => document is CacheFlowDocument;
+    protected override string FlowType => CacheDefinition.FlowTypeName;
 
-    public async Task<DocumentExecutionResult> ExecuteAsync(RegisteredFlowDocument document, string flowFile, DocumentExecutionOptions options, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(document);
-        ArgumentException.ThrowIfNullOrWhiteSpace(flowFile);
-        ArgumentNullException.ThrowIfNull(options);
-        if (document is not CacheFlowDocument cache)
-        {
-            throw new SqlFlowException($"The cache executor cannot run a '{document.Kind}' document.");
-        }
+    protected override CacheDefinition FlowOf(CacheFlowDocument document, string sourcePath) => document.Flow with { SourcePath = sourcePath };
 
-        var flow = cache.Flow with { SourcePath = Path.GetFullPath(flowFile) };
-        var parameters = options.Parameters;
-        parameters.Validate();
-        var operation = Operation(parameters);
-        var runId = options.RunId ?? Guid.CreateVersion7();
-        var actor = string.IsNullOrWhiteSpace(options.Actor) ? "unknown" : options.Actor.Trim();
-        var (runLogger, events, _) = RunArtifacts.BuildEventPlumbing(options, flow.Name);
-        var loggers = new RunLogLoggerFactory(runLogger, events, runId, flow.Name);
-        var log = loggers.CreateLogger("run");
-        var context = _provider.GetRequiredService<EngineContext>().ForRun(loggers);
-        var warningSink = options.Echo;
+    protected override string FlowName(CacheDefinition flow) => flow.Name;
 
-        var stopwatch = Stopwatch.StartNew();
-        object result;
-        string? error = null;
-        var success = false;
-        log.LogInformation("cache flow '{Flow}': {Operation} (parameters: {Parameters}) requested by {Actor}, run {RunId}", flow.Name, operation, parameters.Describe(), actor, runId);
-        try
-        {
-            // Before anything else: every OSDU request the run sends carries the run's correlation id.
-            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, flow.TelemetryOperation, runId, log);
-            result = await ExecuteOperationAsync(context, flow, operation, parameters, runId, actor, log, ct).ConfigureAwait(false);
-            success = true;
-            log.LogInformation("{Operation} completed in {Seconds:0.###}s", operation, stopwatch.Elapsed.TotalSeconds);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (CachePartitionsIncompleteException incomplete)
-        {
-            // A run over several partitions whose partitions did not all complete ends failed, and its outcome still says
-            // what each one did.
-            error = RunFailure.Describe(incomplete);
-            log.LogError("{Operation} failed: {Error}", operation, error);
-            result = incomplete.Outcome;
-        }
-        catch (Exception ex)
-        {
-            // The run boundary: every failure ends the run as a recorded one. An unexpected kind is a defect, so its
-            // stack goes to the run log as well.
-            error = RunFailure.Describe(ex);
-            log.LogError(RunFailure.IsExpected(ex) ? null : ex, "{Operation} failed: {Error}", operation, error);
-            result = new OperationFailure(operation, error);
-        }
+    protected override string TelemetryOperation(CacheDefinition flow) => flow.TelemetryOperation;
 
-        stopwatch.Stop();
-        var artifact = RunArtifacts.Artifact(CacheDefinition.FlowTypeName, flow.Name, runId, success, error, result, events.Records);
-        var directory = RunArtifacts.Write(flowFile, flow.Name, runId, artifact, runLogger.Render(), null, warningSink);
-        return new DocumentExecutionResult
-        {
-            FlowName = flow.Name,
-            FlowKind = CacheDefinition.FlowTypeName,
-            Success = success,
-            Error = error,
-            RunId = runId,
-            RunDirectory = directory,
-            DurationSeconds = stopwatch.Elapsed.TotalSeconds,
-            Result = result,
-        };
-    }
+    protected override string OperationOf(RunParameters parameters) => Operation(parameters);
 
     /// <summary>The operation a cache flow runs: refresh (its default) or plan.</summary>
     public static string Operation(RunParameters parameters)
@@ -128,7 +61,7 @@ public sealed class CacheExecutor : IFlowDocumentExecutor
     /// partition, so a partition whose capture fails leaves the others refreshed and the run ends failed naming it. A
     /// flow whose partition is its header's runs as it always did.
     /// </summary>
-    private static async Task<object> ExecuteOperationAsync(
+    protected override async Task<object> ExecuteOperationAsync(
         EngineContext context, CacheDefinition flow, string operation, RunParameters parameters, Guid runId, string actor, ILogger log, CancellationToken ct)
     {
         var payload = DeliveryRunPayload.Parse(parameters);
@@ -215,7 +148,7 @@ public sealed record CachePartitionsOutcome(string Operation, string Flow, IRead
 public sealed record CachePartitionOutcome(string Partition, object? Outcome, string? Error);
 
 /// <summary>A run over several partitions in which at least one did not complete; it carries what every partition did.</summary>
-public sealed class CachePartitionsIncompleteException : DeliveryException
+public sealed class CachePartitionsIncompleteException : DeliveryException, IFailureWithOutcome
 {
     public CachePartitionsIncompleteException(CachePartitionsOutcome outcome)
         : base((outcome ?? throw new ArgumentNullException(nameof(outcome))).Describe())
@@ -224,4 +157,6 @@ public sealed class CachePartitionsIncompleteException : DeliveryException
     }
 
     public CachePartitionsOutcome Outcome { get; }
+
+    object IFailureWithOutcome.Outcome => Outcome;
 }

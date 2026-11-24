@@ -25,7 +25,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRestore.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs
 ---
 
 # osdu.InventoryRecord: each id an inventory holds or a ledger expects, and what the ledgers hold of it

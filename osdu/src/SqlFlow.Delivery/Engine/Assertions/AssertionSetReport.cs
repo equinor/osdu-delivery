@@ -92,7 +92,7 @@ public sealed record AssertionSetReport(string Set, string? Partition, IReadOnly
         ArgumentNullException.ThrowIfNull(members);
         ArgumentNullException.ThrowIfNull(ledger);
         var ledgerIds = members.Where(m => m.Bound is not null).Select(m => m.Bound!.LedgerId).Distinct().ToList();
-        var latest = (await ledger.LatestAssertionResultsAsync(ledgerIds, withDetail: true, ct).ConfigureAwait(false))
+        var latest = (await ledger.Assertions.LatestResultsAsync(ledgerIds, withDetail: true, ct).ConfigureAwait(false))
             .GroupBy(r => r.FlowId)
             .ToDictionary(g => g.Key, g => g.ToDictionary(r => r.TestName, StringComparer.OrdinalIgnoreCase));
         var flows = new List<AssertionSetFlow>(members.Count);
@@ -104,7 +104,7 @@ public sealed record AssertionSetReport(string Set, string? Partition, IReadOnly
                 continue;
             }
 
-            var runs = await ledger.ListAssertionRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
+            var runs = await ledger.Assertions.ListRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
             var ofFlow = latest.TryGetValue(bound.LedgerId, out var found) ? found : null;
             var tests = bound.Tests
                 .Where(t => t.RunsIn(member.TestPartition))

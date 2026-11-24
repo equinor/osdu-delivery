@@ -12,12 +12,16 @@ namespace SqlFlow.Delivery.Ledger;
 // hold equal values at its key and each copy's figures and role. The control plane opens a check, groups it again by another
 // key, asks for a pick, reads it, writes an operator's choice and makes a selection of its picks; the inventory flow's
 // duplicates runs download into it and pick.
-public sealed partial class OsduLedger
+public sealed partial class InventoryStore
 {
     /// <summary>The SQL Server error number the duplicate statements refuse with, carrying their own words.</summary>
     private const int DuplicateRefusal = 51000;
 
-    public async Task<long> CreateInventoryDuplicateCheckAsync(string partition, InventoryDuplicateCheckStart start, CancellationToken ct = default)
+    /// <summary>
+    /// Opens a check of an inventory's ids for duplicate records (osdu/docs/reference/flow/inventory-duplicates.md), queued for the
+    /// duplicates run of the inventory flow that downloads its properties. Returns the check's number.
+    /// </summary>
+    public async Task<long> CreateDuplicateCheckAsync(string partition, InventoryDuplicateCheckStart start, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentNullException.ThrowIfNull(start);
@@ -56,7 +60,12 @@ public sealed partial class OsduLedger
         return row.InventoryDuplicateCheckId;
     }
 
-    public async Task<InventoryDuplicateCheckState?> CurrentInventoryDuplicateCheckAsync(string partition, int inventoryId, long? buildRunId, CancellationToken ct = default)
+    /// <summary>
+    /// The newest check of an inventory that still answers for it: one queued or running, or one whose download completed against
+    /// the inventory's build <paramref name="buildRunId"/>; null when there is none. A key of the properties it downloaded groups it
+    /// again rather than downloading them again.
+    /// </summary>
+    public async Task<InventoryDuplicateCheckState?> CurrentDuplicateCheckAsync(string partition, int inventoryId, long? buildRunId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -75,7 +84,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryDuplicateCheckState?> GetInventoryDuplicateCheckAsync(string partition, long checkId, CancellationToken ct = default)
+    /// <summary>One duplicate check by its partition and number, or null.</summary>
+    public async Task<InventoryDuplicateCheckState?> GetDuplicateCheckAsync(string partition, long checkId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -91,7 +101,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryDuplicateCheckState>> ListInventoryDuplicateChecksAsync(string partition, int inventoryId, int limit, CancellationToken ct = default)
+    /// <summary>An inventory's duplicate checks, the newest first.</summary>
+    public async Task<IReadOnlyList<InventoryDuplicateCheckState>> ListDuplicateChecksAsync(string partition, int inventoryId, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -110,7 +121,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task SetInventoryDuplicateCheckRunAsync(string partition, long checkId, Guid runId, CancellationToken ct = default)
+    /// <summary>Names the run a check was queued as.</summary>
+    public async Task SetDuplicateCheckRunAsync(string partition, long checkId, Guid runId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         var id = await PartitionIdOfAsync(partition, ct).ConfigureAwait(false)
@@ -122,7 +134,11 @@ public sealed partial class OsduLedger
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.RunId, runId), ct).ConfigureAwait(false);
     }
 
-    public async Task FailInventoryDuplicateCheckAsync(string partition, long checkId, string why, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Ends a check whose run never came, or ended before it did, with why (redacted): a download failed, its groups and table
+    /// deleted; a pick stopped, the check completed still and its groups not read left to pick. One that ended keeps how it ended.
+    /// </summary>
+    public async Task FailDuplicateCheckAsync(string partition, long checkId, string why, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentException.ThrowIfNullOrWhiteSpace(why);
@@ -162,7 +178,12 @@ public sealed partial class OsduLedger
         await SqlServerLedgerBulk.DeleteInventoryDuplicateTableAsync(db, id, checkId, ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryDuplicateCheckState?> StartInventoryDuplicateCheckAsync(
+    /// <summary>
+    /// Starts a check's download as the run <paramref name="runId"/>, against the inventory's build <paramref name="buildRunId"/>:
+    /// running, downloading, with every group and count an earlier attempt left cleared. Null when the partition holds no such check
+    /// of the inventory, or it expired.
+    /// </summary>
+    public async Task<InventoryDuplicateCheckState?> StartDuplicateCheckAsync(
         Guid flowId, int inventoryId, long checkId, Guid runId, long? buildRunId, DateTime nowUtc, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -204,7 +225,8 @@ public sealed partial class OsduLedger
         return ToDuplicateCheckState(row);
     }
 
-    public async Task PlanInventoryDuplicateCheckAsync(Guid flowId, long checkId, long candidates, long requests, CancellationToken ct = default)
+    /// <summary>Notes how many ids the inventory serves for the check to read, and the requests sent so far.</summary>
+    public async Task PlanDuplicateCheckAsync(Guid flowId, long checkId, long candidates, long requests, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(candidates);
         ArgumentOutOfRangeException.ThrowIfNegative(requests);
@@ -217,7 +239,12 @@ public sealed partial class OsduLedger
                 .SetProperty(c => c.Requests, c => c.Requests + requests), ct).ConfigureAwait(false);
     }
 
-    public async Task PrepareInventoryDuplicateTableAsync(Guid flowId, long checkId, IReadOnlyList<DuplicateColumn> attributes, CancellationToken ct = default)
+    /// <summary>
+    /// Makes a check's table afresh (osdu/docs/reference/flow/inventory-duplicates.md, The check's table) through SQLFlow's schema
+    /// evolution, with a column for each of <paramref name="attributes"/>' values and for each comparison's hash of them, and
+    /// records the table and the properties on the check.
+    /// </summary>
+    public async Task PrepareDuplicateTableAsync(Guid flowId, long checkId, IReadOnlyList<DuplicateColumn> attributes, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(attributes);
         if (attributes.Count is 0 or > InventoryDuplicates.MaxKeyProperties)
@@ -230,7 +257,12 @@ public sealed partial class OsduLedger
         await SqlServerLedgerBulk.PrepareInventoryDuplicateTableAsync(db, partition, checkId, attributes, ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryDuplicateRowsWrite> AddInventoryDuplicateRowsAsync(
+    /// <summary>
+    /// Keeps a page of a check's download in its table, in one transaction: each record the inventory serves a row of, once, with
+    /// the version the index holds and what it holds at each property; how many records the inventory holds no row of, and how
+    /// many rows are at another version than it listed; and the check's progress.
+    /// </summary>
+    public async Task<InventoryDuplicateRowsWrite> AddDuplicateRowsAsync(
         Guid flowId, int inventoryId, long checkId, IReadOnlyList<DuplicateColumn> attributes, IReadOnlyList<InventoryDuplicateRow> rows, long checkedCount,
         long requests, CancellationToken ct = default)
     {
@@ -260,7 +292,13 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryDuplicateGrouping> GroupInventoryDuplicatesAsync(string partition, long checkId, InventoryDuplicateKeying keying, CancellationToken ct = default)
+    /// <summary>
+    /// Groups a check's table by a key of properties it downloaded, over whatever it was grouped by before, in SQL and without
+    /// asking OSDU: the ids holding equal values at the key numbered into groups, the largest first; a group too large to pick from
+    /// left for review; every other group waiting to be picked. The key is recorded with who set it and when.
+    /// </summary>
+    /// <exception cref="DeliveryException">The key names a property the check did not download, or the check holds no download, or it is picking.</exception>
+    public async Task<InventoryDuplicateGrouping> GroupDuplicatesAsync(string partition, long checkId, InventoryDuplicateKeying keying, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentNullException.ThrowIfNull(keying);
@@ -315,7 +353,11 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<bool> RequestInventoryDuplicatePickAsync(string partition, long checkId, long? buildRunId, CancellationToken ct = default)
+    /// <summary>
+    /// Asks for a pick of a completed check whose groups wait to be picked: queued, to read their copies. False when the check is
+    /// not completed, is stale against <paramref name="buildRunId"/>, or holds no group to pick.
+    /// </summary>
+    public async Task<bool> RequestDuplicatePickAsync(string partition, long checkId, long? buildRunId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -335,7 +377,8 @@ public sealed partial class OsduLedger
         return asked > 0;
     }
 
-    public async Task<InventoryDuplicateCheckState?> StartInventoryDuplicatePickAsync(Guid flowId, long checkId, Guid runId, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Starts a check's pick as the run <paramref name="runId"/>: running, reading copies. Null when the partition holds no such check, or no pick was asked of it.</summary>
+    public async Task<InventoryDuplicateCheckState?> StartDuplicatePickAsync(Guid flowId, long checkId, Guid runId, DateTime nowUtc, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         await using var db = Open();
@@ -353,7 +396,8 @@ public sealed partial class OsduLedger
         return ToDuplicateCheckState(row);
     }
 
-    public async Task CompleteInventoryDuplicatePickAsync(Guid flowId, long checkId, InventoryDuplicatePickEnd ending, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Ends a pick: the check completed again, picked when no error stopped it, or holding why it stopped and the groups it did not read.</summary>
+    public async Task CompleteDuplicatePickAsync(Guid flowId, long checkId, InventoryDuplicatePickEnd ending, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ending);
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -369,7 +413,8 @@ public sealed partial class OsduLedger
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryDuplicateGroupRow>> InventoryDuplicateGroupsToJudgeAsync(Guid flowId, long checkId, int after, int limit, CancellationToken ct = default)
+    /// <summary>The next groups whose copies are not read yet, at most <paramref name="limit"/>, after <paramref name="after"/>, each copy with the finding the inventory gives it now.</summary>
+    public async Task<IReadOnlyList<InventoryDuplicateGroupRow>> DuplicateGroupsToJudgeAsync(Guid flowId, long checkId, int after, int limit, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(after);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -409,7 +454,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task WriteInventoryDuplicateJudgementsAsync(
+    /// <summary>Writes how a round of groups came out, each copy's figures and role, and moves the check's counts on.</summary>
+    public async Task WriteDuplicateJudgementsAsync(
         Guid flowId, long checkId, IReadOnlyList<InventoryDuplicateJudgement> judgements, long requests, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(judgements);
@@ -421,7 +467,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteInventoryDuplicateCheckAsync(Guid flowId, long checkId, InventoryDuplicateCheckEnd outcome, DateTime nowUtc, CancellationToken ct = default)
+    /// <summary>Ends a check's download: completed with its notes, or failed with why, its groups and table deleted.</summary>
+    public async Task CompleteDuplicateCheckAsync(Guid flowId, long checkId, InventoryDuplicateCheckEnd outcome, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(outcome);
         if (outcome.Status is not (InventoryDuplicates.Completed or InventoryDuplicates.Failed))
@@ -471,7 +518,8 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<IReadOnlyDictionary<string, long>> InventoryDuplicateOutcomesAsync(string partition, long checkId, CancellationToken ct = default)
+    /// <summary>How many of a check's groups came out each way.</summary>
+    public async Task<IReadOnlyDictionary<string, long>> DuplicateOutcomesAsync(string partition, long checkId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -489,7 +537,8 @@ public sealed partial class OsduLedger
         return rows.ToDictionary(r => r.Outcome, r => r.Count, StringComparer.Ordinal);
     }
 
-    public async Task<InventoryDuplicateSizes> InventoryDuplicateSizesAsync(string partition, long checkId, CancellationToken ct = default)
+    /// <summary>How a check's groups are sized, and the groups waiting to be picked with the copies a pick would read of them.</summary>
+    public async Task<InventoryDuplicateSizes> DuplicateSizesAsync(string partition, long checkId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -520,7 +569,11 @@ public sealed partial class OsduLedger
         return new InventoryDuplicateSizes(sizes, pending?.Groups ?? 0, pending?.Copies ?? 0);
     }
 
-    public async Task<IReadOnlyList<InventoryDuplicateGroupPage>> ListInventoryDuplicateGroupsAsync(
+    /// <summary>
+    /// A page of a check's groups, of one outcome or every one, in order after <paramref name="after"/>; each with its copies when
+    /// it holds at most <paramref name="copiesPerGroup"/>, every copy beside the inventory's row of it now.
+    /// </summary>
+    public async Task<IReadOnlyList<InventoryDuplicateGroupPage>> ListDuplicateGroupsAsync(
         string partition, long checkId, string? outcome, int? after, int limit, int copiesPerGroup, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
@@ -567,7 +620,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<InventoryDuplicateMemberState>> ListInventoryDuplicateMembersAsync(
+    /// <summary>A page of one group's copies in the inventory's order after <paramref name="after"/>.</summary>
+    public async Task<IReadOnlyList<InventoryDuplicateMemberState>> ListDuplicateMembersAsync(
         string partition, long checkId, int groupNumber, long? after, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
@@ -588,7 +642,8 @@ public sealed partial class OsduLedger
         return rows.Select(ToDuplicateMemberState).ToList();
     }
 
-    public async Task<InventoryDuplicateGroupState?> GetInventoryDuplicateGroupAsync(string partition, long checkId, int groupNumber, CancellationToken ct = default)
+    /// <summary>One group of a check, or null.</summary>
+    public async Task<InventoryDuplicateGroupState?> GetDuplicateGroupAsync(string partition, long checkId, int groupNumber, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)
@@ -603,7 +658,12 @@ public sealed partial class OsduLedger
         return row is null ? null : ToDuplicateGroupState(row);
     }
 
-    public async Task WriteInventoryDuplicateChoiceAsync(
+    /// <summary>
+    /// Writes an operator's choice of the copy a group keeps (<see cref="DuplicateChoice.Choose"/>, recorded with
+    /// <paramref name="actor"/> and when), or a choice taken back (<see cref="DuplicateChoice.Clear"/>), over the group as it stood;
+    /// the check's counts move by the difference.
+    /// </summary>
+    public async Task WriteDuplicateChoiceAsync(
         string partition, long checkId, InventoryDuplicateJudgement judgement, DuplicateChoice choice, string actor, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
@@ -622,7 +682,11 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<long> CreateInventoryDuplicateSelectionAsync(
+    /// <summary>
+    /// Makes a selection of the copies a completed check picked to remove, against the build the check read, each id beside the
+    /// copy its group keeps, which a removal by the selection checks storage still holds first. Returns the selection's number.
+    /// </summary>
+    public async Task<long> CreateDuplicateSelectionAsync(
         string partition, long checkId, string actor, string filtersJson, string? columnsJson, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
@@ -647,7 +711,8 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<IReadOnlyList<InventorySelectionKeeper>> InventorySelectionKeepersAsync(
+    /// <summary>The copies a selection a duplicate check made keeps beside the ids named, each with the copy its group keeps; none for a selection a match filled.</summary>
+    public async Task<IReadOnlyList<InventorySelectionKeeper>> SelectionKeepersAsync(
         Guid flowId, long selectionId, IReadOnlyList<long> inventoryRecordIds, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(inventoryRecordIds);
@@ -667,7 +732,11 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<InventoryDuplicateSweep> SweepInventoryDuplicateChecksAsync(string partition, DateTime olderThanUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Retires a partition's checks made before <paramref name="olderThanUtc"/>: deleted whole with their tables, or, when a removal
+    /// took the picks of a selection made of them, kept as expired with their groups and tables deleted.
+    /// </summary>
+    public async Task<InventoryDuplicateSweep> SweepDuplicateChecksAsync(string partition, DateTime olderThanUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         if (await PartitionIdOfAsync(partition, ct).ConfigureAwait(false) is not { } id)

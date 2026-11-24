@@ -12,6 +12,7 @@ using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine;
+using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 
@@ -164,16 +165,20 @@ public static class DeliveryIssueEndpoints
             return unresolved!;
         }
 
-        // The pattern the release records is the issue as the ledger names it now, which is what the operator was shown.
-        var group = await ledger.GetProblemAsync(flow.FlowId, hash, ct).ConfigureAwait(false);
-        if (group is null)
+        using var runtime = await DeliveryEndpoints.InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
+        ProblemGroup group;
+        int released;
+        try
         {
-            return NoSuchIssue(issue, flow);
+            // The pattern the release records is the issue as the ledger names it now, which is what the operator was shown.
+            group = await runtime.IssueAsync(hash, ct).ConfigureAwait(false);
+            released = await runtime.ReleaseAsync(RecordReach.Of(group), ct).ConfigureAwait(false);
+        }
+        catch (InterventionRefusedException refused)
+        {
+            return DeliveryEndpoints.Refused(refused);
         }
 
-        using var runtime = FlowRuntime.ForTarget(await DeliveryEndpoints.ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
-        var released = await runtime.ReleaseProblemAsync(hash, group.Pattern, ct).ConfigureAwait(false);
         var named = ProblemSignature.Format(hash);
         if (request is not { Run: true })
         {
@@ -210,20 +215,19 @@ public static class DeliveryIssueEndpoints
             return unresolved!;
         }
 
-        var group = await ledger.GetProblemAsync(flow.FlowId, hash, ct).ConfigureAwait(false);
-        if (group is null || (await ledger.GetLedgerAsync(flow.FlowId, ct).ConfigureAwait(false))?.Partition is not { Length: > 0 } kept)
+        using var runtime = await DeliveryEndpoints.InterventionAsync(engine, config, flow, user, ct).ConfigureAwait(false);
+        ProblemGroup group;
+        IReadOnlyList<DeliveryKey> asked;
+        try
         {
-            return NoSuchIssue(issue, flow);
+            group = await runtime.IssueAsync(hash, ct).ConfigureAwait(false);
+            asked = await runtime.AdoptAsync(RecordReach.Of(group), request?.Confirm, ct).ConfigureAwait(false);
+        }
+        catch (InterventionRefusedException refused)
+        {
+            return DeliveryEndpoints.Refused(refused);
         }
 
-        if (DeliveryEndpoints.AdoptionUnconfirmed(request?.Confirm, kept, $"Adopting the records of issue {issue}", flow.Flow.Label) is { } unconfirmed)
-        {
-            return unconfirmed;
-        }
-
-        using var runtime = FlowRuntime.ForTarget(await DeliveryEndpoints.ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
-        runtime.Actor = RequestActor.Label(user);
-        var asked = await runtime.AdoptProblemAsync(hash, group.Pattern, ct).ConfigureAwait(false);
         var named = ProblemSignature.Format(hash);
         if (request is not { Run: true } || asked.Count == 0)
         {

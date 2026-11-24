@@ -99,7 +99,7 @@ public sealed class AssertionRunReasonTests : IDisposable
 
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
-        var row = (await ledger.GetAssertionRunAsync(outcome.AssertionRunId))!;
+        var row = (await ledger.Assertions.GetRunAsync(outcome.AssertionRunId))!;
         Assert.Equal(AssertionRunStatus.Errored, row.Status);
         Assert.Equal("2 of 2 test(s) evaluated, 1 passed; 1 errored (misspelled)", row.Error);
         Assert.Equal(row.Counts.Tests, Recorded(row));
@@ -113,7 +113,7 @@ public sealed class AssertionRunReasonTests : IDisposable
 
         await Assert.ThrowsAnyAsync<Exception>(() => runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None));
 
-        var row = Assert.Single(await ledger.ListAssertionRunsAsync(new DeliveryDocumentLoader().ParseAssertion(Erroring(), "flow.yaml").ForPartition("dev").LedgerId, 10));
+        var row = Assert.Single(await ledger.Assertions.ListRunsAsync(new DeliveryDocumentLoader().ParseAssertion(Erroring(), "flow.yaml").ForPartition("dev").LedgerId, 10));
         Assert.Equal(AssertionRunStatus.Errored, row.Status);
         Assert.Contains("OSDU_DELIVERY_TESTS_UNSET_ENDPOINT", row.Error, StringComparison.Ordinal);
         Assert.True(Recorded(row) < row.Counts.Tests, $"a run that stopped recorded {Recorded(row)} of its {row.Counts.Tests} tests");
@@ -127,7 +127,7 @@ public sealed class AssertionRunReasonTests : IDisposable
 
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
-        var row = (await ledger.GetAssertionRunAsync(outcome.AssertionRunId))!;
+        var row = (await ledger.Assertions.GetRunAsync(outcome.AssertionRunId))!;
         Assert.Equal((AssertionRunStatus.Passed, (string?)null, 2), (row.Status, row.Error, row.Counts.Skipped));
         Assert.Equal(row.Counts.Tests, Recorded(row));
         Assert.Empty(_platform.Calls);
@@ -141,18 +141,18 @@ public sealed class AssertionRunReasonTests : IDisposable
         var failed = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal(AssertionRunStatus.Failed, failed.Status);
-        var row = (await ledger.GetAssertionRunAsync(failed.AssertionRunId))!;
+        var row = (await ledger.Assertions.GetRunAsync(failed.AssertionRunId))!;
         Assert.Equal(AssertionRunStatus.Failed, row.Status);
         Assert.Equal("4 of 4 test(s) evaluated, 1 passed; 2 failed on an assertion of severity error (also-counted, counted); 1 warned (names)", row.Error);
 
         // The platform run's error says the same after the flow and partition, so the report and the run never disagree.
         Assert.Equal($"assertion flow 'welldb-wellbore-04-assertion' in partition 'dev': {row.Error}.", failed.Describe());
-        Assert.Equal(row.Error, Assert.Single(await ledger.ListAssertionRunsAsync(row.FlowId, 10)).Error);
+        Assert.Equal(row.Error, Assert.Single(await ledger.Assertions.ListRunsAsync(row.FlowId, 10)).Error);
 
         // A run whose tests only warned passed, and keeps no reason.
         _clock.Advance(TimeSpan.FromMinutes(1));
         var warned = await runner.TestAsync(["names", "present"], [], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(AssertionRunStatus.Passed, warned.Status);
-        Assert.Null((await ledger.GetAssertionRunAsync(warned.AssertionRunId))!.Error);
+        Assert.Null((await ledger.Assertions.GetRunAsync(warned.AssertionRunId))!.Error);
     }
 }

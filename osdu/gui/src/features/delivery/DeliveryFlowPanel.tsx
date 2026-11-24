@@ -258,7 +258,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     },
   });
   const releaseAll = useMutation({
-    mutationFn: (run: boolean) => deliveryApi.releaseFlow(pipelineId, undefined, scope, run),
+    mutationFn: (run: boolean) => deliveryApi.releaseFlow(pipelineId, { all: true }, scope, run),
     onSuccess: (result) => {
       setReleaseOpen(false);
       const released = `Released ${result.released.toLocaleString()} record${result.released === 1 ? "" : "s"}`;

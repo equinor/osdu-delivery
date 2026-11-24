@@ -18,9 +18,10 @@ import { MappingAssertionsSection } from "./MappingAssertionEditor";
 import { ChoiceOrText, FindByLinesEditor, IconAction, ModifierListEditor, Section, type ChoiceOption } from "./MappingEditorParts";
 import { assertionsOf, noAssertionsReason, recordFieldOf, takesAssertions, type AssertionPart } from "./mappingAssertions";
 import {
-  ACCESS_TARGETS, alternativeText, bareColumn, emptyEntry, entryText, findLinesOf, findsOf, ID_MODIFIER_KINDS, inputsFor, knownColumns,
+  alternativeText, bareColumn, emptyEntry, entryText, findLinesOf, findsOf, ID_MODIFIER_KINDS, knownColumns,
   MODIFIER_KINDS, moveItem, newFindLine, parseJson, putEntry, repeaterOf, staticModeFor, withinItem, type FindLine, type StaticMode,
 } from "./mappingDraft";
+import { ACCESS_TARGETS, inputsOffered } from "./entryInputs";
 import { shapeText } from "./templateFormat";
 import { appendName, isPlainName, itemSteps, pathNames, repeaterOfPath } from "./recordPath";
 
@@ -53,12 +54,6 @@ const CHOICE_LABELS: Record<Choice, string> = {
   Parent: "Parent record",
   Child: "Child record",
 };
-
-/** The inputs one item of a list of values may read: one value each, or with a find all many. */
-const ITEM_INPUTS: MappingDraftInput[] = ["Static", "Dataset", "Expression", "Cache", "Lookup", "Search", "Child"];
-
-/** The inputs one item of a list of objects may be: an object whose properties are each filled on their own, or a fixed object. */
-const OBJECT_ITEM_INPUTS: MappingDraftInput[] = ["Group", "Static"];
 
 /** How the input choice names an input for a variable: a list filling a list of objects is a list of objects. */
 function choiceLabel(input: Choice, variable: Pick<DeliveryTemplateVariable, "shape">): string {
@@ -208,32 +203,16 @@ function EntryForm({ target, draft, variables, cacheTypes, parent, childKinds, i
 
   const searches = draft.searches;
   const lookups = draft.lookups;
-  // A property of an item of a list of objects is filled as its variable is anywhere, except that the item repeats no rows
-  // and a list of objects inside it is written whole.
-  const offered: MappingDraftInput[] = outside !== null
-    ? ["Dataset", "Expression", "Repeat", "Cache", "Lookup", "Search", "Static"]
-    : objectItem
-      ? OBJECT_ITEM_INPUTS
-      : isItem
-        ? ITEM_INPUTS
-        : isProperty
-          ? inputsFor(variable).filter((input) => input !== "Repeat" && !(input === "List" && variable.shape === "GroupList"))
-          : inputsFor(variable);
-  // A search is offered once the mapping declares one to look in, a lookup once it declares one to read, the parent record
-  // once the template is linked to a parent, and a child record once a template is linked to this one, both outside the
-  // items a child dataset's rows fill, which have neither. A child link is never an alternative: nothing stands in for it.
-  // An alternative or an item reads values of its own, so it is neither a repeat, a coalesce nor a list.
+  // What a repeater fills is its rows, so an entry inside its items reads no relative of the record.
   const repeatedHolder = repeaterOf(keyHolder !== null ? keyHolder.path : variable.path);
   const inRepeater = repeatedHolder !== null
     && draft.entries.some((candidate) => candidate.target === repeatedHolder && candidate.input === "Repeat");
-  const allowed = offered.filter((input) => (input !== "Search" || searches.length > 0)
-    && (input !== "Lookup" || lookups.length > 0)
-    && (input !== "Parent" || (parent !== null && !inRepeater && !isItem))
-    && (input !== "Child" || (childKinds.length > 0 && !inRepeater && !isAlternative))
-    && (nested === undefined || isProperty || (input !== "Repeat" && input !== "Coalesce" && input !== "List")));
-  if (entry !== null && !allowed.includes(entry.input)) {
-    allowed.push(entry.input);
-  }
+  const allowed: MappingDraftInput[] = inputsOffered(
+    variable,
+    { nested: nested?.kind ?? null, outside: outside !== null, inRepeater },
+    { searches: searches.length, lookups: lookups.length, parent: parent !== null, children: childKinds.length > 0 },
+    entry?.input ?? null,
+  );
 
   const typedMode = staticModeFor(valueVariable, null);
   const initialStatic = entry?.input === "Static" ? entry.static : null;

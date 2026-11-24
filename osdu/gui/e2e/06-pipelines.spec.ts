@@ -89,6 +89,20 @@ test.describe.serial("pipelines", () => {
 
     await adminPage.getByTestId("redeliver-cancel").click();
     await expect(dialog).toHaveCount(0);
+
+    // Every record matching no filter: the dialog asks for all of them by name, since the API acts on every record only
+    // when told so. Its check answers what bringing them up to date would find (OSDU holds none of them here), where a
+    // request naming no records would be refused.
+    await adminPage.getByTestId("delivery-records-table").getByTestId("row-select").first().check();
+    await adminPage.getByTestId("delivery-select-all-matching").click();
+    await expect(adminPage.getByTestId("delivery-selection-count")).toContainText("matching records selected");
+    const check = adminPage.waitForRequest((request) => request.method() === "POST" && request.url().includes("/rerender/preview"));
+    await adminPage.getByTestId("delivery-redeliver-selected").click();
+    expect((await check).postDataJSON()).toMatchObject({ all: true });
+    await expect(dialog).toBeVisible();
+    await expect(adminPage.getByTestId("redeliver-preview-error")).toContainText("nothing to bring up to date", { timeout: 30_000 });
+    await adminPage.getByTestId("redeliver-cancel").click();
+    await expect(dialog).toHaveCount(0);
   });
 
   test("a run an action queues opens its trace at once, which leads to the run's page and stays open there", async ({ adminPage }) => {
@@ -104,7 +118,8 @@ test.describe.serial("pipelines", () => {
     await sync.click();
     const panel = adminPage.locator("section[data-testid='bottom-panel']");
     await expect(panel).toBeVisible();
-    await expect(panel).toHaveAttribute("aria-label", `Sync timelines · ${DELIVERY_FLOW}`);
+    // The trace is titled by the ledger it acts on, as every action of a flow is: the flow and the partition it delivers to.
+    await expect(panel).toHaveAttribute("aria-label", `Sync timelines · ${DELIVERY_FLOW} in partition dev`);
     // Closed, it would stay behind the title bar's trace indicator, which holds it already.
     await expect(adminPage.getByTestId("trace-indicator")).toBeVisible();
 

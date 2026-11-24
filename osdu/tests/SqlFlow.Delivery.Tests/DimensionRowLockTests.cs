@@ -74,7 +74,7 @@ public sealed class DimensionRowLockTests : IDisposable
 
         var ledger = _db.Ledger(_clock);
         await Runner(ledger).BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var wellbores = (await ledger.ListDimensionsAsync("dev", null)).Single(d => d.Name == "Wellbores");
+        var wellbores = (await ledger.Dimensions.ListAsync("dev", null)).Single(d => d.Name == "Wellbores");
 
         // A write of the wellbores holds the rows of theirs it writes, as a build's write does until it commits: its dimension's
         // row, and in each table the first rows of the wellbores' range, which share a page with the last rows of the wells'.

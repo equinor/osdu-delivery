@@ -26,11 +26,8 @@ namespace SqlFlow.Delivery.Ledger;
 /// SQL Server alone, and the volume writes (staging pending records, appending and applying a lease's events) go through
 /// a bulk copy and set-based statements (<see cref="SqlServerLedgerBulk"/>).
 /// </summary>
-public sealed partial class OsduLedger : ILedger
+public sealed partial class OsduLedger : LedgerStore, ILedger
 {
-    /// <summary>Cached item ids or set ids per lookup, well inside the parameter ceiling of one command.</summary>
-    private const int LookupChunk = 500;
-
     /// <summary>A change whose records are all marked, waiting for the flows that build them to render them again.</summary>
     private const string Delivering = "delivering";
 
@@ -59,9 +56,6 @@ public sealed partial class OsduLedger : ILedger
     /// </summary>
     private const int IdentityChunk = 100;
 
-    private readonly Func<OsduDbContext> _factory;
-    private readonly TimeProvider _time;
-
     /// <summary>The most records a contains search reads (<see cref="RecordListing.ContainsScanLimit"/>); tests lower it.</summary>
     internal int ContainsScanLimit { get; init; } = RecordListing.ContainsScanLimit;
 
@@ -73,9 +67,6 @@ public sealed partial class OsduLedger : ILedger
     /// </summary>
     internal int WriteSlice { get; init; } = 1_000;
 
-    /// <summary>How many times a claim or lease statement runs when the database ends a deadlock by rolling it back.</summary>
-    private const int DeadlockAttempts = 5;
-
     /// <param name="factory">Makes a context on the module's database.</param>
     /// <param name="time">The clock; the system's unless given.</param>
     /// <param name="secrets">
@@ -83,25 +74,27 @@ public sealed partial class OsduLedger : ILedger
     /// database; null on a host that resolves none, where such a table cannot be reached.
     /// </param>
     public OsduLedger(Func<OsduDbContext> factory, TimeProvider? time = null, SqlFlow.Core.Secrets.ISecretResolver? secrets = null)
+        : this(new LedgerDatabase(factory, time ?? TimeProvider.System), secrets)
     {
-        ArgumentNullException.ThrowIfNull(factory);
-        _factory = factory;
-        _time = time ?? TimeProvider.System;
-        _secrets = secrets;
     }
 
-    private readonly SqlFlow.Core.Secrets.ISecretResolver? _secrets;
-
-    private DateTime Now => _time.GetUtcNow().UtcDateTime;
-
-    /// <summary>A tracking context: the host may pool no-tracking contexts (the control plane does), and the ledger's
-    /// read-modify-write operations rely on tracking.</summary>
-    private OsduDbContext Open()
+    /// <summary>The ledger over <paramref name="database"/>, with the one directory of partitions it shares with every store it makes.</summary>
+    private OsduLedger(LedgerDatabase database, SqlFlow.Core.Secrets.ISecretResolver? secrets)
+        : base(database, new LedgerDirectory(database))
     {
-        var db = _factory();
-        db.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.TrackAll;
-        return db;
+        Downloads = new DownloadStore(Database, Partitions);
+        Assertions = new AssertionStore(Database, Partitions);
+        Inventories = new InventoryStore(Database, Partitions);
+        Dimensions = new DimensionStore(Database, Partitions, secrets);
     }
+
+    public DownloadStore Downloads { get; }
+
+    public AssertionStore Assertions { get; }
+
+    public InventoryStore Inventories { get; }
+
+    public DimensionStore Dimensions { get; }
 
     public async Task<SubmissionState?> GetSubmissionAsync(Guid submissionId, CancellationToken ct = default)
     {
@@ -1042,26 +1035,6 @@ public sealed partial class OsduLedger : ILedger
         return held;
     }
 
-    /// <summary>
-    /// Runs <paramref name="work"/>, and again when the database ended a deadlock by rolling it back. Only for a read, or
-    /// for one statement whose second run does what the first would have: a claim, a lease, a release.
-    /// </summary>
-    private static async Task<T> RetryDeadlockAsync<T>(Func<Task<T>> work, CancellationToken ct)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                return await work().ConfigureAwait(false);
-            }
-            catch (Exception ex) when (attempt < DeadlockAttempts && SqlServerLedgerBulk.IsDeadlock(ex))
-            {
-                // Waiting a moment, longer each time and never the same for two writers, keeps the two from meeting in
-                // the same way again.
-                await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(10, 50) * attempt), ct).ConfigureAwait(false);
-            }
-        }
-    }
 
     /// <summary>How many times a unit of records is decided when another writer reached one of them first.</summary>
     private const int UnitAttempts = 5;
@@ -4571,9 +4544,6 @@ public sealed partial class OsduLedger : ILedger
 
         return rows;
     }
-
-    internal static string? Truncate(string? text, int max)
-        => text is null ? null : text.Length <= max ? text : text[..max];
 
     private static DeliveryAttempt ToEntity(short partition, Guid flowId, AttemptRecord attempt) => new()
     {

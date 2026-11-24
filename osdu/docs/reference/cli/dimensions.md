@@ -38,7 +38,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionViewRemoval.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStates.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery.Search/OsduQuery.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs

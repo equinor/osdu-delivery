@@ -40,7 +40,7 @@ public sealed record InventoryDuplicatesOutcome(
 }
 
 /// <summary>A duplicate check's run that stopped: the run ends failed, carrying what it came to.</summary>
-public sealed class InventoryDuplicatesFailedException : DeliveryException
+public sealed class InventoryDuplicatesFailedException : DeliveryException, IFailureWithOutcome
 {
     public InventoryDuplicatesFailedException(InventoryDuplicatesOutcome outcome)
         : base((outcome ?? throw new ArgumentNullException(nameof(outcome))).Describe())
@@ -49,6 +49,8 @@ public sealed class InventoryDuplicatesFailedException : DeliveryException
     }
 
     public InventoryDuplicatesOutcome Outcome { get; }
+
+    object IFailureWithOutcome.Outcome => Outcome;
 }
 
 public sealed partial class InventoryRunner
@@ -69,18 +71,18 @@ public sealed partial class InventoryRunner
         var flowId = _flow.LedgerId;
         var state = spec is null
             ? null
-            : (await ledger.ListInventoriesAsync(partition, ct).ConfigureAwait(false))
+            : (await ledger.Inventories.ListAsync(partition, ct).ConfigureAwait(false))
                 .FirstOrDefault(i => i.FlowId == flowId && string.Equals(i.Name, spec.Name, StringComparison.OrdinalIgnoreCase));
         if (spec is null || state?.LastBuildRunId is null)
         {
             var why = spec is null
                 ? $"Inventory flow '{_flow.Name}' has no inventory named '{inventoryName}'. Nothing was checked."
                 : $"Inventory '{spec.Name}' has not been built in '{partition}', so it holds no id to check; build it first. Nothing was checked.";
-            await ledger.FailInventoryDuplicateCheckAsync(partition, checkId, why, Now, CancellationToken.None).ConfigureAwait(false);
+            await ledger.Inventories.FailDuplicateCheckAsync(partition, checkId, why, Now, CancellationToken.None).ConfigureAwait(false);
             throw new DeliveryException(why);
         }
 
-        var asked = await ledger.GetInventoryDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false);
+        var asked = await ledger.Inventories.GetDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false);
         return asked is { Phase: InventoryDuplicates.ReadingCopies, Status: InventoryDuplicates.Queued or InventoryDuplicates.Running }
             ? await PickAsync(ledger, partition, spec, checkId, runId, actor, ct).ConfigureAwait(false)
             : await DownloadAsync(ledger, partition, spec, state, checkId, runId, actor, ct).ConfigureAwait(false);
@@ -96,7 +98,7 @@ public sealed partial class InventoryRunner
         ILedger ledger, string partition, InventorySpec spec, InventoryState state, long checkId, Guid runId, string actor, CancellationToken ct)
     {
         var flowId = _flow.LedgerId;
-        var check = await ledger.StartInventoryDuplicateCheckAsync(flowId, state.InventoryId, checkId, runId, state.LastBuildRunId, Now, ct).ConfigureAwait(false)
+        var check = await ledger.Inventories.StartDuplicateCheckAsync(flowId, state.InventoryId, checkId, runId, state.LastBuildRunId, Now, ct).ConfigureAwait(false)
             ?? throw new DeliveryException(
                 $"Inventory '{spec.Name}' in '{partition}' holds no duplicate check {checkId}: it was opened for another inventory, or retired since. Nothing was checked.");
         _log.LogInformation(
@@ -114,9 +116,9 @@ public sealed partial class InventoryRunner
             using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: counter);
             var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
             var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging);
-            var candidates = await ledger.CountInventoryServedAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
-            await ledger.PlanInventoryDuplicateCheckAsync(flowId, checkId, candidates, counter.Take(), ct).ConfigureAwait(false);
-            await ledger.PrepareInventoryDuplicateTableAsync(flowId, checkId, attributes, ct).ConfigureAwait(false);
+            var candidates = await ledger.Inventories.CountServedAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
+            await ledger.Inventories.PlanDuplicateCheckAsync(flowId, checkId, candidates, counter.Take(), ct).ConfigureAwait(false);
+            await ledger.Inventories.PrepareDuplicateTableAsync(flowId, checkId, attributes, ct).ConfigureAwait(false);
             _log.LogInformation(
                 "duplicate check {Check}: downloading {Attributes} of the {Candidates} id(s) the inventory serves into {Table}",
                 checkId, string.Join(", ", attributes.Select(a => a.Path)), candidates, InventoryDuplicateTable.NameOf(checkId));
@@ -126,7 +128,7 @@ public sealed partial class InventoryRunner
                 await DownloadRowsAsync(ledger, search, attributes, spec, partition, state.InventoryId, checkId, counter, notes, ct).ConfigureAwait(false);
             }
 
-            var grouping = await ledger.GroupInventoryDuplicatesAsync(
+            var grouping = await ledger.Inventories.GroupDuplicatesAsync(
                 partition,
                 checkId,
                 new InventoryDuplicateKeying(check.KeyJson, check.KeyHash, key.Paths, check.KeyedBy ?? check.Actor, Now),
@@ -149,8 +151,8 @@ public sealed partial class InventoryRunner
             }
 
             // What the last write left unsaid is counted with the end, so every request sent is in the check's count.
-            await ledger.PlanInventoryDuplicateCheckAsync(flowId, checkId, candidates, counter.Take(), ct).ConfigureAwait(false);
-            await ledger.CompleteInventoryDuplicateCheckAsync(flowId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, notes, null), Now, ct).ConfigureAwait(false);
+            await ledger.Inventories.PlanDuplicateCheckAsync(flowId, checkId, candidates, counter.Take(), ct).ConfigureAwait(false);
+            await ledger.Inventories.CompleteDuplicateCheckAsync(flowId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, notes, null), Now, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -165,7 +167,7 @@ public sealed partial class InventoryRunner
         if (error is not null)
         {
             _log.LogError("duplicate check {Check}: stopped: {Error}", checkId, error);
-            await ledger.CompleteInventoryDuplicateCheckAsync(
+            await ledger.Inventories.CompleteDuplicateCheckAsync(
                 flowId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Failed, notes, error), Now, CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -181,7 +183,7 @@ public sealed partial class InventoryRunner
         ILedger ledger, string partition, InventorySpec spec, long checkId, Guid runId, string actor, CancellationToken ct)
     {
         var flowId = _flow.LedgerId;
-        var check = await ledger.StartInventoryDuplicatePickAsync(flowId, checkId, runId, Now, ct).ConfigureAwait(false)
+        var check = await ledger.Inventories.StartDuplicatePickAsync(flowId, checkId, runId, Now, ct).ConfigureAwait(false)
             ?? throw new DeliveryException(
                 $"Inventory '{spec.Name}' in '{partition}' holds no duplicate check {checkId} to pick: it was retired, or no pick was asked of it. Nothing was read.");
         _log.LogInformation(
@@ -214,8 +216,8 @@ public sealed partial class InventoryRunner
             _log.LogError("duplicate check {Check}: the pick stopped: {Error}", checkId, error);
         }
 
-        await ledger.PlanInventoryDuplicateCheckAsync(flowId, checkId, check.Candidates, counter.Take(), CancellationToken.None).ConfigureAwait(false);
-        await ledger.CompleteInventoryDuplicatePickAsync(flowId, checkId, new InventoryDuplicatePickEnd(notes, error), Now, CancellationToken.None).ConfigureAwait(false);
+        await ledger.Inventories.PlanDuplicateCheckAsync(flowId, checkId, check.Candidates, counter.Take(), CancellationToken.None).ConfigureAwait(false);
+        await ledger.Inventories.CompleteDuplicatePickAsync(flowId, checkId, new InventoryDuplicatePickEnd(notes, error), Now, CancellationToken.None).ConfigureAwait(false);
         return await EndAsync(ledger, partition, spec, checkId, notes, error, counter, cancelled, ct).ConfigureAwait(false);
     }
 
@@ -224,7 +226,7 @@ public sealed partial class InventoryRunner
         ILedger ledger, string partition, InventorySpec spec, long checkId, IReadOnlyList<string> notes, string? error, SearchRequestCounter counter, bool cancelled,
         CancellationToken ct)
     {
-        var ended = await ledger.GetInventoryDuplicateCheckAsync(partition, checkId, CancellationToken.None).ConfigureAwait(false);
+        var ended = await ledger.Inventories.GetDuplicateCheckAsync(partition, checkId, CancellationToken.None).ConfigureAwait(false);
         var outcome = new InventoryDuplicatesOutcome(
             DeliveryOperations.Duplicates, _flow.Name, partition, spec.Name, checkId, ended?.Status ?? InventoryDuplicates.Failed,
             ended?.Candidates ?? 0, ended?.Keyed ?? 0, ended?.Unkeyed ?? 0, ended?.Outside ?? 0, ended?.Groups ?? 0, ended?.Copies ?? 0,
@@ -299,7 +301,7 @@ public sealed partial class InventoryRunner
                 rows.Add(new InventoryDuplicateRow(id, VersionOf(node), values));
             }
 
-            await ledger.AddInventoryDuplicateRowsAsync(_flow.LedgerId, inventoryId, checkId, attributes, rows, page.Hits.Count, counter.Take(), ct).ConfigureAwait(false);
+            await ledger.Inventories.AddDuplicateRowsAsync(_flow.LedgerId, inventoryId, checkId, attributes, rows, page.Hits.Count, counter.Take(), ct).ConfigureAwait(false);
             read += page.Hits.Count;
             var now = _context.Time.GetUtcNow();
             if (now - reported >= RemovalProgressEvery)
@@ -346,7 +348,7 @@ public sealed partial class InventoryRunner
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var round = await ledger.InventoryDuplicateGroupsToJudgeAsync(_flow.LedgerId, checkId, after, InventoryDuplicates.GroupsPerRound, ct).ConfigureAwait(false);
+            var round = await ledger.Inventories.DuplicateGroupsToJudgeAsync(_flow.LedgerId, checkId, after, InventoryDuplicates.GroupsPerRound, ct).ConfigureAwait(false);
             if (round.Count == 0)
             {
                 return;
@@ -380,7 +382,7 @@ public sealed partial class InventoryRunner
             var judgements = round
                 .Select(g => InventoryDuplicatePicker.Judge(g.GroupNumber, g.Copies.Select(c => CopyOf(c, stored, named)).ToList(), removable, chosen: null))
                 .ToList();
-            await ledger.WriteInventoryDuplicateJudgementsAsync(_flow.LedgerId, checkId, judgements, counter.Take(), Now, ct).ConfigureAwait(false);
+            await ledger.Inventories.WriteDuplicateJudgementsAsync(_flow.LedgerId, checkId, judgements, counter.Take(), Now, ct).ConfigureAwait(false);
             judged += round.Count;
             var now = _context.Time.GetUtcNow();
             if (now - reported >= RemovalProgressEvery)

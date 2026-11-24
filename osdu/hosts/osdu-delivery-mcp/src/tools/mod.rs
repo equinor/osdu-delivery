@@ -1,10 +1,10 @@
 //! The delivery module's tools.
 //!
 //! Every tool is a proxy over the module's own endpoints under `/api/v1/delivery` (osdu/src/SqlFlow.Delivery.ControlPlane),
-//! the same ones the GUI and the CLI call. Nothing here reaches OSDU or the ledger's database: a read answers from the
-//! ledger through the control plane, and anything that acts (a release, a redelivery, a read of what OSDU holds) goes
-//! through the endpoint that records it in the ledger under the caller's name. A tool that composes several reads into
-//! one answer still only reads.
+//! the same ones the GUI calls; the CLI does not call them, it acts in process through the engine those endpoints act
+//! through. Nothing here reaches OSDU or the ledger's database: a read answers from the ledger through the control plane,
+//! and anything that acts (a release, a redelivery, a read of what OSDU holds) goes through the endpoint that records it in
+//! the ledger under the caller's name. A tool that composes several reads into one answer still only reads.
 //!
 //! The tools are grouped as the product is: the ledger's records, flows and submissions, the audit trail, mappings and
 //! templates, the partition caches, assertions, dimensions, inventories and removals, and the operator's actions.

@@ -51,8 +51,8 @@ public sealed class DimensionStageTests : IDisposable
     /// <summary>Starts a build of <paramref name="name"/> now, and its staging.</summary>
     private async Task<DimensionStage> StageAsync(OsduLedger ledger, string name = "CurveMnemonic")
     {
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(name), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
-        return await ledger.StageDimensionAsync(FlowId, dimension.DimensionId, run.DimensionRunId);
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(name), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
+        return await ledger.Dimensions.StageAsync(FlowId, dimension.DimensionId, run.DimensionRunId);
     }
 
     /// <summary>Stages <paramref name="count"/> keys, each a value of its own, and copies them to the staging tables.</summary>
@@ -231,8 +231,8 @@ public sealed class DimensionStageTests : IDisposable
         Assert.Empty(await StagedAsync());
 
         // A build written whole from memory stages its rows and drops them once written.
-        var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
-        var written = await ledger.WriteDimensionAsync(new DimensionWrite
+        var (dimension, run) = await ledger.Dimensions.StartRunAsync(Declaration(), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
+        var written = await ledger.Dimensions.WriteAsync(new DimensionWrite
         {
             DimensionRunId = run.DimensionRunId,
             DimensionId = dimension.DimensionId,
@@ -263,7 +263,7 @@ public sealed class DimensionStageTests : IDisposable
         await other.DisposeAsync();
         if (closed)
         {
-            await ledger.CloseDimensionRunAsync(stopped.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts(), "the worker stopped", _clock.GetUtcNow().UtcDateTime);
+            await ledger.Dimensions.CloseRunAsync(stopped.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts(), "the worker stopped", _clock.GetUtcNow().UtcDateTime);
         }
 
         // Closed, or running for longer than any build takes: either way no process is building it now.
@@ -298,7 +298,7 @@ public sealed class DimensionStageTests : IDisposable
         var stopped = await StageAsync(ledger);
         await StageValuesAsync(stopped, 20);
         await stopped.DisposeAsync();
-        await ledger.CloseDimensionRunAsync(stopped.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts(), "the worker stopped", _clock.GetUtcNow().UtcDateTime);
+        await ledger.Dimensions.CloseRunAsync(stopped.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts(), "the worker stopped", _clock.GetUtcNow().UtcDateTime);
 
         // A build writing the dimension holds its write lock: the next build's staging starts at once, dropping nothing.
         await using (var writing = new SqlConnection(_db.ConnectionString))
@@ -340,11 +340,11 @@ public sealed class DimensionStageTests : IDisposable
             await later.DiscardAsync(CancellationToken.None);
         }
 
-        var refused = await Assert.ThrowsAsync<DeliveryException>(() => ledger.WriteDimensionAsync(slow, Write(_clock.GetUtcNow().UtcDateTime)));
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => ledger.Dimensions.WriteAsync(slow, Write(_clock.GetUtcNow().UtcDateTime)));
 
         Assert.Equal(Gone(slow), refused.Message);
-        Assert.Empty(await ledger.ListDimensionMembersAsync(slow.DimensionId, new DimensionMemberQuery(null, true, null, 10)));
-        var run = Assert.Single(await ledger.ListDimensionRunsAsync(slow.DimensionId, 10), r => r.DimensionRunId == slow.DimensionRunId);
+        Assert.Empty(await ledger.Dimensions.ListMembersAsync(slow.DimensionId, new DimensionMemberQuery(null, true, null, 10)));
+        var run = Assert.Single(await ledger.Dimensions.ListRunsAsync(slow.DimensionId, 10), r => r.DimensionRunId == slow.DimensionRunId);
         Assert.Equal(DimensionRunStatus.Running, run.Status);
     }
 
@@ -360,7 +360,7 @@ public sealed class DimensionStageTests : IDisposable
         // A later build takes it for one its process left, or the dimension is removed while it runs.
         if (removed)
         {
-            await ledger.RemoveDimensionAsync(slow.DimensionId);
+            await ledger.Dimensions.RemoveAsync(slow.DimensionId);
         }
         else
         {
@@ -394,10 +394,10 @@ public sealed class DimensionStageTests : IDisposable
         await using var stage = await StageAsync(ledger);
         await StageValuesAsync(stage, 3);
 
-        var written = await ledger.WriteDimensionAsync(stage, Write(_clock.GetUtcNow().UtcDateTime));
+        var written = await ledger.Dimensions.WriteAsync(stage, Write(_clock.GetUtcNow().UtcDateTime));
 
         Assert.Equal((DimensionRunStatus.Completed, 3L, 3L), (written.Status, written.Members, written.Originals));
-        Assert.Equal(["K000000", "K000001", "K000002"], (await ledger.ListDimensionMembersAsync(stage.DimensionId, new DimensionMemberQuery(null, false, null, 10))).Select(m => m.Value));
+        Assert.Equal(["K000000", "K000001", "K000002"], (await ledger.Dimensions.ListMembersAsync(stage.DimensionId, new DimensionMemberQuery(null, false, null, 10))).Select(m => m.Value));
         Assert.Equal(9, (await StagedAsync())[stage.DimensionRunId]);
         await stage.DiscardAsync(CancellationToken.None);
         Assert.Empty(await StagedAsync());

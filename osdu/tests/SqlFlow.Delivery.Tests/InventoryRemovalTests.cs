@@ -84,7 +84,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         await ledger.RegisterAsync(_deliveryFlow);
         var runner = Runner(yaml, ledger);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        return (runner, ledger, Assert.Single(await ledger.ListInventoriesAsync(Partition)));
+        return (runner, ledger, Assert.Single(await ledger.Inventories.ListAsync(Partition)));
     }
 
     private InventoryRunner Runner(string yaml, OsduLedger ledger)
@@ -118,7 +118,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         long? after = null;
         while (true)
         {
-            var page = await ledger.ListInventoryRemovalItemsAsync(Partition, removalId, null, after, 500);
+            var page = await ledger.Inventories.ListRemovalItemsAsync(Partition, removalId, null, after, 500);
             if (page.Count == 0)
             {
                 return all;
@@ -147,7 +147,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         await ledger0.RegisterAsync(_deliveryFlow);
         await ClaimAsync(ledger0, "delivered", "delivered", 3);
         var (runner, ledger, inventory) = await BuiltAsync(Flow());
-        Assert.Equal(1203L, (await ledger.InventoryCountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Orphan));
+        Assert.Equal(1203L, (await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Orphan));
         var run = Guid.NewGuid();
 
         var outcome = await runner.RemoveAsync("WellLogs", Every(InventoryFindings.Orphan, 1203), Partition, run, Operator, CancellationToken.None);
@@ -156,19 +156,19 @@ public sealed partial class InventoryRemovalTests : IDisposable
         Assert.Equal((3, 0), (_platform.BulkDeletes, _platform.SingleDeletes));
         Assert.Equal(1203, _platform.SoftDeleted.Count);
         Assert.Equal(2, _search.Records.Count);
-        var counts = await ledger.InventoryCountsAsync(Partition, inventory.InventoryId);
+        var counts = await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId);
         Assert.Equal((0L, 1203L, 1L, 1L), (counts.Of(InventoryFindings.Orphan), counts.Of(InventoryFindings.Gone), counts.Of(InventoryFindings.Tracked), counts.Of(InventoryFindings.Foreign)));
 
-        var removal = Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        var removal = Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
         Assert.Equal((outcome.InventoryRemovalId, InventoryRunStatus.Completed, 1203L, 1203L, run, Operator), (removal.InventoryRemovalId, removal.Status, removal.Requested, removal.Removed, removal.RunId!.Value, removal.Actor));
         var items = await ItemsAsync(ledger, removal.InventoryRemovalId);
         Assert.Equal(1203, items.Count);
         Assert.All(items.Values, i => Assert.Equal((InventoryRemovals.Removed, InventoryFindings.Orphan, 3L), (i.Outcome, i.Finding, i.Version!.Value)));
-        var row = (await ledger.LookupInventoryRecordsAsync(Partition, Id("orphan-0000"))).Single();
+        var row = (await ledger.Inventories.LookupRecordsAsync(Partition, Id("orphan-0000"))).Single();
         Assert.Equal(InventoryFindings.Gone, row.Finding);
         Assert.NotNull(row.GoneUtc);
         Assert.Contains($"removal {removal.InventoryRemovalId}", row.Detail, StringComparison.Ordinal);
-        Assert.Equal(InventoryRemovals.Removed, Assert.Single(await ledger.LookupInventoryRemovalItemsAsync(Partition, Id("orphan-0000"))).Outcome);
+        Assert.Equal(InventoryRemovals.Removed, Assert.Single(await ledger.Inventories.LookupRemovalItemsAsync(Partition, Id("orphan-0000"))).Outcome);
 
         // The removal is an activity of the audit trail, under the inventory flow's ledger, closed with what it came to.
         await using var db = _db.CreateDbContext();
@@ -210,7 +210,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         Assert.Contains("someone@elsewhere.com", items[Id("rewritten")].Reason, StringComparison.Ordinal);
 
         // What was skipped is still the inventory's to look at; what was removed or found gone is gone from it.
-        var rows = (await ledger.ListInventoryRecordsAsync(Partition, inventory.InventoryId, null, null, 50)).ToDictionary(r => r.TargetId, StringComparer.Ordinal);
+        var rows = (await ledger.Inventories.ListRecordsAsync(Partition, inventory.InventoryId, null, null, 50)).ToDictionary(r => r.TargetId, StringComparer.Ordinal);
         Assert.Equal(InventoryFindings.Orphan, rows[Id("changed")].Finding);
         Assert.Null(rows[Id("changed")].GoneUtc);
         Assert.Equal(InventoryFindings.Gone, rows[Id("vanished")].Finding);
@@ -234,7 +234,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         var items = await ItemsAsync(ledger, outcome.InventoryRemovalId);
         Assert.Equal(InventoryRemovals.Skipped, items[Id("unanswered")].Outcome);
         Assert.Contains("never said whether it holds it", items[Id("unanswered")].Reason, StringComparison.Ordinal);
-        var row = Assert.Single(await ledger.LookupInventoryRecordsAsync(Partition, Id("unanswered")));
+        var row = Assert.Single(await ledger.Inventories.LookupRecordsAsync(Partition, Id("unanswered")));
         Assert.Equal((InventoryFindings.Orphan, (DateTime?)null), (row.Finding, row.GoneUtc));
     }
 
@@ -266,8 +266,8 @@ public sealed partial class InventoryRemovalTests : IDisposable
         Assert.Contains("holds no row of", unknown.Message, StringComparison.Ordinal);
 
         Assert.Equal((0, 0), (_platform.BulkDeletes, _platform.SingleDeletes));
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
-        Assert.Empty(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
+        Assert.Empty(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
         await using var db = _db.CreateDbContext();
         Assert.False(await db.DeliveryActivities.AnyAsync(a => a.Kind == InventoryRemovals.ActivityKind));
         Assert.Equal("deleted", (await db.DeliveryRecords.SingleAsync(r => r.DeliveryKey == stale.Value)).Status);
@@ -291,13 +291,13 @@ public sealed partial class InventoryRemovalTests : IDisposable
         Assert.Equal((1, 0), (_platform.BulkDeletes, _platform.SingleDeletes));
         Assert.Equal((0L, 500L), (stopped.Outcome.Removed, stopped.Outcome.Failed));
         Assert.Contains("owner of the records", stopped.Outcome.Error, StringComparison.Ordinal);
-        var removal = Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        var removal = Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
         Assert.Equal((InventoryRunStatus.Failed, 500L), (removal.Status, removal.Failed));
         Assert.Contains("owner of the records", removal.Error, StringComparison.Ordinal);
         var items = await ItemsAsync(ledger, removal.InventoryRemovalId);
         Assert.Equal(500, items.Count);
         Assert.All(items.Values, i => Assert.Equal(InventoryRemovals.Failed, i.Outcome));
-        Assert.Equal(700L, (await ledger.InventoryCountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Orphan));
+        Assert.Equal(700L, (await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Orphan));
         await using var db = _db.CreateDbContext();
         Assert.Equal("failed", (await db.DeliveryActivities.SingleAsync(a => a.Kind == InventoryRemovals.ActivityKind)).Outcome);
     }
@@ -370,8 +370,8 @@ public sealed partial class InventoryRemovalTests : IDisposable
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         _search.Records.RemoveAll(r => r["id"]!.GetValue<string>() != Id("served"));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
-        Assert.Equal(2106L, (await ledger.InventoryCountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Gone));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
+        Assert.Equal(2106L, (await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Gone));
         await using (var db = _db.CreateDbContext())
         {
             var row = await db.DeliveryInventoryRecords.SingleAsync(r => r.TargetId == Id("gone-0000"));
@@ -388,15 +388,15 @@ public sealed partial class InventoryRemovalTests : IDisposable
 
         Assert.Equal((2105L, 0L, 1L, 0L, (string?)null), (outcome.Removed, outcome.Gone, outcome.Skipped, outcome.Failed, outcome.Error));
         Assert.Equal(asked, (_search.Calls.Count, _platform.Listings, _platform.HeaderReads, _platform.RecordReads, _platform.BulkDeletes, _platform.SingleDeletes));
-        var counts = await ledger.InventoryCountsAsync(Partition, inventory.InventoryId);
+        var counts = await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId);
         Assert.Equal((1L, 1L), (counts.Of(InventoryFindings.Gone), counts.Of(InventoryFindings.Orphan)));
-        Assert.Empty(await ledger.LookupInventoryRecordsAsync(Partition, Id("gone-0000")));
+        Assert.Empty(await ledger.Inventories.LookupRecordsAsync(Partition, Id("gone-0000")));
         await using (var db = _db.CreateDbContext())
         {
             Assert.False(await db.DeliveryInventoryVersions.AnyAsync());
         }
 
-        var removal = Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        var removal = Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
         Assert.Equal(
             (InventoryFindings.Gone, InventoryRemovals.InventoryOnly, InventoryRunStatus.Completed, 2106L, 2105L, 1L, run, Operator),
             (removal.Finding, removal.Scope, removal.Status, removal.Requested, removal.Removed, removal.Skipped, removal.RunId!.Value, removal.Actor));
@@ -415,7 +415,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         // An id OSDU serves again is listed again by the next build, as any new id is.
         Add("gone-0000");
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal(InventoryFindings.Orphan, Assert.Single(await ledger.LookupInventoryRecordsAsync(Partition, Id("gone-0000"))).Finding);
+        Assert.Equal(InventoryFindings.Orphan, Assert.Single(await ledger.Inventories.LookupRecordsAsync(Partition, Id("gone-0000"))).Finding);
     }
 
     [Fact]
@@ -439,7 +439,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         var count = await Assert.ThrowsAsync<DeliveryException>(
             () => runner.RemoveAsync("WellLogs", Every(InventoryFindings.Gone, 3, InventoryRemovals.InventoryOnly), Partition, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Contains("holds 2 gone id(s) now, and the removal was asked for 3", count.Message, StringComparison.Ordinal);
-        Assert.Empty(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        Assert.Empty(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
 
         var picked = new InventoryRemovalRequest { Finding = InventoryFindings.Gone, Scope = InventoryRemovals.InventoryOnly, Expected = 2, Ids = [Id("a"), Id("c")] };
         var outcome = await runner.RemoveAsync("WellLogs", picked, Partition, Guid.NewGuid(), Operator, CancellationToken.None);
@@ -449,10 +449,10 @@ public sealed partial class InventoryRemovalTests : IDisposable
         var item = Assert.Single((await ItemsAsync(ledger, outcome.InventoryRemovalId)).Values);
         Assert.Equal((Id("c"), InventoryRemovals.Skipped), (item.TargetId, item.Outcome));
         Assert.Contains("finds it orphan now, not gone", item.Reason, StringComparison.Ordinal);
-        var rows = (await ledger.ListInventoryRecordsAsync(Partition, inventory.InventoryId, null, null, 50)).ToDictionary(r => r.TargetId, StringComparer.Ordinal);
+        var rows = (await ledger.Inventories.ListRecordsAsync(Partition, inventory.InventoryId, null, null, 50)).ToDictionary(r => r.TargetId, StringComparer.Ordinal);
         Assert.Equal([Id("b"), Id("c")], rows.Keys.Order(StringComparer.Ordinal));
         Assert.Equal((InventoryFindings.Gone, InventoryFindings.Orphan), (rows[Id("b")].Finding, rows[Id("c")].Finding));
-        Assert.True(Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10)).NamesIds);
+        Assert.True(Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10)).NamesIds);
     }
 
     [Fact]
@@ -475,7 +475,7 @@ public sealed partial class InventoryRemovalTests : IDisposable
         var items = await ItemsAsync(ledger, outcome.InventoryRemovalId);
         Assert.Contains("finds it tracked now", items[Id("b")].Reason, StringComparison.Ordinal);
         Assert.False(items.ContainsKey(Id("c")));
-        var removal = Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        var removal = Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
         Assert.True(removal.NamesIds);
     }
 }

@@ -40,7 +40,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadFileNames.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReaders.cs
   - osdu/src/SqlFlow.Delivery/Ledger/Downloads.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDownloadEndpoints.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261029193513_DownloadFlows.cs

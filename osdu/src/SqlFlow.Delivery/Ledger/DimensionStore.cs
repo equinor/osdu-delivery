@@ -11,19 +11,36 @@ namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
 /// The dimensions of dimension flows (osdu/docs/reference/concepts/dimension-tables.md): a row per
-/// dimension of a flow in a partition, a row per build, and the dimension's members, originals and change log. Every
-/// table is a ledger table, written under the ledger identity the build registered, so a partition's dimensions are kept
-/// together and read in one range of it.
+/// dimension of a flow in a partition, a row per build, the dimension's members, originals and change log, and the views
+/// dimension flows declare over their tables (osdu/docs/reference/flow/dimension-views.md). Every table is a ledger table,
+/// written under the ledger identity the build registered, so a partition's dimensions are kept together and read in one
+/// range of it. A store beside the ledger (<see cref="LedgerStore"/>), since a dimension writes no delivered record.
 /// </summary>
-public sealed partial class OsduLedger
+public sealed partial class DimensionStore : LedgerStore
 {
+    internal DimensionStore(LedgerDatabase database, LedgerDirectory partitions, SqlFlow.Core.Secrets.ISecretResolver? secrets)
+        : base(database, partitions)
+    {
+        _secrets = secrets;
+    }
+
+    /// <summary>
+    /// Resolves the connection a dimension flow's <c>target.connection</c> names, so the store reaches a table kept in another
+    /// database; null on a host that resolves none, where such a table cannot be reached.
+    /// </summary>
+    private readonly SqlFlow.Core.Secrets.ISecretResolver? _secrets;
+
     /// <summary>The most lines of notes a build keeps.</summary>
     private const int MaxDimensionNotes = 100;
 
     /// <summary>The most members or originals one page reads.</summary>
-    public const int MaxDimensionPage = 1000;
+    public const int MaxPage = 1000;
 
-    public async Task<(DimensionState Dimension, DimensionRunState Run)> StartDimensionRunAsync(
+    /// <summary>
+    /// Registers a dimension a build is about to read (its declaration as the build reads it, in the ledger the build
+    /// registered) and opens the build's row, returning both with their ids and the partition they are kept in.
+    /// </summary>
+    public async Task<(DimensionState Dimension, DimensionRunState Run)> StartRunAsync(
         DimensionDeclaration declaration, Guid? runId, string actor, DateTime startedUtc, string mode = DimensionRunModes.Full, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(declaration);
@@ -86,7 +103,14 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<DimensionStage> StageDimensionAsync(Guid flowId, int dimensionId, long dimensionRunId, CancellationToken ct = default)
+    /// <summary>
+    /// Opens the staging of build <paramref name="dimensionRunId"/> of dimension <paramref name="dimensionId"/>, of the flow
+    /// whose ledger identity is <paramref name="flowId"/>: what the build reads is staged there as it reads it, and its write
+    /// merges it (<see cref="WriteAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/>). What an earlier
+    /// build of the dimension left (its process stopped before it ended) is deleted first, unless that build is still running
+    /// and has run for less than <see cref="DimensionStage.AbandonedAfter"/>, or is writing the dimension now.
+    /// </summary>
+    public async Task<DimensionStage> StageAsync(Guid flowId, int dimensionId, long dimensionRunId, CancellationToken ct = default)
     {
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
         var stage = new DimensionStage(Open, partition, dimensionId, dimensionRunId, flowId);
@@ -120,7 +144,13 @@ public sealed partial class OsduLedger
         return stage;
     }
 
-    public async Task<DimensionRunState> WriteDimensionAsync(DimensionWrite write, CancellationToken ct = default)
+    /// <summary>
+    /// Writes a completed build into its dimension and closes the build, in one transaction, from what the build staged: what
+    /// is new is added, what changed is changed, what the build no longer found is marked removed, and every change to an
+    /// original is logged. Returns the closed build with what it changed. A failure writes nothing and leaves the build open
+    /// for <see cref="CloseRunAsync"/>; so does a staging that no longer holds what the build staged.
+    /// </summary>
+    public async Task<DimensionRunState> WriteAsync(DimensionWrite write, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(write);
         foreach (var original in write.Originals)
@@ -132,7 +162,7 @@ public sealed partial class OsduLedger
             }
         }
 
-        await using var stage = await StageDimensionAsync(write.FlowId, write.DimensionId, write.DimensionRunId, ct).ConfigureAwait(false);
+        await using var stage = await StageAsync(write.FlowId, write.DimensionId, write.DimensionRunId, ct).ConfigureAwait(false);
         try
         {
             // A value read through a key's record (it counts no records) travels with its key; a collected one is staged apart.
@@ -149,7 +179,7 @@ public sealed partial class OsduLedger
                 await stage.AddRecordsAsync(records.Read, records.Held, ct).ConfigureAwait(false);
             }
 
-            return await WriteDimensionAsync(stage, write.Staged(), ct).ConfigureAwait(false);
+            return await WriteAsync(stage, write.Staged(), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -157,7 +187,12 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task<DimensionRunState> WriteDimensionAsync(DimensionStage stage, DimensionStagedWrite write, CancellationToken ct = default)
+    /// <summary>
+    /// Writes a completed build whose rows <paramref name="write"/> holds in memory, as
+    /// <see cref="WriteAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/> writes a staged one: the rows
+    /// are staged, merged, and the staging deleted.
+    /// </summary>
+    public async Task<DimensionRunState> WriteAsync(DimensionStage stage, DimensionStagedWrite write, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(stage);
         ArgumentNullException.ThrowIfNull(write);
@@ -305,7 +340,8 @@ public sealed partial class OsduLedger
         }
     }
 
-    public async Task CloseDimensionRunAsync(long dimensionRunId, string status, DimensionReadCounts read, string? failure, DateTime completedUtc, CancellationToken ct = default)
+    /// <summary>Closes a build that wrote nothing, as failed or cancelled, with what it read before it stopped and why.</summary>
+    public async Task CloseRunAsync(long dimensionRunId, string status, DimensionReadCounts read, string? failure, DateTime completedUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(status);
         ArgumentNullException.ThrowIfNull(read);
@@ -324,7 +360,11 @@ public sealed partial class OsduLedger
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteDimensionRunAsync(long dimensionRunId, DimensionReadCounts read, DateTime completedUtc, CancellationToken ct = default)
+    /// <summary>
+    /// Closes as completed a build that read its dimension and found nothing to write (an incremental load whose window held
+    /// no change), with what it read; the dimension names it as the build that last read it, and holds what it held.
+    /// </summary>
+    public async Task CompleteRunAsync(long dimensionRunId, DimensionReadCounts read, DateTime completedUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(read);
         await using var db = Open();
@@ -359,7 +399,11 @@ public sealed partial class OsduLedger
         await tx.CommitAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<DateTime?> DimensionReadUpToAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>
+    /// Up to when the dimension's completed builds have read what changed: the latest <see cref="DimensionReadCounts.WindowTo"/>
+    /// of them, which the next incremental load reads on from; null when none kept one.
+    /// </summary>
+    public async Task<DateTime?> ReadUpToAsync(int dimensionId, CancellationToken ct = default)
     {
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -374,7 +418,8 @@ public sealed partial class OsduLedger
         return upTo is { } to ? DateTime.SpecifyKind(to, DateTimeKind.Utc) : null;
     }
 
-    public async Task<IReadOnlyList<string>> DimensionKeyRecordTypesAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>The entity types of the records the dimension's keys were read through, which an incremental load asks the search what changed in.</summary>
+    public async Task<IReadOnlyList<string>> KeyRecordTypesAsync(int dimensionId, CancellationToken ct = default)
     {
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -391,7 +436,11 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<string>> DimensionKeysReadThroughAsync(int dimensionId, IReadOnlyCollection<string> recordIds, CancellationToken ct = default)
+    /// <summary>
+    /// The keys the dimension holds now that were read through one of <paramref name="recordIds"/> (ids without their
+    /// version): those whose label or attributes a change of one of them can have changed.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> KeysReadThroughAsync(int dimensionId, IReadOnlyCollection<string> recordIds, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(recordIds);
         if (recordIds.Count == 0 || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
@@ -409,7 +458,11 @@ public sealed partial class OsduLedger
         return found.Order(StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<string>> DimensionRecordKeysAsync(int dimensionId, IReadOnlyCollection<string> recordKeys, CancellationToken ct = default)
+    /// <summary>
+    /// The keys the dimension holds now that the records <paramref name="recordKeys"/> names (each by its unique key's text)
+    /// held when a load last read them: what an incremental load reads again besides what they hold now.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> RecordKeysAsync(int dimensionId, IReadOnlyCollection<string> recordKeys, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(recordKeys);
         if (recordKeys.Count == 0 || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
@@ -426,7 +479,11 @@ public sealed partial class OsduLedger
         return found.Order(StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<DimensionValueState>> DimensionOriginalsAsync(int dimensionId, IReadOnlyCollection<string> originals, CancellationToken ct = default)
+    /// <summary>
+    /// The originals <paramref name="originals"/> names as the dimension holds them, removed ones included, each with its
+    /// member's clean value; one the dimension never held is left out.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionValueState>> OriginalsAsync(int dimensionId, IReadOnlyCollection<string> originals, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(originals);
         if (originals.Count == 0 || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
@@ -443,7 +500,11 @@ public sealed partial class OsduLedger
         return found;
     }
 
-    public async Task<IReadOnlyList<DimensionState>> ListDimensionsAsync(string? partition, Guid? flowId, CancellationToken ct = default)
+    /// <summary>
+    /// The dimensions of one flow's ledger (<paramref name="flowId"/>), of one partition (by its data-partition-id), or of
+    /// every partition when both are null; by flow and name.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionState>> ListAsync(string? partition, Guid? flowId, CancellationToken ct = default)
     {
         short? partitionId = null;
         if (flowId is { } flow)
@@ -491,13 +552,15 @@ public sealed partial class OsduLedger
         return named;
     }
 
-    public async Task<DimensionState?> GetDimensionAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>The dimension <paramref name="dimensionId"/> names, naming its partition, or null.</summary>
+    public async Task<DimensionState?> GetAsync(int dimensionId, CancellationToken ct = default)
     {
         var row = await ReadAsync(db => db.DeliveryDimensions.AsNoTracking().FirstOrDefaultAsync(d => d.DimensionId == dimensionId, ct), ct).ConfigureAwait(false);
         return row is null ? null : ToState(row) with { Partition = await PartitionNameAsync(row.PartitionId, ct).ConfigureAwait(false) };
     }
 
-    public async Task<DimensionState?> FindDimensionAsync(Guid flowId, string name, CancellationToken ct = default)
+    /// <summary>The dimension named <paramref name="name"/> in the ledger <paramref name="flowId"/> names, or null.</summary>
+    public async Task<DimensionState?> FindAsync(Guid flowId, string name, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
@@ -512,7 +575,8 @@ public sealed partial class OsduLedger
         return row is null ? null : ToState(row) with { Partition = await PartitionNameAsync(row.PartitionId, ct).ConfigureAwait(false) };
     }
 
-    public async Task<IReadOnlyList<DimensionRunState>> ListDimensionRunsAsync(int dimensionId, int max, CancellationToken ct = default)
+    /// <summary>A dimension's builds, newest first.</summary>
+    public async Task<IReadOnlyList<DimensionRunState>> ListRunsAsync(int dimensionId, int max, CancellationToken ct = default)
     {
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -530,7 +594,8 @@ public sealed partial class OsduLedger
         return rows.Select(ToState).ToList();
     }
 
-    public async Task<IReadOnlyList<DimensionRunState>> LatestDimensionRunsAsync(IReadOnlyCollection<int> dimensionIds, CancellationToken ct = default)
+    /// <summary>The newest build of each dimension named, whatever it came to; a dimension never built has none.</summary>
+    public async Task<IReadOnlyList<DimensionRunState>> LatestRunsAsync(IReadOnlyCollection<int> dimensionIds, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(dimensionIds);
         var found = new List<DimensionRunState>();
@@ -558,7 +623,8 @@ public sealed partial class OsduLedger
         return found;
     }
 
-    public async Task<IReadOnlyList<DimensionRunState>> GetDimensionRunsAsync(IReadOnlyCollection<long> dimensionRunIds, CancellationToken ct = default)
+    /// <summary>The builds named by id; an id the ledger does not hold is left out.</summary>
+    public async Task<IReadOnlyList<DimensionRunState>> GetRunsAsync(IReadOnlyCollection<long> dimensionRunIds, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(dimensionRunIds);
         var found = new List<DimensionRunState>();
@@ -573,7 +639,8 @@ public sealed partial class OsduLedger
         return found;
     }
 
-    public async Task<IReadOnlyList<DimensionRunState>> DimensionRunsOfAsync(Guid runId, CancellationToken ct = default)
+    /// <summary>The builds a platform run made, one per dimension it built.</summary>
+    public async Task<IReadOnlyList<DimensionRunState>> RunsOfAsync(Guid runId, CancellationToken ct = default)
     {
         var rows = await ReadAsync(
             db => db.DeliveryDimensionRuns.AsNoTracking().Where(r => r.RunId == runId).OrderBy(r => r.DimensionRunId).Take(DimensionFlowLimit).ToListAsync(ct),
@@ -584,7 +651,8 @@ public sealed partial class OsduLedger
     /// <summary>The most builds one platform run makes: a flow's dimensions.</summary>
     private const int DimensionFlowLimit = 1000;
 
-    public async Task<IReadOnlyList<DimensionMemberState>> ListDimensionMembersAsync(int dimensionId, DimensionMemberQuery query, CancellationToken ct = default)
+    /// <summary>A page of a dimension's members, in order of their clean values or with the most records first.</summary>
+    public async Task<IReadOnlyList<DimensionMemberState>> ListMembersAsync(int dimensionId, DimensionMemberQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
@@ -618,7 +686,12 @@ public sealed partial class OsduLedger
             : page.Select(m => byMember.TryGetValue(m.MemberId, out var attributes) ? m with { Attributes = attributes } : m).ToList();
     }
 
-    public async Task<IReadOnlyList<DimensionAttributeCoverage>> DimensionAttributeCoverageAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>
+    /// How much of each attribute a build read, over the dimension's keys a build finds now: the keys holding a value read
+    /// from a record or collected from their own (not the dimension's value for what is not read), and how many values those
+    /// are. An attribute no key holds a read value of is left out.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionAttributeCoverage>> AttributeCoverageAsync(int dimensionId, CancellationToken ct = default)
     {
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -651,6 +724,10 @@ public sealed partial class OsduLedger
             .ToList();
     }
 
+    /// <summary>
+    /// The values each attribute holds among the keys a build finds now of each of <paramref name="memberIds"/>: the most keys
+    /// first, at most <paramref name="perAttribute"/> per attribute of a member.
+    /// </summary>
     public async Task<IReadOnlyList<DimensionMemberAttributes>> MemberAttributesAsync(
         int dimensionId, IReadOnlyCollection<long> memberIds, int perAttribute, CancellationToken ct = default)
     {
@@ -728,7 +805,7 @@ public sealed partial class OsduLedger
 
     private async Task<IReadOnlyList<DimensionMemberState>> MemberPageAsync(short partition, int dimensionId, DimensionMemberQuery query, CancellationToken ct)
     {
-        var take = Math.Clamp(query.Limit, 1, MaxDimensionPage);
+        var take = Math.Clamp(query.Limit, 1, MaxPage);
         var search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
         var attributeIds = query.Attributes is { Count: > 0 } ? await AttributeIdsAsync(partition, dimensionId, ct).ConfigureAwait(false) : [];
         return await ReadAsync(
@@ -803,7 +880,8 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<DimensionMemberState>> GetDimensionMembersAsync(
+    /// <summary>The members of a dimension named by id or by clean value, removed ones included, in order of their clean values.</summary>
+    public async Task<IReadOnlyList<DimensionMemberState>> GetMembersAsync(
         int dimensionId, IReadOnlyCollection<long> memberIds, IReadOnlyCollection<string> values, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(memberIds);
@@ -827,7 +905,8 @@ public sealed partial class OsduLedger
         return found.GroupBy(m => m.MemberId).Select(g => g.First()).OrderBy(m => m.Value, StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<DimensionValueState>> ListDimensionValuesAsync(int dimensionId, DimensionValueQuery query, CancellationToken ct = default)
+    /// <summary>A page of a dimension's originals, in the order they arrived or with the most records first.</summary>
+    public async Task<IReadOnlyList<DimensionValueState>> ListValuesAsync(int dimensionId, DimensionValueQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
@@ -864,7 +943,7 @@ public sealed partial class OsduLedger
 
     private async Task<IReadOnlyList<DimensionValueState>> ValuePageAsync(short partition, int dimensionId, DimensionValueQuery query, CancellationToken ct)
     {
-        var take = Math.Clamp(query.Limit, 1, MaxDimensionPage);
+        var take = Math.Clamp(query.Limit, 1, MaxPage);
         var search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
         var attributeIds = query.Attributes is { Count: > 0 } ? await AttributeIdsAsync(partition, dimensionId, ct).ConfigureAwait(false) : [];
         return await ReadAsync(
@@ -952,6 +1031,7 @@ public sealed partial class OsduLedger
             ct).ConfigureAwait(false);
     }
 
+    /// <summary>Every original the dimension holds now under the members <paramref name="memberIds"/> names, with each member's clean value.</summary>
     public async Task<IReadOnlyList<DimensionValueState>> MemberOriginalsAsync(int dimensionId, IReadOnlyCollection<long> memberIds, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(memberIds);
@@ -975,6 +1055,10 @@ public sealed partial class OsduLedger
         return found.OrderBy(v => v.MemberValue, StringComparer.Ordinal).ThenBy(v => v.Original, StringComparer.Ordinal).ToList();
     }
 
+    /// <summary>
+    /// The originals most records hold of each member <paramref name="memberIds"/> names, at most <paramref name="perMember"/>
+    /// of each, with the member's clean value: what a page of members shows beside each.
+    /// </summary>
     public async Task<IReadOnlyList<DimensionValueState>> TopMemberOriginalsAsync(
         int dimensionId, IReadOnlyCollection<long> memberIds, int perMember, CancellationToken ct = default)
     {
@@ -1008,7 +1092,12 @@ public sealed partial class OsduLedger
     /// <summary>The most originals of one member <see cref="TopMemberOriginalsAsync"/> reads.</summary>
     public const int MaxTopOriginals = 50;
 
-    public async Task<IReadOnlyList<DimensionAttributeValueState>> ListDimensionAttributeValuesAsync(
+    /// <summary>
+    /// The values an attribute holds among the dimension's originals a build finds now, as <paramref name="query"/> narrows
+    /// them, the most records first: each with the originals holding it and their records (summed). The name compares
+    /// exactly, as the dimension declares it.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionAttributeValueState>> ListAttributeValuesAsync(
         int dimensionId, DimensionAttributeValueQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -1019,7 +1108,7 @@ public sealed partial class OsduLedger
         }
 
         var name = query.Name;
-        var take = Math.Clamp(query.Limit, 1, MaxDimensionPage);
+        var take = Math.Clamp(query.Limit, 1, MaxPage);
         var text = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
 
         // The other picks narrow the keys; the attribute's own pick does not narrow its own list, so a cascade's list always
@@ -1068,9 +1157,14 @@ public sealed partial class OsduLedger
         return rows.Select(r => new DimensionAttributeValueState(r.Value, r.Keys, r.Records)).ToList();
     }
 
-    public async Task<IReadOnlyList<DimensionCaptureState>> DimensionCapturesAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>
+    /// The types of the cache flows of the dimension's partition that capture it (<c>dimension: &lt;name&gt;,
+    /// dimensionFlow: &lt;flow&gt;</c>), as the last repository sync recorded them; none when no cache flow does, or the
+    /// ledger holds no such dimension.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionCaptureState>> CapturesAsync(int dimensionId, CancellationToken ct = default)
     {
-        if (await GetDimensionAsync(dimensionId, ct).ConfigureAwait(false) is not { Partition: { } partition } dimension)
+        if (await GetAsync(dimensionId, ct).ConfigureAwait(false) is not { Partition: { } partition } dimension)
         {
             return [];
         }
@@ -1090,9 +1184,17 @@ public sealed partial class OsduLedger
             .ToList();
     }
 
-    public async Task<DimensionRemoved?> RemoveDimensionAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>
+    /// Removes the dimension from its partition for good: every row kept of it (its collected texts, attribute values, change
+    /// log, keys, values and builds) and then the dimension itself, and nothing of any other dimension or partition. Rows go
+    /// a batch at a time under the dimension's write lock, so a build writing it finishes first; the dimension's own row goes
+    /// last, so a removal that stops part way leaves it listed and is finished by removing it again. Null when the ledger
+    /// holds no such dimension. Whether the dimension may go (its flow no longer declares it, no cache flow captures it) is
+    /// the caller's to settle (<see cref="Engine.Dimensions.DimensionRemoval"/>).
+    /// </summary>
+    public async Task<DimensionRemoved?> RemoveAsync(int dimensionId, CancellationToken ct = default)
     {
-        if (await GetDimensionAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
+        if (await GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
             || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
             return null;
@@ -1108,10 +1210,18 @@ public sealed partial class OsduLedger
         };
     }
 
-    public async Task<bool> EnsureDimensionTableAsync(int dimensionId, DimensionTableSpec table, CancellationToken ct = default)
+    /// <summary>
+    /// Makes sure the dimension has its table (<see cref="DimensionTables"/>) with the rows the ledger holds of it, as a
+    /// build's write does, without a build: for a dimension built before dimensions had a table, or one whose table was
+    /// dropped. A table already there keeps the names its key's and its value's columns have: only a build, which reads
+    /// the declaration, renames them. Answers whether the table had to be made or widened. False when the ledger holds
+    /// no such dimension.
+    /// </summary>
+    /// <exception cref="DeliveryException">Another dimension writes a table of that name, or the table cannot be made.</exception>
+    public async Task<bool> EnsureTableAsync(int dimensionId, DimensionTableSpec table, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(table);
-        if (await GetDimensionAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
+        if (await GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
             || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
             return false;
@@ -1122,9 +1232,14 @@ public sealed partial class OsduLedger
             dimension, (db, _, home) => SqlServerDimensionStore.EnsureTableAsync(db, home, partition, dimensionId, dimension.Partition ?? string.Empty, table, Now, ct), ct).ConfigureAwait(false);
     }
 
-    public async Task<DimensionTableShape?> DimensionTableShapeAsync(int dimensionId, CancellationToken ct = default)
+    /// <summary>
+    /// The dimension's table as the database holds it: its name, the names of the columns that hold its key and its
+    /// value, and its attribute columns, in order. Null when the ledger holds no such dimension.
+    /// </summary>
+    /// <exception cref="DimensionTableMissingException">The database holds no table of the dimension.</exception>
+    public async Task<DimensionTableShape?> TableShapeAsync(int dimensionId, CancellationToken ct = default)
     {
-        if (await GetDimensionAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
+        if (await GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
             || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
             return null;
@@ -1136,10 +1251,17 @@ public sealed partial class OsduLedger
         return new DimensionTableShape(dimension.TableTarget.Shown(table.Name), table.KeyColumn, table.ValueColumn, attributes);
     }
 
-    public async Task<DimensionTablePage?> ReadDimensionTableAsync(int dimensionId, DimensionTableQuery query, CancellationToken ct = default)
+    /// <summary>
+    /// A page of the dimension's table in the dimension's partition, as <paramref name="query"/> narrows and orders it. Null
+    /// when the ledger holds no such dimension.
+    /// </summary>
+    /// <exception cref="DimensionTableMissingException">The database holds no table of the dimension.</exception>
+    /// <exception cref="DimensionTableRenamedException">A build renamed a column of the table while it was read; reading it again finds it.</exception>
+    /// <exception cref="DeliveryException">The query names a column the table does not have.</exception>
+    public async Task<DimensionTablePage?> ReadTableAsync(int dimensionId, DimensionTableQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (await GetDimensionAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
+        if (await GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
             || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
             return null;
@@ -1148,13 +1270,19 @@ public sealed partial class OsduLedger
         var table = TableOf(dimension);
         return await WithTableDatabaseAsync(
             dimension,
-            (_, catalog, home) => SqlServerDimensionStore.ReadTableAsync(catalog, home, partition, dimensionId, table, dimension.Partition ?? string.Empty, query, MaxDimensionPage, ct),
+            (_, catalog, home) => SqlServerDimensionStore.ReadTableAsync(catalog, home, partition, dimensionId, table, dimension.Partition ?? string.Empty, query, MaxPage, ct),
             ct).ConfigureAwait(false);
     }
 
-    public async IAsyncEnumerable<DimensionTableRow> StreamDimensionTableAsync(int dimensionId, [EnumeratorCancellation] CancellationToken ct = default)
+    /// <summary>
+    /// Every row of the dimension's table in the dimension's partition, by value then row number, one at a time, so a table
+    /// of millions of rows is never held whole. Nothing when the ledger holds no such dimension.
+    /// </summary>
+    /// <exception cref="DimensionTableMissingException">The database holds no table of the dimension.</exception>
+    /// <exception cref="DimensionTableRenamedException">A build renamed a column of the table as the read began; reading it again finds it.</exception>
+    public async IAsyncEnumerable<DimensionTableRow> StreamTableAsync(int dimensionId, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        if (await GetDimensionAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
+        if (await GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension
             || await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
         {
             yield break;
@@ -1246,7 +1374,12 @@ public sealed partial class OsduLedger
         return rows.ToDictionary(r => r.Name, r => r.AttributeId, StringComparer.Ordinal);
     }
 
-    public async Task<IReadOnlyList<DimensionCollectedText>> ListDimensionCollectedTextsAsync(
+    /// <summary>
+    /// The texts a collected attribute's values stand for, as the dimension's last build that settled its field read them:
+    /// those shown as one of <paramref name="values"/>, or every one when null; at most <paramref name="limit"/>, by value
+    /// then text. The name compares exactly, as the dimension declares it.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionCollectedText>> ListCollectedTextsAsync(
         int dimensionId, string name, IReadOnlyCollection<string>? values, int limit, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -1292,7 +1425,11 @@ public sealed partial class OsduLedger
         return found.OrderBy(t => t.Value, StringComparer.Ordinal).ThenBy(t => t.Text, StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<DimensionChangeState>> ListDimensionChangesAsync(int dimensionId, DimensionChangeQuery query, CancellationToken ct = default)
+    /// <summary>
+    /// A page of a dimension's change log, newest first: of every build, or of one build, one original or one member, of one
+    /// kind of change or of every kind, as <paramref name="query"/> narrows it.
+    /// </summary>
+    public async Task<IReadOnlyList<DimensionChangeState>> ListChangesAsync(int dimensionId, DimensionChangeQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         if (await DimensionPartitionAsync(dimensionId, ct).ConfigureAwait(false) is not { } partition)
@@ -1300,7 +1437,7 @@ public sealed partial class OsduLedger
             return [];
         }
 
-        var take = Math.Clamp(query.Limit, 1, MaxDimensionPage);
+        var take = Math.Clamp(query.Limit, 1, MaxPage);
         var rows = await ReadAsync(
             db =>
             {

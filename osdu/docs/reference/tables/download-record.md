@@ -20,7 +20,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadFileNames.cs
 ---
 

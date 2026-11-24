@@ -262,7 +262,8 @@ attempts again."
                 };
                 let body = match (keys.is_empty(), i.all_held.unwrap_or(false)) {
                     (false, false) => json!({ "keys": keys }),
-                    (true, true) => json!({}),
+                    // The endpoint takes leaving the keys out for nothing named, so every record is asked for by name.
+                    (true, true) => json!({ "all": true }),
                     (false, true) => return refuse("Give keys or allHeld, not both."),
                     (true, false) => {
                         return refuse(

@@ -111,7 +111,7 @@ public sealed class DimensionIncrementalTests : IDisposable
     }
 
     private static async Task<Dictionary<string, DimensionValueState>> KeysAsync(OsduLedger ledger, int dimensionId)
-        => (await ledger.ListDimensionValuesAsync(dimensionId, new DimensionValueQuery(null, null, false, true, null, 100)))
+        => (await ledger.Dimensions.ListValuesAsync(dimensionId, new DimensionValueQuery(null, null, false, true, null, 100)))
             .ToDictionary(k => k.Original, StringComparer.Ordinal);
 
     private static string Key(string wellbore) => $"dev:master-data--Wellbore:{wellbore}:";
@@ -126,8 +126,8 @@ public sealed class DimensionIncrementalTests : IDisposable
 
         Assert.Equal((DimensionRunModes.Full, At(11, 55)), (first.Load, first.WindowTo));
         Assert.Contains(first.Notes, n => n.StartsWith("Loaded in full, since it has not been loaded in this partition yet", StringComparison.Ordinal));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var full = Assert.Single(await ledger.ListDimensionRunsAsync(dimension.DimensionId, 10));
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var full = Assert.Single(await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, 10));
         Assert.Equal("id", full.Read.RecordKey);
 
         // At 12:30 log 3 moves from wellbore B to C, and log 4 of wellbore A is created.
@@ -151,11 +151,11 @@ public sealed class DimensionIncrementalTests : IDisposable
         // B's only log left it: read again, it is held by no record and is removed, and its value with it.
         Assert.NotNull(keys[Key("B")].RemovedRunId);
         Assert.Equal((1L, 1L), (second.Changes.KeysAdded, second.Changes.KeysRemoved));
-        var changes = await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(second.BuildId, null, null, null, null, 10));
+        var changes = await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(second.BuildId, null, null, null, null, 10));
         Assert.Equal(
             [(Key("B"), DimensionChangeKinds.Removed), (Key("C"), DimensionChangeKinds.Added)],
             changes.Select(c => (c.Original, c.Change)).Order());
-        var values = (await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, null, 10))).Select(m => m.Value);
+        var values = (await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, null, 10))).Select(m => m.Value);
         Assert.Equal(["A-1", "C-1"], values);
 
         // Every value the incremental load read was narrowed to the window or to the keys it read again: no read of the
@@ -190,14 +190,14 @@ public sealed class DimensionIncrementalTests : IDisposable
         var second = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
 
         Assert.Equal((DimensionRunModes.Incremental, (long?)0L, (long?)2L), (second.Load, second.ChangedRecords, second.TouchedKeys));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var keys = await KeysAsync(ledger, dimension.DimensionId);
         Assert.Equal(("A-renamed", "A-renamed", "Norge"), (keys[Key("A")].Label, keys[Key("A")].MemberValue, Assert.Single(keys[Key("A")].Attributes).Value));
         Assert.Equal("Norge", Assert.Single(keys[Key("B")].Attributes).Value);
         Assert.Equal(2L, keys[Key("A")].Count);
 
         // The value A had is left with no key and is removed; the key moved to its new one.
-        Assert.Equal(["A-renamed", "B-1"], (await ledger.ListDimensionMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, null, 10))).Select(m => m.Value));
+        Assert.Equal(["A-renamed", "B-1"], (await ledger.Dimensions.ListMembersAsync(dimension.DimensionId, new DimensionMemberQuery(null, false, null, 10))).Select(m => m.Value));
         Assert.Equal((0L, 1L), (second.Changes.KeysRemoved, second.Changes.KeysMoved));
     }
 
@@ -216,7 +216,7 @@ public sealed class DimensionIncrementalTests : IDisposable
 
         Assert.Equal((DimensionRunModes.Incremental, DimensionRunStatus.Completed, (long?)0L), (second.Load, second.Status, second.TouchedKeys));
         Assert.Contains(second.Notes, n => n.StartsWith("At least 2 record(s) the last full load read", StringComparison.Ordinal));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var keys = await KeysAsync(ledger, dimension.DimensionId);
         Assert.Equal((2L, 1L, (long?)null), (keys[Key("A")].Count, keys[Key("B")].Count, keys[Key("B")].RemovedRunId));
 
@@ -245,7 +245,7 @@ public sealed class DimensionIncrementalTests : IDisposable
 
         var before = Assert.Single((await runner.BuildAsync([], new DimensionLoadRequest(From: At(12), To: At(12, 20)), Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
         Assert.Equal(((long?)0L, (DateTime?)At(12), (DateTime?)At(12, 20)), (before.ChangedRecords, before.WindowFrom, before.WindowTo));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.False((await KeysAsync(ledger, dimension.DimensionId)).ContainsKey(Key("C")));
 
         var within = Assert.Single((await runner.BuildAsync([], new DimensionLoadRequest(From: At(12, 20), To: At(12, 40)), Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
@@ -254,11 +254,11 @@ public sealed class DimensionIncrementalTests : IDisposable
 
         // The next build reads on from the latest any build read up to, less the lag; and a window named for the past
         // afterwards moves nothing back.
-        Assert.Equal(At(12, 40), await ledger.DimensionReadUpToAsync(dimension.DimensionId));
+        Assert.Equal(At(12, 40), await ledger.Dimensions.ReadUpToAsync(dimension.DimensionId));
         var next = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
         Assert.Equal(((DateTime?)At(12, 35), (DateTime?)At(12, 55)), (next.WindowFrom, next.WindowTo));
         await runner.BuildAsync([], new DimensionLoadRequest(From: At(12), To: At(12, 20)), Guid.NewGuid(), "tests", CancellationToken.None);
-        Assert.Equal(At(12, 55), await ledger.DimensionReadUpToAsync(dimension.DimensionId));
+        Assert.Equal(At(12, 55), await ledger.Dimensions.ReadUpToAsync(dimension.DimensionId));
 
         var (fullOnly, _, _) = Runner(Head + Wellbores);
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => fullOnly.BuildAsync([], new DimensionLoadRequest(From: At(12)), Guid.NewGuid(), "tests", CancellationToken.None));
@@ -311,8 +311,8 @@ public sealed class DimensionIncrementalTests : IDisposable
 
         Assert.Equal(DimensionRunModes.Full, second.Load);
         Assert.Contains(second.Notes, n => n.StartsWith("Loaded in full, since its last full load kept no record of the keys each record holds", StringComparison.Ordinal));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        Assert.Equal("id", (await ledger.ListDimensionRunsAsync(dimension.DimensionId, 1))[0].Read.RecordKey);
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        Assert.Equal("id", (await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, 1))[0].Read.RecordKey);
     }
 
     [Theory]
@@ -339,7 +339,7 @@ public sealed class DimensionIncrementalTests : IDisposable
 
         Assert.Equal(DimensionRunModes.Full, second.Load);
         Assert.Contains(why, second.Notes);
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var keys = await KeysAsync(ledger, dimension.DimensionId);
         Assert.Equal((3L, "A-1", (long?)null), (keys[Key("A")].Count, keys[Key("A")].MemberValue, keys[Key("A")].RemovedRunId));
         Assert.Equal((1L, "C-1", "Mexico"), (keys[Key("C")].Count, keys[Key("C")].MemberValue, Assert.Single(keys[Key("C")].Attributes).Value));

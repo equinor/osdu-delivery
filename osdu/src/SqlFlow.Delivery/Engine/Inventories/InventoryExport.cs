@@ -81,7 +81,7 @@ public static class InventoryExport
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.ListInventoryRecordsAsync(inventory.Partition, inventory.InventoryId, finding, after, Page, ct).ConfigureAwait(false);
+            var page = await ledger.Inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, finding, after, Page, ct).ConfigureAwait(false);
             foreach (var record in page)
             {
                 string? ledgerName = null;
@@ -141,7 +141,7 @@ public static class InventoryExport
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var page = await ledger.ListInventorySelectionRecordsAsync(inventory.Partition, selectionId, finding, after, Page, ct).ConfigureAwait(false);
+                var page = await ledger.Inventories.ListSelectionRecordsAsync(inventory.Partition, selectionId, finding, after, Page, ct).ConfigureAwait(false);
                 foreach (var selected in page)
                 {
                     var record = selected.Record;

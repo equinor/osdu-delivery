@@ -559,7 +559,7 @@ public sealed class DeliveryAssertionApiTests
     /// <summary>Writes a run to the ledger as the runner does: opened, each result recorded, then closed with its counts.</summary>
     private static async Task<long> RecordRunAsync(OsduLedger ledger, AssertionFlowDefinition flow, string? selection, DateTime startedUtc, IReadOnlyList<TestResult> results)
     {
-        var run = await ledger.StartAssertionRunAsync(new AssertionRunState
+        var run = await ledger.Assertions.StartRunAsync(new AssertionRunState
         {
             FlowId = flow.LedgerId,
             FlowName = flow.Name,
@@ -573,7 +573,7 @@ public sealed class DeliveryAssertionApiTests
         });
         foreach (var result in results)
         {
-            await ledger.RecordAssertionResultAsync(new AssertionResultState
+            await ledger.Assertions.RecordResultAsync(new AssertionResultState
             {
                 AssertionRunId = run.AssertionRunId,
                 FlowId = flow.LedgerId,
@@ -597,7 +597,7 @@ public sealed class DeliveryAssertionApiTests
 
         var counts = AssertionCounts.Of(results.Select(r => r.Outcome));
         var status = counts.Failed > 0 ? AssertionRunStatus.Failed : counts.Errored > 0 ? AssertionRunStatus.Errored : AssertionRunStatus.Passed;
-        await ledger.CompleteAssertionRunAsync(run.AssertionRunId, status, counts, status == AssertionRunStatus.Passed ? null : "a test did not pass", startedUtc.AddMinutes(1));
+        await ledger.Assertions.CompleteRunAsync(run.AssertionRunId, status, counts, status == AssertionRunStatus.Passed ? null : "a test did not pass", startedUtc.AddMinutes(1));
         return run.AssertionRunId;
     }
 

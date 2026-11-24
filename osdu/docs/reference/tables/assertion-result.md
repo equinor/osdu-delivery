@@ -19,7 +19,7 @@ related:
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs
 ---
 
@@ -69,7 +69,7 @@ of each of its tests superseded it ([What the osdu schema stores](../concepts/st
 
 ## Written and read by
 
-- **Written** by the assertion runner as each test finishes (`AssertionRunner.cs`, through `OsduLedger.Assertions.cs`).
+- **Written** by the assertion runner as each test finishes (`AssertionRunner.cs`, through `AssertionStore.cs`).
 - **Read** by a run's report (JSON, Markdown, HTML or JUnit), an assertion flow's **Assertions** and **History** tabs,
   `sqlflow assertions status` and `report`, and the delivery API's `/assertions`, `/flows/{pipelineId}/assertion-matrix`
   and `/flows/{pipelineId}/assertions/{test}/history`.

@@ -144,15 +144,15 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         // which arrive again since the build after their removal deleted them.
         var ledger = _db.Ledger(_clock);
         var flow = Flow(retired: false);
-        var names = (await ledger.FindDimensionAsync(flow.LedgerId, "WellboreName"))!;
+        var names = (await ledger.Dimensions.FindAsync(flow.LedgerId, "WellboreName"))!;
         Assert.Equal((long)Wellbores, names.Members);
         Assert.Equal(Wellbores / 3L, builds[1].Dimensions.Single(d => d.Dimension == "WellboreName").Changes.ValuesAdded);
-        var logs = (await ledger.FindDimensionAsync(flow.LedgerId, "Log"))!;
+        var logs = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Log"))!;
         Assert.Equal(Logs + 6L, logs.Originals);
         Assert.Equal(
             [((long)Logs, 0L, 0L), (6L, 6L, 0L), (6L, 0L, 0L)],
             builds.Select(b => b.Dimensions.Single(d => d.Dimension == "Log").Changes).Select(c => (c.KeysAdded, c.KeysRemoved, c.KeysRestored)));
-        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "Retired"));
+        Assert.Null(await ledger.Dimensions.FindAsync(flow.LedgerId, "Retired"));
     }
 
     [SkippableFact]
@@ -224,7 +224,7 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         }
 
         var flow = Flow(retired: false);
-        var retired = (await ledger.FindDimensionAsync(flow.LedgerId, "Retired"))!;
+        var retired = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Retired"))!;
         var building = RunnerAsync(ledger, flow).BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var removing = DimensionRemoval.RemoveAsync(_db.Ledger(_clock), retired, "tests", _clock, CancellationToken.None);
         var second = await building;

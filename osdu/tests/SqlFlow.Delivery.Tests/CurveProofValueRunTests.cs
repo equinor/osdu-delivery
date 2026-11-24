@@ -149,7 +149,7 @@ public sealed class CurveProofValueRunTests : IDisposable
         var flow = new DeliveryDocumentLoader().ParseAssertion(Flow, "flow.yaml").ForPartition("dev");
         var runner = new AssertionRunner(engine, flow, new Dictionary<string, string>(), Samples.Logger<AssertionRunner>(), _platform, allowLoopback: true);
         var outcome = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        return (await ledger.ListAssertionResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
+        return (await ledger.Assertions.ListResultsAsync(outcome.AssertionRunId)).ToDictionary(r => r.TestName, r => TestResults.Deserialize(r.Detail)!);
     }
 
     [Fact]

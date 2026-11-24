@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
-using Azure.Core;
+using Azure;
+using Azure.Identity;
 using SqlFlow.Core;
 using SqlFlow.Core.Secrets;
 
@@ -18,14 +19,22 @@ public sealed class AzureKeyVaultSecretProvider : ISecretProvider
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-    private readonly TokenCredential _credential;
-    private readonly ConcurrentDictionary<string, AzureKeyVaultSecretVault> _vaults = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Func<string, ISecretVault> _vaultFor;
+    private readonly ConcurrentDictionary<string, ISecretVault> _vaults = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, (string Value, DateTimeOffset ExpiresUtc)> _values = new(StringComparer.OrdinalIgnoreCase);
 
     public AzureKeyVaultSecretProvider(IAzureCredentialFactory credentialFactory)
     {
         ArgumentNullException.ThrowIfNull(credentialFactory);
-        _credential = credentialFactory.Create();
+        var credential = credentialFactory.Create();
+        _vaultFor = vault => new AzureKeyVaultSecretVault(credential, AzureKeyVaultSecretVault.VaultUriFor(vault));
+    }
+
+    /// <summary>A provider reading through the vaults <paramref name="vaultFor"/> makes, one per vault name.</summary>
+    internal AzureKeyVaultSecretProvider(Func<string, ISecretVault> vaultFor)
+    {
+        ArgumentNullException.ThrowIfNull(vaultFor);
+        _vaultFor = vaultFor;
     }
 
     public string Scheme => "keyvault";
@@ -38,7 +47,7 @@ public sealed class AzureKeyVaultSecretProvider : ISecretProvider
             return cached;
         }
 
-        var value = VaultFor(vault).GetSecretAsync(secretName).GetAwaiter().GetResult()
+        var value = ReadAsync(vault, secretName, CancellationToken.None).GetAwaiter().GetResult()
             ?? throw NotFound(vault, secretName);
         _values[locator] = (value, DateTimeOffset.UtcNow + CacheTtl);
         return value;
@@ -52,7 +61,7 @@ public sealed class AzureKeyVaultSecretProvider : ISecretProvider
             return cached;
         }
 
-        var value = await VaultFor(vault).GetSecretAsync(secretName, ct).ConfigureAwait(false)
+        var value = await ReadAsync(vault, secretName, ct).ConfigureAwait(false)
             ?? throw NotFound(vault, secretName);
         _values[locator] = (value, DateTimeOffset.UtcNow + CacheTtl);
         return value;
@@ -93,8 +102,28 @@ public sealed class AzureKeyVaultSecretProvider : ISecretProvider
         return (locator[..separator], locator[(separator + 1)..]);
     }
 
-    private AzureKeyVaultSecretVault VaultFor(string vault)
-        => _vaults.GetOrAdd(vault, v => new AzureKeyVaultSecretVault(_credential, AzureKeyVaultSecretVault.VaultUriFor(v)));
+    /// <summary>
+    /// Reads one secret, null when the vault holds none of that name. Every other failure is a <see cref="SqlFlowException"/>,
+    /// as every provider's is, naming the vault and the secret and keeping Azure's own exception inside it: a vault that
+    /// refused the read (no access, throttled) or could not be reached, or a credential that could not sign in. So a caller
+    /// tells a reference that cannot be resolved from a defect by the exception's type, whichever provider it names.
+    /// </summary>
+    private async Task<string?> ReadAsync(string vault, string secretName, CancellationToken ct)
+    {
+        try
+        {
+            return await _vaults.GetOrAdd(vault, _vaultFor).GetSecretAsync(secretName, ct).ConfigureAwait(false);
+        }
+        catch (RequestFailedException ex)
+        {
+            var answer = ex.Status == 0 ? "could not be reached" : $"refused it (HTTP {ex.Status}{(string.IsNullOrEmpty(ex.ErrorCode) ? string.Empty : $", {ex.ErrorCode}")})";
+            throw new SqlFlowException($"Key Vault '{vault}' {answer} when reading secret '{secretName}'.", ex);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            throw new SqlFlowException($"No Azure credential could sign in to read secret '{secretName}' from Key Vault '{vault}'.", ex);
+        }
+    }
 
     private static SqlFlowException NotFound(string vault, string secretName)
         => new($"Key Vault secret '{secretName}' was not found in vault '{vault}'.");

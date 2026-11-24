@@ -114,11 +114,11 @@ public sealed class DeliveryCliModule : ICliModule
                 "                                   The issues keeping an interface's records blocked, the most records",
                 "                                   first: each with its counts, the error its records share and an",
                 "                                   example; --issue shows one with its files and samples (needs --db)",
-                "sqlflow records release <flow.yaml> [--interface <name>] [--partition <id>] [--key <delivery key>]...",
-                "                        [--issue <id>]",
+                "sqlflow records release <flow.yaml> (--key <delivery key>... | --issue <id> | --all)",
+                "                        [--interface <name>] [--partition <id>]",
                 "                                   Release blocked records (held, failed, deleted or reverted) back to",
-                "                                   pending, all of them, the ones named, or every one an issue keeps",
-                "                                   blocked, once their cause is fixed (needs --db)",
+                "                                   pending once their cause is fixed: the ones --key names, every one an",
+                "                                   issue keeps blocked, or with --all every one (needs --db)",
                 "sqlflow records adopt <flow.yaml> [--key <delivery key>... | --issue <id>] [--confirm <partition>]",
                 "                      [--interface <name>] [--partition <id>]",
                 "                                   Adopt the records OSDU already holds at the ids held records' keys",
@@ -164,7 +164,7 @@ public sealed class DeliveryCliModule : ICliModule
             DeliveryRecordVerbs.RecordsAsync)
         {
             Subcommands = ["list", "export", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "enrichments", "undos", "removed", "lift-removal"],
-            Flags = ["--contains", "--preview", "--access-restricted", "--restricted", "--incomplete"],
+            Flags = ["--contains", "--preview", "--access-restricted", "--restricted", "--incomplete", "--all"],
             ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--missing", "--confirm", "--run", "--submission", "--outcome", "--state", "--after", "--out"],
         },
         new CliVerb(

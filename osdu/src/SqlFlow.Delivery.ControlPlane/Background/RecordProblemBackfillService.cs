@@ -91,13 +91,7 @@ public sealed partial class RecordProblemBackfillService : BackgroundService
     public async Task<(int Sorted, int Pages)> BackfillAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
-        if (ledger is not OsduLedger sortable)
-        {
-            // Another ledger implementation keeps its problems its own way; there is nothing here to sort.
-            return (0, 0);
-        }
-
+        var sortable = scope.ServiceProvider.GetRequiredService<OsduLedger>();
         var sorted = 0;
         var pages = 0;
         while (!ct.IsCancellationRequested)

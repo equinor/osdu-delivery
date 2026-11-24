@@ -81,9 +81,9 @@ public sealed class DimensionRunTests : IDisposable
         DimensionMemberCursor? after = null;
         while (true)
         {
-            var page = await ledger.ListDimensionMembersAsync(dimensionId, new DimensionMemberQuery(null, false, after, OsduLedger.MaxDimensionPage));
+            var page = await ledger.Dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(null, false, after, DimensionStore.MaxPage));
             members.AddRange(page);
-            if (page.Count < OsduLedger.MaxDimensionPage)
+            if (page.Count < DimensionStore.MaxPage)
             {
                 return members;
             }
@@ -119,7 +119,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.True(spellings.Count > 1_500, "some mnemonics are spelled more than one way");
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
 
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "CurveMnemonic"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "CurveMnemonic"))!;
         var members = await MembersAsync(ledger, dimension.DimensionId);
         Assert.Equal(1_500, members.Count);
         var twice = spellings.Where(s => s[0] == 'm').Select(s => "M" + s[1..]).First(upper => spellings.Contains(upper));
@@ -131,7 +131,7 @@ public sealed class DimensionRunTests : IDisposable
             member.Filter);
         Assert.False(member.RecordsExact);
 
-        var run = (await ledger.ListDimensionRunsAsync(dimension.DimensionId, 1)).Single();
+        var run = (await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, 1)).Single();
         Assert.True(run.Read.Splits > 0, "the values could only be read past the limit by splitting");
         Assert.Contains(WellLog, run.Read.Templates, StringComparison.Ordinal);
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
@@ -157,8 +157,8 @@ public sealed class DimensionRunTests : IDisposable
         var changes = Assert.Single(second.Dimensions).Changes;
         Assert.Equal(1, changes.KeysAdded);
         Assert.True(changes.KeysRemoved >= 1);
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "CurveMnemonic"))!;
-        Assert.Contains(await ledger.ListDimensionChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, null, 100)), c => c.Original == "NEW" && c.Change == DimensionChangeKinds.Added);
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "CurveMnemonic"))!;
+        Assert.Contains(await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(null, null, null, null, null, 100)), c => c.Original == "NEW" && c.Change == DimensionChangeKinds.Added);
     }
 
     [Fact]
@@ -203,8 +203,8 @@ public sealed class DimensionRunTests : IDisposable
 
         Assert.Equal((2, 0), (outcome.Built, outcome.Failed));
         Assert.Equal([2L, 2L], outcome.Dimensions.Select(d => d.Labelled));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var keys = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original, StringComparer.Ordinal);
 
         // A key is the reference exactly as the index holds it; its value the name the wellbore holds.
@@ -215,7 +215,7 @@ public sealed class DimensionRunTests : IDisposable
         // and the build says why.
         Assert.Equal((null, "Z"), (keys["dev:master-data--Wellbore:Z:"].Label, keys["dev:master-data--Wellbore:Z:"].MemberValue));
         Assert.Equal((null, "dev:master-data--Wellbore:C"), (keys["dev:master-data--Wellbore:C:"].Label, keys["dev:master-data--Wellbore:C:"].LabelFrom));
-        var run = (await ledger.ListDimensionRunsAsync(wellbores.DimensionId, 1)).Single();
+        var run = (await ledger.Dimensions.ListRunsAsync(wellbores.DimensionId, 1)).Single();
         Assert.Equal((2L, 2L, 1), (run.Read.Labelled, run.Read.Unlabelled, run.Read.LabelQueries));
         Assert.Contains(run.Read.Notes, n => n.Contains("the search holds no record they name", StringComparison.Ordinal));
         Assert.Contains(run.Read.Notes, n => n.Contains("holds nothing at the path it is read from", StringComparison.Ordinal));
@@ -226,12 +226,12 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(["dev:work-product-component--WellLog:1", "dev:work-product-component--WellLog:2"], _platform.Find(WellLog, named.Filter!));
 
         // A label read through two records: the wellbore's country reference, then the country's name.
-        var countries = (await ledger.FindDimensionAsync(flow.LedgerId, "Country"))!;
+        var countries = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Country"))!;
         var mexico = (await MembersAsync(ledger, countries.DimensionId)).Single(m => m.Value == "Mexico");
         Assert.Equal((2, 3L), (mexico.Originals, mexico.Records));
-        var country = (await ledger.ListDimensionRunsAsync(countries.DimensionId, 1)).Single();
+        var country = (await ledger.Dimensions.ListRunsAsync(countries.DimensionId, 1)).Single();
         Assert.Equal((2L, 2L, 2), (country.Read.Labelled, country.Read.Unlabelled, country.Read.LabelQueries));
-        var ofMexico = await ledger.ListDimensionValuesAsync(countries.DimensionId, new DimensionValueQuery(null, mexico.MemberId, false, false, null, 10));
+        var ofMexico = await ledger.Dimensions.ListValuesAsync(countries.DimensionId, new DimensionValueQuery(null, mexico.MemberId, false, false, null, 10));
         Assert.All(ofMexico, k => Assert.Equal(Mexico, k.LabelFrom));
 
         // The keys whose country is not read are one value a drop-down lists, as the dimension names it, and its filter
@@ -313,8 +313,8 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((2, 0), (outcome.Built, outcome.Failed));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var keys = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original, StringComparer.Ordinal);
 
         // Each key keeps its attributes: the country the entity whose own type is Country, not the region before it; the
@@ -325,26 +325,26 @@ public sealed class DimensionRunTests : IDisposable
             a.Attributes.Select(x => (x.Name, x.Value, x.From)));
         Assert.Equal([("Country", "Mexico")], keys["dev:master-data--Wellbore:A%2F1-B:"].Attributes.Select(x => (x.Name, x.Value)));
         Assert.Equal([("Country", "Canada")], keys["dev:master-data--Wellbore:B%2F7-1:"].Attributes.Select(x => (x.Name, x.Value)));
-        var run = (await ledger.ListDimensionRunsAsync(wellbores.DimensionId, 1)).Single();
+        var run = (await ledger.Dimensions.ListRunsAsync(wellbores.DimensionId, 1)).Single();
         Assert.Contains(run.Read.Notes, n => n.Contains("key(s) have no Field", StringComparison.Ordinal));
 
         // A key naming a record with no label is valued by the code its id ends with, its escapes decoded.
-        var codes = (await ledger.FindDimensionAsync(flow.LedgerId, "WellboreCode"))!;
+        var codes = (await ledger.Dimensions.FindAsync(flow.LedgerId, "WellboreCode"))!;
         Assert.Equal(["A/1-A", "A/1-B", "B/7-1"], (await MembersAsync(ledger, codes.DimensionId)).Select(m => m.Value));
 
         // Values and keys are looked up by their attributes, and an attribute lists its values with their keys and records.
-        var mexican = await ledger.ListDimensionMembersAsync(
+        var mexican = await ledger.Dimensions.ListMembersAsync(
             wellbores.DimensionId, new DimensionMemberQuery(null, false, null, 10, DimensionMemberOrder.Value, [new DimensionAttributeMatch("Country", ["Mexico"])]));
         Assert.Equal(["Wellbore A/1-A", "Wellbore A/1-B"], mexican.Select(m => m.Value));
         Assert.Contains(mexican[0].Attributes, x => x is { Name: "Country", Value: "Mexico", Keys: 1 });
-        var both = await ledger.ListDimensionValuesAsync(
+        var both = await ledger.Dimensions.ListValuesAsync(
             wellbores.DimensionId,
             new DimensionValueQuery(null, null, false, false, null, 10, DimensionValueOrder.Arrival,
                 [new DimensionAttributeMatch("Country", ["Mexico", "Canada"]), new DimensionAttributeMatch("Field", ["Field A"])]));
         Assert.Equal(["dev:master-data--Wellbore:A%2F1-A:"], both.Select(k => k.Original));
         Assert.Equal(
             [("Mexico", 2, 3L), ("Canada", 1, 1L)],
-            (await ledger.ListDimensionAttributeValuesAsync(wellbores.DimensionId, new DimensionAttributeValueQuery("Country", null, 10))).Select(v => (v.Value, v.Keys, v.Records)));
+            (await ledger.Dimensions.ListAttributeValuesAsync(wellbores.DimensionId, new DimensionAttributeValueQuery("Country", null, 10))).Select(v => (v.Value, v.Keys, v.Records)));
 
         // A search picked by an attribute finds the logs of every wellbore holding it.
         var inMexico = await DimensionSearch.ComposeAsync(
@@ -362,10 +362,10 @@ public sealed class DimensionRunTests : IDisposable
         var first = _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:master-data--Wellbore:A%2F1-A")["data"]!.AsObject();
         first["GeoContexts"] = new JsonArray(Context(RegionA, "Region"), Context(Mexico, "Country"));
         await runner.BuildAsync(["Wellbore"], Guid.NewGuid(), "tests", CancellationToken.None);
-        var again = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var again = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .Single(k => k.Original == "dev:master-data--Wellbore:A%2F1-A:");
         Assert.Equal([("Country", "United Mexican States"), ("Region", "Region A")], again.Attributes.Select(x => (x.Name, x.Value)));
-        var second = (await ledger.ListDimensionRunsAsync(wellbores.DimensionId, 1)).Single();
+        var second = (await ledger.Dimensions.ListRunsAsync(wellbores.DimensionId, 1)).Single();
         Assert.Contains(second.Read.Notes, n => n.Contains("attribute value(s) of keys were added, rewritten or dropped", StringComparison.Ordinal));
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
     }
@@ -426,8 +426,8 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "WellboreContext"))!;
-        var keys = (await ledger.ListDimensionValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "WellboreContext"))!;
+        var keys = (await ledger.Dimensions.ListValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original, StringComparer.Ordinal);
 
         // max keeps the greatest of every record reached, each attribute on its own (the greatest name and the greatest
@@ -505,8 +505,8 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var keys = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original[(k.Original.LastIndexOf(':', k.Original.Length - 2) + 1)..^1], StringComparer.Ordinal);
 
         // Each wellbore collects the sources of its logs with how many hold each; a source spelled with a trailing space is
@@ -525,18 +525,18 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(("Source", "data.Source", "Not specified"), (collected.Name, collected.Path, collected.Missing));
         Assert.Equal(
             [("PETREL", "PETREL", 2L), ("WELLDB", "WELLDB", 3L), ("WELLDB", "WELLDB ", 1L)],
-            (await ledger.ListDimensionCollectedTextsAsync(wellbores.DimensionId, "Source", null, 10)).Select(v => (v.Value, v.Text, v.Records)));
+            (await ledger.Dimensions.ListCollectedTextsAsync(wellbores.DimensionId, "Source", null, 10)).Select(v => (v.Value, v.Text, v.Records)));
 
         // Each list of a cascade lists what the other picks leave, its own pick aside.
         async Task<IEnumerable<(string, int, long)>> ListAsync(string name, IReadOnlyList<DimensionAttributeMatch>? picks = null, IReadOnlyCollection<long>? values = null)
-            => (await ledger.ListDimensionAttributeValuesAsync(wellbores.DimensionId, new DimensionAttributeValueQuery(name, null, 10, picks, values)))
+            => (await ledger.Dimensions.ListAttributeValuesAsync(wellbores.DimensionId, new DimensionAttributeValueQuery(name, null, 10, picks, values)))
                 .Select(v => (v.Value, v.Keys, v.Records));
         DimensionAttributeMatch Pick(string name, params string[] values) => new(name, values);
         Assert.Equal([("Field A", 1, 3L), ("Not specified", 1, 2L)], await ListAsync("Field", [Pick("Country", "Mexico")]));
         Assert.Equal([("WELLDB", 2, 3L), ("Not specified", 1, 1L), ("PETREL", 1, 1L)], await ListAsync("Source", [Pick("Country", "Mexico")]));
         Assert.Equal([("Mexico", 1, 3L), ("Canada", 1, 2L)], await ListAsync("Country", [Pick("Source", "PETREL")]));
         Assert.Equal(await ListAsync("Country", [Pick("Source", "PETREL")]), await ListAsync("Country", [Pick("Country", "Mexico"), Pick("Source", "PETREL")]));
-        var a = (await ledger.GetDimensionMembersAsync(wellbores.DimensionId, [], ["MX A"])).Single();
+        var a = (await ledger.Dimensions.GetMembersAsync(wellbores.DimensionId, [], ["MX A"])).Single();
         Assert.Equal([("WELLDB", 1, 2L), ("PETREL", 1, 1L)], await ListAsync("Source", null, [a.MemberId]));
 
         // The table: a row per wellbore and source, each with its country, field and records, what cascading selects read.
@@ -592,7 +592,7 @@ public sealed class DimensionRunTests : IDisposable
         // A second build collects again: a wellbore whose last PETREL log became WELLDB holds WELLDB alone.
         _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:work-product-component--WellLog:3")["data"]!["Source"] = "WELLDB";
         await runner.BuildAsync(["Wellbore"], Guid.NewGuid(), "tests", CancellationToken.None);
-        var again = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var again = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .Single(k => k.Original == "dev:master-data--Wellbore:A:");
         Assert.Equal([("Source", "WELLDB", (long?)3L)], again.Attributes.Where(x => x.Name == "Source").Select(x => (x.Name, x.Value, x.Records)));
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
@@ -758,7 +758,7 @@ public sealed class DimensionRunTests : IDisposable
                 """));
 
         // The table's page reads the fields as it reads attributes.
-        var curves = (await ledger.FindDimensionAsync(flow.LedgerId, "TestCurve"))!;
+        var curves = (await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"))!;
         var page = await DimensionTable.ReadAsync(ledger, curves, new DimensionTableQuery(), CancellationToken.None);
         Assert.Equal(["Mnemonic", "CurveUnitID", "TopDepth"], page.Attributes);
         Assert.Equal(4L, page.Total);
@@ -818,7 +818,7 @@ public sealed class DimensionRunTests : IDisposable
         // identity, its rows found by partition and key, with a column for each attribute it declares. Any SQL client reads
         // it and joins on its numbers.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(Table, wellbores.TableName);
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country"], await ColumnsAsync(Table));
         Assert.Equal(
@@ -828,7 +828,7 @@ public sealed class DimensionRunTests : IDisposable
             ],
             await IndexesAsync(Table));
         Assert.Equal(["IX_key"], await SqlAsync($"SELECT i.[name] FROM sys.indexes AS i WHERE i.[object_id] = OBJECT_ID(N'[osdu].[{Table}]') AND i.[is_unique] = 1 AND i.[is_primary_key] = 0;"));
-        var keys = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
+        var keys = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original[^2..^1], StringComparer.Ordinal);
 
         // Each row first written and last changed by the build, at the time the dimension records as its last build.
@@ -886,7 +886,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(
             ["CA C|Canada|uuid-C|PETREL|1", "MX A|Mexico|uuid-A|PETREL|1", "MX A|Mexico|uuid-A|WELLDB|2", "MX B|Mexico|uuid-B|WELLDB|1"],
             await SqlAsync($"SELECT [FacilityName], [Country], [UUID], [Source], [records] FROM [osdu].[{Table}] WHERE [partition] = N'dev' ORDER BY [FacilityName], [Source];"));
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var welldb = await DimensionTable.ReadAsync(
             ledger, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Source", ["WELLDB"])], OrderBy: "records", Descending: true), CancellationToken.None);
         Assert.Equal(["Country", "UUID", "Source"], welldb.Attributes);
@@ -911,7 +911,7 @@ public sealed class DimensionRunTests : IDisposable
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country", "UUID", "Source", "Notes"], await ColumnsAsync(Table));
         Assert.Equal(["CA C|(null)|PETREL|mine", "MX A|(null)|WELLDB|mine", "MX B|(null)|WELLDB|mine"], await SqlAsync($"SELECT [FacilityName], [UUID], [Source], [Notes] FROM [osdu].[{Table}] ORDER BY [FacilityName];"));
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(["Country", "Source"], (await DimensionTable.ShapeAsync(ledger, wellbores, CancellationToken.None)).Attributes);
 
         // A table the dimension wrote under an earlier name is left behind by no build: the next one writes the table
@@ -925,7 +925,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Empty(await ColumnsAsync("dim_wells_dimensions_Wellbore"));
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country", "Source"], await ColumnsAsync(Table));
         Assert.Equal(["CA C|PETREL", "MX A|WELLDB", "MX B|WELLDB"], await SqlAsync($"SELECT [FacilityName], [Source] FROM [osdu].[{Table}] ORDER BY [FacilityName];"));
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(Table, wellbores.TableName);
 
         // A table dropped by hand is made again, with its rows, by whoever next reads it; so is the table of a dimension
@@ -934,11 +934,11 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(3, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country", "Source"], await ColumnsAsync(Table));
         await SqlAsync($"DROP TABLE [osdu].[{Table}]; UPDATE [osdu].[Dimension] SET [TableName] = NULL;");
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Null(wellbores.TableName);
         var exported = new StringWriter();
         Assert.Equal(3, await DimensionExport.WriteAsync(ledger, wellbores, DimensionExportSet.Table, DimensionExportFormat.Csv, exported, CancellationToken.None));
-        Assert.Equal(Table, (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!.TableName);
+        Assert.Equal(Table, (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!.TableName);
 
         // A key no build finds any more is no row of it.
         _platform.Records.RemoveAll(r => r["id"]!.GetValue<string>() == "dev:work-product-component--WellLog:5");
@@ -946,7 +946,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(["MX A", "MX B"], await SqlAsync($"SELECT [FacilityName] FROM [osdu].[{Table}] ORDER BY [FacilityName];"));
 
         // Removing the dimension drops its table with it.
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var removed = await DimensionRemoval.RemoveAsync(ledger, wellbores, "admin@example.test", _clock, CancellationToken.None);
         Assert.Equal(Table, removed.TableDropped);
         Assert.Contains("dropped the table osdu." + Table, removed.Describe(), StringComparison.Ordinal);
@@ -1062,7 +1062,7 @@ public sealed class DimensionRunTests : IDisposable
             await SqlAsync(Stamps));
 
         // The page a reader reads carries the same times.
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var page = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "UpdatedDate_DW", Descending: true), CancellationToken.None);
         Assert.Equal(
             [("MX B2", new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc), new DateTime(2026, 9, 7, 13, 0, 0, DateTimeKind.Utc)),
@@ -1127,7 +1127,7 @@ public sealed class DimensionRunTests : IDisposable
         // The columns are named after what the dimension reads: the property its path ends with, and its label's.
         var (runner, ledger, flow) = Runner(Head + Declared);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(("WellboreID", "FacilityName"), (wellbores.KeyColumn, wellbores.ValueColumn));
         var rows = await SqlAsync(Rows("WellboreID", "FacilityName"));
         Assert.Equal(2, rows.Count);
@@ -1138,7 +1138,7 @@ public sealed class DimensionRunTests : IDisposable
             EXEC sys.sp_rename N'[osdu].[{Table}].[FacilityName]', N'value', N'COLUMN';
             UPDATE [osdu].[Dimension] SET [KeyColumn] = N'key', [ValueColumn] = N'value';
             """);
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var before = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None);
         Assert.Equal(("key", "value", 2L), (before.KeyColumn, before.ValueColumn, before.Total));
 
@@ -1164,7 +1164,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(Columns("WellboreId", "Wellbore"), await ColumnsAsync(Table));
         Assert.Equal(rows, await SqlAsync(Rows("WellboreId", "Wellbore")));
         Assert.Equal(["partition, Wellbore, id"], await SqlAsync(ValueIndex));
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(("WellboreId", "Wellbore"), (wellbores.KeyColumn, wellbores.ValueColumn));
 
         // A page says what the two columns are named, and is ordered by a column's name or by the words value and key.
@@ -1201,16 +1201,16 @@ public sealed class DimensionRunTests : IDisposable
 
         // A reader that finds the table gone makes it again under the names it had: only a build reads the document.
         await SqlAsync($"DROP TABLE [osdu].[{Table}];");
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(2, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
         Assert.Equal(Columns("Wellbore", "WellboreId"), await ColumnsAsync(Table));
 
         // And a dimension that never had a table takes the names it reads by.
         await SqlAsync($"DROP TABLE [osdu].[{Table}]; UPDATE [osdu].[Dimension] SET [TableName] = NULL, [KeyColumn] = NULL, [ValueColumn] = NULL;");
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(2, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
         Assert.Equal(Columns("WellboreID", "FacilityName"), await ColumnsAsync(Table));
-        wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal((Table, "WellboreID", "FacilityName"), (wellbores.TableName, wellbores.KeyColumn, wellbores.ValueColumn));
     }
 
@@ -1238,14 +1238,14 @@ public sealed class DimensionRunTests : IDisposable
             "Dimension Source of log-dimensions would write a table named dim_Source, which dimension Source of wells-dimensions writes: a dimension's table is named after the dimension alone, so a dimension's name is unique among the module's dimension flows, wherever their targets keep their tables. Rename one of them.",
             refused.Message,
             StringComparison.Ordinal);
-        var failed = (await ledger.ListDimensionsAsync(null, null)).Single(d => d.FlowName == "log-dimensions");
-        Assert.Equal((DimensionRunStatus.Failed, (string?)null), ((await ledger.ListDimensionRunsAsync(failed.DimensionId, 1)).Single().Status, failed.TableName));
+        var failed = (await ledger.Dimensions.ListAsync(null, null)).Single(d => d.FlowName == "log-dimensions");
+        Assert.Equal((DimensionRunStatus.Failed, (string?)null), ((await ledger.Dimensions.ListRunsAsync(failed.DimensionId, 1)).Single().Status, failed.TableName));
 
         // The first flow's table is untouched, and the refused dimension goes without taking it.
         var removed = await DimensionRemoval.RemoveAsync(ledger, failed, "admin@example.test", _clock, CancellationToken.None);
         Assert.Null(removed.TableDropped);
         Assert.Equal(["dev|WELLDB|WELLDB|1"], await SqlAsync("SELECT [partition], [SourceKey], [Source], [records] FROM [osdu].[dim_Source];"));
-        Assert.Equal("dim_Source", (await ledger.FindDimensionAsync(flow.LedgerId, "Source"))!.TableName);
+        Assert.Equal("dim_Source", (await ledger.Dimensions.FindAsync(flow.LedgerId, "Source"))!.TableName);
     }
 
     [Fact]
@@ -1297,15 +1297,15 @@ public sealed class DimensionRunTests : IDisposable
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
         Assert.DoesNotContain(_platform.Calls, c => c.Uri.AbsolutePath.EndsWith("/query_with_cursor", StringComparison.Ordinal));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var keys = await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10));
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10));
         Assert.Equal(4, keys.Count);
         Assert.All(keys, k => Assert.Equal(
             [("Not specified", (long?)300L), ("PETREL", 300L), ("WELLDB", 300L)],
             k.Attributes.Select(a => (a.Value, a.Records)).OrderBy(a => a.Value, StringComparer.Ordinal)));
         Assert.Equal(
             [("PETREL", 1200L), ("WELLDB", 1200L)],
-            (await ledger.ListDimensionCollectedTextsAsync(wellbores.DimensionId, "Source", null, 10)).Select(v => (v.Value, v.Records)));
+            (await ledger.Dimensions.ListCollectedTextsAsync(wellbores.DimensionId, "Source", null, 10)).Select(v => (v.Value, v.Records)));
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
     }
 
@@ -1337,15 +1337,15 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        Assert.Equal(1100, (await ledger.ListDimensionCollectedTextsAsync(wellbores.DimensionId, "Source", null, 2000)).Count);
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        Assert.Equal(1100, (await ledger.Dimensions.ListCollectedTextsAsync(wellbores.DimensionId, "Source", null, 2000)).Count);
         // W2 holds every third source, and the log of 1,100 without one.
-        var w2 = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery("W2", null, false, false, null, 10))).Single();
+        var w2 = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery("W2", null, false, false, null, 10))).Single();
         Assert.Equal(366, w2.Attributes.Count(a => a is { Name: "Source", Records: 1 } && a.Value != "Not specified"));
         Assert.Contains(w2.Attributes, a => a is { Name: "Source", Value: "Not specified", Records: 1 });
         Assert.Equal(
             [("S0001", 1, 1L)],
-            (await ledger.ListDimensionAttributeValuesAsync(wellbores.DimensionId, new DimensionAttributeValueQuery("Source", "S0001", 10))).Select(v => (v.Value, v.Keys, v.Records)));
+            (await ledger.Dimensions.ListAttributeValuesAsync(wellbores.DimensionId, new DimensionAttributeValueQuery("Source", "S0001", 10))).Select(v => (v.Value, v.Keys, v.Records)));
 
         // A source picks its log; Not specified would have to exclude every one of 1,100 sources, which no search holds.
         var one = await DimensionSearch.ComposeAsync(
@@ -1383,8 +1383,8 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var keys = await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000));
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000));
         Assert.Equal(300, keys.Count);
         Assert.Equal(
             expected.OrderBy(e => e.Key.Key, StringComparer.Ordinal).ThenBy(e => e.Key.Source, StringComparer.Ordinal).Select(e => (e.Key.Key, e.Key.Source, (long?)e.Value)).ToList(),
@@ -1436,8 +1436,8 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var keys = await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000));
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000));
         Assert.Equal(
             expected.OrderBy(e => e.Key.Key, StringComparer.Ordinal).ThenBy(e => e.Key.Source, StringComparer.Ordinal).Select(e => (e.Key.Key, e.Key.Source, (long?)e.Value)).ToList(),
             keys.SelectMany(k => k.Attributes.Select(a => (k.Original, a.Value, a.Records)))
@@ -1470,8 +1470,8 @@ public sealed class DimensionRunTests : IDisposable
                   Source: { collect: data.Source }
             """);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var built = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var before = (await ledger.ListDimensionValuesAsync(built.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000)))
+        var built = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var before = (await ledger.Dimensions.ListValuesAsync(built.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000)))
             .SelectMany(k => k.Attributes.Select(a => (k.Original, a.Value, a.Records))).ToList();
 
         // Every page after the first of the pass is lost: each range's read and its second read both fail.
@@ -1479,13 +1479,13 @@ public sealed class DimensionRunTests : IDisposable
         var failed = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
         Assert.Contains("could not be read whole in 2 reads", failed.Outcome.Dimensions[0].Error, StringComparison.Ordinal);
-        var kept = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var kept = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(built.Members, kept.Members);
         Assert.Equal(
             before,
-            (await ledger.ListDimensionValuesAsync(kept.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000)))
+            (await ledger.Dimensions.ListValuesAsync(kept.DimensionId, new DimensionValueQuery(null, null, false, false, null, 1000)))
                 .SelectMany(k => k.Attributes.Select(a => (k.Original, a.Value, a.Records))).ToList());
-        var runs = await ledger.ListDimensionRunsAsync(kept.DimensionId, 2);
+        var runs = await ledger.Dimensions.ListRunsAsync(kept.DimensionId, 2);
         Assert.Equal([DimensionRunStatus.Failed, DimensionRunStatus.Completed], runs.Select(r => r.Status));
     }
 
@@ -1544,9 +1544,9 @@ public sealed class DimensionRunTests : IDisposable
 
         Assert.Equal((1, 0), (outcome.Built, outcome.Failed));
         Assert.InRange(_platform.MostAtOnce, 3, 6);
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal((1_200L, 1_200L), (wellbores.Members, wellbores.Originals));
-        var first = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery("W0000", null, false, false, null, 1))).Single();
+        var first = (await ledger.Dimensions.ListValuesAsync(wellbores.DimensionId, new DimensionValueQuery("W0000", null, false, false, null, 1))).Single();
         Assert.Equal("MX 0000", first.MemberValue);
         Assert.Equal([("Country", "Mexico", null), ("Source", "S000", 2L)], first.Attributes.Select(a => (a.Name, a.Value, a.Records)));
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
@@ -1607,8 +1607,8 @@ public sealed class DimensionRunTests : IDisposable
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         _platform.Add("dev:work-product-component--WellLog:4", WellLog, new JsonObject { ["WellboreID"] = "dev:master-data--Wellbore:C:", ["Source"] = "WELLDB" });
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
-        var sources = (await ledger.FindDimensionAsync(flow.LedgerId, "Source"))!;
+        var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
+        var sources = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Source"))!;
         string[] tables = ["DimensionRun", "DimensionMember", "DimensionValue", "DimensionAttribute", "DimensionCollectedText", "DimensionChange", "Dimension"];
         async Task<long[]> RowsAsync(int dimensionId)
         {
@@ -1656,7 +1656,7 @@ public sealed class DimensionRunTests : IDisposable
             (removed.DimensionId, removed.Name, removed.Values, removed.Keys, removed.Builds, removed.Changes, removed.Attributes, removed.Texts));
         Assert.All(await RowsAsync(wellbores.DimensionId), count => Assert.Equal(0L, count));
         Assert.Equal(others, await RowsAsync(sources.DimensionId));
-        Assert.Null(await ledger.GetDimensionAsync(wellbores.DimensionId));
+        Assert.Null(await ledger.Dimensions.GetAsync(wellbores.DimensionId));
 
         // The removal is an activity of the flow, with who removed it and what went; one that finds nothing to remove fails.
         var activity = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = flow.LedgerId, Kind = DimensionRemoval.ActivityKind }));
@@ -1684,7 +1684,7 @@ public sealed class DimensionRunTests : IDisposable
 
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "LegalTag"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "LegalTag"))!;
         var members = await MembersAsync(ledger, dimension.DimensionId);
         var a = members.Single(m => m.Value == "dev-a");
         Assert.Equal((3L, true, 2), (a.Records, a.RecordsExact, a.Originals));
@@ -1716,11 +1716,11 @@ public sealed class DimensionRunTests : IDisposable
         var field = failed.Outcome.Dimensions.Single(d => d.Dimension == "FieldName");
         Assert.Contains("osdu:wks:master-data--Field:1.0.0 (1 record(s))", field.Error, StringComparison.Ordinal);
         Assert.Contains("sqlflow template capture", field.Error, StringComparison.Ordinal);
-        var names = (await ledger.FindDimensionAsync(flow.LedgerId, "WellboreName"))!;
+        var names = (await ledger.Dimensions.FindAsync(flow.LedgerId, "WellboreName"))!;
         Assert.Equal(1, names.Members);
-        var fieldName = (await ledger.FindDimensionAsync(flow.LedgerId, "FieldName"))!;
+        var fieldName = (await ledger.Dimensions.FindAsync(flow.LedgerId, "FieldName"))!;
         Assert.Null(fieldName.LastRunId);
-        Assert.Equal(DimensionRunStatus.Failed, (await ledger.ListDimensionRunsAsync(fieldName.DimensionId, 1)).Single().Status);
+        Assert.Equal(DimensionRunStatus.Failed, (await ledger.Dimensions.ListRunsAsync(fieldName.DimensionId, 1)).Single().Status);
     }
 
     [Fact]
@@ -1738,7 +1738,7 @@ public sealed class DimensionRunTests : IDisposable
         var built = Assert.Single(outcome.Dimensions);
         Assert.Equal((DimensionRunStatus.Completed, 0L), (built.Status, built.Values));
         Assert.Contains(built.Notes, n => n.Contains("No record of kind", StringComparison.Ordinal));
-        Assert.Null((await ledger.FindDimensionAsync(flow.LedgerId, "WellboreName"))!.Field);
+        Assert.Null((await ledger.Dimensions.FindAsync(flow.LedgerId, "WellboreName"))!.Field);
     }
 
     [Fact]
@@ -1772,9 +1772,9 @@ public sealed class DimensionRunTests : IDisposable
 
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Operator"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Operator"))!;
         Assert.Equal(["Acme Oil", "Newco Ltd"], (await MembersAsync(ledger, dimension.DimensionId)).Select(m => m.Value));
-        var left = await ledger.ListDimensionValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, LeftOutOnly: true, false, null, 10));
+        var left = await ledger.Dimensions.ListValuesAsync(dimension.DimensionId, new DimensionValueQuery(null, null, LeftOutOnly: true, false, null, 10));
         Assert.Equal(
             [("  ", DimensionLeftOut.Empty), ("Retired", DimensionLeftOut.Dropped)],
             left.Select(v => (v.Original, v.LeftOut!)).OrderBy(v => v.Original, StringComparer.Ordinal));
@@ -1797,7 +1797,7 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Contains(outcome.Dimensions[0].Notes, n => n.Contains("scanning", StringComparison.Ordinal));
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Version"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Version"))!;
         var members = await MembersAsync(ledger, dimension.DimensionId);
         Assert.Equal([("11", 1L), ("12", 2L)], members.Select(m => (m.Value, m.Records)));
         Assert.Equal("version:\"12\"", members[1].Filter);
@@ -1816,7 +1816,7 @@ public sealed class DimensionRunTests : IDisposable
         var outcome = await runner.BuildAsync(["kinds"], Guid.NewGuid(), "tests", CancellationToken.None);
 
         Assert.Equal(["Kinds"], outcome.Dimensions.Select(d => d.Dimension));
-        Assert.Null(await ledger.FindDimensionAsync(flow.LedgerId, "Names"));
+        Assert.Null(await ledger.Dimensions.FindAsync(flow.LedgerId, "Names"));
     }
 
     [Fact]
@@ -1838,7 +1838,7 @@ public sealed class DimensionRunTests : IDisposable
         var field = plan.Dimensions.Single(d => d.Dimension == "FieldName");
         Assert.Equal(0, field.Records);
         Assert.NotEmpty(field.Problems);
-        Assert.Empty(await ledger.ListDimensionsAsync("dev", null));
+        Assert.Empty(await ledger.Dimensions.ListAsync("dev", null));
     }
 
     [Fact]
@@ -1855,9 +1855,9 @@ public sealed class DimensionRunTests : IDisposable
         var failed = await Assert.ThrowsAsync<DimensionBuildsFailedException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
         Assert.Contains("503", failed.Outcome.Dimensions[0].Error, StringComparison.Ordinal);
-        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "CurveMnemonic"))!;
+        var dimension = (await ledger.Dimensions.FindAsync(flow.LedgerId, "CurveMnemonic"))!;
         Assert.Equal(0, dimension.Members);
-        var run = (await ledger.ListDimensionRunsAsync(dimension.DimensionId, 1)).Single();
+        var run = (await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, 1)).Single();
         Assert.Equal(DimensionRunStatus.Failed, run.Status);
         Assert.NotNull(run.CompletedUtc);
     }

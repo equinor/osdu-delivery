@@ -118,6 +118,12 @@ public sealed class DeliveryRedeliverApiTests
             return await db.Runs.AsNoTracking().SingleAsync(r => r.RunId == runId);
         }
 
+        async Task<int> RunCountAsync()
+        {
+            await using var db = CatalogDatabase.Create(cs);
+            return await db.Runs.AsNoTracking().CountAsync(r => r.PipelineId == pipelineId);
+        }
+
         try
         {
             await using var factory = new ControlPlaneAppFactory()
@@ -159,8 +165,19 @@ public sealed class DeliveryRedeliverApiTests
             Assert.Equal((pipelineId, "deliver"), (plain.PipelineId, plain.Operation));
             Assert.DoesNotContain("rerender", plain.Payload ?? string.Empty, StringComparison.Ordinal);
 
+            // A request that names no records asks nothing and queues nothing: every record is asked for by name, and all is
+            // not asked beside keys or a filter.
+            var runsBefore = await RunCountAsync();
+            foreach (var route in new[] { "rerender", "rerender/preview", "redeliver" })
+            {
+                await StatusAsync(client, token, HttpMethod.Post, $"{flow}/{route}", HttpStatusCode.BadRequest, "{}");
+                await StatusAsync(client, token, HttpMethod.Post, $"{flow}/{route}", HttpStatusCode.BadRequest, """{"filter":{"status":"delivered"},"expected":3,"all":true}""");
+            }
+
+            Assert.Equal(runsBefore, await RunCountAsync());
+
             // Every delivered record: asked of a deliver run, whose node asks and plans them in the run that brings them.
-            var all = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/rerender", "{}", HttpStatusCode.Accepted);
+            var all = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/rerender", """{"all":true}""", HttpStatusCode.Accepted);
             Assert.Equal(0, all.GetProperty("marked").GetInt32());
             Assert.Contains("\"rerender\":true", (await RunAsync(all.GetProperty("runId").GetGuid())).Payload, StringComparison.Ordinal);
 
@@ -173,7 +190,7 @@ public sealed class DeliveryRedeliverApiTests
             Assert.Contains(delivered[2].ToString("D"), plan.Payload, StringComparison.Ordinal);
             Assert.DoesNotContain(held.ToString("D"), plan.Payload, StringComparison.Ordinal);
             await StatusAsync(client, token, HttpMethod.Post, $"{flow}/rerender/preview", HttpStatusCode.Conflict, Keys(true, held));
-            var whole = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/rerender/preview", "{}", HttpStatusCode.Accepted);
+            var whole = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/rerender/preview", """{"all":true}""", HttpStatusCode.Accepted);
             Assert.Equal((3, 3L), (whole.GetProperty("checked").GetInt32(), whole.GetProperty("selected").GetInt64()));
 
             // Sent again whatever the hashes say: a part the route does not send is refused, and the record forgets its
@@ -183,7 +200,7 @@ public sealed class DeliveryRedeliverApiTests
             var again = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/redeliver", $$"""{"keys":["{{delivered[2]:D}}"],"scope":"record","run":false}""");
             Assert.Equal(1, again.GetProperty("marked").GetInt32());
             Assert.Null((await RecordAsync(delivered[2])).MetadataHash);
-            var everyOne = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/redeliver", "{}", HttpStatusCode.Accepted);
+            var everyOne = await JsonAsync(client, token, HttpMethod.Post, $"{flow}/redeliver", """{"all":true}""", HttpStatusCode.Accepted);
             Assert.Contains("\"redeliver\":\"all\"", (await RunAsync(everyOne.GetProperty("runId").GetGuid())).Payload, StringComparison.Ordinal);
         }
         finally

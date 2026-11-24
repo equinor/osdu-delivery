@@ -1545,8 +1545,9 @@ async fn records_are_released_one_by_key_or_all_held_and_never_by_omission() {
     assert_eq!((by_key.path.as_str(), by_key.query.as_str()), (flow.as_str(), "interface=well%20logs&partition=dev"));
     assert_eq!(by_key.body, json!({ "keys": [KEY] }));
 
+    // Said, it is said to the endpoint too: an empty body releases nothing there.
     session.json("delivery_release_records", json!({ "pipelineId": PIPELINE, "allHeld": true })).await;
-    assert_eq!(estate.seen().into_iter().last().expect("a request").body, json!({}));
+    assert_eq!(estate.seen().into_iter().last().expect("a request").body, json!({ "all": true }));
 
     let both = session.call("delivery_release_records", json!({ "pipelineId": PIPELINE, "keys": [KEY], "allHeld": true })).await;
     assert_eq!(both, "Error: Give keys or allHeld, not both.");

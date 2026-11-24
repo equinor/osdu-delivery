@@ -148,7 +148,7 @@ public static class DimensionSearch
 
     /// <summary>
     /// The part of a pick by attributes: the keys holding every attribute value picked (and belonging to one of the values
-    /// picked, when there are some), at most <see cref="OsduLedger.MaxDimensionPage"/>, and the filter finding their records;
+    /// picked, when there are some), at most <see cref="DimensionStore.MaxPage"/>, and the filter finding their records;
     /// a value picked of a collected attribute narrows those records to the ones holding it. Collected values picked alone
     /// pick no keys: the filter finds every record holding one, among the records holding a key.
     /// </summary>
@@ -211,7 +211,7 @@ public static class DimensionSearch
         var picked = new List<DimensionMemberState>();
         if (pick.ValueIds.Count + pick.Values.Count > 0)
         {
-            var named = await ledger.GetDimensionMembersAsync(dimension.DimensionId, pick.ValueIds, pick.Values, ct).ConfigureAwait(false);
+            var named = await ledger.Dimensions.GetMembersAsync(dimension.DimensionId, pick.ValueIds, pick.Values, ct).ConfigureAwait(false);
             missing.AddRange(pick.ValueIds.Where(id => named.All(m => m.MemberId != id)).Select(id => $"{dimension.Name}: {id.ToString(CultureInfo.InvariantCulture)}")
                 .Concat(pick.Values.Where(v => named.All(m => !string.Equals(m.Value, v, StringComparison.Ordinal))).Select(v => $"{dimension.Name}: {v}")));
             removed.AddRange(named.Where(m => m.RemovedRunId is not null).Select(m => $"{dimension.Name}: {m.Value}"));
@@ -223,15 +223,15 @@ public static class DimensionSearch
             }
         }
 
-        var keys = await ledger.ListDimensionValuesAsync(
+        var keys = await ledger.Dimensions.ListValuesAsync(
             dimension.DimensionId,
-            new DimensionValueQuery(null, null, false, false, null, OsduLedger.MaxDimensionPage, DimensionValueOrder.Arrival, matches, memberIds),
+            new DimensionValueQuery(null, null, false, false, null, DimensionStore.MaxPage, DimensionValueOrder.Arrival, matches, memberIds),
             ct).ConfigureAwait(false);
         var described = string.Join(" and ", matches.Select(m => $"{m.Name} is {string.Join(" or ", m.Values)}"));
-        if (keys.Count >= OsduLedger.MaxDimensionPage)
+        if (keys.Count >= DimensionStore.MaxPage)
         {
             throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
-                $"The keys of dimension {dimension.Name} where {described} are {OsduLedger.MaxDimensionPage} or more, more than one search holds. Pick narrower attribute values, or values of the dimension with them."));
+                $"The keys of dimension {dimension.Name} where {described} are {DimensionStore.MaxPage} or more, more than one search holds. Pick narrower attribute values, or values of the dimension with them."));
         }
 
         var filterable = keys.Where(k => k.Filterable).Select(k => k.Original).ToList();
@@ -253,7 +253,7 @@ public static class DimensionSearch
         if (picked.Count == 0)
         {
             var ids = keys.Where(k => k.MemberId is not null).Select(k => k.MemberId!.Value).Distinct().ToList();
-            picked = (await ledger.GetDimensionMembersAsync(dimension.DimensionId, ids, [], ct).ConfigureAwait(false)).ToList();
+            picked = (await ledger.Dimensions.GetMembersAsync(dimension.DimensionId, ids, [], ct).ConfigureAwait(false)).ToList();
         }
 
         return new DimensionSearchPart(
@@ -277,7 +277,7 @@ public static class DimensionSearch
                 $"Dimension {dimension.Name} has not been built since it began collecting attribute {match.Name}, so no search can pick its values yet. Build it first.");
         var field = DimensionFilters.FieldOf(state.Path, state.Field)!;
         var asked = match.Values.Distinct(StringComparer.Ordinal).ToList();
-        var picked = await ledger.ListDimensionCollectedTextsAsync(dimension.DimensionId, match.Name, asked, MaxClauses + 1, ct).ConfigureAwait(false);
+        var picked = await ledger.Dimensions.ListCollectedTextsAsync(dimension.DimensionId, match.Name, asked, MaxClauses + 1, ct).ConfigureAwait(false);
         if (picked.Count > MaxClauses)
         {
             throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
@@ -295,7 +295,7 @@ public static class DimensionSearch
         {
             // The records holding none of the values are every record but those holding one of the attribute's texts: one
             // search can exclude only so many.
-            var every = await ledger.ListDimensionCollectedTextsAsync(dimension.DimensionId, match.Name, null, MaxClauses + 1, ct).ConfigureAwait(false);
+            var every = await ledger.Dimensions.ListCollectedTextsAsync(dimension.DimensionId, match.Name, null, MaxClauses + 1, ct).ConfigureAwait(false);
             if (every.Count > MaxClauses)
             {
                 throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,

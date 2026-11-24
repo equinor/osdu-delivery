@@ -180,13 +180,13 @@ public static class DeliveryAssertionEndpoints
             return DeliveryEndpoints.Invalid($"A query returns a number of rows, or 0 for all of them; {request.MaxRows.Value.ToString(CultureInfo.InvariantCulture)} is neither.");
         }
 
-        var run = await ledger.GetAssertionRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        var run = await ledger.Assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
         if (run is null)
         {
             return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
-        var kept = (await ledger.ListAssertionResultsAsync(assertionRunId, ct).ConfigureAwait(false))
+        var kept = (await ledger.Assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false))
             .FirstOrDefault(r => string.Equals(r.TestName, test, StringComparison.OrdinalIgnoreCase));
         var check = TestResults.Deserialize(kept?.Detail)?.Assertions.FirstOrDefault(a => a.Index == index);
         if (check is null)
@@ -310,7 +310,7 @@ public static class DeliveryAssertionEndpoints
                 detail: $"ids names {named.Count} results; name between 1 and {MaxResults}, comma-separated.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid result ids");
         }
 
-        var results = await ledger.GetAssertionResultsAsync(named, ct).ConfigureAwait(false);
+        var results = await ledger.Assertions.GetResultsAsync(named, ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryAssertionResultDto>>(results
             .Select(r => (State: r, Result: TestResults.Deserialize(r.Detail)))
             .Where(r => r.Result is not null)
@@ -430,7 +430,7 @@ public static class DeliveryAssertionEndpoints
             return problem!;
         }
 
-        var runs = await ledger.ListAssertionRunsAsync(bound.LedgerId, Math.Clamp(max ?? 50, 1, 500), ct).ConfigureAwait(false);
+        var runs = await ledger.Assertions.ListRunsAsync(bound.LedgerId, Math.Clamp(max ?? 50, 1, 500), ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryAssertionRunDto>>(runs.Select(ToDto).ToList());
     }
 
@@ -445,8 +445,8 @@ public static class DeliveryAssertionEndpoints
         }
 
         var take = Math.Clamp(runs ?? 30, 1, 200);
-        var recent = await ledger.ListAssertionRunsAsync(bound.LedgerId, take, ct).ConfigureAwait(false);
-        var results = await ledger.AssertionHistoryAsync(bound.LedgerId, null, take, withDetail: false, ct).ConfigureAwait(false);
+        var recent = await ledger.Assertions.ListRunsAsync(bound.LedgerId, take, ct).ConfigureAwait(false);
+        var results = await ledger.Assertions.HistoryAsync(bound.LedgerId, null, take, withDetail: false, ct).ConfigureAwait(false);
         var byTest = results.GroupBy(r => r.TestName, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         var rows = bound.Tests
             .Select(t => t.Name)
@@ -476,7 +476,7 @@ public static class DeliveryAssertionEndpoints
             return TypedResults.Problem(detail: $"'{test}' is not a test name: {SelectableNames.Rule}.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid test name");
         }
 
-        var results = await ledger.AssertionHistoryAsync(bound.LedgerId, test, Math.Clamp(runs ?? 30, 1, 200), withDetail: true, ct).ConfigureAwait(false);
+        var results = await ledger.Assertions.HistoryAsync(bound.LedgerId, test, Math.Clamp(runs ?? 30, 1, 200), withDetail: true, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryAssertionTestHistoryDto(
             bound.Test(test)?.Name ?? test,
             results.Select(r => TestResults.Deserialize(r.Detail)).Where(r => r is not null).Cast<TestResult>().ToList()));
@@ -485,13 +485,13 @@ public static class DeliveryAssertionEndpoints
     private static async Task<Results<Ok<DeliveryAssertionRunDetailDto>, ProblemHttpResult>> GetRunAsync(
         long assertionRunId, CatalogDbContext db, ILedger ledger, CancellationToken ct)
     {
-        var run = await ledger.GetAssertionRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        var run = await ledger.Assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
         if (run is null)
         {
             return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
-        var results = await ledger.ListAssertionResultsAsync(assertionRunId, ct).ConfigureAwait(false);
+        var results = await ledger.Assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false);
         var pipelineId = await db.Pipelines.AsNoTracking()
             .Where(p => p.Kind == AssertionFlowDefinition.FlowTypeName && p.Name == run.FlowName)
             .OrderByDescending(p => p.Active)
@@ -508,13 +508,13 @@ public static class DeliveryAssertionEndpoints
             return TypedResults.Problem(detail: $"format '{format}' is not one of json, md, html, junit.", statusCode: StatusCodes.Status400BadRequest, title: "Unknown report format");
         }
 
-        var run = await ledger.GetAssertionRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        var run = await ledger.Assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
         if (run is null)
         {
             return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
-        var results = await ledger.ListAssertionResultsAsync(assertionRunId, ct).ConfigureAwait(false);
+        var results = await ledger.Assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false);
         var report = new AssertionReport(run, Parsed(results), time.GetUtcNow().UtcDateTime);
         var (mediaType, _) = AssertionReport.Describe(chosen);
         return TypedResults.File(Encoding.UTF8.GetBytes(report.Render(chosen)), mediaType, report.FileName(chosen));
@@ -656,7 +656,7 @@ public static class DeliveryAssertionEndpoints
     {
         var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
         var ledgerIds = parsed.Where(p => p.Bound is not null).Select(p => p.Bound!.LedgerId).ToList();
-        var latest = (await ledger.LatestAssertionResultsAsync(ledgerIds, ct: ct).ConfigureAwait(false))
+        var latest = (await ledger.Assertions.LatestResultsAsync(ledgerIds, ct: ct).ConfigureAwait(false))
             .GroupBy(r => r.FlowId)
             .ToDictionary(g => g.Key, g => g.ToDictionary(r => r.TestName, StringComparer.OrdinalIgnoreCase));
         var flows = new List<DeliveryAssertionFlowDto>(parsed.Count);
@@ -678,7 +678,7 @@ public static class DeliveryAssertionEndpoints
             MappingReader mappings = (reference, token) => SyncedMappings.ByReferenceAsync(ledger, repositories, documents, reference, token);
             var bindings = await AssertionTemplates.BindMappingsAsync(bound.Tests, mappings, ct).ConfigureAwait(false);
             var fits = await AssertionTemplates.FitAsync(bindings, folders, pipeline.RelativePath, mappings, ct).ConfigureAwait(false);
-            var runs = await ledger.ListAssertionRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
+            var runs = await ledger.Assertions.ListRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
             var lastRun = runs.Count > 0 ? runs[0] : null;
             var ofFlow = latest.TryGetValue(bound.LedgerId, out var found) ? found : new Dictionary<string, AssertionResultState>(StringComparer.OrdinalIgnoreCase);
             var tests = bound.Tests.Select(test =>

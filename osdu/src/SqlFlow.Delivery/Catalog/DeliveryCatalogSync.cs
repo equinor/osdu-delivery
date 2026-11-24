@@ -83,21 +83,9 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     /// </summary>
     private async Task<string> ResolvedScopeAsync(CacheDefinition cache, CancellationToken ct)
     {
-        if (_secrets is null)
-        {
-            return cache.Scope;
-        }
-
-        try
-        {
-            return Snapshots.CacheScope.Normalize(
-                await _secrets.ResolveAsync(cache.Scope, ct).ConfigureAwait(false),
-                cache.SourcePath ?? cache.Name);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return cache.Scope;
-        }
+        return _secrets is null
+            ? cache.Scope
+            : await Snapshots.CacheScope.ResolvedAsync(cache.Scope, _secrets, cache.SourcePath ?? cache.Name, ct).ConfigureAwait(false);
     }
 
     public async Task<CatalogSyncExtensionResult> SyncAsync(

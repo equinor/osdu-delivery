@@ -102,17 +102,17 @@ public sealed class DeliveryInventoryApiTests
 
             // A build of WellLogs lists five ids: the two the ledger knows, two no ledger knows that the estate created, and one
             // another identity created. It reconciles with the owner the flow names and completes.
-            var wellLogs = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
-            var build = await ledger.StartInventoryRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-2));
-            await ledger.AppendInventoryScanAsync(flow.LedgerId, build,
+            var wellLogs = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
+            var build = await ledger.Inventories.StartRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-2));
+            await ledger.Inventories.AppendScanAsync(flow.LedgerId, build,
             [
                 Row(Id("tracked"), 10, Estate), Row(Id("drifted"), 12, Estate), Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("theirs"), 1, Stranger, named: false),
             ]);
-            var merge = await ledger.MergeInventoryAsync(flow.LedgerId, wellLogs.InventoryId, build, now.AddHours(-2));
-            await ledger.ReconcileInventoryAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], now.AddHours(-2));
-            var counts = await ledger.InventoryCountsAsync(flow.LedgerId, wellLogs.InventoryId);
+            var merge = await ledger.Inventories.MergeAsync(flow.LedgerId, wellLogs.InventoryId, build, now.AddHours(-2));
+            await ledger.Inventories.ReconcileAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], now.AddHours(-2));
+            var counts = await ledger.Inventories.CountsAsync(flow.LedgerId, wellLogs.InventoryId);
             var owners = JsonSerializer.Serialize(new { source = "declared", owners = new[] { new { identity = Estate, records = 2 } } });
-            await ledger.CompleteInventoryRunAsync(
+            await ledger.Inventories.CompleteRunAsync(
                 flow.LedgerId, build,
                 new InventoryRunState
                 {
@@ -123,11 +123,11 @@ public sealed class DeliveryInventoryApiTests
                 "declared", now.AddHours(-2).AddMinutes(1));
 
             // A newer build is under way: listings show it as the newest run, and the counts the last reconcile wrote beside it.
-            var running = await ledger.StartInventoryRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddMinutes(-5));
+            var running = await ledger.Inventories.StartRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddMinutes(-5));
 
             // LogFiles is registered and never built; Retired is kept from a declaration the flow no longer makes.
-            var logFiles = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "LogFiles", LogFile, null, "search", "latest");
-            var retired = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "Retired", "osdu:wks:master-data--Wellbore:*", null, "search", "all");
+            var logFiles = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "LogFiles", LogFile, null, "search", "latest");
+            var retired = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "Retired", "osdu:wks:master-data--Wellbore:*", null, "search", "all");
 
             await using var factory = Factory(cs);
             using var client = factory.CreateClient();
@@ -350,11 +350,11 @@ public sealed class DeliveryInventoryApiTests
 
             // Two ids no ledger knows that the estate created (orphans), one another identity created (foreign), and one OSDU no
             // longer serves (gone).
-            var wellLogs = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
-            var build = await ledger.StartInventoryRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-1));
-            await ledger.AppendInventoryScanAsync(flow.LedgerId, build, [Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("theirs"), 1, Stranger), Row(Id("vanished"), 1, Estate)]);
-            var merge = await ledger.MergeInventoryAsync(flow.LedgerId, wellLogs.InventoryId, build, now.AddHours(-1));
-            await ledger.ReconcileInventoryAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], now.AddHours(-1));
+            var wellLogs = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
+            var build = await ledger.Inventories.StartRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-1));
+            await ledger.Inventories.AppendScanAsync(flow.LedgerId, build, [Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("theirs"), 1, Stranger), Row(Id("vanished"), 1, Estate)]);
+            var merge = await ledger.Inventories.MergeAsync(flow.LedgerId, wellLogs.InventoryId, build, now.AddHours(-1));
+            await ledger.Inventories.ReconcileAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], now.AddHours(-1));
             await using (var osdu = SampleEstate.Context(cs))
             {
                 var vanished = Id("vanished");
@@ -363,8 +363,8 @@ public sealed class DeliveryInventoryApiTests
                     .ExecuteUpdateAsync(s => s.SetProperty(r => r.Finding, InventoryFindings.Gone).SetProperty(r => r.GoneUtc, now.AddMinutes(-30)));
             }
 
-            var counts = await ledger.InventoryCountsAsync(flow.LedgerId, wellLogs.InventoryId);
-            await ledger.CompleteInventoryRunAsync(
+            var counts = await ledger.Inventories.CountsAsync(flow.LedgerId, wellLogs.InventoryId);
+            await ledger.Inventories.CompleteRunAsync(
                 flow.LedgerId, build,
                 new InventoryRunState
                 {
@@ -548,15 +548,15 @@ public sealed class DeliveryInventoryApiTests
             await ledger.RegisterAsync(deliveryFlow, partition, "api-selection-delivery-" + suffix);
 
             // Three ids no ledger knows that the estate created (orphans), and one another identity created (foreign).
-            var wellLogs = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
+            var wellLogs = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
             async Task<long> BuildAsync(DateTime at)
             {
-                var run = await ledger.StartInventoryRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", at);
-                await ledger.AppendInventoryScanAsync(flow.LedgerId, run, [Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("ours-3"), 1, Estate), Row(Id("theirs"), 1, Stranger)]);
-                var merged = await ledger.MergeInventoryAsync(flow.LedgerId, wellLogs.InventoryId, run, at);
-                await ledger.ReconcileInventoryAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], at);
-                var found = await ledger.InventoryCountsAsync(flow.LedgerId, wellLogs.InventoryId);
-                await ledger.CompleteInventoryRunAsync(
+                var run = await ledger.Inventories.StartRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", at);
+                await ledger.Inventories.AppendScanAsync(flow.LedgerId, run, [Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("ours-3"), 1, Estate), Row(Id("theirs"), 1, Stranger)]);
+                var merged = await ledger.Inventories.MergeAsync(flow.LedgerId, wellLogs.InventoryId, run, at);
+                await ledger.Inventories.ReconcileAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], at);
+                var found = await ledger.Inventories.CountsAsync(flow.LedgerId, wellLogs.InventoryId);
+                await ledger.Inventories.CompleteRunAsync(
                     flow.LedgerId, run,
                     new InventoryRunState
                     {
@@ -629,16 +629,16 @@ public sealed class DeliveryInventoryApiTests
             }
 
             // The match run fills the selection: two ids of the inventory hold the condition, and one record of the kind it holds no row of.
-            Assert.NotNull(await ledger.StartInventorySelectionAsync(flow.LedgerId, wellLogs.InventoryId, selectionId, matchRun, firstBuild, now));
-            await ledger.PlanInventorySelectionAsync(flow.LedgerId, selectionId, 4, 3, InventorySelections.ByConditions, "data.FacilityName.keyword:\"Wellbore A-1\"", 1);
-            var write = await ledger.AddInventorySelectionItemsAsync(flow.LedgerId, wellLogs.InventoryId, selectionId,
+            Assert.NotNull(await ledger.Inventories.StartSelectionAsync(flow.LedgerId, wellLogs.InventoryId, selectionId, matchRun, firstBuild, now));
+            await ledger.Inventories.PlanSelectionAsync(flow.LedgerId, selectionId, 4, 3, InventorySelections.ByConditions, "data.FacilityName.keyword:\"Wellbore A-1\"", 1);
+            var write = await ledger.Inventories.AddSelectionItemsAsync(flow.LedgerId, wellLogs.InventoryId, selectionId,
             [
                 new InventorySelectionHit(Id("ours-1"), 2, """{"data.FacilityName":["Wellbore A-1"]}"""),
                 new InventorySelectionHit(Id("theirs"), 1, """{"data.FacilityName":["Wellbore A-1"]}"""),
                 new InventorySelectionHit(Id("since"), 1, """{"data.FacilityName":["Wellbore A-1"]}"""),
             ], 3, 2);
             Assert.Equal(new InventorySelectionWrite(2, 1, 1), write);
-            await ledger.CompleteInventorySelectionAsync(
+            await ledger.Inventories.CompleteSelectionAsync(
                 flow.LedgerId, selectionId, new InventorySelectionEnd(InventorySelections.Completed, null, null, [], ["data.FacilityName"], null), now);
 
             var selection = await JsonAsync(client, reader, $"{selections}/{selectionId}");
@@ -704,7 +704,7 @@ public sealed class DeliveryInventoryApiTests
             }
 
             // A removal that took the selection's ids names it, with the conditions that made it.
-            await ledger.StartInventoryRemovalAsync(
+            await ledger.Inventories.StartRemovalAsync(
                 flow.LedgerId, new InventoryRemovalStart(wellLogs.InventoryId, removalRun, "inventory api tests", "orphan", "record", false, 1, null, now, selectionId));
             var listed = Assert.Single((await JsonAsync(client, reader, removals)).EnumerateArray());
             var named = listed.GetProperty("selection");
@@ -790,15 +790,15 @@ public sealed class DeliveryInventoryApiTests
             await ledger.RegisterAsync(deliveryFlow, partition, "api-duplicates-delivery-" + suffix);
 
             // Three ids no ledger knows that the estate created (orphans), and one another identity created (foreign).
-            var wellLogs = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
+            var wellLogs = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
             async Task<long> BuildAsync(DateTime at)
             {
-                var run = await ledger.StartInventoryRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", at);
-                await ledger.AppendInventoryScanAsync(flow.LedgerId, run, [Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("ours-3"), 1, Estate), Row(Id("theirs"), 1, Stranger)]);
-                var merged = await ledger.MergeInventoryAsync(flow.LedgerId, wellLogs.InventoryId, run, at);
-                await ledger.ReconcileInventoryAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], at);
-                var found = await ledger.InventoryCountsAsync(flow.LedgerId, wellLogs.InventoryId);
-                await ledger.CompleteInventoryRunAsync(
+                var run = await ledger.Inventories.StartRunAsync(flow.LedgerId, wellLogs.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", at);
+                await ledger.Inventories.AppendScanAsync(flow.LedgerId, run, [Row(Id("ours-1"), 1, Estate), Row(Id("ours-2"), 1, Estate), Row(Id("ours-3"), 1, Estate), Row(Id("theirs"), 1, Stranger)]);
+                var merged = await ledger.Inventories.MergeAsync(flow.LedgerId, wellLogs.InventoryId, run, at);
+                await ledger.Inventories.ReconcileAsync(flow.LedgerId, wellLogs.InventoryId, [Estate], at);
+                var found = await ledger.Inventories.CountsAsync(flow.LedgerId, wellLogs.InventoryId);
+                await ledger.Inventories.CompleteRunAsync(
                     flow.LedgerId, run,
                     new InventoryRunState
                     {
@@ -863,12 +863,12 @@ public sealed class DeliveryInventoryApiTests
             await RefusedAsync(client, operate, $"{duplicates}/{checkId}/selection", new { }, HttpStatusCode.Conflict, "is queued: only a check that downloaded every id");
 
             // The run downloads the properties into the check's table and groups it: two groups of two, waiting to be picked.
-            Assert.NotNull(await ledger.StartInventoryDuplicateCheckAsync(flow.LedgerId, wellLogs.InventoryId, checkId, checkRun, firstBuild, now));
-            await ledger.PlanInventoryDuplicateCheckAsync(flow.LedgerId, checkId, 4, 0);
+            Assert.NotNull(await ledger.Inventories.StartDuplicateCheckAsync(flow.LedgerId, wellLogs.InventoryId, checkId, checkRun, firstBuild, now));
+            await ledger.Inventories.PlanDuplicateCheckAsync(flow.LedgerId, checkId, 4, 0);
             var attributes = InventoryDuplicateTable.AttributesOf(["data.WellboreID", "data.Name"]);
-            await ledger.PrepareInventoryDuplicateTableAsync(flow.LedgerId, checkId, attributes);
+            await ledger.Inventories.PrepareDuplicateTableAsync(flow.LedgerId, checkId, attributes);
             static InventoryDuplicateValue Value(string value) => new($"[\"{value}\"]", Key(value));
-            var write = await ledger.AddInventoryDuplicateRowsAsync(flow.LedgerId, wellLogs.InventoryId, checkId, attributes,
+            var write = await ledger.Inventories.AddDuplicateRowsAsync(flow.LedgerId, wellLogs.InventoryId, checkId, attributes,
             [
                 new InventoryDuplicateRow(Id("ours-1"), 1, [Value("wb-1"), Value("GR")]),
                 new InventoryDuplicateRow(Id("ours-2"), 2, [Value("wb-1"), Value("GR")]),
@@ -880,8 +880,8 @@ public sealed class DeliveryInventoryApiTests
             var logKey = InventoryDuplicateKey.Of(["data.WellboreID", "data.Name"]).Key!;
             Assert.Equal(
                 new InventoryDuplicateGrouping(2, 4, 0, 4, 0),
-                await ledger.GroupInventoryDuplicatesAsync(partition, checkId, new InventoryDuplicateKeying(logKey.ToJson(), logKey.Hash(), logKey.Paths, "inventory api tests", now)));
-            await ledger.CompleteInventoryDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, ["a note"], null), now);
+                await ledger.Inventories.GroupDuplicatesAsync(partition, checkId, new InventoryDuplicateKeying(logKey.ToJson(), logKey.Hash(), logKey.Paths, "inventory api tests", now)));
+            await ledger.Inventories.CompleteDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, ["a note"], null), now);
 
             var downloaded = await JsonAsync(client, reader, $"{duplicates}/{checkId}");
             Assert.Equal((InventoryDuplicates.Completed, 2L, 4L, 2L, 4L, $"osdu.dup_{checkId.ToString(CultureInfo.InvariantCulture)}"), (
@@ -930,14 +930,14 @@ public sealed class DeliveryInventoryApiTests
             }
 
             await RefusedAsync(client, operate, $"{duplicates}/{checkId}/pick", new { }, HttpStatusCode.Conflict, "is picking the copies of its groups");
-            Assert.NotNull(await ledger.StartInventoryDuplicatePickAsync(flow.LedgerId, checkId, pickRun, now));
-            var toJudge = await ledger.InventoryDuplicateGroupsToJudgeAsync(flow.LedgerId, checkId, 0, 10);
+            Assert.NotNull(await ledger.Inventories.StartDuplicatePickAsync(flow.LedgerId, checkId, pickRun, now));
+            var toJudge = await ledger.Inventories.DuplicateGroupsToJudgeAsync(flow.LedgerId, checkId, 0, 10);
             var figures = new Dictionary<string, int>(StringComparer.Ordinal) { [Id("ours-1")] = 9, [Id("ours-2")] = 3, [Id("ours-3")] = 5, [Id("theirs")] = 5 };
             var orphans = new HashSet<string>(StringComparer.Ordinal) { InventoryFindings.Orphan };
             var judged = toJudge.Select(g => InventoryDuplicatePicker.Judge(
                 g.GroupNumber, g.Copies.Select(c => new DuplicateCopy(c.InventoryRecordId, c.TargetId, c.Finding, InventoryDuplicates.Held, 1, figures[c.TargetId], 0)).ToList(), orphans, null)).ToList();
-            await ledger.WriteInventoryDuplicateJudgementsAsync(flow.LedgerId, checkId, judged, 3, now);
-            await ledger.CompleteInventoryDuplicatePickAsync(flow.LedgerId, checkId, new InventoryDuplicatePickEnd(["a note"], null), now);
+            await ledger.Inventories.WriteDuplicateJudgementsAsync(flow.LedgerId, checkId, judged, 3, now);
+            await ledger.Inventories.CompleteDuplicatePickAsync(flow.LedgerId, checkId, new InventoryDuplicatePickEnd(["a note"], null), now);
             await RefusedAsync(client, operate, $"{duplicates}/{checkId}/pick", new { }, HttpStatusCode.Conflict, "holds no group waiting to be picked");
 
             var check = await JsonAsync(client, reader, $"{duplicates}/{checkId}");
@@ -1062,7 +1062,7 @@ public sealed class DeliveryInventoryApiTests
                 await db.Runs.Where(r => r.RunId == removalRun).ExecuteDeleteAsync();
             }
 
-            await ledger.StartInventoryRemovalAsync(
+            await ledger.Inventories.StartRemovalAsync(
                 flow.LedgerId, new InventoryRemovalStart(wellLogs.InventoryId, removalRun, "inventory api tests", "orphan", "record", false, 1, null, now, remade));
             var named = Assert.Single((await JsonAsync(client, reader, removals)).EnumerateArray()).GetProperty("selection");
             Assert.Equal((remade, checkId, "data.Name"), (named.GetProperty("selectionId").GetInt64(), named.GetProperty("duplicateCheckId").GetInt64(), named.GetProperty("duplicateKey")[1].GetProperty("path").GetString()));
@@ -1184,8 +1184,8 @@ public sealed class DeliveryInventoryApiTests
 
             // The inventory found five ids missing: the two delivered records, the held one, a dataset a delivery minted, and one
             // whose record no ledger holds any more.
-            var wellbores = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "Wellbores", "*:*:master-data--Wellbore:*", null, "search", "latest");
-            var build = await ledger.StartInventoryRunAsync(flow.LedgerId, wellbores.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-1));
+            var wellbores = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "Wellbores", "*:*:master-data--Wellbore:*", null, "search", "latest");
+            var build = await ledger.Inventories.StartRunAsync(flow.LedgerId, wellbores.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "inventory api tests", "search", now.AddHours(-1));
             await using (var osdu = SampleEstate.Context(cs))
             {
                 var inventoryPartition = await osdu.DeliveryInventories.AsNoTracking().Where(i => i.InventoryId == wellbores.InventoryId).Select(i => i.PartitionId).SingleAsync();
@@ -1204,8 +1204,8 @@ public sealed class DeliveryInventoryApiTests
                 await osdu.SaveChangesAsync();
             }
 
-            var counts = await ledger.InventoryCountsAsync(flow.LedgerId, wellbores.InventoryId);
-            await ledger.CompleteInventoryRunAsync(
+            var counts = await ledger.Inventories.CountsAsync(flow.LedgerId, wellbores.InventoryId);
+            await ledger.Inventories.CompleteRunAsync(
                 flow.LedgerId, build,
                 new InventoryRunState
                 {
@@ -1429,8 +1429,8 @@ public sealed class DeliveryInventoryApiTests
             {
                 FlowId = flow.LedgerId, Partition = partition, Kind = LedgerKinds.Inventory, FlowName = flow.Name, LedgerName = flow.LedgerName,
             });
-            var wellLogs = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
-            var files = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "LogFiles", LogFile, null, "search", "latest");
+            var wellLogs = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
+            var files = await ledger.Inventories.RegisterAsync(flow.LedgerId, flow.Name, "LogFiles", LogFile, null, "search", "latest");
             var key = InventoryDuplicateKey.Of(["data.Name"]).Key!;
             var attributes = InventoryDuplicateTable.AttributesOf(key.Paths);
 
@@ -1438,13 +1438,13 @@ public sealed class DeliveryInventoryApiTests
             // lets go of an inventory's earlier tables), one whose run the catalog no longer holds, one recent.
             async Task<long> CheckAsync(int inventoryId, DateTime created, bool complete)
             {
-                var checkId = await ledger.CreateInventoryDuplicateCheckAsync(
+                var checkId = await ledger.Inventories.CreateDuplicateCheckAsync(
                     partition, new InventoryDuplicateCheckStart(inventoryId, "inventory api tests", key.ToJson(), key.Hash(), attributes, null, created));
-                Assert.NotNull(await ledger.StartInventoryDuplicateCheckAsync(flow.LedgerId, inventoryId, checkId, Guid.NewGuid(), null, created));
-                await ledger.PrepareInventoryDuplicateTableAsync(flow.LedgerId, checkId, attributes);
+                Assert.NotNull(await ledger.Inventories.StartDuplicateCheckAsync(flow.LedgerId, inventoryId, checkId, Guid.NewGuid(), null, created));
+                await ledger.Inventories.PrepareDuplicateTableAsync(flow.LedgerId, checkId, attributes);
                 if (complete)
                 {
-                    await ledger.CompleteInventoryDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, [], null), created);
+                    await ledger.Inventories.CompleteDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, [], null), created);
                 }
 
                 return checkId;
@@ -1461,13 +1461,13 @@ public sealed class DeliveryInventoryApiTests
             var pass = await sweep.SweepAsync(CancellationToken.None);
 
             Assert.True(pass is { Settled: >= 1, Deleted: >= 1 }, $"the pass closed {pass.Settled} and deleted {pass.Deleted}");
-            Assert.Null(await ledger.GetInventoryDuplicateCheckAsync(partition, old));
+            Assert.Null(await ledger.Inventories.GetDuplicateCheckAsync(partition, old));
             Assert.False(await TableExistsAsync(cs, old));
-            var closed = await ledger.GetInventoryDuplicateCheckAsync(partition, stuck);
+            var closed = await ledger.Inventories.GetDuplicateCheckAsync(partition, stuck);
             Assert.Equal((InventoryDuplicates.Failed, (string?)null), (closed?.Status, closed?.TableName));
             Assert.Contains("is no longer in the catalog", closed!.Error, StringComparison.Ordinal);
             Assert.False(await TableExistsAsync(cs, stuck));
-            Assert.Equal(InventoryDuplicates.Completed, (await ledger.GetInventoryDuplicateCheckAsync(partition, recent))?.Status);
+            Assert.Equal(InventoryDuplicates.Completed, (await ledger.Inventories.GetDuplicateCheckAsync(partition, recent))?.Status);
             Assert.True(await TableExistsAsync(cs, recent));
         }
         finally

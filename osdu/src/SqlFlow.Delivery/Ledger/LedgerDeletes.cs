@@ -30,7 +30,7 @@ public static class LedgerDeletes
     /// that name them: the tables that carry the ledger's identity (<c>FlowId</c>), each with the tables whose rows name one
     /// of its rows. A delivery ledger is deleted as a flow's own is (<see cref="ILedger.DeleteLedgerAsync"/>), and a
     /// dimension ledger a dimension at a time, as a dimension its flow no longer declares is removed
-    /// (<see cref="ILedger.RemoveDimensionAsync"/>).
+    /// (<see cref="DimensionStore.RemoveAsync"/>).
     /// </summary>
     public static IReadOnlyDictionary<string, IReadOnlyList<LedgerDeleteTable>> Trees { get; } = new Dictionary<string, IReadOnlyList<LedgerDeleteTable>>(StringComparer.Ordinal)
     {

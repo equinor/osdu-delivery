@@ -2332,13 +2332,15 @@ export interface DeliverySyncRequest {
 
 /**
  * Which of a flow's records a many-record intervention acts on: those `keys` names, every one `filter` matches (refused when
- * it no longer matches the `expected` count the operator was shown), or with neither every record the flow has delivered.
+ * it no longer matches the `expected` count the operator was shown), or with `all` every record the flow has delivered.
+ * Exactly one of the three is given; the API refuses a request that names none rather than taking it for every record.
  * With `run` (the default) a deliver run is queued that acts on them; without it the flow's next run does.
  */
 export interface DeliveryManyRecords {
   keys?: string[];
   filter?: DeliveryRecordFilter;
   expected?: number;
+  all?: boolean;
   run?: boolean;
 }
 
@@ -2400,13 +2402,15 @@ export interface DeliveryRemovalPreview {
 }
 
 /**
- * Records already removed from OSDU to delete from the ledger: named by `keys` or by `filter` with the `expected` count the
- * operator was shown. A record OSDU may still hold is never deleted; it is counted as left.
+ * Records already removed from OSDU to delete from the ledger: named by `keys`, by `filter` with the `expected` count the
+ * operator was shown, or with `all` every record the ledger marks deleted; exactly one of them. A record OSDU may still hold
+ * is never deleted; it is counted as left.
  */
 export interface DeliveryLedgerPurgeRequest {
   keys?: string[];
   filter?: DeliveryRecordFilter;
   expected?: number;
+  all?: boolean;
 }
 
 /** What deleting from the ledger did: records asked about, deleted, and left as they were. */
@@ -4976,11 +4980,12 @@ export const deliveryApi = {
     get<PagedResult<DeliveryCacheGap>>("/api/v1/delivery/cache/gaps", query as unknown as QueryParams),
   /**
    * Releases the flow's blocked records (held, failed, reverted, or removed by a reversal), and its held or failed ones
-   * nothing moves: all of them, or the given keys. A record that kept its rendered document goes back to pending; the others
-   * are planned again from their rows by the next run. With `run`, a deliver run of the flow is queued at once.
+   * nothing moves: the given keys, or every one with `all`, which has to be said. A record that kept its rendered document
+   * goes back to pending; the others are planned again from their rows by the next run. With `run`, a deliver run of the
+   * flow is queued at once.
    */
-  releaseFlow: (pipelineId: string, keys?: string[], scope?: DeliveryFlowScope, run = false) =>
-    post<DeliveryReleaseResult>(flowPath(pipelineId, "/release", scope), { keys: keys ?? null, run }),
+  releaseFlow: (pipelineId: string, selection: { keys: string[] } | { all: true }, scope?: DeliveryFlowScope, run = false) =>
+    post<DeliveryReleaseResult>(flowPath(pipelineId, "/release", scope), { ...selection, run }),
   /** Sends many records again whatever their hashes say: the part `scope` names, of the records the request names. */
   redeliverFlow: (pipelineId: string, request: DeliveryFlowRedeliverRequest, scope?: DeliveryFlowScope) =>
     post<DeliveryRedeliverResult>(flowPath(pipelineId, "/redeliver", scope), request),

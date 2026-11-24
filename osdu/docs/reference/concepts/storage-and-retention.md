@@ -33,7 +33,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
-  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs
@@ -73,8 +73,9 @@ never until an admin sets how long they stay.
 
 The counts are in the area's own unit (attempts, logs, runs, pieces of work), and a preview counts exactly what the
 cleanup then takes: the count and the deletion share one query in the ledger (`CountPrunableAttemptsAsync` and
-`PruneAttemptsAsync`, `CountActivityLogsAsync` and `ClearActivityLogsAsync`, `CountPrunableAssertionRunsAsync` and
-`PruneAssertionRunsAsync`), and in the compute usage store for the node work (`CountFoldableAsync` and `FoldAsync`).
+`PruneAttemptsAsync`, `CountActivityLogsAsync` and `ClearActivityLogsAsync`), in its assertion store
+(`CountPrunableRunsAsync` and `PruneRunsAsync`), and in the compute usage store for the node work (`CountFoldableAsync`
+and `FoldAsync`).
 Each deletes in bounded statements (4,000 attempts, 1,000 logs, 100 runs, 5,000 pieces of work at a time), each its own
 short transaction, across every partition. Traceability keeps every attempt, so leave the attempts' limit unset unless
 the ledger's size calls for it, and choose it in years rather than months: statistics and trends read further back than

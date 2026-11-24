@@ -59,7 +59,7 @@ public sealed record DownloadPlanSummary(string Download, string Kind, string? Q
 public sealed record DownloadPlanOutcome(string Operation, string Flow, string Partition, IReadOnlyList<DownloadPlanSummary> Downloads);
 
 /// <summary>Every download of a run was taken up and at least one failed: the run ends failed, carrying how each came out.</summary>
-public sealed class DownloadRunsFailedException : DeliveryException
+public sealed class DownloadRunsFailedException : DeliveryException, IFailureWithOutcome
 {
     public DownloadRunsFailedException(DownloadOutcome outcome)
         : base((outcome ?? throw new ArgumentNullException(nameof(outcome))).Describe())
@@ -68,6 +68,8 @@ public sealed class DownloadRunsFailedException : DeliveryException
     }
 
     public DownloadOutcome Outcome { get; }
+
+    object IFailureWithOutcome.Outcome => Outcome;
 }
 
 /// <summary>
@@ -212,7 +214,7 @@ public sealed class DownloadRunner
         var summaries = new List<DownloadSummary>(selected.Count);
         foreach (var download in selected)
         {
-            summaries.Add(await RunOneAsync(ledger, client, download, partition, force, runId, actor, ct).ConfigureAwait(false));
+            summaries.Add(await RunOneAsync(ledger.Downloads, client, download, partition, force, runId, actor, ct).ConfigureAwait(false));
         }
 
         var outcome = new DownloadOutcome(
@@ -222,11 +224,11 @@ public sealed class DownloadRunner
     }
 
     private async Task<DownloadSummary> RunOneAsync(
-        ILedger ledger, OsduHttpClient client, DownloadSpec download, string partition, bool force, Guid runId, string actor, CancellationToken ct)
+        DownloadStore downloads, OsduHttpClient client, DownloadSpec download, string partition, bool force, Guid runId, string actor, CancellationToken ct)
     {
         var flowId = _flow.LedgerId;
         var read = ReadName(_flow.Source.Read);
-        var state = await ledger.RegisterDownloadAsync(flowId, _flow.Name, download.Name, download.Kind, download.Query, read, ct).ConfigureAwait(false);
+        var state = await downloads.RegisterAsync(flowId, _flow.Name, download.Name, download.Kind, download.Query, read, ct).ConfigureAwait(false);
         string folder;
         try
         {
@@ -242,7 +244,7 @@ public sealed class DownloadRunner
             ? DownloadRewrite.Forced
             : state.Location is { } last && !string.Equals(last, folder, StringComparison.Ordinal) ? DownloadRewrite.Moved : null;
         var started = Now;
-        var runRow = await ledger.StartDownloadRunAsync(flowId, state.DownloadId, runId, actor, read, folder, rewrite, started, ct).ConfigureAwait(false);
+        var runRow = await downloads.StartRunAsync(flowId, state.DownloadId, runId, actor, read, folder, rewrite, started, ct).ConfigureAwait(false);
         if (rewrite == DownloadRewrite.Moved)
         {
             _log.LogInformation(
@@ -255,12 +257,12 @@ public sealed class DownloadRunner
         var writes = new WriteTally();
         try
         {
-            merge = await ListAndMergeAsync(ledger, client, download, state, runRow, partition, stats, ct).ConfigureAwait(false);
-            await WriteDueAsync(ledger, client, download, state, runRow, folder, rewrite is not null, stats, writes, ct).ConfigureAwait(false);
+            merge = await ListAndMergeAsync(downloads, client, download, state, runRow, partition, stats, ct).ConfigureAwait(false);
+            await WriteDueAsync(downloads, client, download, state, runRow, folder, rewrite is not null, stats, writes, ct).ConfigureAwait(false);
             var summary = new DownloadSummary(
                 download.Name, download.Kind, DownloadRunStatus.Completed, runRow, folder, rewrite, merge.Listed, merge.Added, merge.Changed, merge.Gone,
                 merge.Returned, writes.Written, writes.Bytes, writes.Missing, stats.Pages, stats.Requests, null);
-            await ledger.CompleteDownloadRunAsync(flowId, runRow, Outcome(summary, started), Now, ct).ConfigureAwait(false);
+            await downloads.CompleteRunAsync(flowId, runRow, Outcome(summary, started), Now, ct).ConfigureAwait(false);
             _log.LogInformation("{Summary}", summary.Describe());
             return summary;
         }
@@ -271,14 +273,14 @@ public sealed class DownloadRunner
             var summary = new DownloadSummary(
                 download.Name, download.Kind, DownloadRunStatus.Failed, runRow, folder, rewrite, merge.Listed, merge.Added, merge.Changed, merge.Gone,
                 merge.Returned, writes.Written, writes.Bytes, writes.Missing, stats.Pages, stats.Requests, error);
-            await ledger.CompleteDownloadRunAsync(flowId, runRow, Outcome(summary, started), Now, CancellationToken.None).ConfigureAwait(false);
+            await downloads.CompleteRunAsync(flowId, runRow, Outcome(summary, started), Now, CancellationToken.None).ConfigureAwait(false);
             return summary;
         }
     }
 
     /// <summary>Lists the download whole into its stage, a chunk at a time, then merges it; a listing that fails part way merges nothing.</summary>
     private async Task<DownloadMerge> ListAndMergeAsync(
-        ILedger ledger, OsduHttpClient client, DownloadSpec download, DownloadState state, long runRow, string partition, InventoryReadStats stats, CancellationToken ct)
+        DownloadStore downloads, OsduHttpClient client, DownloadSpec download, DownloadState state, long runRow, string partition, InventoryReadStats stats, CancellationToken ct)
     {
         // A listing needs each id, its kind and version, not its name: a storage listing reads headers, a thousand ids a request.
         IInventoryReader reader = _flow.Source.Read == InventoryRead.Storage
@@ -296,18 +298,18 @@ public sealed class DownloadRunner
             listed += page.Count;
             if (buffer.Count >= StageChunk)
             {
-                await ledger.AppendDownloadScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
+                await downloads.AppendScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
                 buffer.Clear();
             }
         }
 
         if (buffer.Count > 0)
         {
-            await ledger.AppendDownloadScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
+            await downloads.AppendScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
         }
 
         _log.LogInformation("download '{Download}': {Listed} id(s) listed in {Pages} page(s), {Requests} request(s); merging", download.Name, listed, stats.Pages, stats.Requests);
-        return await ledger.MergeDownloadAsync(_flow.LedgerId, state.DownloadId, runRow, Now, ct).ConfigureAwait(false);
+        return await downloads.MergeAsync(_flow.LedgerId, state.DownloadId, runRow, Now, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -316,7 +318,7 @@ public sealed class DownloadRunner
     /// files already written recorded even when the pass stops part way, so the ledger never misses a file it holds.
     /// </summary>
     private async Task WriteDueAsync(
-        ILedger ledger, OsduHttpClient client, DownloadSpec download, DownloadState state, long runRow, string folder, bool every,
+        DownloadStore downloads, OsduHttpClient client, DownloadSpec download, DownloadState state, long runRow, string folder, bool every,
         InventoryReadStats stats, WriteTally tally, CancellationToken ct)
     {
         var storage = new StorageRecords(client, _flow.Source.RecordQueryPath);
@@ -325,7 +327,7 @@ public sealed class DownloadRunner
         var nextProgress = ProgressEvery;
         while (true)
         {
-            var due = await ledger.DownloadsDueAsync(_flow.LedgerId, state.DownloadId, every, after, WriteChunk, ct).ConfigureAwait(false);
+            var due = await downloads.DueAsync(_flow.LedgerId, state.DownloadId, every, after, WriteChunk, ct).ConfigureAwait(false);
             if (due.Count == 0)
             {
                 return;
@@ -361,7 +363,7 @@ public sealed class DownloadRunner
             {
                 // What was written is the folder's, whether or not the pass completed: the ledger says so before anything else happens.
                 var recorded = results.ToList();
-                await ledger.RecordDownloadWritesAsync(_flow.LedgerId, runRow, recorded, Now, CancellationToken.None).ConfigureAwait(false);
+                await downloads.RecordWritesAsync(_flow.LedgerId, runRow, recorded, Now, CancellationToken.None).ConfigureAwait(false);
                 tally.Add(recorded);
             }
 

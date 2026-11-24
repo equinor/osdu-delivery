@@ -2478,399 +2478,98 @@ public interface ILedger
     Task<OpenArtifactRecordPage> OpenArtifactRecordsAsync(Guid flowId, int offset, int max, CancellationToken ct = default);
 
     /// <summary>
-    /// The inventory <paramref name="name"/> of the inventory flow whose ledger is <paramref name="flowId"/>, created on its first
-    /// build and kept in step with what the flow declares (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory
-    /// keeps).
+    /// The inventories of inventory flows, with their selections, duplicate checks and removals
+    /// (osdu/docs/reference/flow/inventory.md): a store beside the ledger (<see cref="LedgerStore"/>), since an inventory
+    /// writes no delivered record.
     /// </summary>
-    Task<InventoryState> RegisterInventoryAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, string versions, CancellationToken ct = default);
+    InventoryStore Inventories { get; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /// <summary>
-    /// Starts a build or a reconcile of an inventory: an earlier one its process left running is closed as failed, and what it
-    /// staged is deleted, since a run of a flow is the only one of it.
+    /// The downloads of download flows (osdu/docs/reference/flow/download.md, What a run records): a store beside the ledger
+    /// (<see cref="LedgerStore"/>), since a download writes no delivered record.
     /// </summary>
-    Task<long> StartInventoryRunAsync(Guid flowId, int inventoryId, string operation, Guid? runId, string actor, string readMode, DateTime nowUtc, CancellationToken ct = default);
+    DownloadStore Downloads { get; }
 
-    /// <summary>Stages one chunk of a build's read; nothing of the inventory changes until <see cref="MergeInventoryAsync"/>.</summary>
-    Task AppendInventoryScanAsync(Guid flowId, long inventoryRunId, IReadOnlyList<InventoryScanRow> rows, CancellationToken ct = default);
 
-    /// <summary>Merges a build's whole read into its inventory: ids added, changed, served again, and those it did not list marked gone.</summary>
-    Task<InventoryMerge> MergeInventoryAsync(Guid flowId, int inventoryId, long inventoryRunId, DateTime nowUtc, CancellationToken ct = default);
 
-    /// <summary>The records of an inventory keeping every version whose versions are to be read: new, or moved since they were read.</summary>
-    Task<IReadOnlyList<InventoryVersionsDue>> InventoryVersionsDueAsync(Guid flowId, int inventoryId, int max, CancellationToken ct = default);
 
-    /// <summary>Replaces the versions kept of each record read.</summary>
-    Task WriteInventoryVersionsAsync(Guid flowId, IReadOnlyList<InventoryVersionsRead> reads, CancellationToken ct = default);
 
-    /// <summary>The identities that created ids of the inventory a ledger of the partition claims, each with how many.</summary>
-    Task<IReadOnlyList<InventoryOwner>> InventoryOwnersAsync(Guid flowId, int inventoryId, CancellationToken ct = default);
 
-    /// <summary>Sets the finding of every id of the inventory OSDU serves, comparing it with every ledger of the partition.</summary>
-    Task ReconcileInventoryAsync(Guid flowId, int inventoryId, IReadOnlyList<string> owners, DateTime nowUtc, CancellationToken ct = default);
 
-    /// <summary>
-    /// The ids a ledger of the partition expects that the inventory's read did not list, at most <paramref name="max"/>, the
-    /// least recently asked of storage first; with <paramref name="typePrefix"/> (an inventory covering its entity type whole),
-    /// the ledgers' ids of the type too.
-    /// </summary>
-    Task<IReadOnlyList<InventoryCandidate>> InventoryCandidatesAsync(Guid flowId, int inventoryId, string? typePrefix, int max, CancellationToken ct = default);
-
-    /// <summary>Settles the ids OSDU no longer serves: gone, or what storage answered for the ones a ledger expects (missing, unlisted).</summary>
-    Task RecordInventoryChecksAsync(Guid flowId, int inventoryId, IReadOnlyList<InventoryCheck> checks, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>An inventory's ids by finding, read from its rows.</summary>
-    Task<InventoryCounts> InventoryCountsAsync(Guid flowId, int inventoryId, CancellationToken ct = default);
-
-    /// <summary>
-    /// Closes a build or a reconcile with what it did and found; a completed one becomes its inventory's last of its kind, and a
-    /// failed one's staged read is discarded.
-    /// </summary>
-    Task CompleteInventoryRunAsync(Guid flowId, long inventoryRunId, InventoryRunState outcome, string? ownersSource, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>The inventories of a partition (or of every partition), with their flows.</summary>
-    Task<IReadOnlyList<InventoryState>> ListInventoriesAsync(string? partition, CancellationToken ct = default);
-
-    /// <summary>One inventory by its partition and number, or null.</summary>
-    Task<InventoryState?> GetInventoryAsync(string partition, int inventoryId, CancellationToken ct = default);
-
-    /// <summary>An inventory's counts by finding, read from its rows.</summary>
-    Task<InventoryCounts> InventoryCountsAsync(string partition, int inventoryId, CancellationToken ct = default);
-
-    /// <summary>A page of an inventory's ids, of one finding or all, in id order after <paramref name="after"/>.</summary>
-    Task<IReadOnlyList<InventoryRecordState>> ListInventoryRecordsAsync(string partition, int inventoryId, string? finding, long? after, int limit, CancellationToken ct = default);
-
-    /// <summary>What every inventory of the partition holds of one OSDU id.</summary>
-    Task<IReadOnlyList<InventoryRecordState>> LookupInventoryRecordsAsync(string partition, string targetId, CancellationToken ct = default);
-
-    /// <summary>An inventory's latest builds and reconciles, the newest first.</summary>
-    Task<IReadOnlyList<InventoryRunState>> ListInventoryRunsAsync(string partition, int inventoryId, int limit, CancellationToken ct = default);
-
-    /// <summary>One build or reconcile by its partition and number, or null: the run an inventory names as its last build or reconcile.</summary>
-    Task<InventoryRunState?> GetInventoryRunAsync(string partition, long inventoryRunId, CancellationToken ct = default);
-
-    /// <summary>
-    /// The download <paramref name="name"/> of the download flow whose ledger is <paramref name="flowId"/>, created on its first
-    /// run and kept in step with what the flow declares (osdu/docs/reference/flow/download.md, What a run records).
-    /// </summary>
-    Task<DownloadState> RegisterDownloadAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, CancellationToken ct = default);
-
-    /// <summary>
-    /// Starts a run of a download: an earlier one its process left running is closed as failed, and what it staged is deleted,
-    /// since a run of a flow is the only one of it. <paramref name="rewrite"/> says why the run writes every record again, or null.
-    /// </summary>
-    Task<long> StartDownloadRunAsync(Guid flowId, int downloadId, Guid? runId, string actor, string readMode, string location, string? rewrite, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>Stages one chunk of a run's listing; nothing of the download changes until <see cref="MergeDownloadAsync"/>.</summary>
-    Task AppendDownloadScanAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadScanRow> rows, CancellationToken ct = default);
-
-    /// <summary>
-    /// Merges a run's whole listing into its download: ids added with the file name no other id of the download holds whatever its
-    /// case, ids whose version or kind changed, ids served again, and those it did not list marked gone.
-    /// </summary>
-    Task<DownloadMerge> MergeDownloadAsync(Guid flowId, int downloadId, long downloadRunId, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// The next records of a download a run writes, in row order after <paramref name="after"/>, at most <paramref name="max"/>:
-    /// every one OSDU serves whose file holds no version, or an older one than listed; with <paramref name="every"/>, every one
-    /// OSDU serves.
-    /// </summary>
-    Task<IReadOnlyList<DownloadDue>> DownloadsDueAsync(Guid flowId, int downloadId, bool every, long after, int max, CancellationToken ct = default);
-
-    /// <summary>Records what came of writing each record: the version its file holds with its size and SHA-256, or why nothing was written.</summary>
-    Task RecordDownloadWritesAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadWrite> writes, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// Closes a run with what it did; a completed one becomes its download's last, and the folder it wrote the download's folder,
-    /// and a failed one's staged listing is discarded.
-    /// </summary>
-    Task CompleteDownloadRunAsync(Guid flowId, long downloadRunId, DownloadRunState outcome, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>The downloads the ledger <paramref name="flowId"/> keeps, by name.</summary>
-    Task<IReadOnlyList<DownloadState>> ListDownloadsAsync(Guid flowId, CancellationToken ct = default);
-
-    /// <summary>One download by its partition and number, or null.</summary>
-    Task<DownloadState?> GetDownloadAsync(string partition, int downloadId, CancellationToken ct = default);
-
-    /// <summary>How many records of a download stand where, read from its rows.</summary>
-    Task<DownloadCounts> DownloadCountsAsync(string partition, int downloadId, CancellationToken ct = default);
-
-    /// <summary>A download's latest runs, the newest first.</summary>
-    Task<IReadOnlyList<DownloadRunState>> ListDownloadRunsAsync(string partition, int downloadId, int limit, CancellationToken ct = default);
-
-    /// <summary>
-    /// A page of a download's records in row order after <paramref name="after"/>: of one state or all, and those whose id or
-    /// file name holds <paramref name="search"/>, ignoring case, when it is given.
-    /// </summary>
-    Task<IReadOnlyList<DownloadRecordState>> ListDownloadRecordsAsync(string partition, int downloadId, string? state, string? search, long? after, int limit, CancellationToken ct = default);
-
-    /// <summary>
-    /// Opens a removal of an inventory's ids (osdu/docs/reference/flow/inventory-removals.md, What a removal does), or a restore of
-    /// its gone ids (scope <see cref="InventoryRemovals.Restore"/>, Restoring gone ids): an earlier one of the inventory its process
-    /// left running is closed as failed first, since a removal is a run of the flow and the flow runs one at a time. Returns the
-    /// removal's number.
-    /// </summary>
-    Task<long> StartInventoryRemovalAsync(Guid flowId, InventoryRemovalStart start, CancellationToken ct = default);
-
-    /// <summary>
-    /// The next ids a removal may act on, at most <paramref name="limit"/>, after <paramref name="after"/>: those of
-    /// <paramref name="finding"/> the inventory holds as served (only those the selection <paramref name="selectionId"/> holds,
-    /// when one is named), or with <paramref name="ids"/> those ids whatever they are now; each with the finding the reconcile's
-    /// rule gives it against the ledgers as they stand now and <paramref name="owners"/>. A removal names its ids or a
-    /// selection, not both.
-    /// </summary>
-    Task<IReadOnlyList<InventoryRemovalCandidate>> InventoryRemovalCandidatesAsync(
-        Guid flowId, int inventoryId, string finding, IReadOnlyList<string>? ids, IReadOnlyList<string> owners, long after, int limit, long? selectionId = null,
-        CancellationToken ct = default);
-
-    /// <summary>
-    /// Keeps what one chunk of a removal came to, in one transaction: every id's outcome and reason, the ids removed from OSDU
-    /// (<paramref name="removedDetail"/>) or found no longer served (<paramref name="goneDetail"/>) marked gone in the inventory,
-    /// and the removal's tallies.
-    /// </summary>
-    Task RecordInventoryRemovalAsync(
-        Guid flowId, int inventoryId, long removalId, IReadOnlyList<InventoryRemovalItem> items, string removedDetail, string goneDetail, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// One round of a removal of gone ids from the inventory alone (scope <see cref="InventoryRemovals.InventoryOnly"/>), in one
-    /// transaction held against the inventory's merge: the next <paramref name="limit"/> gone ids after <paramref name="after"/>,
-    /// or of <paramref name="ids"/> whatever they are now, removed with the versions kept of them; an id that is not gone now,
-    /// that OSDU serves again, or that a ledger expects is kept and recorded as skipped with why. Nothing is asked of OSDU.
-    /// </summary>
-    Task<InventoryRemovalRound> RemoveFromInventoryAsync(
-        Guid flowId, int inventoryId, long removalId, IReadOnlyList<string>? ids, long after, int limit, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// The next ids a restore may bring back (osdu/docs/reference/flow/inventory-removals.md, Restoring gone ids), at most
-    /// <paramref name="limit"/>, after <paramref name="after"/>: the inventory's gone ids, or with <paramref name="ids"/> those
-    /// ids whatever they are now, or with <paramref name="removalId"/> the ids that soft-delete removal of the inventory removed,
-    /// whether or not the inventory still holds a row of them; each with what the inventory and the ledgers hold of it now, and
-    /// the finding the reconcile's rule gives it against them and <paramref name="owners"/> once OSDU serves it again. A restore
-    /// names its ids or a removal, not both.
-    /// </summary>
-    Task<IReadOnlyList<InventoryRestoreCandidate>> InventoryRestoreCandidatesAsync(
-        Guid flowId, int inventoryId, IReadOnlyList<string>? ids, long? removalId, IReadOnlyList<string> owners, long after, int limit, CancellationToken ct = default);
-
-    /// <summary>
-    /// Keeps what one round of a restore came to, in one transaction: every id's outcome and reason, the ids brought back served
-    /// again in the inventory (<paramref name="restoredDetail"/>) with the finding the reconcile's rule gives them against the
-    /// ledgers and <paramref name="owners"/>, and the restore's tallies.
-    /// </summary>
-    Task RecordInventoryRestoreAsync(
-        Guid flowId, int inventoryId, long restoreId, IReadOnlyList<InventoryRemovalItem> items, IReadOnlyList<string> owners, string restoredDetail, DateTime nowUtc,
-        CancellationToken ct = default);
-
-    /// <summary>Closes a removal as completed or failed, with why it stopped (redacted).</summary>
-    Task CompleteInventoryRemovalAsync(Guid flowId, long removalId, string status, string? stoppedBy, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>An inventory's removals, the newest first.</summary>
-    Task<IReadOnlyList<InventoryRemovalState>> ListInventoryRemovalsAsync(string partition, int inventoryId, int limit, CancellationToken ct = default);
-
-    /// <summary>One removal by its partition and number, or null.</summary>
-    Task<InventoryRemovalState?> GetInventoryRemovalAsync(string partition, long removalId, CancellationToken ct = default);
-
-    /// <summary>A page of what a removal did to each id, of one outcome or all, in order after <paramref name="after"/>.</summary>
-    Task<IReadOnlyList<InventoryRemovalItemState>> ListInventoryRemovalItemsAsync(string partition, long removalId, string? outcome, long? after, int limit, CancellationToken ct = default);
-
-    /// <summary>What every removal of the partition did to one OSDU id, the newest first.</summary>
-    Task<IReadOnlyList<InventoryRemovalItemState>> LookupInventoryRemovalItemsAsync(string partition, string targetId, CancellationToken ct = default);
-
-    /// <summary>The rows an inventory holds of <paramref name="targetIds"/>, at most as many as it names; an id it holds no row of is left out.</summary>
-    Task<IReadOnlyList<InventoryRecordState>> InventoryRecordsOfAsync(string partition, int inventoryId, IReadOnlyList<string> targetIds, CancellationToken ct = default);
-
-    /// <summary>
-    /// Opens a selection of an inventory's ids (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds),
-    /// queued for the match a run of the inventory flow makes. Returns the selection's number.
-    /// </summary>
-    Task<long> CreateInventorySelectionAsync(string partition, InventorySelectionStart start, CancellationToken ct = default);
-
-    /// <summary>
-    /// The newest selection of an inventory made of the same conditions (<paramref name="conditionsKey"/>) that still says what
-    /// they match: one whose match is under way, or one that completed against the inventory's build
-    /// <paramref name="buildRunId"/>; null when there is none.
-    /// </summary>
-    Task<InventorySelectionState?> FindInventorySelectionAsync(string partition, int inventoryId, string conditionsKey, long? buildRunId, CancellationToken ct = default);
-
-    /// <summary>One selection by its partition and number, or null.</summary>
-    Task<InventorySelectionState?> GetInventorySelectionAsync(string partition, long selectionId, CancellationToken ct = default);
-
-    /// <summary>Names the run a selection's match was queued as.</summary>
-    Task SetInventorySelectionRunAsync(string partition, long selectionId, Guid runId, CancellationToken ct = default);
-
-    /// <summary>
-    /// Ends a selection whose match never ran as failed, with why (redacted): its run could not be queued, or ended before the
-    /// match did. A selection that ended already keeps how it ended.
-    /// </summary>
-    Task FailInventorySelectionAsync(string partition, long selectionId, string why, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// Starts a selection's match as the run <paramref name="runId"/>, against the inventory's build <paramref name="buildRunId"/>:
-    /// running, with every count and id an earlier attempt of the match left cleared, so a run tried again matches afresh.
-    /// Returns the selection as it starts; null when the partition holds no such selection of the inventory.
-    /// </summary>
-    Task<InventorySelectionState?> StartInventorySelectionAsync(Guid flowId, int inventoryId, long selectionId, Guid runId, long? buildRunId, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>How many ids the inventory serves now, which a match judges.</summary>
-    Task<long> CountInventoryServedAsync(Guid flowId, int inventoryId, CancellationToken ct = default);
-
-    /// <summary>The next ids the inventory serves, at most <paramref name="limit"/>, in its own order after <paramref name="after"/>.</summary>
-    Task<IReadOnlyList<InventoryServedId>> InventoryServedAsync(Guid flowId, int inventoryId, long after, int limit, CancellationToken ct = default);
-
-    /// <summary>Notes what a match has to read and how it reads it, so a page following it can say how far it got.</summary>
-    Task PlanInventorySelectionAsync(Guid flowId, long selectionId, long candidates, long toCheck, string direction, string? query, long requests, CancellationToken ct = default);
-
-    /// <summary>
-    /// Keeps what one page or chunk of a match found, in one transaction: each record the search found that the inventory serves
-    /// a row of, once, with the version the index holds and its values; how many records it holds no row of, and how many are at
-    /// another version than the inventory listed; and the match's progress (<paramref name="checkedCount"/> more read,
-    /// <paramref name="requests"/> more sent).
-    /// </summary>
-    Task<InventorySelectionWrite> AddInventorySelectionItemsAsync(
-        Guid flowId, int inventoryId, long selectionId, IReadOnlyList<InventorySelectionHit> hits, long checkedCount, long requests, CancellationToken ct = default);
-
-    /// <summary>Ends a selection's match: completed with its query, direction, notes and columns, or failed with why, its ids deleted.</summary>
-    Task CompleteInventorySelectionAsync(Guid flowId, long selectionId, InventorySelectionEnd outcome, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>How many of a selection's ids have each finding now, as the inventory holds them.</summary>
-    Task<InventoryCounts> InventorySelectionCountsAsync(string partition, long selectionId, CancellationToken ct = default);
-
-    /// <summary>A page of a selection's ids, of one finding or every one, in the inventory's order after <paramref name="after"/>, each with what the match read of it.</summary>
-    Task<IReadOnlyList<InventorySelectionRecord>> ListInventorySelectionRecordsAsync(
-        string partition, long selectionId, string? finding, long? after, int limit, CancellationToken ct = default);
-
-    /// <summary>
-    /// Retires a partition's selections made before <paramref name="olderThanUtc"/>: deleted whole, or, when a removal took
-    /// their ids, kept as expired with their ids deleted, so a removal still says what it removed by.
-    /// </summary>
-    Task<InventorySelectionSweep> SweepInventorySelectionsAsync(string partition, DateTime olderThanUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// Opens a check of an inventory's ids for duplicate records (osdu/docs/reference/flow/inventory-duplicates.md), queued for the
-    /// duplicates run of the inventory flow that downloads its properties. Returns the check's number.
-    /// </summary>
-    Task<long> CreateInventoryDuplicateCheckAsync(string partition, InventoryDuplicateCheckStart start, CancellationToken ct = default);
-
-    /// <summary>
-    /// The newest check of an inventory that still answers for it: one queued or running, or one whose download completed against
-    /// the inventory's build <paramref name="buildRunId"/>; null when there is none. A key of the properties it downloaded groups it
-    /// again rather than downloading them again.
-    /// </summary>
-    Task<InventoryDuplicateCheckState?> CurrentInventoryDuplicateCheckAsync(string partition, int inventoryId, long? buildRunId, CancellationToken ct = default);
-
-    /// <summary>One duplicate check by its partition and number, or null.</summary>
-    Task<InventoryDuplicateCheckState?> GetInventoryDuplicateCheckAsync(string partition, long checkId, CancellationToken ct = default);
-
-    /// <summary>An inventory's duplicate checks, the newest first.</summary>
-    Task<IReadOnlyList<InventoryDuplicateCheckState>> ListInventoryDuplicateChecksAsync(string partition, int inventoryId, int limit, CancellationToken ct = default);
-
-    /// <summary>Names the run a check was queued as.</summary>
-    Task SetInventoryDuplicateCheckRunAsync(string partition, long checkId, Guid runId, CancellationToken ct = default);
-
-    /// <summary>
-    /// Ends a check whose run never came, or ended before it did, with why (redacted): a download failed, its groups and table
-    /// deleted; a pick stopped, the check completed still and its groups not read left to pick. One that ended keeps how it ended.
-    /// </summary>
-    Task FailInventoryDuplicateCheckAsync(string partition, long checkId, string why, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// Starts a check's download as the run <paramref name="runId"/>, against the inventory's build <paramref name="buildRunId"/>:
-    /// running, downloading, with every group and count an earlier attempt left cleared. Null when the partition holds no such check
-    /// of the inventory, or it expired.
-    /// </summary>
-    Task<InventoryDuplicateCheckState?> StartInventoryDuplicateCheckAsync(
-        Guid flowId, int inventoryId, long checkId, Guid runId, long? buildRunId, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>Notes how many ids the inventory serves for the check to read, and the requests sent so far.</summary>
-    Task PlanInventoryDuplicateCheckAsync(Guid flowId, long checkId, long candidates, long requests, CancellationToken ct = default);
-
-    /// <summary>
-    /// Makes a check's table afresh (osdu/docs/reference/flow/inventory-duplicates.md, The check's table) through SQLFlow's schema
-    /// evolution, with a column for each of <paramref name="attributes"/>' values and for each comparison's hash of them, and
-    /// records the table and the properties on the check.
-    /// </summary>
-    Task PrepareInventoryDuplicateTableAsync(Guid flowId, long checkId, IReadOnlyList<DuplicateColumn> attributes, CancellationToken ct = default);
-
-    /// <summary>
-    /// Keeps a page of a check's download in its table, in one transaction: each record the inventory serves a row of, once, with
-    /// the version the index holds and what it holds at each property; how many records the inventory holds no row of, and how
-    /// many rows are at another version than it listed; and the check's progress.
-    /// </summary>
-    Task<InventoryDuplicateRowsWrite> AddInventoryDuplicateRowsAsync(
-        Guid flowId, int inventoryId, long checkId, IReadOnlyList<DuplicateColumn> attributes, IReadOnlyList<InventoryDuplicateRow> rows, long checkedCount,
-        long requests, CancellationToken ct = default);
-
-    /// <summary>
-    /// Groups a check's table by a key of properties it downloaded, over whatever it was grouped by before, in SQL and without
-    /// asking OSDU: the ids holding equal values at the key numbered into groups, the largest first; a group too large to pick from
-    /// left for review; every other group waiting to be picked. The key is recorded with who set it and when.
-    /// </summary>
-    /// <exception cref="DeliveryException">The key names a property the check did not download, or the check holds no download, or it is picking.</exception>
-    Task<InventoryDuplicateGrouping> GroupInventoryDuplicatesAsync(string partition, long checkId, InventoryDuplicateKeying keying, CancellationToken ct = default);
-
-    /// <summary>
-    /// Asks for a pick of a completed check whose groups wait to be picked: queued, to read their copies. False when the check is
-    /// not completed, is stale against <paramref name="buildRunId"/>, or holds no group to pick.
-    /// </summary>
-    Task<bool> RequestInventoryDuplicatePickAsync(string partition, long checkId, long? buildRunId, CancellationToken ct = default);
-
-    /// <summary>Starts a check's pick as the run <paramref name="runId"/>: running, reading copies. Null when the partition holds no such check, or no pick was asked of it.</summary>
-    Task<InventoryDuplicateCheckState?> StartInventoryDuplicatePickAsync(Guid flowId, long checkId, Guid runId, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>Ends a pick: the check completed again, picked when no error stopped it, or holding why it stopped and the groups it did not read.</summary>
-    Task CompleteInventoryDuplicatePickAsync(Guid flowId, long checkId, InventoryDuplicatePickEnd ending, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>The next groups whose copies are not read yet, at most <paramref name="limit"/>, after <paramref name="after"/>, each copy with the finding the inventory gives it now.</summary>
-    Task<IReadOnlyList<InventoryDuplicateGroupRow>> InventoryDuplicateGroupsToJudgeAsync(Guid flowId, long checkId, int after, int limit, CancellationToken ct = default);
-
-    /// <summary>Writes how a round of groups came out, each copy's figures and role, and moves the check's counts on.</summary>
-    Task WriteInventoryDuplicateJudgementsAsync(
-        Guid flowId, long checkId, IReadOnlyList<InventoryDuplicateJudgement> judgements, long requests, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>Ends a check's download: completed with its notes, or failed with why, its groups and table deleted.</summary>
-    Task CompleteInventoryDuplicateCheckAsync(Guid flowId, long checkId, InventoryDuplicateCheckEnd outcome, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>How many of a check's groups came out each way.</summary>
-    Task<IReadOnlyDictionary<string, long>> InventoryDuplicateOutcomesAsync(string partition, long checkId, CancellationToken ct = default);
-
-    /// <summary>How a check's groups are sized, and the groups waiting to be picked with the copies a pick would read of them.</summary>
-    Task<InventoryDuplicateSizes> InventoryDuplicateSizesAsync(string partition, long checkId, CancellationToken ct = default);
-
-    /// <summary>
-    /// A page of a check's groups, of one outcome or every one, in order after <paramref name="after"/>; each with its copies when
-    /// it holds at most <paramref name="copiesPerGroup"/>, every copy beside the inventory's row of it now.
-    /// </summary>
-    Task<IReadOnlyList<InventoryDuplicateGroupPage>> ListInventoryDuplicateGroupsAsync(
-        string partition, long checkId, string? outcome, int? after, int limit, int copiesPerGroup, CancellationToken ct = default);
-
-    /// <summary>A page of one group's copies in the inventory's order after <paramref name="after"/>.</summary>
-    Task<IReadOnlyList<InventoryDuplicateMemberState>> ListInventoryDuplicateMembersAsync(
-        string partition, long checkId, int groupNumber, long? after, int limit, CancellationToken ct = default);
-
-    /// <summary>One group of a check, or null.</summary>
-    Task<InventoryDuplicateGroupState?> GetInventoryDuplicateGroupAsync(string partition, long checkId, int groupNumber, CancellationToken ct = default);
-
-    /// <summary>
-    /// Writes an operator's choice of the copy a group keeps (<see cref="DuplicateChoice.Choose"/>, recorded with
-    /// <paramref name="actor"/> and when), or a choice taken back (<see cref="DuplicateChoice.Clear"/>), over the group as it stood;
-    /// the check's counts move by the difference.
-    /// </summary>
-    Task WriteInventoryDuplicateChoiceAsync(
-        string partition, long checkId, InventoryDuplicateJudgement judgement, DuplicateChoice choice, string actor, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>
-    /// Makes a selection of the copies a completed check picked to remove, against the build the check read, each id beside the
-    /// copy its group keeps, which a removal by the selection checks storage still holds first. Returns the selection's number.
-    /// </summary>
-    Task<long> CreateInventoryDuplicateSelectionAsync(
-        string partition, long checkId, string actor, string filtersJson, string? columnsJson, DateTime nowUtc, CancellationToken ct = default);
-
-    /// <summary>The copies a selection a duplicate check made keeps beside the ids named, each with the copy its group keeps; none for a selection a match filled.</summary>
-    Task<IReadOnlyList<InventorySelectionKeeper>> InventorySelectionKeepersAsync(Guid flowId, long selectionId, IReadOnlyList<long> inventoryRecordIds, CancellationToken ct = default);
-
-    /// <summary>
-    /// Retires a partition's checks made before <paramref name="olderThanUtc"/>: deleted whole with their tables, or, when a removal
-    /// took the picks of a selection made of them, kept as expired with their groups and tables deleted.
-    /// </summary>
-    Task<InventoryDuplicateSweep> SweepInventoryDuplicateChecksAsync(string partition, DateTime olderThanUtc, CancellationToken ct = default);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /// <summary>
     /// Applies what the lease's worker has appended so far to its records, a slice at a time, and deletes each event with
@@ -3679,300 +3378,69 @@ public interface ILedger
     /// <summary>The flow's retrieval runs, newest first.</summary>
     Task<IReadOnlyList<RetrievalState>> ListRetrievalsAsync(Guid flowId, int max, CancellationToken ct = default);
 
-    /// <summary>Opens the row of an assertion run and returns it with its id.</summary>
-    Task<AssertionRunState> StartAssertionRunAsync(AssertionRunState run, CancellationToken ct = default);
+    /// <summary>
+    /// The runs and results of assertion flows (osdu/docs/reference/flow/assertion.md): a store beside the ledger
+    /// (<see cref="LedgerStore"/>), since an assertion run writes no delivered record.
+    /// </summary>
+    AssertionStore Assertions { get; }
 
-    /// <summary>Records one test's result in a run, as soon as the test has come out, and returns it with its id.</summary>
-    Task<AssertionResultState> RecordAssertionResultAsync(AssertionResultState result, CancellationToken ct = default);
 
-    /// <summary>Closes an assertion run with its status, its counts and, for a run that stopped, why.</summary>
-    Task CompleteAssertionRunAsync(long assertionRunId, string status, AssertionCounts counts, string? failure, DateTime completedUtc, CancellationToken ct = default);
 
-    /// <summary>The assertion run <paramref name="assertionRunId"/> names, naming its partition, or null.</summary>
-    Task<AssertionRunState?> GetAssertionRunAsync(long assertionRunId, CancellationToken ct = default);
 
-    /// <summary>A flow's assertion runs in its partition, newest first.</summary>
-    Task<IReadOnlyList<AssertionRunState>> ListAssertionRunsAsync(Guid flowId, int max, CancellationToken ct = default);
 
-    /// <summary>The results a run recorded, in the order it recorded them.</summary>
-    Task<IReadOnlyList<AssertionResultState>> ListAssertionResultsAsync(long assertionRunId, CancellationToken ct = default);
+
+
+
+
+
+
 
     /// <summary>
-    /// Each test's most recent result of each flow in <paramref name="flowIds"/>, the latest run that ran it; a test no run
-    /// has run has none. The summary columns alone, what a board across flows reads; with <paramref name="withDetail"/>, each
-    /// whole, what a set's report reads.
+    /// The dimensions of dimension flows, with their builds, members and views
+    /// (osdu/docs/reference/concepts/dimension-tables.md): a store beside the ledger (<see cref="LedgerStore"/>), since a
+    /// dimension writes no delivered record.
     /// </summary>
-    Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, bool withDetail = false, CancellationToken ct = default);
+    DimensionStore Dimensions { get; }
 
-    /// <summary>
-    /// The results <paramref name="resultIds"/> name, each whole with its detail, in no set order; an id no result has is
-    /// left out. What the dashboard opens an assertion on: its latest result, by the id the board gave it.
-    /// </summary>
-    Task<IReadOnlyList<AssertionResultState>> GetAssertionResultsAsync(IReadOnlyCollection<long> resultIds, CancellationToken ct = default);
 
-    /// <summary>
-    /// Removes the runs of a flow in its partition that its latest status no longer needs, each whole with its results
-    /// (osdu/docs/reference/flow/assertion.md, The report): every finished run but the latest, unless it holds a test's latest
-    /// judged result of the version <paramref name="current"/> names for that test (test name to definition hash). A run under
-    /// way is left alone. Returns how many runs went.
-    /// </summary>
-    Task<int> PruneReplacedAssertionRunsAsync(Guid flowId, IReadOnlyDictionary<string, string> current, CancellationToken ct = default);
 
-    /// <summary>
-    /// The results of a flow's <paramref name="runs"/> most recent runs, newest run first, for one test or (null) every test:
-    /// the history a matrix of tests against runs, or one test's trend, is drawn from. With <paramref name="withDetail"/> each
-    /// result carries its detail; without, an empty one.
-    /// </summary>
-    Task<IReadOnlyList<AssertionResultState>> AssertionHistoryAsync(Guid flowId, string? testName, int runs, bool withDetail, CancellationToken ct = default);
 
-    /// <summary>
-    /// Removes the finished assertion runs that started before <paramref name="olderThanUtc"/> and whose every result a later
-    /// result of the same test superseded, each run with all its results, so a report that is kept is whole. A run holding a
-    /// test's latest result stays however old, so a board always shows where each test stands. Returns the runs removed.
-    /// </summary>
-    Task<int> PruneAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default);
 
-    /// <summary>How many runs <see cref="PruneAssertionRunsAsync"/> would remove at the cut-off; changes nothing.</summary>
-    Task<long> CountPrunableAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default);
 
-    /// <summary>
-    /// Registers a dimension a build is about to read (its declaration as the build reads it, in the ledger the build
-    /// registered) and opens the build's row, returning both with their ids and the partition they are kept in.
-    /// </summary>
-    Task<(DimensionState Dimension, DimensionRunState Run)> StartDimensionRunAsync(
-        DimensionDeclaration declaration, Guid? runId, string actor, DateTime startedUtc, string mode = DimensionRunModes.Full, CancellationToken ct = default);
 
-    /// <summary>
-    /// Opens the staging of build <paramref name="dimensionRunId"/> of dimension <paramref name="dimensionId"/>, of the flow
-    /// whose ledger identity is <paramref name="flowId"/>: what the build reads is staged there as it reads it, and its write
-    /// merges it (<see cref="WriteDimensionAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/>). What an earlier
-    /// build of the dimension left (its process stopped before it ended) is deleted first, unless that build is still running
-    /// and has run for less than <see cref="DimensionStage.AbandonedAfter"/>, or is writing the dimension now.
-    /// </summary>
-    Task<DimensionStage> StageDimensionAsync(Guid flowId, int dimensionId, long dimensionRunId, CancellationToken ct = default);
 
-    /// <summary>
-    /// Writes a completed build into its dimension and closes the build, in one transaction, from what the build staged: what
-    /// is new is added, what changed is changed, what the build no longer found is marked removed, and every change to an
-    /// original is logged. Returns the closed build with what it changed. A failure writes nothing and leaves the build open
-    /// for <see cref="CloseDimensionRunAsync"/>; so does a staging that no longer holds what the build staged.
-    /// </summary>
-    Task<DimensionRunState> WriteDimensionAsync(DimensionStage stage, DimensionStagedWrite write, CancellationToken ct = default);
 
-    /// <summary>
-    /// Writes a completed build whose rows <paramref name="write"/> holds in memory, as
-    /// <see cref="WriteDimensionAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/> writes a staged one: the rows
-    /// are staged, merged, and the staging deleted.
-    /// </summary>
-    Task<DimensionRunState> WriteDimensionAsync(DimensionWrite write, CancellationToken ct = default);
 
-    /// <summary>Closes a build that wrote nothing, as failed or cancelled, with what it read before it stopped and why.</summary>
-    Task CloseDimensionRunAsync(long dimensionRunId, string status, DimensionReadCounts read, string? failure, DateTime completedUtc, CancellationToken ct = default);
 
-    /// <summary>
-    /// Closes as completed a build that read its dimension and found nothing to write (an incremental load whose window held
-    /// no change), with what it read; the dimension names it as the build that last read it, and holds what it held.
-    /// </summary>
-    Task CompleteDimensionRunAsync(long dimensionRunId, DimensionReadCounts read, DateTime completedUtc, CancellationToken ct = default);
 
-    /// <summary>
-    /// Up to when the dimension's completed builds have read what changed: the latest <see cref="DimensionReadCounts.WindowTo"/>
-    /// of them, which the next incremental load reads on from; null when none kept one.
-    /// </summary>
-    Task<DateTime?> DimensionReadUpToAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>The entity types of the records the dimension's keys were read through, which an incremental load asks the search what changed in.</summary>
-    Task<IReadOnlyList<string>> DimensionKeyRecordTypesAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>
-    /// The keys the dimension holds now that were read through one of <paramref name="recordIds"/> (ids without their
-    /// version): those whose label or attributes a change of one of them can have changed.
-    /// </summary>
-    Task<IReadOnlyList<string>> DimensionKeysReadThroughAsync(int dimensionId, IReadOnlyCollection<string> recordIds, CancellationToken ct = default);
 
-    /// <summary>
-    /// The keys the dimension holds now that the records <paramref name="recordKeys"/> names (each by its unique key's text)
-    /// held when a load last read them: what an incremental load reads again besides what they hold now.
-    /// </summary>
-    Task<IReadOnlyList<string>> DimensionRecordKeysAsync(int dimensionId, IReadOnlyCollection<string> recordKeys, CancellationToken ct = default);
 
-    /// <summary>
-    /// The originals <paramref name="originals"/> names as the dimension holds them, removed ones included, each with its
-    /// member's clean value; one the dimension never held is left out.
-    /// </summary>
-    Task<IReadOnlyList<DimensionValueState>> DimensionOriginalsAsync(int dimensionId, IReadOnlyCollection<string> originals, CancellationToken ct = default);
 
-    /// <summary>
-    /// The dimensions of one flow's ledger (<paramref name="flowId"/>), of one partition (by its data-partition-id), or of
-    /// every partition when both are null; by flow and name.
-    /// </summary>
-    Task<IReadOnlyList<DimensionState>> ListDimensionsAsync(string? partition, Guid? flowId, CancellationToken ct = default);
 
-    /// <summary>The dimension <paramref name="dimensionId"/> names, naming its partition, or null.</summary>
-    Task<DimensionState?> GetDimensionAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>The dimension named <paramref name="name"/> in the ledger <paramref name="flowId"/> names, or null.</summary>
-    Task<DimensionState?> FindDimensionAsync(Guid flowId, string name, CancellationToken ct = default);
 
-    /// <summary>A dimension's builds, newest first.</summary>
-    Task<IReadOnlyList<DimensionRunState>> ListDimensionRunsAsync(int dimensionId, int max, CancellationToken ct = default);
 
-    /// <summary>The newest build of each dimension named, whatever it came to; a dimension never built has none.</summary>
-    Task<IReadOnlyList<DimensionRunState>> LatestDimensionRunsAsync(IReadOnlyCollection<int> dimensionIds, CancellationToken ct = default);
 
-    /// <summary>The builds named by id; an id the ledger does not hold is left out.</summary>
-    Task<IReadOnlyList<DimensionRunState>> GetDimensionRunsAsync(IReadOnlyCollection<long> dimensionRunIds, CancellationToken ct = default);
 
-    /// <summary>The builds a platform run made, one per dimension it built.</summary>
-    Task<IReadOnlyList<DimensionRunState>> DimensionRunsOfAsync(Guid runId, CancellationToken ct = default);
 
-    /// <summary>A page of a dimension's members, in order of their clean values or with the most records first.</summary>
-    Task<IReadOnlyList<DimensionMemberState>> ListDimensionMembersAsync(int dimensionId, DimensionMemberQuery query, CancellationToken ct = default);
 
-    /// <summary>The members of a dimension named by id or by clean value, removed ones included, in order of their clean values.</summary>
-    Task<IReadOnlyList<DimensionMemberState>> GetDimensionMembersAsync(
-        int dimensionId, IReadOnlyCollection<long> memberIds, IReadOnlyCollection<string> values, CancellationToken ct = default);
 
-    /// <summary>A page of a dimension's originals, in the order they arrived or with the most records first.</summary>
-    Task<IReadOnlyList<DimensionValueState>> ListDimensionValuesAsync(int dimensionId, DimensionValueQuery query, CancellationToken ct = default);
 
-    /// <summary>Every original the dimension holds now under the members <paramref name="memberIds"/> names, with each member's clean value.</summary>
-    Task<IReadOnlyList<DimensionValueState>> MemberOriginalsAsync(int dimensionId, IReadOnlyCollection<long> memberIds, CancellationToken ct = default);
 
-    /// <summary>
-    /// The originals most records hold of each member <paramref name="memberIds"/> names, at most <paramref name="perMember"/>
-    /// of each, with the member's clean value: what a page of members shows beside each.
-    /// </summary>
-    Task<IReadOnlyList<DimensionValueState>> TopMemberOriginalsAsync(int dimensionId, IReadOnlyCollection<long> memberIds, int perMember, CancellationToken ct = default);
 
-    /// <summary>
-    /// A page of a dimension's change log, newest first: of every build, or of one build, one original or one member, of one
-    /// kind of change or of every kind, as <paramref name="query"/> narrows it.
-    /// </summary>
-    Task<IReadOnlyList<DimensionChangeState>> ListDimensionChangesAsync(int dimensionId, DimensionChangeQuery query, CancellationToken ct = default);
 
-    /// <summary>
-    /// Makes sure the dimension has its table (<see cref="DimensionTables"/>) with the rows the ledger holds of it, as a
-    /// build's write does, without a build: for a dimension built before dimensions had a table, or one whose table was
-    /// dropped. A table already there keeps the names its key's and its value's columns have: only a build, which reads
-    /// the declaration, renames them. Answers whether the table had to be made or widened. False when the ledger holds
-    /// no such dimension.
-    /// </summary>
-    /// <exception cref="DeliveryException">Another dimension writes a table of that name, or the table cannot be made.</exception>
-    Task<bool> EnsureDimensionTableAsync(int dimensionId, DimensionTableSpec table, CancellationToken ct = default);
 
-    /// <summary>
-    /// The dimension's table as the database holds it: its name, the names of the columns that hold its key and its
-    /// value, and its attribute columns, in order. Null when the ledger holds no such dimension.
-    /// </summary>
-    /// <exception cref="DimensionTableMissingException">The database holds no table of the dimension.</exception>
-    Task<DimensionTableShape?> DimensionTableShapeAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>
-    /// A page of the dimension's table in the dimension's partition, as <paramref name="query"/> narrows and orders it. Null
-    /// when the ledger holds no such dimension.
-    /// </summary>
-    /// <exception cref="DimensionTableMissingException">The database holds no table of the dimension.</exception>
-    /// <exception cref="DimensionTableRenamedException">A build renamed a column of the table while it was read; reading it again finds it.</exception>
-    /// <exception cref="DeliveryException">The query names a column the table does not have.</exception>
-    Task<DimensionTablePage?> ReadDimensionTableAsync(int dimensionId, DimensionTableQuery query, CancellationToken ct = default);
 
-    /// <summary>
-    /// Every row of the dimension's table in the dimension's partition, by value then row number, one at a time, so a table
-    /// of millions of rows is never held whole. Nothing when the ledger holds no such dimension.
-    /// </summary>
-    /// <exception cref="DimensionTableMissingException">The database holds no table of the dimension.</exception>
-    /// <exception cref="DimensionTableRenamedException">A build renamed a column of the table as the read began; reading it again finds it.</exception>
-    IAsyncEnumerable<DimensionTableRow> StreamDimensionTableAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>
-    /// The types of the cache flows of the dimension's partition that capture it (<c>dimension: &lt;name&gt;,
-    /// dimensionFlow: &lt;flow&gt;</c>), as the last repository sync recorded them; none when no cache flow does, or the
-    /// ledger holds no such dimension.
-    /// </summary>
-    Task<IReadOnlyList<DimensionCaptureState>> DimensionCapturesAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>
-    /// Removes the dimension from its partition for good: every row kept of it (its collected texts, attribute values, change
-    /// log, keys, values and builds) and then the dimension itself, and nothing of any other dimension or partition. Rows go
-    /// a batch at a time under the dimension's write lock, so a build writing it finishes first; the dimension's own row goes
-    /// last, so a removal that stops part way leaves it listed and is finished by removing it again. Null when the ledger
-    /// holds no such dimension. Whether the dimension may go (its flow no longer declares it, no cache flow captures it) is
-    /// the caller's to settle (<see cref="Engine.Dimensions.DimensionRemoval"/>).
-    /// </summary>
-    Task<DimensionRemoved?> RemoveDimensionAsync(int dimensionId, CancellationToken ct = default);
 
-    /// <summary>
-    /// Writes a build run's views (osdu/docs/reference/flow/dimension-views.md): each view its flow declares, in one
-    /// transaction under the view's lock, written where its statement changed and checked in the run's partition, and each
-    /// view the flow made before and no longer declares, dropped. A view that cannot be written keeps its last definition
-    /// and says why; the others are still written.
-    /// </summary>
-    Task<DimensionViewsWritten> WriteDimensionViewsAsync(DimensionViewWrite write, CancellationToken ct = default);
 
-    /// <summary>The views builds made, of one flow when <paramref name="flowName"/> names one, by name.</summary>
-    Task<IReadOnlyList<DimensionViewState>> ListDimensionViewsAsync(string? flowName, CancellationToken ct = default);
 
-    /// <summary>The view named <paramref name="name"/>, ignoring case, with its newest checks; null when no build made one.</summary>
-    Task<DimensionViewDetail?> GetDimensionViewAsync(string name, CancellationToken ct = default);
 
-    /// <summary>The views builds made that read the dimension table <paramref name="table"/>, by name: what refuses the removal of its dimension.</summary>
-    Task<IReadOnlyList<string>> DimensionViewsReadingAsync(string table, CancellationToken ct = default);
 
-    /// <summary>
-    /// Removes the view named <paramref name="name"/> for good: the view from the database when it is there, and its record
-    /// with its checks. Null when no build made one. Whether it may go (no flow declares it) is the caller's to settle
-    /// (<see cref="Engine.Dimensions.DimensionViewRemoval"/>).
-    /// </summary>
-    Task<DimensionViewRemoved?> RemoveDimensionViewAsync(string name, CancellationToken ct = default);
-
-    /// <summary>
-    /// What a build of flow <paramref name="flowName"/> would do with each of <paramref name="views"/>, writing nothing: what a
-    /// plan says of them, looked at where <paramref name="target"/> keeps them (the module's database when null), its
-    /// reference resolved through <paramref name="secrets"/> (the run's; the host's when null).
-    /// </summary>
-    Task<IReadOnlyList<DimensionViewProbe>> ProbeDimensionViewsAsync(
-        string flowName, IReadOnlyList<Model.DimensionViewSpec> views, DimensionTableTarget? target = null, SqlFlow.Core.Secrets.ISecretResolver? secrets = null,
-        CancellationToken ct = default);
-
-    /// <summary>
-    /// Where a dimension flow keeps its tables and views (osdu/docs/reference/flow/dimension-target.md): the module's
-    /// database when <paramref name="target"/> is null or reaches it, else the target, once this host has opened it, its
-    /// reference resolved through <paramref name="secrets"/> (the run's; the host's when null).
-    /// </summary>
-    /// <exception cref="DeliveryException">The target cannot be resolved or opened, or names the module's database with another schema.</exception>
-    Task<DimensionTableTarget> ResolveDimensionTargetAsync(
-        string flowName, Model.DimensionTarget? target, SqlFlow.Core.Secrets.ISecretResolver? secrets = null, CancellationToken ct = default);
-
-    /// <summary>
-    /// The texts a collected attribute's values stand for, as the dimension's last build that settled its field read them:
-    /// those shown as one of <paramref name="values"/>, or every one when null; at most <paramref name="limit"/>, by value
-    /// then text. The name compares exactly, as the dimension declares it.
-    /// </summary>
-    Task<IReadOnlyList<DimensionCollectedText>> ListDimensionCollectedTextsAsync(
-        int dimensionId, string name, IReadOnlyCollection<string>? values, int limit, CancellationToken ct = default);
-
-    /// <summary>
-    /// The values an attribute holds among the dimension's originals a build finds now, as <paramref name="query"/> narrows
-    /// them, the most records first: each with the originals holding it and their records (summed). The name compares
-    /// exactly, as the dimension declares it.
-    /// </summary>
-    Task<IReadOnlyList<DimensionAttributeValueState>> ListDimensionAttributeValuesAsync(
-        int dimensionId, DimensionAttributeValueQuery query, CancellationToken ct = default);
-
-    /// <summary>
-    /// How much of each attribute a build read, over the dimension's keys a build finds now: the keys holding a value read
-    /// from a record or collected from their own (not the dimension's value for what is not read), and how many values those
-    /// are. An attribute no key holds a read value of is left out.
-    /// </summary>
-    Task<IReadOnlyList<DimensionAttributeCoverage>> DimensionAttributeCoverageAsync(int dimensionId, CancellationToken ct = default);
-
-    /// <summary>
-    /// The values each attribute holds among the keys a build finds now of each of <paramref name="memberIds"/>: the most keys
-    /// first, at most <paramref name="perAttribute"/> per attribute of a member.
-    /// </summary>
-    Task<IReadOnlyList<DimensionMemberAttributes>> MemberAttributesAsync(
-        int dimensionId, IReadOnlyCollection<long> memberIds, int perAttribute, CancellationToken ct = default);
 
     Task<ActivityRecord> StartActivityAsync(ActivityRecord activity, CancellationToken ct = default);
 

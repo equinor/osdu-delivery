@@ -108,7 +108,7 @@ public sealed class InventoryRunTests : IDisposable
         long? after = null;
         while (true)
         {
-            var page = await ledger.ListInventoryRecordsAsync(Partition, inventoryId, null, after, 500);
+            var page = await ledger.Inventories.ListRecordsAsync(Partition, inventoryId, null, after, 500);
             if (page.Count == 0)
             {
                 return all;
@@ -146,7 +146,7 @@ public sealed class InventoryRunTests : IDisposable
         Assert.Equal(("inferred", Estate), (summary.OwnersSource, Assert.Single(summary.Owners).Identity));
         Assert.Equal((1L, 1L, 1L, 1201L), (Of(summary, InventoryFindings.Tracked), Of(summary, InventoryFindings.Drifted), Of(summary, InventoryFindings.Foreign), Of(summary, InventoryFindings.Orphan)));
 
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
         Assert.Equal((summary.InventoryRunId, "inferred"), (inventory.LastBuildRunId, inventory.OwnersSource));
         var records = await RecordsAsync(ledger, inventory.InventoryId);
         var tracked = records[Id("log-0000")];
@@ -169,7 +169,7 @@ public sealed class InventoryRunTests : IDisposable
 
         var (runner, ledger, _) = await RunnerAsync(Flow());
         var built = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
         Assert.Equal(built.InventoryRunId, inventory.LastBuildRunId);
 
         // The next build's cursor pages fail once a whole chunk has been staged, the search's own second read from the first
@@ -189,10 +189,10 @@ public sealed class InventoryRunTests : IDisposable
         var records = await RecordsAsync(ledger, inventory.InventoryId);
         Assert.Equal(count, records.Count);
         Assert.All(records.Values, r => Assert.Null(r.GoneUtc));
-        var run = (await ledger.ListInventoryRunsAsync(Partition, inventory.InventoryId, 5))[0];
+        var run = (await ledger.Inventories.ListRunsAsync(Partition, inventory.InventoryId, 5))[0];
         Assert.Equal((summary.InventoryRunId!.Value, InventoryRunStatus.Failed), (run.InventoryRunId, run.Status));
         Assert.Equal(summary.Error, run.Error);
-        Assert.Equal(built.InventoryRunId, (await ledger.ListInventoriesAsync(Partition))[0].LastBuildRunId);
+        Assert.Equal(built.InventoryRunId, (await ledger.Inventories.ListAsync(Partition))[0].LastBuildRunId);
         await using var db = _db.CreateDbContext();
         Assert.Equal(0, await db.DeliveryInventoryScans.CountAsync());
     }
@@ -215,7 +215,7 @@ public sealed class InventoryRunTests : IDisposable
         // so a name is never read there.
         Assert.Equal((3, 21, 0), (_platform.Listings, _platform.RecordReads, _platform.HeaderReads));
         Assert.All(_platform.AttributesAsked, asked => Assert.Equal(RecordNames.Fields, asked));
-        var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
+        var records = await RecordsAsync(ledger, (await ledger.Inventories.ListAsync(Partition))[0].InventoryId);
         Assert.DoesNotContain(Id("log-7"), records.Keys);
         Assert.Equal((Estate, "log-0"), (records[Id("log-0")].ModifyUser, records[Id("log-0")].Name));
         Assert.DoesNotContain(_search.Calls, c => c.Uri.AbsolutePath.EndsWith("/query_with_cursor", StringComparison.Ordinal));
@@ -234,7 +234,7 @@ public sealed class InventoryRunTests : IDisposable
         Assert.Equal(2L, summary.Listed);
         Assert.Equal(["osdu:wks:work-product-component--WellLog:1.0.0", "osdu:wks:work-product-component--WellLog:1.4.0"], _platform.KindsListed.Order(StringComparer.Ordinal));
         Assert.Equal(0, _platform.HeaderReads);
-        var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
+        var records = await RecordsAsync(ledger, (await ledger.Inventories.ListAsync(Partition))[0].InventoryId);
         Assert.Equal(["osdu:wks:work-product-component--WellLog:1.0.0", "osdu:wks:work-product-component--WellLog:1.4.0"], records.Values.Select(r => r.Kind!).Order(StringComparer.Ordinal));
         Assert.Equal(["a", "b"], records.Values.Select(r => r.Name!).Order(StringComparer.Ordinal));
     }
@@ -253,7 +253,7 @@ public sealed class InventoryRunTests : IDisposable
 
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
 
-        var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
+        var records = await RecordsAsync(ledger, (await ledger.Inventories.ListAsync(Partition))[0].InventoryId);
         Assert.Equal("Wellbore A-1", records[Id("named")].Name);
         Assert.Equal("gr-run-1.las", records[Id("file")].Name);
         Assert.Equal("C-1", records[Id("blank")].Name);
@@ -276,7 +276,7 @@ public sealed class InventoryRunTests : IDisposable
         var filled = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
         Assert.Equal((0L, 0L, 0L), (filled.Added, filled.Changed, filled.Gone));
-        var inventoryId = (await ledger.ListInventoriesAsync(Partition))[0].InventoryId;
+        var inventoryId = (await ledger.Inventories.ListAsync(Partition))[0].InventoryId;
         Assert.Equal(["a", "b"], (await RecordsAsync(ledger, inventoryId)).Values.Select(r => r.Name!).Order(StringComparer.Ordinal));
 
         // A record renamed in OSDU comes with a new version: a change, its name with it.
@@ -294,7 +294,7 @@ public sealed class InventoryRunTests : IDisposable
         Add("b");
         var (runner, ledger, _) = await RunnerAsync(Flow(read: "storage"));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
         _search.Records.RemoveAt(0);
         _platform.RetryForever.Add(Id("b"));
 
@@ -341,7 +341,7 @@ public sealed class InventoryRunTests : IDisposable
 
         Assert.Equal((1L, 1L, 1L, 2L), (Of(summary, InventoryFindings.Tracked), Of(summary, InventoryFindings.Missing), Of(summary, InventoryFindings.Unlisted), summary.MissingChecked));
         Assert.Equal(("declared", 1L), (summary.OwnersSource, Assert.Single(summary.Owners).Records));
-        var records = await RecordsAsync(ledger, (await ledger.ListInventoriesAsync(Partition))[0].InventoryId);
+        var records = await RecordsAsync(ledger, (await ledger.Inventories.ListAsync(Partition))[0].InventoryId);
         Assert.Null(records[Id("gone-from-osdu")].FirstSeenUtc);
         Assert.Null(records[Id("gone-from-osdu")].Name);
         // An id the read never listed that storage holds gets its row with its record's name, read with it.
@@ -362,7 +362,7 @@ public sealed class InventoryRunTests : IDisposable
         var unanswered = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
         Assert.Equal((InventoryRunStatus.Completed, 0L, 0L, 0L), (unanswered.Status, unanswered.MissingChecked, Of(unanswered, InventoryFindings.Missing), Of(unanswered, InventoryFindings.Unlisted)));
-        var inventoryId = (await ledger.ListInventoriesAsync(Partition))[0].InventoryId;
+        var inventoryId = (await ledger.Inventories.ListAsync(Partition))[0].InventoryId;
         Assert.DoesNotContain(Id("not-indexed"), (await RecordsAsync(ledger, inventoryId)).Keys);
 
         _platform.RetryForever.Clear();
@@ -402,7 +402,7 @@ public sealed class InventoryRunTests : IDisposable
 
         Assert.Equal((0L, 1L), (reconciled.Listed, Of(reconciled, InventoryFindings.Stale)));
         Assert.Equal(searches, _search.Calls.Count);
-        var inventory = (await ledger.ListInventoriesAsync(Partition))[0];
+        var inventory = (await ledger.Inventories.ListAsync(Partition))[0];
         Assert.Equal(reconciled.InventoryRunId, inventory.LastReconcileRunId);
         Assert.NotEqual(reconciled.InventoryRunId, inventory.LastBuildRunId);
     }
@@ -419,7 +419,7 @@ public sealed class InventoryRunTests : IDisposable
         var inventory = Assert.Single(plan.Inventories);
         Assert.Equal((2L, "search", "latest"), (inventory.Records!.Value, inventory.Read, inventory.Versions));
         Assert.Empty(inventory.Problems);
-        Assert.Empty(await ledger.ListInventoriesAsync(Partition));
+        Assert.Empty(await ledger.Inventories.ListAsync(Partition));
         var unknown = await Assert.ThrowsAsync<DeliveryException>(() => runner.PlanAsync(["Nope"], CancellationToken.None));
         Assert.Contains("has no inventory named 'Nope'", unknown.Message, StringComparison.Ordinal);
     }
@@ -451,7 +451,7 @@ public sealed class InventoryRunTests : IDisposable
 
         var (runner, ledger, _) = await RunnerAsync(Flow(read: "storage"));
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
         _search.Records.RemoveAt(0);
         _platform.Cursors = cursors == "circling" ? ListingCursors.Circling : ListingCursors.Lost;
 
@@ -528,8 +528,8 @@ public sealed class InventoryRunTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", stop.Token));
 
-        var inventory = Assert.Single(await ledger.ListInventoriesAsync(Partition));
-        var stopped = Assert.Single(await ledger.ListInventoryRunsAsync(Partition, inventory.InventoryId, 5));
+        var inventory = Assert.Single(await ledger.Inventories.ListAsync(Partition));
+        var stopped = Assert.Single(await ledger.Inventories.ListRunsAsync(Partition, inventory.InventoryId, 5));
         Assert.Equal(InventoryRunStatus.Running, stopped.Status);
         await using (var db = _db.CreateDbContext())
         {
@@ -540,7 +540,7 @@ public sealed class InventoryRunTests : IDisposable
         var next = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Inventories);
 
         Assert.Equal(InventoryRunStatus.Completed, next.Status);
-        var closed = (await ledger.ListInventoryRunsAsync(Partition, inventory.InventoryId, 5)).Single(r => r.InventoryRunId == stopped.InventoryRunId);
+        var closed = (await ledger.Inventories.ListRunsAsync(Partition, inventory.InventoryId, 5)).Single(r => r.InventoryRunId == stopped.InventoryRunId);
         Assert.Equal(InventoryRunStatus.Failed, closed.Status);
         Assert.Contains("ended without finishing", closed.Error, StringComparison.Ordinal);
         await using (var db = _db.CreateDbContext())
@@ -562,14 +562,14 @@ public sealed class InventoryRunTests : IDisposable
 
         var only = await runner.BuildAsync(["welllogs"], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(["WellLogs"], only.Inventories.Select(i => i.Inventory));
-        Assert.Equal(["WellLogs"], (await ledger.ListInventoriesAsync(Partition)).Select(i => i.Name));
+        Assert.Equal(["WellLogs"], (await ledger.Inventories.ListAsync(Partition)).Select(i => i.Name));
 
         _search.Fail = body => body is not null && body.Contains("master-data--Well", StringComparison.Ordinal) ? HttpStatusCode.ServiceUnavailable : null;
         var failed = await Assert.ThrowsAsync<InventoryRunsFailedException>(() => runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None));
 
         Assert.Equal((1, 1), (failed.Outcome.Completed, failed.Outcome.Failed));
         Assert.Equal([("Wells", InventoryRunStatus.Failed), ("WellLogs", InventoryRunStatus.Completed)], failed.Outcome.Inventories.Select(i => (i.Inventory, i.Status)));
-        var built = (await ledger.ListInventoriesAsync(Partition)).ToDictionary(i => i.Name, StringComparer.Ordinal);
+        var built = (await ledger.Inventories.ListAsync(Partition)).ToDictionary(i => i.Name, StringComparer.Ordinal);
         Assert.Null(built["Wells"].LastBuildRunId);
         Assert.Equal(failed.Outcome.Inventories[1].InventoryRunId, built["WellLogs"].LastBuildRunId);
     }

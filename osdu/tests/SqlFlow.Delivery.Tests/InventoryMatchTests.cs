@@ -88,7 +88,7 @@ public sealed class InventoryMatchTests : IDisposable
         await ledger.RegisterAsync(_deliveryFlow);
         var runner = Runner(yaml, ledger);
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        return (runner, ledger, Assert.Single(await ledger.ListInventoriesAsync(Partition)));
+        return (runner, ledger, Assert.Single(await ledger.Inventories.ListAsync(Partition)));
     }
 
     private InventoryRunner Runner(string yaml, OsduLedger ledger)
@@ -118,7 +118,7 @@ public sealed class InventoryMatchTests : IDisposable
         Assert.Null(search.Problem());
         var conditions = JsonSerializer.Serialize(filters.Select(f => new { path = f.Path, value = f.Value }));
         var key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(conditions)));
-        return await ledger.CreateInventorySelectionAsync(
+        return await ledger.Inventories.CreateSelectionAsync(
             Partition, new InventorySelectionStart(inventory.InventoryId, Operator, conditions, key, search.ToJson(), inventory.LastBuildRunId, _clock.GetUtcNow().UtcDateTime));
     }
 
@@ -132,7 +132,7 @@ public sealed class InventoryMatchTests : IDisposable
         long? after = null;
         while (true)
         {
-            var page = await ledger.ListInventorySelectionRecordsAsync(Partition, selectionId, finding, after, 500);
+            var page = await ledger.Inventories.ListSelectionRecordsAsync(Partition, selectionId, finding, after, 500);
             if (page.Count == 0)
             {
                 return all;
@@ -177,7 +177,7 @@ public sealed class InventoryMatchTests : IDisposable
         Assert.Equal(_search.Calls.Count - sent, outcome.Requests);
         Assert.Equal("data.FacilityName.keyword:\"Wellbore A-1\"", outcome.Query);
 
-        var selection = await ledger.GetInventorySelectionAsync(Partition, selectionId);
+        var selection = await ledger.Inventories.GetSelectionAsync(Partition, selectionId);
         Assert.NotNull(selection);
         Assert.Equal((InventorySelections.Completed, inventory.LastBuildRunId, 4L, 5L, 5L), (selection.Status, selection.BuildRunId, selection.Matched, selection.ToCheck, selection.Checked));
         Assert.Equal("""["data.FacilityName"]""", selection.ColumnsJson);
@@ -189,13 +189,13 @@ public sealed class InventoryMatchTests : IDisposable
         Assert.Equal((4L, 3L), (selected[Id("a-changed")].MatchedVersion!.Value, selected[Id("a-changed")].Record.Version!.Value));
 
         // The selection's ids by the finding the inventory gives each now, and a page of one finding.
-        var counts = await ledger.InventorySelectionCountsAsync(Partition, selectionId);
+        var counts = await ledger.Inventories.SelectionCountsAsync(Partition, selectionId);
         Assert.Equal((3L, 1L), (counts.Of(InventoryFindings.Orphan), counts.Of(InventoryFindings.Tracked)));
         Assert.Equal(3, (await SelectedAsync(ledger, selectionId, InventoryFindings.Orphan)).Count);
 
         // The same conditions asked again of the same build find this match; of another build, none.
-        Assert.Equal(selectionId, (await ledger.FindInventorySelectionAsync(Partition, inventory.InventoryId, selection.ConditionsKey, inventory.LastBuildRunId))?.InventorySelectionId);
-        Assert.Null(await ledger.FindInventorySelectionAsync(Partition, inventory.InventoryId, selection.ConditionsKey, inventory.LastBuildRunId + 1));
+        Assert.Equal(selectionId, (await ledger.Inventories.FindSelectionAsync(Partition, inventory.InventoryId, selection.ConditionsKey, inventory.LastBuildRunId))?.InventorySelectionId);
+        Assert.Null(await ledger.Inventories.FindSelectionAsync(Partition, inventory.InventoryId, selection.ConditionsKey, inventory.LastBuildRunId + 1));
     }
 
     [Fact]
@@ -247,7 +247,7 @@ public sealed class InventoryMatchTests : IDisposable
         _search.Fail = body => body is not null && body.Contains("\"version\"", StringComparison.Ordinal) ? HttpStatusCode.ServiceUnavailable : null;
         var failed = await Assert.ThrowsAsync<InventoryMatchFailedException>(() => runner.MatchAsync("WellLogs", selectionId, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Equal(InventorySelections.Failed, failed.Outcome.Status);
-        var selection = await ledger.GetInventorySelectionAsync(Partition, selectionId);
+        var selection = await ledger.Inventories.GetSelectionAsync(Partition, selectionId);
         Assert.NotNull(selection);
         Assert.Equal((InventorySelections.Failed, 0L), (selection.Status, selection.Matched));
         Assert.False(string.IsNullOrWhiteSpace(selection.Error));
@@ -257,13 +257,13 @@ public sealed class InventoryMatchTests : IDisposable
         _search.Fail = null;
         var again = await runner.MatchAsync("WellLogs", selectionId, Guid.NewGuid(), Operator, CancellationToken.None);
         Assert.Equal((InventorySelections.Completed, 5L), (again.Status, again.Matched));
-        Assert.Null((await ledger.GetInventorySelectionAsync(Partition, selectionId))!.Error);
+        Assert.Null((await ledger.Inventories.GetSelectionAsync(Partition, selectionId))!.Error);
 
         // An inventory the flow does not declare holds nothing to match: the selection closes with why.
         var orphaned = await SelectAsync(ledger, inventory, Facility("nothing"));
         var missing = await Assert.ThrowsAsync<DeliveryException>(() => runner.MatchAsync("Wells", orphaned, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Contains("no inventory named 'Wells'", missing.Message, StringComparison.Ordinal);
-        Assert.Equal(InventorySelections.Failed, (await ledger.GetInventorySelectionAsync(Partition, orphaned))!.Status);
+        Assert.Equal(InventorySelections.Failed, (await ledger.Inventories.GetSelectionAsync(Partition, orphaned))!.Status);
         var unknown = await Assert.ThrowsAsync<DeliveryException>(() => runner.MatchAsync("WellLogs", 987654321, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Contains("holds no selection 987654321", unknown.Message, StringComparison.Ordinal);
     }
@@ -284,7 +284,7 @@ public sealed class InventoryMatchTests : IDisposable
         var (runner, ledger, inventory) = await BuiltAsync(Flow());
         var selectionId = await SelectAsync(ledger, inventory, Facility(FacilityA));
         await runner.MatchAsync("WellLogs", selectionId, Guid.NewGuid(), Operator, CancellationToken.None);
-        Assert.Equal(6L, (await ledger.InventoryCountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Orphan));
+        Assert.Equal(6L, (await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId)).Of(InventoryFindings.Orphan));
 
         var shownAsTwo = new InventoryRemovalRequest { Finding = InventoryFindings.Orphan, Scope = InventoryRemovals.SoftDelete, Expected = 2, Selection = selectionId };
         var count = await Assert.ThrowsAsync<DeliveryException>(() => runner.RemoveAsync("WellLogs", shownAsTwo, Partition, Guid.NewGuid(), Operator, CancellationToken.None));
@@ -298,9 +298,9 @@ public sealed class InventoryMatchTests : IDisposable
 
         Assert.Equal((3L, 0L, 0L, 0L), (outcome.Removed, outcome.Gone, outcome.Skipped, outcome.Failed));
         Assert.Equal([Id("a-1"), Id("a-2"), Id("a-3")], _platform.SoftDeleted.Order(StringComparer.Ordinal));
-        var counts = await ledger.InventoryCountsAsync(Partition, inventory.InventoryId);
+        var counts = await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId);
         Assert.Equal((3L, 3L), (counts.Of(InventoryFindings.Orphan), counts.Of(InventoryFindings.Gone)));
-        var removal = Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10));
+        var removal = Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10));
         Assert.Equal((selectionId, false, 3L), (removal.SelectionId, removal.NamesIds, removal.Requested));
         await using (var db = _db.CreateDbContext())
         {
@@ -309,7 +309,7 @@ public sealed class InventoryMatchTests : IDisposable
         }
 
         // The selection's ids now count under the finding the removal left them with.
-        Assert.Equal(3L, (await ledger.InventorySelectionCountsAsync(Partition, selectionId)).Of(InventoryFindings.Gone));
+        Assert.Equal(3L, (await ledger.Inventories.SelectionCountsAsync(Partition, selectionId)).Of(InventoryFindings.Gone));
 
         // A build since the match makes the selection stale, so a removal of what it holds is refused until it is matched again.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
@@ -317,7 +317,7 @@ public sealed class InventoryMatchTests : IDisposable
         Assert.Contains("was built again since", stale.Message, StringComparison.Ordinal);
 
         // A selection whose match did not complete holds nothing a removal may take.
-        var rebuilt = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        var rebuilt = Assert.Single(await ledger.Inventories.ListAsync(Partition));
         var unmatched = await SelectAsync(ledger, rebuilt, Facility("Wellbore B-1"));
         var queued = await Assert.ThrowsAsync<DeliveryException>(() => runner.RemoveAsync(
             "WellLogs", shownAsTwo with { Expected = 3, Selection = unmatched }, Partition, Guid.NewGuid(), Operator, CancellationToken.None));
@@ -340,18 +340,18 @@ public sealed class InventoryMatchTests : IDisposable
         await runner.MatchAsync("WellLogs", unused, Guid.NewGuid(), Operator, CancellationToken.None);
 
         // Nothing is younger than a week yet, so a sweep takes nothing.
-        Assert.Equal(new InventorySelectionSweep(0, 0), await ledger.SweepInventorySelectionsAsync(Partition, _clock.GetUtcNow().UtcDateTime - InventorySelections.KeptFor));
+        Assert.Equal(new InventorySelectionSweep(0, 0), await ledger.Inventories.SweepSelectionsAsync(Partition, _clock.GetUtcNow().UtcDateTime - InventorySelections.KeptFor));
 
         _clock.Advance(InventorySelections.KeptFor + TimeSpan.FromHours(1));
         var recent = await SelectAsync(ledger, inventory, Facility(FacilityA));
-        var swept = await ledger.SweepInventorySelectionsAsync(Partition, _clock.GetUtcNow().UtcDateTime - InventorySelections.KeptFor);
+        var swept = await ledger.Inventories.SweepSelectionsAsync(Partition, _clock.GetUtcNow().UtcDateTime - InventorySelections.KeptFor);
 
         Assert.Equal(new InventorySelectionSweep(1, 1), swept);
-        Assert.Null(await ledger.GetInventorySelectionAsync(Partition, unused));
-        var expired = await ledger.GetInventorySelectionAsync(Partition, removedBy);
+        Assert.Null(await ledger.Inventories.GetSelectionAsync(Partition, unused));
+        var expired = await ledger.Inventories.GetSelectionAsync(Partition, removedBy);
         Assert.Equal(InventorySelections.Expired, expired?.Status);
         Assert.Empty(await SelectedAsync(ledger, removedBy));
-        Assert.Equal(InventorySelections.Queued, (await ledger.GetInventorySelectionAsync(Partition, recent))?.Status);
-        Assert.Equal(removedBy, Assert.Single(await ledger.ListInventoryRemovalsAsync(Partition, inventory.InventoryId, 10)).SelectionId);
+        Assert.Equal(InventorySelections.Queued, (await ledger.Inventories.GetSelectionAsync(Partition, recent))?.Status);
+        Assert.Equal(removedBy, Assert.Single(await ledger.Inventories.ListRemovalsAsync(Partition, inventory.InventoryId, 10)).SelectionId);
     }
 }

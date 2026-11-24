@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
@@ -9,9 +8,9 @@ using SqlFlow.Delivery.Snapshots;
 namespace SqlFlow.Delivery.Ledger;
 
 // The ledger's directory (osdu/docs/reference/concepts/ledger.md, Ledgers, flows and partitions): the partitions the
-// ledger keys by, each with its number, and every ledger with the partition it belongs to. Every ledger table starts
-// its key with the partition's number, so every read and write of a ledger names it: the directory resolves it once per
-// ledger, and this process keeps it, since a ledger's partition never changes once it has one.
+// ledger keys by, each with its number, and every ledger with the partition it belongs to. Registering a ledger and
+// adopting an unplaced one write it here; what this process knows of it is kept by the LedgerDirectory the ledger shares
+// with its stores.
 public sealed partial class OsduLedger
 {
     private const short Unassigned = DeliveryModel.UnassignedPartition;
@@ -31,18 +30,6 @@ public sealed partial class OsduLedger
         .Select(table => "UPDATE TOP (@slice) [osdu].[" + table + "] SET [PartitionId] = @partition WHERE [PartitionId] = @unassigned AND [FlowId] = @flow;")
         .ToArray();
 
-    /// <summary>
-    /// Ledger identities this process has resolved to their partition's number. An unassigned ledger is not kept: its next
-    /// run adopts it, perhaps in another process, and it is read again until then.
-    /// </summary>
-    private readonly ConcurrentDictionary<Guid, short> _ledgerPartitions = new();
-
-    /// <summary>Partition numbers this process has resolved, by data-partition-id, compared regardless of case.</summary>
-    private readonly ConcurrentDictionary<string, short> _partitionIds = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Partition names by number, for the rows the ledger reads back.</summary>
-    private readonly ConcurrentDictionary<short, string> _partitionNames = new();
-
     public async Task<LedgerEntry> RegisterLedgerAsync(LedgerEntry ledger, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ledger);
@@ -60,7 +47,7 @@ public sealed partial class OsduLedger
             {
                 if (await TryAddLedgerAsync(ledger, partitionId, ct).ConfigureAwait(false))
                 {
-                    _ledgerPartitions[ledger.FlowId] = partitionId;
+                    Partitions.Remember(ledger.FlowId, partitionId);
                     return await EntryAsync(ledger.FlowId, ct).ConfigureAwait(false);
                 }
 
@@ -70,7 +57,7 @@ public sealed partial class OsduLedger
 
             if (existing.PartitionId == partitionId)
             {
-                _ledgerPartitions[ledger.FlowId] = partitionId;
+                Partitions.Remember(ledger.FlowId, partitionId);
                 return await ToEntryAsync(existing, ct).ConfigureAwait(false);
             }
 
@@ -124,53 +111,6 @@ public sealed partial class OsduLedger
         return entries;
     }
 
-    /// <summary>
-    /// The partition number <paramref name="flowId"/>'s rows are kept under, for a read: null when no run has registered the
-    /// ledger, so there is nothing of it to read; <see cref="Unassigned"/> for a ledger not yet placed.
-    /// </summary>
-    private async ValueTask<short?> PartitionOfAsync(Guid flowId, CancellationToken ct)
-    {
-        if (_ledgerPartitions.TryGetValue(flowId, out var known))
-        {
-            return known;
-        }
-
-        var row = await ReadAsync(db => db.DeliveryLedgers.AsNoTracking().Where(l => l.FlowId == flowId).Select(l => (short?)l.PartitionId).FirstOrDefaultAsync(ct), ct).ConfigureAwait(false);
-        if (row is { } found && found != Unassigned)
-        {
-            _ledgerPartitions[flowId] = found;
-        }
-
-        return row;
-    }
-
-    /// <summary>The partition number every row a write adds to <paramref name="flowId"/>'s ledger is keyed by.</summary>
-    /// <exception cref="DeliveryException">No run has registered the ledger.</exception>
-    private async ValueTask<short> WritePartitionAsync(Guid flowId, CancellationToken ct)
-        => await PartitionOfAsync(flowId, ct).ConfigureAwait(false)
-            ?? throw new DeliveryException(
-                $"Ledger {flowId:D} is not in the ledger's directory, so nothing of it can be written: a run registers the ledger of the partition it delivers to before it writes a row of it (osdu/docs/reference/concepts/ledger.md, Ledgers, flows and partitions).");
-
-    /// <summary>The number of the partition named <paramref name="partition"/>, or null when no ledger has been kept under it.</summary>
-    private async ValueTask<short?> PartitionIdOfAsync(string partition, CancellationToken ct)
-    {
-        var name = partition.Trim();
-        if (_partitionIds.TryGetValue(name, out var known))
-        {
-            return known;
-        }
-
-        var row = await ReadAsync(db => db.DeliveryLedgerPartitions.AsNoTracking().Where(p => p.Name == name).Select(p => new { p.PartitionId, p.Name }).FirstOrDefaultAsync(ct), ct).ConfigureAwait(false);
-        if (row is null)
-        {
-            return null;
-        }
-
-        _partitionIds[row.Name] = row.PartitionId;
-        _partitionNames[row.PartitionId] = row.Name;
-        return row.PartitionId;
-    }
-
     /// <summary>The number of the partition named <paramref name="partition"/>, numbering it when it has none yet.</summary>
     private async Task<short> EnsurePartitionIdAsync(string partition, CancellationToken ct)
     {
@@ -198,32 +138,6 @@ public sealed partial class OsduLedger
                     string.Create(CultureInfo.InvariantCulture, $"The ledger keys by at most {MaxPartitionNumber:N0} partitions, and partition '{partition}' would be one more."), ex);
             }
         }
-    }
-
-    /// <summary>The data-partition-id of partition number <paramref name="partitionId"/>, or null for an unassigned ledger.</summary>
-    private async ValueTask<string?> PartitionNameAsync(short partitionId, CancellationToken ct)
-    {
-        if (partitionId == Unassigned)
-        {
-            return null;
-        }
-
-        if (_partitionNames.TryGetValue(partitionId, out var known))
-        {
-            return known;
-        }
-
-        // The table holds one row per partition the ledger has kept, so every name is read at once.
-        var rows = await ReadAsync(db => db.DeliveryLedgerPartitions.AsNoTracking().Select(p => new { p.PartitionId, p.Name }).ToListAsync(ct), ct).ConfigureAwait(false);
-        foreach (var row in rows)
-        {
-            _partitionNames[row.PartitionId] = row.Name;
-            _partitionIds[row.Name] = row.PartitionId;
-        }
-
-        return _partitionNames.TryGetValue(partitionId, out var name)
-            ? name
-            : throw new DeliveryException(string.Create(CultureInfo.InvariantCulture, $"Partition number {partitionId} is not in the ledger's directory, which numbers every partition a ledger row names."));
     }
 
     /// <summary>The data-partition-ids of the partition numbers <paramref name="partitionIds"/>, for rows read across ledgers.</summary>
@@ -338,20 +252,6 @@ public sealed partial class OsduLedger
             ? name
             : throw new DeliveryException(
                 $"Ledger {ledger.FlowId:D} ({ledger.LedgerName}) is registered in '{ledger.Partition}', which is no data-partition-id: letters, digits, underscore, hyphen and dot, at most {CacheScope.MaxLength} characters. A ledger belongs to the partition a run delivers to, resolved.");
-    }
-
-    /// <summary>Whether a write failed on a unique key or index: another writer inserted the same row first.</summary>
-    private static bool IsDuplicate(Exception ex)
-    {
-        for (var current = ex; current is not null; current = current.InnerException)
-        {
-            if (current is SqlException sql && sql.Errors.Cast<SqlError>().Any(e => e.Number is 2601 or 2627))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// <summary>Whether a write failed because an identity ran past its type (error 8115, arithmetic overflow).</summary>

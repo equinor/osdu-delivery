@@ -58,7 +58,7 @@ public static class InventoryDuplicateExport
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var page = await ledger.ListInventoryDuplicateGroupsAsync(inventory.Partition, checkId, null, after, GroupsPage, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
+                var page = await ledger.Inventories.ListDuplicateGroupsAsync(inventory.Partition, checkId, null, after, GroupsPage, InventoryDuplicates.MaxCopiesPicked, ct).ConfigureAwait(false);
                 foreach (var group in page)
                 {
                     if (group.Group.Copies <= InventoryDuplicates.MaxCopiesPicked)
@@ -72,7 +72,7 @@ public static class InventoryDuplicateExport
                     while (true)
                     {
                         ct.ThrowIfCancellationRequested();
-                        var copies = await ledger.ListInventoryDuplicateMembersAsync(inventory.Partition, checkId, group.Group.GroupNumber, afterCopy, CopiesPage, ct).ConfigureAwait(false);
+                        var copies = await ledger.Inventories.ListDuplicateMembersAsync(inventory.Partition, checkId, group.Group.GroupNumber, afterCopy, CopiesPage, ct).ConfigureAwait(false);
                         rows += await WriteCopiesAsync(writer, group.Group, copies, paths).ConfigureAwait(false);
                         if (copies.Count < CopiesPage)
                         {

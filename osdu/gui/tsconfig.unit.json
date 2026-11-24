@@ -32,6 +32,8 @@
     "src/features/delivery/enrichmentText.ts",
     "src/features/delivery/issueText.ts",
     "src/features/delivery/recordTarget.ts",
+    "src/features/delivery/recordStory.ts",
+    "src/features/delivery/entryInputs.ts",
     "src/features/delivery/verifyOutcome.ts",
     "src/features/delivery/deliveryReason.ts",
     "src/features/delivery/previewHolds.ts",

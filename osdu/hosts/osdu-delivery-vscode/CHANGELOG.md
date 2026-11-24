@@ -28,6 +28,19 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   `attributes`, `columns` and a view's columns names the two, which no attribute or key or value column can take
   ([the dimension's table](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/flow/dimension-table.md)).
 
+### The command line
+
+- **`sqlflow records release` names the records it releases.** It takes `--key`, `--issue` or `--all`, and with none of
+  them stops and says so, where it used to release every blocked record of the flow. The control plane the pages and the
+  MCP server talk to refuses a release, redelivery, bringing up to date or deletion from the ledger that names no
+  records in the same way; **Release blocked** and **Redeliver** on the pages, and the MCP server's `allHeld`, say which
+  records they mean and work as before
+  ([records release](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/cli/records.md#records-release)).
+- **`sqlflow records adopt --key` takes `--confirm`.** Adopting records named by key takes the partition typed back, as
+  adopting every record or an issue's already did and as the pages' **Adopt** in the Records tab's selection bar does;
+  without it nothing is asked
+  ([records adopt](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/cli/records.md#records-adopt)).
+
 ## [1.0.5]
 
 ### Environments

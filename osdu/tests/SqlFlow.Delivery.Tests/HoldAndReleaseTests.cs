@@ -392,7 +392,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             await DeliverAsync(runtime);
             var problem = (await StateAsync(ledger, runtime, 2)).ProblemHash;
 
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(2)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
             var released = await StateAsync(ledger, runtime, 2);
             Assert.Equal((RecordStatus.Held, false, (long?)null), (released.Status, released.Blocked, released.ProblemHash));
             Assert.NotNull(released.PlanRequestedUtc);
@@ -426,13 +426,13 @@ public sealed class HoldAndReleaseTests : IDisposable
             await DeliverAsync(runtime);
             Assert.True((await StateAsync(ledger, runtime, 2)).Blocked);
 
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
             await DeliverAsync(runtime);
 
             AssertDelivered(await StateAsync(ledger, runtime, 2));
             Assert.Empty(protocol.Deliveries);
             Assert.Contains("the held record is delivered again", Assert.Single(await AttemptsAsync(ledger, runtime, 2), a => a.Phase == AttemptPhases.Identical).ResultJson, StringComparison.Ordinal);
-            Assert.Equal(0, await runtime.ReleaseAsync(null));
+            Assert.Equal(0, await runtime.ReleaseAsync(RecordReach.Every));
             await AssertNothingStrandedAsync(runtime);
         }
     }
@@ -449,7 +449,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             await DeliverAsync(runtime);
 
             tables.Records[2].Row["wellbore_uwi"] = SampleEstate.Logs()[3].WellboreUwi;
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
             await DeliverAsync(runtime);
 
             var sent = Assert.Single(protocol.Deliveries);
@@ -470,7 +470,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             await DeliverEverythingAsync(runtime, protocol);
             Load(tables.Records[2], "wellbore_uwi", Unresolvable);
             await DeliverAsync(runtime);
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
 
             _clock.Advance(TimeSpan.FromMinutes(1));
             tables.Records[2].DeletedUtc = Now;
@@ -495,7 +495,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             var row = tables.Records[2];
             Load(row, "wellbore_uwi", Unresolvable);
             await DeliverAsync(runtime);
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
 
             // The row leaves the ingestion table: the run's pass cannot plan the record, and reads it again in its own scope.
             // A row that is gone answers the request, so no later run reads it again, and the record is blocked again,
@@ -536,7 +536,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             var date = (DateTime)tables.Records[2].Row["update_date"]!;
             Load(tables.Records[2], "wellbore_uwi", Unresolvable, date.AddDays(1));
             await DeliverAsync(runtime);
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
 
             // Before the run that plans it, the row goes back to a business date older than the version OSDU holds.
             Load(tables.Records[2], "wellbore_uwi", Unresolvable, date.AddDays(-1));
@@ -562,15 +562,15 @@ public sealed class HoldAndReleaseTests : IDisposable
         using (runtime)
         {
             await DeliverEverythingAsync(runtime, protocol);
-            Assert.Equal(0, await runtime.ReleaseAsync(null));
-            Assert.Equal(0, await runtime.ReleaseAsync([Key(0), Key(1)]));
+            Assert.Equal(0, await runtime.ReleaseAsync(RecordReach.Every));
+            Assert.Equal(0, await runtime.ReleaseAsync(RecordReach.Named([Key(0), Key(1)])));
 
             Load(tables.Records[2], "wellbore_uwi", Unresolvable);
             await DeliverAsync(runtime);
-            Assert.Equal(0, await runtime.ReleaseAsync([Key(0)]));
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(0), Key(2)]));
-            Assert.Equal(0, await runtime.ReleaseAsync([Key(2)]));
-            Assert.Equal(0, await runtime.ReleaseAsync(null));
+            Assert.Equal(0, await runtime.ReleaseAsync(RecordReach.Named([Key(0)])));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(0), Key(2)])));
+            Assert.Equal(0, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
+            Assert.Equal(0, await runtime.ReleaseAsync(RecordReach.Every));
 
             // Each release that reached a record names it under its activity; one that reached nothing names none.
             var releases = await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = runtime.Flow.Id, Kind = "release" });
@@ -600,11 +600,13 @@ public sealed class HoldAndReleaseTests : IDisposable
             Assert.Equal(unresolved, (await StateAsync(ledger, runtime, 2)).ProblemHash);
             Assert.NotEqual(unresolved, (await StateAsync(ledger, runtime, 3)).ProblemHash);
 
-            Assert.Equal(2, await runtime.ReleaseProblemAsync(unresolved, "pattern shown"));
+            Assert.Equal(2, await runtime.ReleaseAsync(RecordReach.Of(await runtime.IssueAsync(unresolved))));
             Assert.False((await StateAsync(ledger, runtime, 1)).Blocked);
             Assert.False((await StateAsync(ledger, runtime, 2)).Blocked);
             AssertBlocked(await StateAsync(ledger, runtime, 3), RecordStatus.Held, "marked the record row deleted");
-            Assert.Equal(0, await runtime.ReleaseProblemAsync(unresolved, "pattern shown"));
+            // Released, the issue keeps no record blocked any more, so a second release of it is refused rather than releasing none.
+            var gone = await Assert.ThrowsAsync<InterventionRefusedException>(() => runtime.IssueAsync(unresolved));
+            Assert.Equal(InterventionRefusal.UnknownIssue, gone.Refusal);
 
             await DeliverAsync(runtime);
             AssertBlocked(await StateAsync(ledger, runtime, 1), RecordStatus.Held, Unresolvable);
@@ -635,7 +637,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             Assert.Equal(tries, protocol.Deliveries.Count(w => w.Key == Key(2)));
 
             // Released while OSDU still refuses it: tried once more with the kept document, held again.
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(2)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
             var released = await StateAsync(ledger, runtime, 2);
             Assert.Equal((RecordStatus.Pending, false, 0), (released.Status, released.Blocked, released.AttemptCount));
             await DeliverAsync(runtime);
@@ -644,7 +646,7 @@ public sealed class HoldAndReleaseTests : IDisposable
 
             // OSDU accepts it now: released, the kept document lands.
             protocol.FailWith = null;
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
             Assert.NotNull((await StateAsync(ledger, runtime, 2)).AcceptedMetadataHash);
             await DeliverAsync(runtime);
             var delivered = await StateAsync(ledger, runtime, 2);
@@ -734,7 +736,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             Assert.Equal(tries, protocol.Deliveries.Count(w => w.Key == Key(2)));
 
             protocol.FailWith = null;
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
             Assert.Equal(0, (await StateAsync(ledger, runtime, 2)).AttemptCount);
             await DeliverAsync(runtime);
             AssertDelivered(await StateAsync(ledger, runtime, 2));
@@ -899,8 +901,8 @@ public sealed class HoldAndReleaseTests : IDisposable
 
             // Named, or among every record a release of the flow reaches, it is asked to be planned again, and the next
             // run settles it from its row.
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(1)]));
-            Assert.Equal(1, await runtime.ReleaseAsync(null));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(1)])));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Every));
             Assert.NotNull((await StateAsync(ledger, runtime, 1)).PlanRequestedUtc);
             Assert.NotNull((await StateAsync(ledger, runtime, 2)).PlanRequestedUtc);
             var released = await ledger.StatsAsync(runtime.Flow.Id, Now);
@@ -934,7 +936,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             // with no issue to release and nothing sent.
             protocol.FailWith = null;
             protocol.Deliveries.Clear();
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(2)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
             await DeliverAsync(runtime);
             var replanned = await StateAsync(ledger, runtime, 2);
             Assert.Equal((RecordStatus.Held, false, (string?)null, (long?)null), (replanned.Status, replanned.Blocked, replanned.PendingDocumentRef, replanned.ProblemHash));
@@ -961,7 +963,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             await DeliverEverythingAsync(runtime, protocol);
             Load(tables.Records[2], "wellbore_uwi", Unresolvable);
             await DeliverAsync(runtime);
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(2)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
             var released = (await StateAsync(ledger, runtime, 2)).PlanRequestedUtc;
             Assert.NotNull(released);
             tables.Records[2].Row["wellbore_uwi"] = SampleEstate.Logs()[3].WellboreUwi;
@@ -1026,7 +1028,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             Assert.Equal(attempts, (await AttemptsAsync(ledger, runtime, 2)).Count);
 
             // Released while the undo is still open: blocked again, never settled.
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(2)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
             await DeliverAsync(runtime);
             AssertBlocked(await StateAsync(ledger, runtime, 2), RecordStatus.Held, "not undone yet");
             Assert.Empty(protocol.Deliveries);
@@ -1180,7 +1182,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             await DeliverEverythingAsync(runtime, protocol);
             Load(tables.Records[2], "wellbore_uwi", Unresolvable);
             await DeliverAsync(runtime);
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(2)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(2)])));
             var read = await StateAsync(ledger, runtime, 2);
             var submission = read.LastSubmissionId!.Value;
 
@@ -1371,7 +1373,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             Assert.Equal(1L, (await ledger.StatsAsync(flow, Now)).Blocked);
 
             // Released with fresh tries, it is sent.
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(0)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(0)])));
             Assert.Equal(0, (await StateAsync(ledger, runtime, 0)).AttemptCount);
             await DeliverAsync(runtime);
             AssertDelivered(await StateAsync(ledger, runtime, 0));
@@ -1534,7 +1536,7 @@ public sealed class HoldAndReleaseTests : IDisposable
             // Both corrected in place and released, as records an older version kept without a source key.
             tables.Records[1].Row["wellbore_uwi"] = wellbore1;
             tables.Records[2].Row["wellbore_uwi"] = wellbore2;
-            Assert.Equal(2, await runtime.ReleaseAsync([Key(1), Key(2)]));
+            Assert.Equal(2, await runtime.ReleaseAsync(RecordReach.Named([Key(1), Key(2)])));
             await using (var db = _db.CreateDbContext())
             {
                 Guid[] keyless = [Key(1).Value, Key(2).Value];
@@ -1601,7 +1603,7 @@ public sealed class HoldAndReleaseTests : IDisposable
 
             // Sent without waiting: the reference it waited for goes, the other stays for the check before sending, and no
             // claim leaves it waiting again.
-            Assert.Equal(1, await runtime.ReleaseAsync([Key(0)]));
+            Assert.Equal(1, await runtime.ReleaseAsync(RecordReach.Named([Key(0)])));
             var released = await StateAsync(ledger, runtime, 0);
             Assert.Equal((RecordStatus.Pending, (string?)null), (released.Status, released.WaitingFor));
             Assert.Equal([new RecordReference(elsewhere, "data.WellID")], released.PendingReferences);

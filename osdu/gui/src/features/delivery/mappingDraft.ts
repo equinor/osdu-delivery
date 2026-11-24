@@ -1,6 +1,6 @@
-// The mapping builder's draft logic that needs no server: which inputs a variable takes, where an entry goes in the draft,
-// how a static value is edited, how an entry reads as text, and the column names a draft already knows. The server writes
-// the YAML and checks it.
+// The mapping builder's draft logic that needs no server: where an entry goes in the draft, how a static value is edited,
+// how an entry reads as text, and the column names a draft already knows (which inputs an entry is offered is
+// entryInputs.ts). The server writes the YAML and checks it.
 
 import type {
   DeliveryCachedType, DeliveryTemplateVariable, MappingDraft, MappingDraftAssertion, MappingDraftEntry, MappingDraftFindAll,
@@ -9,20 +9,6 @@ import type {
 import { comparisonsOf, findByPhrase, type DraftFind } from "./findByLines";
 import { assertionText } from "./mappingAssertionText";
 import { holderOfPath, repeaterOfPath } from "./recordPath";
-
-/** The access and legal variables every record carries, which a mapping gives as non-empty lists of strings. */
-export const ENVELOPE_TARGETS: readonly string[] = [
-  "osdu.acl.owners",
-  "osdu.acl.viewers",
-  "osdu.legal.legaltags",
-  "osdu.legal.otherRelevantDataCountries",
-];
-
-/**
- * The access lists, which a list of values may add to: nodes reading groups beside the fixed values every record carries.
- * The legal lists stay fixed, since the legal service checks them before a run.
- */
-export const ACCESS_TARGETS: readonly string[] = ["osdu.acl.owners", "osdu.acl.viewers"];
 
 /** A lookup's name, as the mapping format takes it: letters, digits, underscores and hyphens. */
 export const LOOKUP_NAME = /^[A-Za-z0-9_-]+$/;
@@ -191,37 +177,6 @@ export function newModifier(kind: MappingDraftModifierKind): MappingDraftModifie
     case "date":
     case "ref":
       return { kind, separator: null, part: null, replacements: null, text: null, decimalSeparator: null, groupSeparator: null };
-  }
-}
-
-/**
- * The inputs a variable takes, as the preflight allows them: a value or a list of values from a dataset column, the cache,
- * a lookup, a search of the platform or a static value, and a list of values from items that are each one of those; a
- * list of objects from a repeater, a static list, or a list whose items are objects of properties each filled on its
- * own; an object only from a static value. A section of the record's parent fills any shape, for a template linked to a
- * parent, and the link to one of the record's children a value, for a template other templates are linked to (the editor
- * offers each only then). The legal lists are static, and the access lists static or a list of values that keeps a fixed
- * value every record carries.
- */
-export function inputsFor(variable: Pick<DeliveryTemplateVariable, "shape" | "path">): MappingDraftInput[] {
-  if (ACCESS_TARGETS.includes(variable.path)) {
-    return ["Static", "List"];
-  }
-
-  if (ENVELOPE_TARGETS.includes(variable.path)) {
-    return ["Static"];
-  }
-
-  switch (variable.shape) {
-    case "Value":
-      return ["Dataset", "Expression", "Cache", "Lookup", "Search", "Parent", "Child", "Static", "Coalesce"];
-    case "ValueList":
-      return ["Dataset", "Expression", "Cache", "Lookup", "Search", "Parent", "Child", "Static", "Coalesce", "List"];
-    case "GroupList":
-      return ["Repeat", "List", "Parent", "Static"];
-    case "Group":
-    case "Whole":
-      return ["Parent", "Static"];
   }
 }
 

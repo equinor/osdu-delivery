@@ -77,7 +77,7 @@ public static partial class DeliveryDimensionEndpoints
         var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
         var (bound, kept, _) = await SettleAsync(flow, named, ledger, registered, ct).ConfigureAwait(false);
         var spec = flow.Dimension(name);
-        var state = bound is null ? null : await ledger.FindDimensionAsync(bound.LedgerId, spec?.Name ?? name.Trim(), ct).ConfigureAwait(false);
+        var state = bound is null ? null : await ledger.Dimensions.FindAsync(bound.LedgerId, spec?.Name ?? name.Trim(), ct).ConfigureAwait(false);
         if (spec is null && state is null)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"Dimension flow {flow.Name} declares no dimension '{name.Trim()}', and its ledger keeps none of that name.");
@@ -90,13 +90,13 @@ public static partial class DeliveryDimensionEndpoints
         IReadOnlyList<DimensionKind> kinds = [];
         if (state?.LastRunId is { } runId && string.Equals(described.Kind, state.Kind, StringComparison.Ordinal))
         {
-            var runs = await ledger.GetDimensionRunsAsync([runId], ct).ConfigureAwait(false);
+            var runs = await ledger.Dimensions.GetRunsAsync([runId], ct).ConfigureAwait(false);
             kinds = runs.Count == 0 ? [] : DimensionRunner.KindsOf(runs[0].Read.Templates);
         }
 
         var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
         var blueprint = await DimensionBlueprints.DescribeAsync(described, folders, pipeline.RelativePath, kinds, ct).ConfigureAwait(false);
-        var coverage = state is null ? [] : await ledger.DimensionAttributeCoverageAsync(state.DimensionId, ct).ConfigureAwait(false);
+        var coverage = state is null ? [] : await ledger.Dimensions.AttributeCoverageAsync(state.DimensionId, ct).ConfigureAwait(false);
 
         DeliveryDimensionYamlDto? yaml = null;
         string? yamlMissing;

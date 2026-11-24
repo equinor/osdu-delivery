@@ -230,9 +230,10 @@ public sealed class LargeFileUploadTests
             .Select(c => System.Web.HttpUtility.ParseQueryString(c.Uri.Query)["blockid"]!)
             .Order(StringComparer.Ordinal)
             .ToList();
-        Assert.Equal(Enumerable.Range(0, 4).Select(BlockBlob.Id), ids);
-        Assert.Single(ids.Select(id => id.Length).Distinct());
-        Assert.Equal(Enumerable.Range(0, 4).Select(BlockBlob.Id), rig.Platform.CommittedBlocks["/staging/blob/f-1"]);
+        // Base64 of the block's index in six digits, so every id has the length the store requires of a blob's blocks.
+        string[] named = ["MDAwMDAw", "MDAwMDAx", "MDAwMDAy", "MDAwMDAz"];
+        Assert.Equal(named, ids);
+        Assert.Equal(named, rig.Platform.CommittedBlocks["/staging/blob/f-1"]);
     }
 
     [Fact]

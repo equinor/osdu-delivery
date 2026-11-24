@@ -207,7 +207,7 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
 
         // The check counted the groups, the join over the rows it groups (one names a type the partition does not hold),
         // and a conversion of an aggregate that cannot read.
-        var assurances = (await ledger.GetDimensionViewAsync("edge_assurances"))!;
+        var assurances = (await ledger.Dimensions.GetViewAsync("edge_assurances"))!;
         var check = assurances.Checks[0];
         Assert.Equal(2L, check.Rows);
         Assert.Equal([("Type", 303L, 1L)], check.Joins.Select(j => (j.Alias, j.Matched, j.Unmatched)));
@@ -216,7 +216,7 @@ public sealed class DimensionViewSqlServerEdgeCaseTests : IDisposable
         Assert.Equal("  spaced  ", Assert.Single(check.Columns.Single(c => c.Name == "Bad").Examples).Value);
         Assert.Equal((long?)0L, check.Columns.Single(c => c.Name == "FirstElement").Unconverted);
         Assert.Equal(2L, check.Columns.Single(c => c.Name == "Json").Values);
-        Assert.Equal(["v_dim_edge_assurances"], (await ledger.GetDimensionViewAsync("edge_logs"))!.View.Joins.Select(j => j.Table));
+        Assert.Equal(["v_dim_edge_assurances"], (await ledger.Dimensions.GetViewAsync("edge_logs"))!.View.Joins.Select(j => j.Table));
     }
 
     [Fact]

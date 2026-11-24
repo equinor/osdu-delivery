@@ -50,16 +50,16 @@ public sealed class InventoryLedgerTests : IDisposable
             LedgerName = "welllog-inventory@" + Partition,
         });
         await ledger.RegisterAsync(_deliveryFlow);
-        var inventory = await ledger.RegisterInventoryAsync(_inventoryFlow, "welllog-inventory", "WellLogs", Kind, null, "search", "latest");
+        var inventory = await ledger.Inventories.RegisterAsync(_inventoryFlow, "welllog-inventory", "WellLogs", Kind, null, "search", "latest");
         return (ledger, inventory);
     }
 
     /// <summary>One build's read staged and merged, as a build does it.</summary>
     private async Task<InventoryMerge> BuildAsync(OsduLedger ledger, InventoryState inventory, params InventoryScanRow[] rows)
     {
-        var run = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
-        await ledger.AppendInventoryScanAsync(_inventoryFlow, run, rows);
-        return await ledger.MergeInventoryAsync(_inventoryFlow, inventory.InventoryId, run, Now);
+        var run = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
+        await ledger.Inventories.AppendScanAsync(_inventoryFlow, run, rows);
+        return await ledger.Inventories.MergeAsync(_inventoryFlow, inventory.InventoryId, run, Now);
     }
 
     private static async Task<Dictionary<string, InventoryRecordState>> RecordsAsync(OsduLedger ledger, InventoryState inventory)
@@ -68,7 +68,7 @@ public sealed class InventoryLedgerTests : IDisposable
         long? after = null;
         while (true)
         {
-            var page = await ledger.ListInventoryRecordsAsync(Partition, inventory.InventoryId, null, after, 2);
+            var page = await ledger.Inventories.ListRecordsAsync(Partition, inventory.InventoryId, null, after, 2);
             if (page.Count == 0)
             {
                 return all.ToDictionary(r => r.TargetId, StringComparer.Ordinal);
@@ -156,18 +156,18 @@ public sealed class InventoryLedgerTests : IDisposable
         Assert.Equal(7L, (await RecordsAsync(ledger, inventory))[Id("a")].Version);
 
         // A build stopped after staging its read: the next one closes it, deletes what it staged, and the inventory is as it was.
-        var stopped = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
-        await ledger.AppendInventoryScanAsync(_inventoryFlow, stopped, [Row("x", 1)]);
+        var stopped = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
+        await ledger.Inventories.AppendScanAsync(_inventoryFlow, stopped, [Row("x", 1)]);
         Assert.Single(await RecordsAsync(ledger, inventory));
 
         _clock.Advance(TimeSpan.FromMinutes(5));
-        var next = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
+        var next = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "tests", "search", Now);
         await using (var db = _db.CreateDbContext())
         {
             Assert.Equal(0, await db.DeliveryInventoryScans.CountAsync(s => s.InventoryRunId == stopped));
         }
 
-        var runs = await ledger.ListInventoryRunsAsync(Partition, inventory.InventoryId, 10);
+        var runs = await ledger.Inventories.ListRunsAsync(Partition, inventory.InventoryId, 10);
         var closed = runs.Single(r => r.InventoryRunId == stopped);
         Assert.Equal((InventoryRunStatus.Failed, Now), (closed.Status, closed.CompletedUtc!.Value));
         Assert.Contains("stopped before it did", closed.Error, StringComparison.Ordinal);
@@ -209,7 +209,7 @@ public sealed class InventoryLedgerTests : IDisposable
             ledger, inventory,
             Row("tracked", 10), Row("drifted", 12), Row("unconfirmed", 1), Row("removed", 10), Row("minted", 1), Row("replaced", 1), Row("undoing", 1),
             Row("inflight", 1), Row("undone", 1), Row("orphaned-artifact", 1), Row("purged", 3), Row("ours", 1), Row("theirs", 1, Stranger));
-        await ledger.ReconcileInventoryAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
+        await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
 
         var records = await RecordsAsync(ledger, inventory);
         string Finding(string key) => records[Id(key)].Finding;
@@ -236,15 +236,15 @@ public sealed class InventoryLedgerTests : IDisposable
         // A second reconcile that finds the same keeps when each finding was first set.
         var at = records[Id("ours")].FindingUtc;
         _clock.Advance(TimeSpan.FromHours(1));
-        await ledger.ReconcileInventoryAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
+        await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
         Assert.Equal(at, (await RecordsAsync(ledger, inventory))[Id("ours")].FindingUtc);
 
         // An owner no longer named makes its ids foreign, from now.
-        await ledger.ReconcileInventoryAsync(_inventoryFlow, inventory.InventoryId, [], Now);
+        await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [], Now);
         var foreign = (await RecordsAsync(ledger, inventory))[Id("ours")];
         Assert.Equal((InventoryFindings.Foreign, Now), (foreign.Finding, foreign.FindingUtc));
 
-        var counts = await ledger.InventoryCountsAsync(_inventoryFlow, inventory.InventoryId);
+        var counts = await ledger.Inventories.CountsAsync(_inventoryFlow, inventory.InventoryId);
         Assert.Equal(13L, counts.ByFinding.Values.Sum());
         Assert.Equal(2L, counts.Of(InventoryFindings.Foreign));
     }
@@ -263,22 +263,22 @@ public sealed class InventoryLedgerTests : IDisposable
         // The next read lists none of them.
         _clock.Advance(TimeSpan.FromHours(1));
         await BuildAsync(ledger, inventory);
-        await ledger.ReconcileInventoryAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
+        await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
 
         // Narrowed: only the rows the inventory listed before, delivered records and live minted ids, are candidates.
-        var narrowed = await ledger.InventoryCandidatesAsync(_inventoryFlow, inventory.InventoryId, null, 100);
+        var narrowed = await ledger.Inventories.CandidatesAsync(_inventoryFlow, inventory.InventoryId, null, 100);
         Assert.Equal([Id("lagging"), Id("lost"), Id("minted-lost")], narrowed.Select(c => c.TargetId).Order(StringComparer.Ordinal));
         Assert.All(narrowed, c => Assert.True(c.Known));
 
         // Covering the type whole: the ledgers' delivered records of the type it never listed too, after the known ones.
-        var covering = await ledger.InventoryCandidatesAsync(_inventoryFlow, inventory.InventoryId, $"{Partition}:work-product-component--WellLog:", 100);
+        var covering = await ledger.Inventories.CandidatesAsync(_inventoryFlow, inventory.InventoryId, $"{Partition}:work-product-component--WellLog:", 100);
         Assert.Equal(4, covering.Count);
         Assert.Equal((Id("never-listed"), false), (covering[^1].TargetId, covering[^1].Known));
-        Assert.Equal(2, (await ledger.InventoryCandidatesAsync(_inventoryFlow, inventory.InventoryId, $"{Partition}:work-product-component--WellLog:", 2)).Count);
+        Assert.Equal(2, (await ledger.Inventories.CandidatesAsync(_inventoryFlow, inventory.InventoryId, $"{Partition}:work-product-component--WellLog:", 2)).Count);
 
         // Storage holds lagging and never-listed, and not lost or minted-lost.
         var checks = covering.Select(c => new InventoryCheck(c, c.TargetId == Id("lagging") || c.TargetId == Id("never-listed"), c.TargetId == Id("never-listed") ? Row("never-listed", 5) : null)).ToList();
-        await ledger.RecordInventoryChecksAsync(_inventoryFlow, inventory.InventoryId, checks, Now);
+        await ledger.Inventories.RecordChecksAsync(_inventoryFlow, inventory.InventoryId, checks, Now);
 
         var records = await RecordsAsync(ledger, inventory);
         Assert.Equal(InventoryFindings.Missing, records[Id("lost")].Finding);
@@ -300,7 +300,7 @@ public sealed class InventoryLedgerTests : IDisposable
         await ArtifactAsync(Id("d"), "live");
         await BuildAsync(ledger, inventory, Row("a", 1), Row("b", 1), Row("c", 1, "migration@contoso.com"), Row("d", 1), Row("e", 1, Stranger));
 
-        var owners = await ledger.InventoryOwnersAsync(_inventoryFlow, inventory.InventoryId);
+        var owners = await ledger.Inventories.OwnersAsync(_inventoryFlow, inventory.InventoryId);
 
         Assert.Equal([new InventoryOwner(Estate, 3), new InventoryOwner("migration@contoso.com", 1)], owners);
     }
@@ -310,16 +310,16 @@ public sealed class InventoryLedgerTests : IDisposable
     {
         var (ledger, inventory) = await InventoryAsync();
         await BuildAsync(ledger, inventory, Row("a", 2), Row("b", 1));
-        var due = await ledger.InventoryVersionsDueAsync(_inventoryFlow, inventory.InventoryId, 10);
+        var due = await ledger.Inventories.VersionsDueAsync(_inventoryFlow, inventory.InventoryId, 10);
         Assert.Equal([Id("a"), Id("b")], due.Select(d => d.TargetId));
 
-        await ledger.WriteInventoryVersionsAsync(_inventoryFlow, due.Select(d => new InventoryVersionsRead(d.InventoryRecordId, d.Version, d.TargetId == Id("a") ? [1, 2] : [1])).ToList());
-        Assert.Empty(await ledger.InventoryVersionsDueAsync(_inventoryFlow, inventory.InventoryId, 10));
+        await ledger.Inventories.WriteVersionsAsync(_inventoryFlow, due.Select(d => new InventoryVersionsRead(d.InventoryRecordId, d.Version, d.TargetId == Id("a") ? [1, 2] : [1])).ToList());
+        Assert.Empty(await ledger.Inventories.VersionsDueAsync(_inventoryFlow, inventory.InventoryId, 10));
 
         await BuildAsync(ledger, inventory, Row("a", 3), Row("b", 1));
-        var moved = Assert.Single(await ledger.InventoryVersionsDueAsync(_inventoryFlow, inventory.InventoryId, 10));
+        var moved = Assert.Single(await ledger.Inventories.VersionsDueAsync(_inventoryFlow, inventory.InventoryId, 10));
         Assert.Equal((Id("a"), 3L), (moved.TargetId, moved.Version));
-        await ledger.WriteInventoryVersionsAsync(_inventoryFlow, [new InventoryVersionsRead(moved.InventoryRecordId, 3, [1, 2, 3])]);
+        await ledger.Inventories.WriteVersionsAsync(_inventoryFlow, [new InventoryVersionsRead(moved.InventoryRecordId, 3, [1, 2, 3])]);
         await using var db = _db.CreateDbContext();
         Assert.Equal([1L, 2L, 3L], await db.DeliveryInventoryVersions.Where(v => v.InventoryRecordId == moved.InventoryRecordId).OrderBy(v => v.Version).Select(v => v.Version).ToListAsync());
     }
@@ -329,13 +329,13 @@ public sealed class InventoryLedgerTests : IDisposable
     {
         var (ledger, inventory) = await InventoryAsync();
         await ClaimAsync(ledger, "a", "delivered", 1);
-        var run = await ledger.StartInventoryRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "gui:tahir", "search", Now);
-        await ledger.AppendInventoryScanAsync(_inventoryFlow, run, [Row("a", 1), Row("b", 1), Row("c", 1, Stranger)]);
-        var merge = await ledger.MergeInventoryAsync(_inventoryFlow, inventory.InventoryId, run, Now);
-        await ledger.ReconcileInventoryAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
-        var counts = await ledger.InventoryCountsAsync(_inventoryFlow, inventory.InventoryId);
+        var run = await ledger.Inventories.StartRunAsync(_inventoryFlow, inventory.InventoryId, InventoryRunStatus.Build, Guid.NewGuid(), "gui:tahir", "search", Now);
+        await ledger.Inventories.AppendScanAsync(_inventoryFlow, run, [Row("a", 1), Row("b", 1), Row("c", 1, Stranger)]);
+        var merge = await ledger.Inventories.MergeAsync(_inventoryFlow, inventory.InventoryId, run, Now);
+        await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [Estate], Now);
+        var counts = await ledger.Inventories.CountsAsync(_inventoryFlow, inventory.InventoryId);
         _clock.Advance(TimeSpan.FromMinutes(1));
-        await ledger.CompleteInventoryRunAsync(
+        await ledger.Inventories.CompleteRunAsync(
             _inventoryFlow, run,
             new InventoryRunState
             {
@@ -345,27 +345,27 @@ public sealed class InventoryLedgerTests : IDisposable
             },
             "declared", Now);
 
-        var listed = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        var listed = Assert.Single(await ledger.Inventories.ListAsync(Partition));
         Assert.Equal((run, Now, run, "declared"), (listed.LastBuildRunId!.Value, listed.LastBuiltUtc!.Value, listed.LastReconcileRunId!.Value, listed.OwnersSource));
         Assert.Equal(Partition, listed.Partition);
-        Assert.Empty(await ledger.ListInventoriesAsync("prod"));
-        Assert.Equal(inventory.InventoryId, (await ledger.GetInventoryAsync(Partition, inventory.InventoryId))!.InventoryId);
-        Assert.Null(await ledger.GetInventoryAsync(Partition, inventory.InventoryId + 1000));
+        Assert.Empty(await ledger.Inventories.ListAsync("prod"));
+        Assert.Equal(inventory.InventoryId, (await ledger.Inventories.GetAsync(Partition, inventory.InventoryId))!.InventoryId);
+        Assert.Null(await ledger.Inventories.GetAsync(Partition, inventory.InventoryId + 1000));
 
-        var byPartition = await ledger.InventoryCountsAsync(Partition, inventory.InventoryId);
+        var byPartition = await ledger.Inventories.CountsAsync(Partition, inventory.InventoryId);
         Assert.Equal((1L, 1L, 1L), (byPartition.Of(InventoryFindings.Tracked), byPartition.Of(InventoryFindings.Orphan), byPartition.Of(InventoryFindings.Foreign)));
         Assert.Equal(1L, byPartition.Raised);
 
-        var orphans = Assert.Single(await ledger.ListInventoryRecordsAsync(Partition, inventory.InventoryId, InventoryFindings.Orphan, null, 10));
+        var orphans = Assert.Single(await ledger.Inventories.ListRecordsAsync(Partition, inventory.InventoryId, InventoryFindings.Orphan, null, 10));
         Assert.Equal(Id("b"), orphans.TargetId);
-        var refused = await Assert.ThrowsAsync<DeliveryException>(() => ledger.ListInventoryRecordsAsync(Partition, inventory.InventoryId, "lost", null, 10));
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => ledger.Inventories.ListRecordsAsync(Partition, inventory.InventoryId, "lost", null, 10));
         Assert.Contains("is not a finding", refused.Message, StringComparison.Ordinal);
 
-        var looked = Assert.Single(await ledger.LookupInventoryRecordsAsync(Partition, Id("a")));
+        var looked = Assert.Single(await ledger.Inventories.LookupRecordsAsync(Partition, Id("a")));
         Assert.Equal((InventoryFindings.Tracked, _deliveryFlow), (looked.Finding, looked.LedgerFlowId!.Value));
-        Assert.Empty(await ledger.LookupInventoryRecordsAsync(Partition, Id("nowhere")));
+        Assert.Empty(await ledger.Inventories.LookupRecordsAsync(Partition, Id("nowhere")));
 
-        var done = Assert.Single(await ledger.ListInventoryRunsAsync(Partition, inventory.InventoryId, 5));
+        var done = Assert.Single(await ledger.Inventories.ListRunsAsync(Partition, inventory.InventoryId, 5));
         Assert.Equal((InventoryRunStatus.Completed, 3L, 3L), (done.Status, done.Listed, done.Added));
         Assert.Contains("\"tracked\":1", done.FindingsJson, StringComparison.Ordinal);
     }
@@ -376,7 +376,7 @@ public sealed class InventoryLedgerTests : IDisposable
         var (ledger, inventory) = await InventoryAsync();
         await BuildAsync(ledger, inventory, Row("a", 1));
 
-        var again = await ledger.RegisterInventoryAsync(_inventoryFlow, "welllog-inventory", "WellLogs", "osdu:wks:work-product-component--WellLog:*", "data.Name:A*", "search", "all");
+        var again = await ledger.Inventories.RegisterAsync(_inventoryFlow, "welllog-inventory", "WellLogs", "osdu:wks:work-product-component--WellLog:*", "data.Name:A*", "search", "all");
 
         Assert.Equal(inventory.InventoryId, again.InventoryId);
         Assert.Equal(("osdu:wks:work-product-component--WellLog:*", "data.Name:A*", "all"), (again.Kind, again.Query, again.Versions));
