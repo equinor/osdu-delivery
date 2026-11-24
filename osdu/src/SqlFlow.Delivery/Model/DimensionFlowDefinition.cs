@@ -540,7 +540,9 @@ public sealed record DimensionAttributeSpec(
     /// (<see cref="DimensionColumnNames"/>), which an attribute of the dimension cannot share either.
     /// </summary>
     public static readonly IReadOnlySet<string> Reserved =
-        new HashSet<string>(["value", "keys", "key", "key_id", "records", "filter", "label", "id", "partition"], StringComparer.OrdinalIgnoreCase);
+        new HashSet<string>(
+            ["value", "keys", "key", "key_id", "records", "filter", "label", "id", "partition", DimensionColumnNames.InsertedColumn, DimensionColumnNames.UpdatedColumn],
+            StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Whether <paramref name="name"/> is an attribute name: a letter, then letters, digits and underscores.</summary>
     public static bool IsName(string? name)

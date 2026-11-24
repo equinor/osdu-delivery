@@ -55,6 +55,7 @@ public static class DimensionViews
         ArgumentNullException.ThrowIfNull(dimension);
         ViewColumnSource Text(string name, int length) => new(alias, sqlAlias, name, ViewValue.Text, string.Create(CultureInfo.InvariantCulture, $"nvarchar({length})"));
         ViewColumnSource Number(string name, string type) => new(alias, sqlAlias, name, ViewValue.Number, type);
+        ViewColumnSource Time(string name) => new(alias, sqlAlias, name, ViewValue.Date, DimensionTables.StampType);
         var columns = new List<ViewColumnSource>
         {
             Number("id", "bigint"),
@@ -64,6 +65,8 @@ public static class DimensionViews
             Text(dimension.ValueColumn, DimensionSpec.MaxCleanLength),
             Number("records", "bigint"),
             Text("filter", DeliveryDimensionValue.MaxFilterLength),
+            Time(DimensionColumnNames.InsertedColumn),
+            Time(DimensionColumnNames.UpdatedColumn),
         };
         if (dimension.Elements is not null)
         {
@@ -153,16 +156,18 @@ public static class DimensionViews
 
     /// <summary>
     /// The columns a view holds when its document lists none (osdu/docs/reference/flow/dimension-views.md): every
-    /// column of <paramref name="from"/> but its numbers, the partition and the filter, under the names its table gives
-    /// them, then every column of each join the same way, prefixed by the join's alias and an underscore, with the joined
-    /// row's number as <c>&lt;alias&gt;_id</c>. A joined key is the value joined on, so it is left out.
+    /// column of <paramref name="from"/> but its numbers, the partition, the filter and the rows' times, under the names its
+    /// table gives them, then every column of each join the same way, prefixed by the join's alias and an underscore, with
+    /// the joined row's number as <c>&lt;alias&gt;_id</c>. A joined key is the value joined on, so it is left out. A view
+    /// holds a row's times when its document lists them.
     /// </summary>
     public static IReadOnlyList<(string Name, ViewColumnSource Source)> DefaultColumns(
         DimensionSpec from, IReadOnlyList<(string Alias, string SqlAlias, DimensionSpec Dimension)> joins)
     {
         ArgumentNullException.ThrowIfNull(from);
         ArgumentNullException.ThrowIfNull(joins);
-        var hidden = new HashSet<string>(["id", "partition", "key_id", "filter"], StringComparer.OrdinalIgnoreCase);
+        var hidden = new HashSet<string>(
+            ["id", "partition", "key_id", "filter", DimensionColumnNames.InsertedColumn, DimensionColumnNames.UpdatedColumn], StringComparer.OrdinalIgnoreCase);
         var columns = new List<(string, ViewColumnSource)>();
         foreach (var column in ColumnsOf(from, ViewScope.FromAlias, FromSqlAlias).Where(c => !hidden.Contains(c.Column)))
         {

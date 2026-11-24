@@ -2,7 +2,7 @@
 id: delivery-flow-dimension-table
 title: "The dimension's table: osdu.dim_<dimension>, its columns and names, and how it follows the document"
 type: flow-reference
-summary: "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and how its rows are kept."
+summary: "A dimension's table, osdu.dim_<dimension>: its columns and their names, each row's InsertedDate_DW and UpdatedDate_DW, schema evolution, and how rows are kept."
 keywords:
   - "osdu.dim_"
   - dimension table
@@ -12,6 +12,9 @@ keywords:
   - IX_key
   - IX_value
   - clustered on id
+  - InsertedDate_DW
+  - UpdatedDate_DW
+  - data freshness
 related:
   - delivery-flow-dimension
   - delivery-flow-dimension-target
@@ -45,6 +48,8 @@ migration creates it.
 | the value's column | The key's value. |
 | `records` | The records of the row: those holding the collected value, or every record of the key. |
 | `filter` | The search filter finding the key's records; null when no query can carry the key. |
+| `InsertedDate_DW` | When a build first wrote the row, in UTC (`datetime`). It stays for as long as the row keeps its `id`. |
+| `UpdatedDate_DW` | When a build last changed the row, in UTC (`datetime`): the time it was first written, or the time a later build rewrote its key, value, records, filter or an attribute. |
 | one per attribute | The attribute's value for the row, under the attribute's name; null where the key has none. |
 | `element` | Only for a dimension that reads elements: the element's place among the key's, from 1, in the order the key's record holds them; one column per element field follows the attributes. |
 
@@ -56,7 +61,8 @@ the value's after the property the last `label` path ends with (`FacilityName`),
 it reads no label (`CurveMnemonic` beside `Mnemonic`). Where the two would be the same ignoring case (a dimension
 `Source` reading `data.Source` with no label), the value's column keeps the name and the key's takes `Key` at its end:
 `Source` and `SourceKey`. `columns: { key, value }` names either one; it has to where the name would be one of `id`,
-`partition`, `key_id`, `records` or `filter`, an attribute's name, or no column name at all. A name is a letter, then
+`partition`, `key_id`, `records`, `filter`, `InsertedDate_DW` or `UpdatedDate_DW`, an attribute's name, or no column
+name at all. A name is a letter, then
 letters, digits and underscores, at most 64; the key's column cannot be named `value` nor the value's `key`, the words
 that ask for the two columns whatever they are named.
 
@@ -72,9 +78,20 @@ again rewrite that log's rows, not the table's): an incremental load's, the keys
 full load's, the keys that arrived, left, moved or came back and those whose own row, attribute values or objects it
 wrote, which a key's hashes tell ([decision 0058](../../wiki/decisions/0058-dimension-keys-by-their-text.md)). A table
 behind its dimension (the write before did not reach it, or it moved) is laid out whole. When the collected attribute is added, taken out or replaced, the
-partition's rows are written again under new numbers. A write that changes a row raises the table's version
+partition's rows are written again under new numbers, each first written then. A write that changes a row raises the table's version
 ([`osdu.Dimension`](../tables/dimension.md)'s `TableVersion`), which tells a view's check whether the rows it read changed
 ([A check kept](dimension-views.md)).
+
+**When a row was written.** `InsertedDate_DW` and `UpdatedDate_DW` are SQLFlow's own audit columns, under the same names,
+type and rule as on SQLFlow's ingestion tables, so a reader that knows those reads these. Every row a build adds takes the
+time of the build's write in both; a row it rewrites takes it in `UpdatedDate_DW` alone; a row it finds as it was keeps
+both. The time is the one the dimension records as its last build (`LastBuiltUtc` on
+[`osdu.Dimension`](../tables/dimension.md)), so a row changed by the last build has that time. `UpdatedDate_DW` says how
+fresh a row's data is, and a reader takes what changed since a time it read by it (`WHERE [UpdatedDate_DW] >= @since`).
+A row a build deletes leaves the table and carries no time; the dimension's
+[change log](dimension.md#what-a-build-keeps) says which keys left, and when. A table made before tables kept these columns is given them by its next
+build, not null, every row it holds taking that build's time in both; on SQL Server's editions that add such a column
+online (Enterprise, Developer, Azure SQL) that changes the table's metadata alone, not its rows.
 
 The table keeps its rows in the order of `id`, its key and identity, the clustered index: a small key that grows as rows
 are added, so every other index carries a row's eight-byte `id` alone. A partition's rows, and a key's rows within it, are

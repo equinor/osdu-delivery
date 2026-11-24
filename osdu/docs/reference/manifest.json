@@ -5214,7 +5214,7 @@
       "path": "flow/dimension-table.md",
       "title": "The dimension's table: osdu.dim_<dimension>, its columns and names, and how it follows the document",
       "type": "flow-reference",
-      "summary": "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and how its rows are kept.",
+      "summary": "A dimension's table, osdu.dim_<dimension>: its columns and their names, each row's InsertedDate_DW and UpdatedDate_DW, schema evolution, and how rows are kept.",
       "keywords": [
         "osdu.dim_",
         "dimension table",
@@ -5223,7 +5223,10 @@
         "schema evolution",
         "IX_key",
         "IX_value",
-        "clustered on id"
+        "clustered on id",
+        "InsertedDate_DW",
+        "UpdatedDate_DW",
+        "data freshness"
       ],
       "related": [
         "delivery-flow-dimension",

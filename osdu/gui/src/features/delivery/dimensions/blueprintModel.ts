@@ -20,8 +20,8 @@ export const recordsElement = (recordsId: string): BlueprintElement => `card:${r
 /** The read of the dimension's key, which every chain starts from. */
 export const KEY_READ = "key";
 
-/** The columns every dimension's table has, which no read is drawn to: the row's and key's numbers, the partition, the records and the filter. */
-export const FIXED_COLUMNS = new Set(["id", "partition", "keyId", "records", "filter"]);
+/** The columns every dimension's table has, which no read is drawn to: the row's and key's numbers, the partition, the records, the filter and the row's two times. */
+export const FIXED_COLUMNS = new Set(["id", "partition", "keyId", "records", "filter", "inserted", "updated"]);
 
 /**
  * One way a column is made, from the key to the last read: the key alone (its own column, its number and filter), the

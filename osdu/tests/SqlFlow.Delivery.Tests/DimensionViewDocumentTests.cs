@@ -205,6 +205,20 @@ public class DimensionViewDocumentTests
     }
 
     [Fact]
+    public void A_view_names_when_a_build_first_wrote_a_row_and_last_changed_it_as_dates()
+    {
+        var view = Parse(View("      Curve: Mnemonic\n      Updated: UpdatedDate_DW\n      LogInserted: { expression: WellLog.InsertedDate_DW, dataType: datetime2(3) }\n")).Views[0];
+
+        Assert.Equal(["partition", "id", "Curve", "Updated", "LogInserted"], view.Definition.Columns.Select(c => c.Name));
+        Assert.Equal(["nvarchar(256)", "bigint", "nvarchar(4000)", "datetime", "datetime2(3)"], view.Definition.Columns.Select(c => c.Type));
+        Assert.Contains("[b].[UpdatedDate_DW]", view.Definition.CreateSql, StringComparison.Ordinal);
+        Assert.Contains("[j1].[InsertedDate_DW]", view.Definition.CreateSql, StringComparison.Ordinal);
+
+        // A time is a date to an expression: a number is not added to it.
+        Assert.Contains("gives the operator + a date", Refused(View("      Bad: UpdatedDate_DW + 1\n")), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_flow_declaring_views_writes_its_tables_and_views_on_its_target_connection_in_lineage()
     {
         var flow = Parse(Head + Curve);

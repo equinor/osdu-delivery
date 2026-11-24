@@ -26,8 +26,8 @@ export const MAX_NAME_LENGTH = 64;
 /** The explorer's address part holding the draft while a dimension is built. */
 export const DRAFT_PARAM = "dim";
 
-/** Names an attribute cannot take: the columns every dimension's table has, and the words a key's own facts go by. */
-const RESERVED = new Set(["value", "keys", "key", "key_id", "records", "filter", "label", "id", "partition"]);
+/** Names an attribute cannot take, lowercase: the columns every dimension's table has, and the words a key's own facts go by. */
+const RESERVED = new Set(["value", "keys", "key", "key_id", "records", "filter", "label", "id", "partition", "inserteddate_dw", "updateddate_dw"]);
 
 /** A draft that has picked nothing but the kind it reads (none yet, for an empty kind). */
 export function emptyDraft(kind: string): DimensionDraft {

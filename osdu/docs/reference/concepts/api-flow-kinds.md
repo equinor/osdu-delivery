@@ -58,7 +58,7 @@ every delivery route does: the scopes, partition and interface parameters and an
 | `GET /flows/{pipelineId}/dimensions` | read | `partition` | One dimension flow's dimensions; 409 for another kind. |
 | `GET /flows/{pipelineId}/dimensions/{name}/blueprint` | read | `partition` | How a dimension is built: its YAML beside what each line reads and makes. |
 | `GET /dimensions/{dimensionId}` | read | | One dimension, its pipeline and parameters. |
-| `GET /dimensions/{dimensionId}/table` | read | `search`, `attr`, `order`, `dir`, `offset`, `limit` (100, at most 1,000) | A page of the dimension's own table. |
+| `GET /dimensions/{dimensionId}/table` | read | `search`, `attr`, `order`, `dir`, `offset`, `limit` (100, at most 1,000) | A page of the dimension's own table; each row with `insertedUtc` and `updatedUtc`, when a build first wrote it and last changed it (null until a table made before them is next built). |
 | `GET /dimensions/{dimensionId}/values` | read | `search`, `order`, `removed`, `attr`, `after`, `limit` | A page of its values. |
 | `GET /dimensions/{dimensionId}/values/{valueId}` | read | | One value with its keys, filter and history. |
 | `GET /dimensions/{dimensionId}/keys` | read | `search`, `value`, `leftOut`, `removed`, `attr`, `order`, `after`, `limit` | A page of its keys. |

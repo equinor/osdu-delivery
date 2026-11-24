@@ -330,7 +330,7 @@ what to read instead.
 | [Labels and attributes](dimension-attributes.md) | How a label and an attribute read the records a key names: steps and filters, keeping a key so tables join, several values, decoding, white space, filters through a reference, lookup kinds, collected attributes and the fields a label search returns. |
 | [Elements](dimension-elements.md) | The objects of a nested array, a row each with their fields. |
 | [Clean steps](dimension-clean.md) | How each value is cleaned into what a person picks. |
-| [The dimension's table](dimension-table.md) | `osdu.dim_<dimension>`: its columns, their names, and how the table follows the document. |
+| [The dimension's table](dimension-table.md) | `osdu.dim_<dimension>`: its columns, their names, when each row was first written and last changed, and how the table follows the document. |
 | [Views](dimension-views.md) | Dimensions joined into one table, grouped or a row per row, typed, written and checked. |
 | [Incremental loads](dimension-incremental.md) | When a build loads in full, and what an incremental one reads. |
 | [Builds](dimension-build.md) | The operations a run takes, what a build does, and what a run returns. |

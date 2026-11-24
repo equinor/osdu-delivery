@@ -150,8 +150,9 @@ fails where [What a build does](../flow/dimension-build.md#what-a-build-does) sa
 ## The columns and what was read for them
 
 `blueprint.columns` lists the table's columns in its order, each with its `name`, its `role` (`id`, `partition`,
-`keyId`, `key`, `value`, `records`, `filter` or `attribute`), the attribute it is, and `from`, the reads it is written
-from: `key_id`, the key's column and `filter` from the key; the value's column from the label's last step, or from the key
+`keyId`, `key`, `value`, `records`, `filter`, `inserted`, `updated` or `attribute`), the attribute it is, and `from`, the
+reads it is written from: `key_id`, the key's column and `filter` from the key; `InsertedDate_DW` and `UpdatedDate_DW`
+(roles `inserted` and `updated`) from no read, being the times a build wrote the row; the value's column from the label's last step, or from the key
 when the dimension reads no label; `records` from the key and each collected attribute; an attribute from its last step,
 or from its collected read. The blueprint lays out the key, the label and the attributes; the `element` column and an
 element's fields are not among its columns.

@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every row of a dimension's table says how fresh it is.** `osdu.dim_<dimension>` carries SQLFlow's audit columns,
+  `InsertedDate_DW` (when a build first wrote the row) and `UpdatedDate_DW` (when a build last changed it), in UTC; a build
+  that finds a row as it was leaves both, so a reader takes what changed since a time by `UpdatedDate_DW`. A table built
+  before gets them on its next build, its rows taking that build's time. The dimension's Table tab shows both, `sqlflow
+  dimensions table` and the table export carry them, and a view can name them
+  ([the dimension's table](osdu/docs/reference/flow/dimension-table.md)).
 - **Environments in the VS Code extension.** Save the control planes you work against (dev, test, prod) with a name
   and a stage, and switch between them from the side bar: the sign-in kept for each comes with it, production asks
   first, and the environment in use shows in green, orange or red across the side bar, on every page and in the status
@@ -794,6 +800,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- `InsertedDate_DW` and `UpdatedDate_DW` are columns every dimension's table has, so a dimension flow naming an attribute,
+  an element field, or its key's or value's column (`columns:`) after either is refused when it loads
+  ([labels and attributes](osdu/docs/reference/flow/dimension-attributes.md)).
 - **The Delivery page's search filters its flows.** The field first in its header narrows the flow cards to the flows
   whose card shows every word typed (name, path, batch, partition, or a verdict such as failed or held) and says how many
   match, where it used to open the Records page looked up for the term; a record is still looked up from the home page

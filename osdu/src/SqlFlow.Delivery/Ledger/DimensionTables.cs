@@ -41,7 +41,8 @@ public sealed record DimensionTableRef(string Name, string KeyColumn, string Val
 /// (<see cref="DimensionTableTarget"/>), named after the dimension. A row per key and value it
 /// collects (one row for a key of a dimension collecting nothing, or collecting no value), with the row's number, the
 /// partition, the key's number, the key exactly as the index holds it, its value, the records of the row, the search
-/// filter finding the key's records, and a column per attribute named as the dimension declares it. The key's column
+/// filter finding the key's records, when a build first wrote the row and when one last changed it (SQLFlow's
+/// <c>InsertedDate_DW</c> and <c>UpdatedDate_DW</c>), and a column per attribute named as the dimension declares it. The key's column
 /// and the value's are named after what the dimension reads (<see cref="DimensionColumnNames"/>: <c>WellboreID</c> and
 /// <c>FacilityName</c>), as the attributes' are. A key under no value, and a key no build finds any more, is no row.
 /// </summary>
@@ -56,7 +57,8 @@ public sealed record DimensionTableRef(string Name, string KeyColumn, string Val
 /// The table's schema follows the declaration through SQLFlow's schema evolution, the same that widens an ingestion
 /// table: a first build creates the table with its identity key, an attribute the flow starts to declare gets its
 /// column on the next build, and nothing is ever dropped or narrowed. An attribute the flow stops declaring keeps its
-/// column, emptied, so a query that names it still runs.
+/// column, emptied, so a query that names it still runs. A table made before tables kept their rows' times is given the
+/// two columns by its next build, every row it holds taking that build's time in both (<see cref="StampSql"/>).
 /// </para>
 /// <para>
 /// The key's column and the value's are renamed where they are when the dimension names them otherwise (its path or
@@ -148,6 +150,8 @@ public static class DimensionTables
             new() { Name = table.ValueColumn, DataType = Text(256), IsNullable = false },
             new() { Name = "records", DataType = Type("bigint"), IsNullable = false },
             new() { Name = "filter", DataType = Text(DeliveryDimensionValue.MaxFilterLength), IsNullable = true },
+            new() { Name = DimensionColumnNames.InsertedColumn, DataType = Type(StampType), IsNullable = false },
+            new() { Name = DimensionColumnNames.UpdatedColumn, DataType = Type(StampType), IsNullable = false },
         };
         if (table.HasElements)
         {
@@ -206,6 +210,51 @@ public static class DimensionTables
                 CREATE INDEX [IX_value] ON {table} ([partition], {Quoted(spec.ValueColumn)}, [id]);
             {KeyIndexSql(spec.Name, spec.KeyColumn, target)}
             """;
+    }
+
+    /// <summary>The type of a row's two times: <c>datetime</c>, as SQLFlow's audit columns of the same names are.</summary>
+    internal const string StampType = "datetime";
+
+    /// <summary>
+    /// The statement that gives a table made before tables kept their rows' times the two columns holding them
+    /// (<see cref="DimensionColumnNames.InsertedColumn"/>, <see cref="DimensionColumnNames.UpdatedColumn"/>), each when the
+    /// table is there without it, run before SQLFlow's schema evolution, which adds a column to a table holding rows as
+    /// nullable alone. Each is added not null with <paramref name="stamp"/> as its default, which every row the table holds
+    /// takes, and the default is dropped again, so the table has the shape a build that makes it gives it and a row is
+    /// stamped by the write alone. A constant default makes the column a change to the table's metadata on SQL Server's
+    /// editions that do so online (Enterprise, Developer and Azure SQL), not a rewrite of its rows. The statement runs under
+    /// the table's lock, and answers how many of the two columns it added.
+    /// </summary>
+    internal static string StampSql(DimensionTableSpec spec, DimensionTableTarget target, DateTime stamp)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(target);
+        var table = target.Qualified(spec.Name);
+        var literal = table.Replace("'", "''", StringComparison.Ordinal);
+
+        // ISO 8601 with milliseconds, which datetime reads whatever the session's language and date format.
+        var at = stamp.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var sql = new StringBuilder("DECLARE @added int = 0;\nDECLARE @dropDefault nvarchar(1000);\n");
+        foreach (var column in new[] { DimensionColumnNames.InsertedColumn, DimensionColumnNames.UpdatedColumn })
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"""
+                IF OBJECT_ID(N'{literal}', N'U') IS NOT NULL AND COL_LENGTH(N'{literal}', N'{column}') IS NULL
+                BEGIN
+                    ALTER TABLE {table} ADD [{column}] {StampType} NOT NULL DEFAULT (CONVERT({StampType}, '{at}', 126));
+                    SET @dropDefault = (
+                        SELECT N'ALTER TABLE {literal} DROP CONSTRAINT ' + QUOTENAME(d.[name]) + N';'
+                        FROM sys.default_constraints AS d
+                        INNER JOIN sys.columns AS c ON c.[object_id] = d.[parent_object_id] AND c.[column_id] = d.[parent_column_id]
+                        WHERE d.[parent_object_id] = OBJECT_ID(N'{literal}', N'U') AND c.[name] = N'{column}');
+                    EXEC sys.sp_executesql @dropDefault;
+                    SET @added += 1;
+                END;
+
+                """);
+        }
+
+        sql.Append("SELECT @added;");
+        return sql.ToString();
     }
 
     /// <summary>
@@ -300,9 +349,11 @@ public static class DimensionTables
     /// are emptied. The statement takes <c>@partition</c>, and <c>@rewrite</c>: 1 when the attribute that makes the rows is
     /// no longer the one the table's rows were written with, so no row of it can be matched and all are written again; and
     /// <c>@scoped</c>: 1 when <c>#DimRow</c> holds the rows of the keys in <c>#DimScope</c> alone (an incremental load's
-    /// write), so only those keys' rows are compared and every other row is left as it is. It adds the rows it deleted,
-    /// rewrote and added to <c>@changed</c> (an output), which the write raises the table's version by
-    /// (<c>DeliveryDimension.TableVersion</c>).
+    /// write), so only those keys' rows are compared and every other row is left as it is; and <c>@stamp</c>, the time of the
+    /// write, which a row it adds takes in both of its times (<see cref="DimensionColumnNames.InsertedColumn"/>,
+    /// <see cref="DimensionColumnNames.UpdatedColumn"/>) and a row it rewrites in the second alone. The times are no part of
+    /// the comparison, so a row the build finds as it was keeps them. It adds the rows it deleted, rewrote and added to
+    /// <c>@changed</c> (an output), which the write raises the table's version by (<c>DeliveryDimension.TableVersion</c>).
     /// </summary>
     internal static string ApplySql(DimensionTableSpec table, IReadOnlyCollection<string> retired, DimensionTableTarget kept)
     {
@@ -344,6 +395,7 @@ public static class DimensionTables
             sql.Append(CultureInfo.InvariantCulture, $", t.{Quoted(column)} = NULL");
         }
 
+        sql.Append(CultureInfo.InvariantCulture, $", t.{Quoted(DimensionColumnNames.UpdatedColumn)} = @stamp");
         sql.Append(CultureInfo.InvariantCulture, $"\nFROM {target} AS t WITH (FORCESEEK)\nINNER JOIN #DimRow AS s ON {same}\nWHERE t.[partition] = @partition\n  AND (EXISTS (\n");
         sql.Append("        SELECT s.[Key], s.[Value], s.[Records], s.[Filter]");
         foreach (var attribute in attributes)
@@ -366,7 +418,8 @@ public static class DimensionTables
         sql.Append(");\nSET @changed += @@ROWCOUNT;\n\n");
 
         // New rows take their numbers in the table's own order: by value, then key, then the value collected or the element.
-        sql.Append(CultureInfo.InvariantCulture, $"INSERT INTO {target} ([partition], [key_id], {key}, {value}, [records], [filter]");
+        var stamps = $"{Quoted(DimensionColumnNames.InsertedColumn)}, {Quoted(DimensionColumnNames.UpdatedColumn)}";
+        sql.Append(CultureInfo.InvariantCulture, $"INSERT INTO {target} ([partition], [key_id], {key}, {value}, [records], [filter], {stamps}");
         if (table.HasElements)
         {
             sql.Append(CultureInfo.InvariantCulture, $", {element}");
@@ -377,7 +430,7 @@ public static class DimensionTables
             sql.Append(CultureInfo.InvariantCulture, $", {attribute.Column}");
         }
 
-        sql.Append(CultureInfo.InvariantCulture, $")\nSELECT @partition, s.[ValueId], s.[Key], s.[Value], s.[Records], s.[Filter]");
+        sql.Append(CultureInfo.InvariantCulture, $")\nSELECT @partition, s.[ValueId], s.[Key], s.[Value], s.[Records], s.[Filter], @stamp, @stamp");
         if (table.HasElements)
         {
             sql.Append(", s.[Element]");

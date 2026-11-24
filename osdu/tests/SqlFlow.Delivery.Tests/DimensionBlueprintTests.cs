@@ -190,7 +190,7 @@ public class DimensionBlueprintTests
 
         // The table's columns in its order, each with the read it is written from.
         Assert.Equal(
-            ["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "UUID", "Field", "Country", "Source"],
+            ["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "UUID", "Field", "Country", "Source"],
             blueprint.Columns.Select(c => c.Name));
         var columns = blueprint.Columns.ToDictionary(c => c.Name);
         Assert.Equal(["1:master-data--Wellbore/data.FacilityName"], columns["FacilityName"].From);

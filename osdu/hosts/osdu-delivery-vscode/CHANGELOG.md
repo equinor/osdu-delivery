@@ -20,6 +20,14 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   Record** and the Home page still do
   ([the Delivery page](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/gui-ledger.md#delivery)).
 
+### Dimensions
+
+- **A dimension's Table tab says how fresh each row is.** Two columns, **Inserted** and **Updated**, show when a build
+  first wrote the row and when one last changed it (the table's `InsertedDate_DW` and `UpdatedDate_DW`), with the UTC
+  time on hover, and the rows can be ordered by either, the latest first. The editor's help on a dimension's
+  `attributes`, `columns` and a view's columns names the two, which no attribute or key or value column can take
+  ([the dimension's table](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/flow/dimension-table.md)).
+
 ## [1.0.5]
 
 ### Environments

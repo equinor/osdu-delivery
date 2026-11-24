@@ -402,10 +402,12 @@ public sealed record DimensionTableQuery(
 /// <summary>
 /// One row of a dimension's table: the row's number (what a table of facts joins on, the same for as long as the dimension
 /// holds the row), the key's number (the same in every row of the key), the key, its value, its attributes in the order
-/// of the table's attribute columns (null where the key has none), the records of the row, and the search filter finding
-/// the key's records.
+/// of the table's attribute columns (null where the key has none), the records of the row, the search filter finding
+/// the key's records, and when a build first wrote the row and last changed it, in UTC (<c>InsertedDate_DW</c>,
+/// <c>UpdatedDate_DW</c>; null from a table its next build has yet to give them).
 /// </summary>
-public sealed record DimensionTableRow(long Id, long KeyId, string Key, string Value, IReadOnlyList<string?> Attributes, long Records, string? Filter);
+public sealed record DimensionTableRow(
+    long Id, long KeyId, string Key, string Value, IReadOnlyList<string?> Attributes, long Records, string? Filter, DateTime? InsertedUtc, DateTime? UpdatedUtc);
 
 /// <summary>
 /// A dimension's table as a reader finds it: its name in the module's schema, the names of the columns that hold its key

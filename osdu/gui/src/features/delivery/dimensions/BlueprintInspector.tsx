@@ -351,6 +351,10 @@ function holds(column: BlueprintColumn, layout: BlueprintLayout, dimension: Deli
       return "The records of the row: those holding the value the row collects, or every record of the key.";
     case "filter":
       return "The search that finds the key's records.";
+    case "inserted":
+      return "When a build first wrote the row, in UTC: the time of that build. It stays for as long as the row keeps its number.";
+    case "updated":
+      return "When a build last changed the row, in UTC: when it was written first, or when a later build found its value, records, search or an attribute changed. A build that finds the row as it was leaves it, so it says how fresh the row's data is.";
     default:
       return collected
         ? `The attribute ${column.name}, collected from the key's own records: a row for each value a key holds.`

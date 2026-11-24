@@ -357,6 +357,12 @@ public sealed class DeliveryDimensionApiTests
                 ("dev:master-data--Wellbore:1001:", DimensionFilters.Of(wellboreField, ["dev:master-data--Wellbore:1001:"])[0]),
                 (firstRow.GetProperty("key").GetString(), firstRow.GetProperty("filter").GetString()));
             Assert.True(firstRow.GetProperty("id").GetInt64() > 0 && firstRow.GetProperty("keyId").GetInt64() > 0);
+
+            // Every row says when a build first wrote it and last changed it, as SQLFlow's own tables do: the write that
+            // made the table wrote them all, so the two are the same.
+            var inserted = firstRow.GetProperty("insertedUtc").GetDateTime();
+            Assert.Equal(inserted, firstRow.GetProperty("updatedUtc").GetDateTime());
+            Assert.All(whole.GetProperty("rows").EnumerateArray(), r => Assert.Equal(inserted, r.GetProperty("updatedUtc").GetDateTime()));
             Assert.Equal(tableName, (await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}")).GetProperty("dimension").GetProperty("table").GetString());
 
             // A page of it narrowed by an attribute and ordered by any column, searched, and paged.
@@ -369,6 +375,7 @@ public sealed class DeliveryDimensionApiTests
             var byName = Values(await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}/table?order=facilityname&dir=desc"));
             Assert.Equal(["dev:master-data--Wellbore:9999:", "A/1-F-4", "A/1-F-1"], byName);
             Assert.Equal(byName, Values(await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}/table?order=value&dir=desc")));
+            Assert.Equal(3, Values(await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}/table?order=updateddate_dw&dir=desc")).Count);
             Assert.Equal("A/1-F-4", Assert.Single((await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}/table?search=f-4")).GetProperty("rows").EnumerateArray()).GetProperty("value").GetString());
             var secondPage = await JsonAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}/table?offset=1&limit=1");
             Assert.Equal(("A/1-F-4", true, JsonValueKind.Null), (
@@ -385,7 +392,7 @@ public sealed class DeliveryDimensionApiTests
             using (var table = await SendAsync(client, token, $"/api/v1/delivery/dimensions/{wellboreId}/export?set=table&format=csv"))
             {
                 var lines = (await table.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-                Assert.Equal("id,partition,key_id,WellboreID,FacilityName,Country,records,filter", lines[0]);
+                Assert.Equal("id,partition,key_id,WellboreID,FacilityName,Country,records,filter,InsertedDate_DW,UpdatedDate_DW", lines[0]);
                 Assert.Equal(
                     [
                         $"{partition},dev:master-data--Wellbore:1001:,A/1-F-1,United States,7",
@@ -425,7 +432,7 @@ public sealed class DeliveryDimensionApiTests
             var keyRead = laidOut.GetProperty("source").GetProperty("reads")[0];
             Assert.Equal(("key", "data.WellboreID"), (keyRead.GetProperty("id").GetString(), keyRead.GetProperty("path").GetString()));
             Assert.Equal(
-                ["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "Country"],
+                ["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country"],
                 laidOut.GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString()));
             var countryRead = Assert.Single(blueprint.GetProperty("coverage").EnumerateArray());
             Assert.Equal(("Country", 2, 1), (countryRead.GetProperty("name").GetString(), countryRead.GetProperty("keys").GetInt32(), countryRead.GetProperty("values").GetInt32()));

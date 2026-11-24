@@ -73,6 +73,12 @@ public static class BlueprintRoles
     public const string Records = "records";
     public const string Filter = "filter";
 
+    /// <summary>The column holding when a build first wrote the row (<c>InsertedDate_DW</c>).</summary>
+    public const string Inserted = "inserted";
+
+    /// <summary>The column holding when a build last changed the row (<c>UpdatedDate_DW</c>).</summary>
+    public const string Updated = "updated";
+
     /// <summary>The id of the read of a dimension's key.</summary>
     public const string KeyRead = "key";
 
@@ -257,6 +263,8 @@ public static class DimensionBlueprints
             new(dimension.ValueColumn, BlueprintRoles.Value, null, [lastReads.GetValueOrDefault((BlueprintRoles.Label, null)) ?? BlueprintRoles.KeyRead]),
             new("records", BlueprintRoles.Records, null, [BlueprintRoles.KeyRead, .. dimension.Attributes.Where(a => a.IsCollected).Select(a => BlueprintRoles.CollectRead(a.Name))]),
             new("filter", BlueprintRoles.Filter, null, [BlueprintRoles.KeyRead]),
+            new(DimensionColumnNames.InsertedColumn, BlueprintRoles.Inserted, null, []),
+            new(DimensionColumnNames.UpdatedColumn, BlueprintRoles.Updated, null, []),
         };
         columns.AddRange(dimension.Attributes.Select(a => new BlueprintColumn(
             a.Name, BlueprintRoles.Attribute, a.Name,

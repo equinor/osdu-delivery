@@ -35,7 +35,7 @@ What a [dimension flow](dimension.md) is refused for when it is read, and what f
 | `dimensions must list at least one dimension; a dimension flow without dimensions has nothing to build.` | No `dimensions`. |
 | `dimensions[1] 'Well-Type' would share its table with 'Well.Type': a table's name keeps the letters, digits and underscores of a dimension's name, and theirs are the same. Rename one of them.` | Two names that make the same table name. |
 | `path legal.foo is not a value the index holds of the record; under legal it holds legal.legaltags, legal.otherRelevantDataCountries, legal.status.` | A record property the indexer does not map. |
-| `the key's column would be named 'id', after the property its path ends with, which is a column every dimension's table has already (id, partition, key_id, records, filter). Name it in the document: columns: { key: <name> }.` | `path: id` without `columns.key`. |
+| `the key's column would be named 'id', after the property its path ends with, which is a column every dimension's table has already (id, partition, key_id, records, filter, InsertedDate_DW, UpdatedDate_DW). Name it in the document: columns: { key: <name> }.` | `path: id` without `columns.key`. |
 | `the value's column would be named 'FacilityName', after the property its label ends with, which is the name of its attribute FacilityName, ...` | An attribute named like a column. |
 | `unlabelled is the value of a key whose label or attribute is not read, and the dimension reads neither.` | `unlabelled` without `label` or `attributes`. |
 | `attributes.B is a second collected attribute beside A; a dimension collects one, ...` | Two `collect` attributes. |

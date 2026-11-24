@@ -92,7 +92,8 @@ views:
 
 **What a view holds.** Every view begins with `partition` and `id`, the number of the `from` row each of its rows stands
 for, which stays the same for as long as the dimension holds the row: a pipeline merges on it. Then its `columns`, in
-order. A view that lists none holds every column of `from` but its numbers, partition and filter, then every column of
+order. A view that lists none holds every column of `from` but its numbers, partition, filter and the two times a row
+was written (`InsertedDate_DW`, `UpdatedDate_DW`, which a view holds when it lists them), then every column of
 each join prefixed by its alias (`Unit_UnitCode`, `Unit_id`), as the tables hold them. Every join is a left join that
 meets at most one row, so a row of `from` is a row of the view, unless its `where` leaves the row out. The check reads
 the rows the view holds, its `where` applied.
@@ -116,7 +117,8 @@ module from what it read. It uses numbers, `'text'`, `N'text'`, `NULL`, `+ - * /
 `LOG10`, `SIGN`, `DATEADD`, `DATEDIFF`, `DATEPART`, `YEAR`, `MONTH`, `DAY`, `EOMONTH` and `STRING_ESCAPE(<text>, 'json')`,
 and in a grouped view the aggregates ([Grouped views](#grouped-views)). A subquery, a variable, a window, `COLLATE`, a value
 of the clock (`GETDATE()`) and any other function are refused. Every column of a dimension's
-table is text but `id`, `key_id`, `records` and `element`; where SQL Server would convert implicitly (`BaseDepth -
+table is text but `id`, `key_id`, `records` and `element`, which are numbers, and `InsertedDate_DW` and
+`UpdatedDate_DW`, which are dates; where SQL Server would convert implicitly (`BaseDepth -
 TopDepth`, text compared with a number, `CONCAT` of a number) the expression is refused, saying to convert first. A
 division by zero, a root or a logarithm outside its domain and a negative length are null. Quote an expression that
 starts with `[`, and a type with a comma in a flow mapping (`dataType: "decimal(18,3)"`).

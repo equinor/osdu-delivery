@@ -548,6 +548,8 @@ internal static class DeliveryDimensionVerbs
 
                     json["records"] = row.Records;
                     json["filter"] = row.Filter;
+                    json[DimensionColumnNames.InsertedColumn] = row.InsertedUtc;
+                    json[DimensionColumnNames.UpdatedColumn] = row.UpdatedUtc;
                     return (JsonNode)json;
                 }).ToArray()),
             }));
@@ -556,12 +558,12 @@ internal static class DeliveryDimensionVerbs
 
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"{dimension.Name}: {page.Rows.Count} of {page.Total ?? page.Rows.Count} row(s) of {page.Table}"));
-        context.Out.WriteLine($"  {"id",10}  {"records",12}  {page.ValueColumn}  {page.KeyColumn}{(page.Attributes.Count == 0 ? string.Empty : "  " + string.Join("  ", page.Attributes))}");
+        context.Out.WriteLine($"  {"id",10}  {"records",12}  {"updated (UTC)",-16}  {page.ValueColumn}  {page.KeyColumn}{(page.Attributes.Count == 0 ? string.Empty : "  " + string.Join("  ", page.Attributes))}");
         foreach (var row in page.Rows)
         {
             var attributes = string.Join("  ", page.Attributes.Select((name, i) => $"{name}={(i < row.Attributes.Count && row.Attributes[i] is { } value ? Quoted(value) : "-")}"));
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"  {row.Id,10}  {row.Records,12:N0}  {Quoted(row.Value)}  {row.Key}{(attributes.Length == 0 ? string.Empty : "  " + attributes)}"));
+                $"  {row.Id,10}  {row.Records,12:N0}  {(row.UpdatedUtc is { } updated ? updated.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "-"),-16}  {Quoted(row.Value)}  {row.Key}{(attributes.Length == 0 ? string.Empty : "  " + attributes)}"));
         }
 
         if (page.More)

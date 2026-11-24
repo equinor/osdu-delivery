@@ -79,8 +79,8 @@ attributes:
 - A label or an attribute value that is itself a record reference is kept as the code its id ends with, decoded.
 
 An attribute's name is a letter, then letters, digits and underscores, at most 64, unique ignoring case, none of
-`value`, `keys`, `key`, `key_id`, `records`, `filter`, `label`, `id`, `partition`, and not the name of the dimension's
-key or value column.
+`value`, `keys`, `key`, `key_id`, `records`, `filter`, `label`, `id`, `partition`, `InsertedDate_DW`, `UpdatedDate_DW`,
+and not the name of the dimension's key or value column.
 
 ## Keeping a key, so tables join
 

@@ -94,6 +94,8 @@ records read through and records; [the blueprint](dimension-blueprint.md) reads 
 its text, the value's column its value's text, `records` its records (or the collected value's, or 1 for an element),
 `filter` its filter, and each attribute's column the value of the attribute in that place (`DimensionAttributeName`
 ordering `DimensionAttribute`). A collected attribute makes a row for each value of the key, and elements a row for each
-object (`DimensionElement`), numbered in `element`. A build writes only the rows that differ, so a row keeps its `id`.
+object (`DimensionElement`), numbered in `element`. A build writes only the rows that differ, so a row keeps its `id`;
+a row it adds takes the time of its write (the dimension's `LastBuiltUtc`) in `InsertedDate_DW` and `UpdatedDate_DW`,
+and a row it rewrites in `UpdatedDate_DW` alone ([The dimension's table](../flow/dimension-table.md)).
 A view reads only `dim_` tables, of its own flow; `DimensionView` records each view a build made, so a build writes over
 and drops only views it recorded.

@@ -122,13 +122,14 @@ With `--json`: `flow`, `ledger`, and `dimensions`, each with `dimension`, `dimen
 ## table
 
 A page of the dimension's own table, `osdu.dim_<dimension>`: a row per key and value it collects, with the row's `id`
-(what a table of facts joins on), its records, its value, its key and a column per attribute.
+(what a table of facts joins on), its records, when a build last changed it (`UpdatedDate_DW`, in UTC), its value, its
+key and a column per attribute.
 
 | Option | Meaning |
 | --- | --- |
 | `--search <text>` | Rows whose key, value or any attribute contains the text, ignoring case. |
 | `--attr <attribute>=<value>` | Rows whose attribute column holds the value exactly. |
-| `--order <column>` | A column by its name in the table (the key's, the value's, `records`, `id` or an attribute's), or the words `value` (the default) and `key`, which name those two columns whatever the dimension calls them. |
+| `--order <column>` | A column by its name in the table (the key's, the value's, `records`, `id`, `InsertedDate_DW`, `UpdatedDate_DW` or an attribute's), or the words `value` (the default) and `key`, which name those two columns whatever the dimension calls them. |
 | `--desc` | Largest first. |
 
 ```bash
@@ -137,18 +138,20 @@ sqlflow dimensions table flows/welldb-welllog-05-dimensions.yaml --dimension Wel
 
 ```text
 Wellbore: 3 of 2410 row(s) of osdu.dim_Wellbore
-          id       records  FacilityName  WellboreID  Country  Operator  LoggingService
-         412            12  "Wellbore A-1"  dev:master-data--Wellbore:WB-0001:  Country="United States"  Operator="Example Operator"  LoggingService="GR-RES"
-         413             3  "Wellbore A-1"  dev:master-data--Wellbore:WB-0001:  Country="United States"  Operator="Example Operator"  LoggingService="Not specified"
-          97            40  "Wellbore A-2"  dev:master-data--Wellbore:WB-0002:  Country="United States"  Operator="Not specified"  LoggingService="SONIC"
+          id       records  updated (UTC)     FacilityName  WellboreID  Country  Operator  LoggingService
+         412            12  2026-11-20 06:00  "Wellbore A-1"  dev:master-data--Wellbore:WB-0001:  Country="United States"  Operator="Example Operator"  LoggingService="GR-RES"
+         413             3  2026-11-02 06:00  "Wellbore A-1"  dev:master-data--Wellbore:WB-0001:  Country="United States"  Operator="Example Operator"  LoggingService="Not specified"
+          97            40  2026-11-02 06:00  "Wellbore A-2"  dev:master-data--Wellbore:WB-0002:  Country="United States"  Operator="Not specified"  LoggingService="SONIC"
   more rows follow: raise --max (now 3), narrow with --search or --attr, or export the table.
 ```
 
 A column name the table does not have is refused, listing the columns it has
-(`The table osdu.dim_Wellbore has no column 'Field' to order by; it has FacilityName, WellboreID, records, id, Country,
-Operator, LoggingService.`). A dimension built before dimensions had tables has its table made by this read. With
+(`The table osdu.dim_Wellbore has no column 'Field' to order by; it has FacilityName, WellboreID, records, id,
+InsertedDate_DW, UpdatedDate_DW, Country, Operator, LoggingService.`). A table no build has written since tables kept
+their rows' times shows `-` for the time until its next build gives it the columns. A dimension built before dimensions had tables has its table made by this read. With
 `--json`: `dimension`, `table`, `keyColumn`, `valueColumn`, `total`, `more`, and `rows`, each row every column under its
-own name (`id`, `partition`, `key_id`, `WellboreID`, `FacilityName`, each attribute, `records`, `filter`).
+own name (`id`, `partition`, `key_id`, `WellboreID`, `FacilityName`, each attribute, `records`, `filter`,
+`InsertedDate_DW`, `UpdatedDate_DW`).
 
 ## values
 
@@ -314,7 +317,7 @@ export gives.
 | --- | --- | --- |
 | `values` (default) | value, in value order | `value_id`, `value`, `records`, `records_exact`, `keys`, `unfilterable`, `filter_parts`, `filter`, `first_seen_utc`, then `attribute_<name>` per attribute (several values joined by `; `) |
 | `keys` | key, in arrival order | `key_id`, `key`, `label`, `label_from`, `value`, `left_out`, `note`, `count`, `filterable`, `filter`, `first_seen_utc`, then `attribute_<name>` |
-| `table` | row of `osdu.dim_<dimension>` | `id`, `partition`, `key_id`, the key's column, the value's column, one per attribute, `records`, `filter` |
+| `table` | row of `osdu.dim_<dimension>` | `id`, `partition`, `key_id`, the key's column, the value's column, one per attribute, `records`, `filter`, `InsertedDate_DW`, `UpdatedDate_DW` (UTC, ISO 8601) |
 
 In JSON Lines every value is kept exactly (property names in camel case for `values` and `keys`, the table's column names
 for `table`). In CSV a cell a spreadsheet would run as a formula is written with a leading apostrophe.

@@ -261,6 +261,16 @@ WHERE [partition] = 'dev' AND [Country] = 'United States'
 ORDER BY [FacilityName];
 ```
 
+Every row also says how fresh it is, in UTC, in SQLFlow's own audit columns: `InsertedDate_DW`, when a build first wrote
+it, and `UpdatedDate_DW`, when a build last changed it. A build that finds a row as it was leaves both, so a pipeline
+reading what changed since its last read filters on the second:
+
+```sql
+SELECT [id], [FacilityName], [Country], [UpdatedDate_DW]
+FROM [osdu].[dim_Wellbore]
+WHERE [partition] = 'dev' AND [UpdatedDate_DW] >= @lastRead;
+```
+
 The table follows the flow: an attribute added gets its column on the next build, and nothing is dropped. Changing the
 path or label renames the key's or value's column on the next build; give a name that stays with
 `columns: { key: <name>, value: <name> }`. `sqlflow dimensions export ... --set table --out wellbores.csv` writes it whole.

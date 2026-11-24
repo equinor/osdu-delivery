@@ -774,6 +774,22 @@ internal static partial class SqlServerDimensionStore
     /// <exception cref="DimensionTableMissingException">The database holds no such table.</exception>
     internal static async Task<IReadOnlyList<string>> TableAttributesAsync(
         SqlConnection catalog, DimensionTableDatabase home, short partitionId, int dimensionId, string table, CancellationToken ct)
+        => (await TableLayoutAsync(catalog, home, partitionId, dimensionId, table, ct).ConfigureAwait(false)).Attributes;
+
+    /// <summary>
+    /// The columns a reader of a table names beside the ones every table has from its first build: its attribute columns,
+    /// and whether it holds its rows' times yet (<see cref="DimensionColumnNames.InsertedColumn"/>,
+    /// <see cref="DimensionColumnNames.UpdatedColumn"/>), which the next build gives a table made before tables kept them.
+    /// </summary>
+    private sealed record TableLayout(IReadOnlyList<string> Attributes, bool Stamped);
+
+    /// <summary>
+    /// The attribute columns of table <paramref name="table"/> as <see cref="TableAttributesAsync"/> finds them, and whether
+    /// the table holds its rows' times.
+    /// </summary>
+    /// <exception cref="DimensionTableMissingException">The database holds no such table.</exception>
+    private static async Task<TableLayout> TableLayoutAsync(
+        SqlConnection catalog, DimensionTableDatabase home, short partitionId, int dimensionId, string table, CancellationToken ct)
     {
         var declared = new List<string>();
         await using (var names = new SqlCommand(
@@ -812,7 +828,9 @@ internal static partial class SqlServerDimensionStore
             }
         }
 
-        return declared.Where(columns.Contains).ToList();
+        return new TableLayout(
+            declared.Where(columns.Contains).ToList(),
+            columns.Contains(DimensionColumnNames.InsertedColumn) && columns.Contains(DimensionColumnNames.UpdatedColumn));
     }
 
     /// <summary>The columns of every table a page can be ordered by, beside the key's, the value's and the attributes'.</summary>
@@ -821,15 +839,22 @@ internal static partial class SqlServerDimensionStore
     private const string IdColumn = "id";
 
     /// <summary>
+    /// The columns a page of the table can be ordered by: the value's, the key's, the records, the row's number, the rows'
+    /// times where the table holds them, and the attributes'.
+    /// </summary>
+    private static List<string> OrderColumns(DimensionTableRef table, TableLayout layout)
+        => [table.ValueColumn, table.KeyColumn, RecordsColumn, IdColumn,
+            .. layout.Stamped ? new[] { DimensionColumnNames.InsertedColumn, DimensionColumnNames.UpdatedColumn } : [], .. layout.Attributes];
+
+    /// <summary>
     /// A column of the table by the name a caller gave it, ignoring case: a column named so in the table first, then the
     /// two words the value's and the key's columns are asked for by whatever the dimension names them; null when the
     /// table has no such column.
     /// </summary>
-    private static string? TableColumn(DimensionTableRef table, IReadOnlyList<string> attributes, string name)
+    private static string? TableColumn(DimensionTableRef table, TableLayout layout, string name)
     {
         var wanted = name.Trim();
-        string[] named = [table.ValueColumn, table.KeyColumn, RecordsColumn, IdColumn, .. attributes];
-        return named.FirstOrDefault(c => string.Equals(c, wanted, StringComparison.OrdinalIgnoreCase))
+        return OrderColumns(table, layout).FirstOrDefault(c => string.Equals(c, wanted, StringComparison.OrdinalIgnoreCase))
             ?? (string.Equals(wanted, DimensionColumnNames.ValueRole, StringComparison.OrdinalIgnoreCase) ? table.ValueColumn
                 : string.Equals(wanted, DimensionColumnNames.KeyRole, StringComparison.OrdinalIgnoreCase) ? table.KeyColumn
                 : null);
@@ -840,10 +865,18 @@ internal static partial class SqlServerDimensionStore
     /// <summary>The columns a row ends with.</summary>
     private static readonly string[] EndColumns = ["[records]", "[filter]"];
 
-    /// <summary>The rows a statement over a table reads: the row's number, the key's, the key, the value, each attribute, the records and the filter.</summary>
-    private static string TableColumns(DimensionTableRef table, IReadOnlyList<string> attributes, string alias = "")
-        => string.Join(", ", new[] { "[id]", "[key_id]", Bracketed(table.KeyColumn), Bracketed(table.ValueColumn) }
-            .Concat(attributes.Select(Bracketed)).Concat(EndColumns).Select(c => alias + c));
+    /// <summary>
+    /// The rows a statement over a table reads: the row's number, the key's, the key, the value, each attribute, the
+    /// records, the filter, and the row's two times, read as none from a table its next build has yet to give them.
+    /// </summary>
+    private static string TableColumns(DimensionTableRef table, TableLayout layout, string alias = "")
+    {
+        IEnumerable<string> stamps = layout.Stamped
+            ? new[] { DimensionColumnNames.InsertedColumn, DimensionColumnNames.UpdatedColumn }.Select(c => alias + Bracketed(c))
+            : ["NULL", "NULL"];
+        return string.Join(", ", new[] { "[id]", "[key_id]", Bracketed(table.KeyColumn), Bracketed(table.ValueColumn) }
+            .Concat(layout.Attributes.Select(Bracketed)).Concat(EndColumns).Select(c => alias + c).Concat(stamps));
+    }
 
     /// <summary>What SQL Server answers a statement naming a column the table does not have.</summary>
     private const int InvalidColumnName = 207;
@@ -868,8 +901,13 @@ internal static partial class SqlServerDimensionStore
         }
 
         var records = reader.GetInt64(4 + attributes);
-        return new DimensionTableRow(id, keyId, key, value, values, records, reader.IsDBNull(5 + attributes) ? null : reader.GetString(5 + attributes));
+        var filter = reader.IsDBNull(5 + attributes) ? null : reader.GetString(5 + attributes);
+        return new DimensionTableRow(id, keyId, key, value, values, records, filter, Stamp(reader, 6 + attributes), Stamp(reader, 7 + attributes));
     }
+
+    /// <summary>A row's time as the table holds it, in UTC; null where the table holds none yet.</summary>
+    private static DateTime? Stamp(SqlDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : DateTime.SpecifyKind(reader.GetDateTime(ordinal), DateTimeKind.Utc);
 
     /// <summary>
     /// A page of the rows of the table <paramref name="named"/> in partition <paramref name="partition"/>, narrowed and ordered as
@@ -899,7 +937,8 @@ internal static partial class SqlServerDimensionStore
         var connection = home.Connection;
         try
         {
-            var attributes = await TableAttributesAsync(catalog, home, partitionId, dimensionId, table, ct).ConfigureAwait(false);
+            var layout = await TableLayoutAsync(catalog, home, partitionId, dimensionId, table, ct).ConfigureAwait(false);
+            var attributes = layout.Attributes;
             var where = new List<string> { "[partition] = @partition" };
             var parameters = new List<SqlParameter> { new("@partition", SqlDbType.NVarChar, 256) { Value = partition } };
             if (!string.IsNullOrWhiteSpace(query.Search))
@@ -932,9 +971,9 @@ internal static partial class SqlServerDimensionStore
                 }
             }
 
-            var ordered = string.IsNullOrWhiteSpace(query.OrderBy) ? named.ValueColumn : TableColumn(named, attributes, query.OrderBy)
+            var ordered = string.IsNullOrWhiteSpace(query.OrderBy) ? named.ValueColumn : TableColumn(named, layout, query.OrderBy)
                 ?? throw new DeliveryException(
-                    $"The table {target.Shown(table)} has no column '{query.OrderBy}' to order by; it has {named.ValueColumn}, {named.KeyColumn}, {RecordsColumn}, {IdColumn}{(attributes.Count == 0 ? string.Empty : ", " + string.Join(", ", attributes))}.");
+                    $"The table {target.Shown(table)} has no column '{query.OrderBy}' to order by; it has {string.Join(", ", OrderColumns(named, layout))}.");
 
             // A row's number tells it from every other, so the order ends with it: every page then holds its own rows.
             var direction = query.Descending ? "DESC" : "ASC";
@@ -964,7 +1003,7 @@ internal static partial class SqlServerDimensionStore
                     SELECT [id] FROM #match ORDER BY {matchOrder} OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY;
                     DROP TABLE #match;
                     SELECT @total;
-                    SELECT {TableColumns(named, attributes, "t.")}
+                    SELECT {TableColumns(named, layout, "t.")}
                     FROM @page AS g INNER JOIN {from} AS t ON t.[id] = g.[id]
                     ORDER BY g.[n];
                     """,
@@ -1006,7 +1045,7 @@ internal static partial class SqlServerDimensionStore
                         DECLARE @page TABLE ([n] int IDENTITY(1, 1) NOT NULL PRIMARY KEY, [id] bigint NOT NULL);
                         INSERT INTO @page ([id])
                         SELECT [id] FROM {from} WHERE {filter} ORDER BY {order} OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY;
-                        SELECT {TableColumns(named, attributes, "t.")}
+                        SELECT {TableColumns(named, layout, "t.")}
                         FROM @page AS g INNER JOIN {from} AS t ON t.[id] = g.[id]
                         ORDER BY g.[n];
                         """,
@@ -1048,13 +1087,13 @@ internal static partial class SqlServerDimensionStore
         var table = named.Name;
         var connection = home.Connection;
         {
-            var attributes = await TableAttributesAsync(catalog, home, partitionId, dimensionId, table, ct).ConfigureAwait(false);
+            var layout = await TableLayoutAsync(catalog, home, partitionId, dimensionId, table, ct).ConfigureAwait(false);
 
             // The whole table in order is a sort of every row, and a row is declared wide (a key, a filter), so the server
             // would reserve memory for the widest table it can imagine: a tenth of what it may give one query sorts any
             // dimension, past it the sort uses tempdb, and other queries keep their memory.
             await using var command = new SqlCommand(
-                $"SELECT {TableColumns(named, attributes)} FROM {home.Target.Qualified(table)} WHERE [partition] = @partition ORDER BY {Bracketed(named.ValueColumn)}, [id] OPTION (MAX_GRANT_PERCENT = 10);",
+                $"SELECT {TableColumns(named, layout)} FROM {home.Target.Qualified(table)} WHERE [partition] = @partition ORDER BY {Bracketed(named.ValueColumn)}, [id] OPTION (MAX_GRANT_PERCENT = 10);",
                 connection)
             {
                 CommandTimeout = CommandTimeoutSeconds,
@@ -1073,16 +1112,18 @@ internal static partial class SqlServerDimensionStore
             await using var reader = opened;
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                yield return TableRow(reader, attributes.Count);
+                yield return TableRow(reader, layout.Attributes.Count);
             }
         }
     }
 
     /// <summary>
     /// What preparing a dimension's table came to: the table as it is now (its key's and its value's columns under the
-    /// names they were settled at), the statements that write its rows, and whether its schema had to change.
+    /// names they were settled at), the statements that write its rows, whether its schema had to change, and the time the
+    /// write stamps the rows it adds and rewrites with (<see cref="DimensionColumnNames.InsertedColumn"/>,
+    /// <see cref="DimensionColumnNames.UpdatedColumn"/>).
     /// </summary>
-    private sealed record PreparedTable(DimensionTableSpec Table, string ApplySql, bool Changed);
+    private sealed record PreparedTable(DimensionTableSpec Table, string ApplySql, bool Changed, DateTime Stamp);
 
     // What the table's key and value columns are named now: what the dimensions writing the table recorded (the rows
     // that name the table first, then this dimension's own, which a build that never wrote may hold alone), and the
@@ -1259,18 +1300,22 @@ internal static partial class SqlServerDimensionStore
     /// (<see cref="SettleColumnsAsync"/>), then SQLFlow's schema evolution reads the table as it is, creates it when it is
     /// missing and adds the column of an attribute it does not have, and never drops or narrows one
     /// (osdu/docs/reference/flow/dimension-table.md, The dimension's table). Then the order it keeps its rows in and the
-    /// indexes it is read through (<see cref="MakeIndexesAsync"/>), and the statements that write its rows.
+    /// indexes it is read through (<see cref="MakeIndexesAsync"/>), and the statements that write its rows. A table made
+    /// before tables kept their rows' times is given the two columns first (<see cref="StampColumnsAsync"/>), every row it
+    /// holds taking <paramref name="stamp"/>, the time of the write that follows.
     /// <paramref name="rename"/> is true for a build, which names the two columns as its dimension declares, and false for
     /// a reader, which keeps the names the table has.
     /// </summary>
     /// <exception cref="DeliveryException">The table cannot be made or widened: the database user may not, or the table was changed by hand into something a build cannot write.</exception>
     private static async Task<PreparedTable> PrepareTableAsync(
-        SqlConnection connection, DimensionTableDatabase home, short partitionId, int dimensionId, DimensionTableSpec declared, bool rename, CancellationToken ct)
+        SqlConnection connection, DimensionTableDatabase home, short partitionId, int dimensionId, DimensionTableSpec declared, bool rename, DateTime stamp,
+        CancellationToken ct)
     {
         await EnsureSchemaAsync(home, ct).ConfigureAwait(false);
         var (table, renamed) = await SettleColumnsAsync(connection, home, partitionId, dimensionId, declared, rename, ct).ConfigureAwait(false);
         try
         {
+            var stamped = await StampColumnsAsync(connection, home, table, stamp, ct).ConfigureAwait(false);
             var (plan, changed) = await RunTimeTables.EvolveAsync(
                 home.Connection, table.Name, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct, home.Target.Schema).ConfigureAwait(false);
             await MakeIndexesAsync(connection, home, table, ct).ConfigureAwait(false);
@@ -1300,7 +1345,7 @@ internal static partial class SqlServerDimensionStore
                 retired.AddRange(extra.Where(names.Contains));
             }
 
-            return new PreparedTable(table, DimensionTables.ApplySql(table, retired, home.Target), changed || renamed);
+            return new PreparedTable(table, DimensionTables.ApplySql(table, retired, home.Target), changed || renamed || stamped, stamp);
         }
         catch (Exception ex) when (ex is SqlException or SqlFlowException)
         {
@@ -1339,6 +1384,31 @@ internal static partial class SqlServerDimensionStore
             throw new DeliveryException(
                 $"The schema {home.Target.Schema} of the dimension tables' target is not in its database and could not be made: {ex.Message.Trim()} Make it there, or grant the database user the tables are written as CREATE SCHEMA.",
                 ex);
+        }
+    }
+
+    /// <summary>
+    /// Gives a table made before tables kept their rows' times the two columns that hold them, every row it holds taking
+    /// <paramref name="stamp"/> (<see cref="DimensionTables.StampSql"/>), under the table's lock, so builds of the dimension in
+    /// two partitions add them once. A table not there yet is left to schema evolution, which makes it with the columns.
+    /// Says whether a column was added.
+    /// </summary>
+    private static async Task<bool> StampColumnsAsync(SqlConnection connection, DimensionTableDatabase home, DimensionTableSpec table, DateTime stamp, CancellationToken ct)
+    {
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
+        await using (transaction.ConfigureAwait(false))
+        {
+            // A column added not null on an edition that writes every row for it takes as long as the rows take, as a
+            // layout does: the wait for the lock is bounded by the other build's run.
+            await TableLockAsync(connection, transaction, table.Name, home.Target.Shown(table.Name), -1, "gave it its rows' times", ct).ConfigureAwait(false);
+            int added;
+            await using (var stamps = Command(home.Connection, home.Joining(transaction), DimensionTables.StampSql(table, home.Target, stamp)))
+            {
+                added = Convert.ToInt32(await stamps.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            }
+
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+            return added > 0;
         }
     }
 
@@ -1515,7 +1585,7 @@ internal static partial class SqlServerDimensionStore
             long changed;
             if (home.InCatalog)
             {
-                changed = await ApplyAsync(connection, transaction, prepared.ApplySql, partition, rewrite, scoped, ct).ConfigureAwait(false);
+                changed = await ApplyAsync(connection, transaction, prepared, partition, rewrite, scoped, ct).ConfigureAwait(false);
             }
             else
             {
@@ -1524,7 +1594,7 @@ internal static partial class SqlServerDimensionStore
                 var remote = (SqlTransaction)await home.Connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
                 await using (remote.ConfigureAwait(false))
                 {
-                    changed = await ApplyAsync(home.Connection, remote, prepared.ApplySql, partition, rewrite, scoped, ct).ConfigureAwait(false);
+                    changed = await ApplyAsync(home.Connection, remote, prepared, partition, rewrite, scoped, ct).ConfigureAwait(false);
                     await remote.CommitAsync(ct).ConfigureAwait(false);
                 }
 
@@ -1559,13 +1629,15 @@ internal static partial class SqlServerDimensionStore
 
     /// <summary>
     /// Runs the statements made for the table (<see cref="DimensionTables.ApplySql"/>) over the rows laid out on
-    /// <paramref name="connection"/>'s session, and answers how many of the table's rows they added, rewrote or deleted.
+    /// <paramref name="connection"/>'s session, stamping the rows they add and rewrite with the prepared table's time, and
+    /// answers how many of the table's rows they added, rewrote or deleted.
     /// </summary>
     private static async Task<long> ApplyAsync(
-        SqlConnection connection, SqlTransaction transaction, string applySql, string partition, bool rewrite, bool scoped, CancellationToken ct)
+        SqlConnection connection, SqlTransaction transaction, PreparedTable prepared, string partition, bool rewrite, bool scoped, CancellationToken ct)
     {
-        await using var command = Command(connection, transaction, applySql);
+        await using var command = Command(connection, transaction, prepared.ApplySql);
         command.Parameters.Add(new SqlParameter("@partition", SqlDbType.NVarChar, 256) { Value = partition });
+        command.Parameters.Add(new SqlParameter("@stamp", SqlDbType.DateTime) { Value = prepared.Stamp });
         command.Parameters.Add(new SqlParameter("@rewrite", SqlDbType.Bit) { Value = rewrite });
         command.Parameters.Add(new SqlParameter("@scoped", SqlDbType.Bit) { Value = scoped });
         var changed = new SqlParameter("@changed", SqlDbType.BigInt) { Direction = ParameterDirection.InputOutput, Value = 0L };
@@ -1599,10 +1671,12 @@ internal static partial class SqlServerDimensionStore
     /// Makes sure dimension <paramref name="dimensionId"/> has <paramref name="table"/> with the rows the ledger holds of
     /// it, as a build's write does, without a build: for a dimension built before dimensions had a table, or one whose
     /// table was dropped. The table's key and value columns keep the names it has; where it has none yet, they take
-    /// <paramref name="table"/>'s. Says whether the table had to be made or widened.
+    /// <paramref name="table"/>'s. The rows it adds or rewrites take <paramref name="now"/> as their times. Says whether the
+    /// table had to be made or widened.
     /// </summary>
     internal static async Task<bool> EnsureTableAsync(
-        OsduDbContext db, DimensionTableDatabase home, short partitionId, int dimensionId, string partition, DimensionTableSpec table, CancellationToken ct)
+        OsduDbContext db, DimensionTableDatabase home, short partitionId, int dimensionId, string partition, DimensionTableSpec table, DateTime now,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(home);
@@ -1611,7 +1685,7 @@ internal static partial class SqlServerDimensionStore
         try
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
-            var prepared = await PrepareTableAsync(connection, home, partitionId, dimensionId, table, rename: false, ct).ConfigureAwait(false);
+            var prepared = await PrepareTableAsync(connection, home, partitionId, dimensionId, table, rename: false, now, ct).ConfigureAwait(false);
             var elementRows = await ElementRowsAsync(home, prepared.Table, partition, ct).ConfigureAwait(false);
             bool rewrite;
             bool scoped;
@@ -1979,7 +2053,7 @@ internal static partial class SqlServerDimensionStore
                     await clock.TimeAsync(
                         DimensionWriteStep.Table,
                         home.Target.Shown(table.Name) + (merged.Scoped ? ", the rows of the keys the write changed" : ", every row"),
-                        () => WriteBuiltTableAsync(connection, home, stage, partition, table, merged, clock, ct),
+                        () => WriteBuiltTableAsync(connection, home, stage, partition, table, merged, write.CompletedUtc, clock, ct),
                         changed => string.Create(CultureInfo.InvariantCulture, $"{changed} row(s) added, rewritten or deleted"),
                         ct).ConfigureAwait(false);
                 }
@@ -2086,15 +2160,17 @@ internal static partial class SqlServerDimensionStore
 
     /// <summary>
     /// The table step of a build: the table made ready where it is kept, then brought to the rows the merge laid out, a
-    /// deadlock tried again from the same layout. A failure says the dimension was written and the table was not.
+    /// deadlock tried again from the same layout. The rows it adds or rewrites take <paramref name="stamp"/>, the time of the
+    /// build's write, which the dimension records as its last build. A failure says the dimension was written and the table
+    /// was not.
     /// </summary>
     private static async Task<long> WriteBuiltTableAsync(
-        SqlConnection connection, DimensionTableDatabase home, DimensionStage stage, string partition, DimensionTableSpec table, Merged merged, DimensionWriteClock clock,
-        CancellationToken ct)
+        SqlConnection connection, DimensionTableDatabase home, DimensionStage stage, string partition, DimensionTableSpec table, Merged merged, DateTime stamp,
+        DimensionWriteClock clock, CancellationToken ct)
     {
         try
         {
-            var prepared = await PrepareTableAsync(connection, home, stage.PartitionId, stage.DimensionId, table, rename: true, ct).ConfigureAwait(false);
+            var prepared = await PrepareTableAsync(connection, home, stage.PartitionId, stage.DimensionId, table, rename: true, stamp, ct).ConfigureAwait(false);
             for (var attempt = 1; ; attempt++)
             {
                 try

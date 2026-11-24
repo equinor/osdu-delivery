@@ -1119,7 +1119,7 @@ public sealed partial class OsduLedger
 
         await GuardTableNameAsync(dimensionId, table, ct).ConfigureAwait(false);
         return await WithTableDatabaseAsync(
-            dimension, (db, _, home) => SqlServerDimensionStore.EnsureTableAsync(db, home, partition, dimensionId, dimension.Partition ?? string.Empty, table, ct), ct).ConfigureAwait(false);
+            dimension, (db, _, home) => SqlServerDimensionStore.EnsureTableAsync(db, home, partition, dimensionId, dimension.Partition ?? string.Empty, table, Now, ct), ct).ConfigureAwait(false);
     }
 
     public async Task<DimensionTableShape?> DimensionTableShapeAsync(int dimensionId, CancellationToken ct = default)

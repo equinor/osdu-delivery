@@ -6,6 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { CopyButton } from "@/components/CopyButton";
 import { DataTable, type Column } from "@/components/DataTable";
 import { FilterBar } from "@/components/FilterBar";
+import { RelativeTime } from "@/components/RelativeTime";
 import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -38,9 +39,13 @@ interface TableOrder {
   descending: boolean;
 }
 
-/** The order a column starts in when it is picked: the most records first, anything else from its lowest. */
+/** The table's columns holding when a build first wrote a row and last changed it, as SQLFlow's own tables name them. */
+const INSERTED = "InsertedDate_DW";
+const UPDATED = "UpdatedDate_DW";
+
+/** The order a column starts in when it is picked: the most records and the latest times first, anything else from its lowest. */
 function firstOrder(column: string): TableOrder {
-  return { column, descending: column === "records" };
+  return { column, descending: column === "records" || column === INSERTED || column === UPDATED };
 }
 
 /**
@@ -85,7 +90,8 @@ function OrderMenu({ order, columns, onChange }: {
 
 /**
  * The dimension as one table, as its own table in the database holds it: a row per key and value it collects, with the
- * key's value, a column per attribute, the records of the row and the search finding the key's records. Its columns are
+ * key's value, a column per attribute, when a build first wrote the row and last changed it (the table's
+ * `InsertedDate_DW` and `UpdatedDate_DW`), the records of the row and the search finding the key's records. Its columns are
  * headed as the table names them: the key's and the value's after what the dimension reads, as the attributes' are. Read
  * a page at a time, more as the grid is scrolled; found by text anywhere in a row, narrowed by attribute values, ordered
  * by any column. Columns are left out under View.
@@ -133,6 +139,8 @@ export function DimensionTableGrid({ dimensionId, table, keyColumn, valueColumn,
     { id: "records", label: "Records" },
     { id: "key", label: keyName },
     ...names.map((name) => ({ id: attributeColumnId(name), label: name })),
+    { id: "inserted", label: "Inserted" },
+    { id: "updated", label: "Updated" },
     { id: "search", label: "Search" },
   ];
   // The two columns are asked for by the words value and key, which name them whatever the table calls them.
@@ -141,6 +149,8 @@ export function DimensionTableGrid({ dimensionId, table, keyColumn, valueColumn,
     { id: "records", label: "Records" },
     { id: "key", label: keyName },
     ...names.map((name) => ({ id: name, label: name })),
+    { id: UPDATED, label: "Updated" },
+    { id: INSERTED, label: "Inserted" },
     { id: "id", label: "Id" },
   ];
   const all: Column<DeliveryDimensionTableRow>[] = [
@@ -196,6 +206,16 @@ export function DimensionTableGrid({ dimensionId, table, keyColumn, valueColumn,
           : <DimensionValueText value={value} search={search} maxWidth={ATTRIBUTE_WIDTH} className={value === unlabelled ? "text-muted-foreground/70" : undefined} />;
       },
     })),
+    {
+      id: "inserted",
+      header: "Inserted",
+      render: (row) => <span className="whitespace-nowrap text-[12px] text-muted-foreground" data-testid="dimension-table-inserted"><RelativeTime value={row.insertedUtc} absolute={false} /></span>,
+    },
+    {
+      id: "updated",
+      header: "Updated",
+      render: (row) => <span className="whitespace-nowrap text-[12px] text-muted-foreground" data-testid="dimension-table-updated"><RelativeTime value={row.updatedUtc} absolute={false} /></span>,
+    },
     {
       id: "search",
       header: "Search",

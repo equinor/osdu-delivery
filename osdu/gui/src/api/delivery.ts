@@ -4195,7 +4195,7 @@ export interface DeliveryDimensionRunBuild {
 export type BlueprintRole = "key" | "label" | "attribute" | "collect";
 
 /** What a column of a dimension's table holds. */
-export type BlueprintColumnRole = "id" | "partition" | "keyId" | "key" | "value" | "records" | "filter" | "attribute";
+export type BlueprintColumnRole = "id" | "partition" | "keyId" | "key" | "value" | "records" | "filter" | "inserted" | "updated" | "attribute";
 
 /** A template a blueprint describes a part of the dimension by. */
 export interface BlueprintTemplate {
@@ -4456,7 +4456,8 @@ export interface DeliveryDimensionChangeQuery {
 /**
  * One row of a dimension's table: the row's number (what a table of facts joins on), the key's number, the key, its value,
  * its attributes in the order of the table's attribute columns (null where the key has none), the records of the row,
- * and the search finding the key's records.
+ * the search finding the key's records, and when a build first wrote the row and last changed it, in UTC (the table's
+ * `InsertedDate_DW` and `UpdatedDate_DW`; null from a table its next build has yet to give them).
  */
 export interface DeliveryDimensionTableRow {
   id: number;
@@ -4466,6 +4467,8 @@ export interface DeliveryDimensionTableRow {
   attributes: (string | null)[];
   records: number;
   filter: string | null;
+  insertedUtc: string | null;
+  updatedUtc: string | null;
 }
 
 /**

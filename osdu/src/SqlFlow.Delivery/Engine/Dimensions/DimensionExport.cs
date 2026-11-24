@@ -302,14 +302,14 @@ public static class DimensionExport
         var partition = dimension.Partition ?? string.Empty;
         if (format == DimensionExportFormat.Csv)
         {
-            await writer.WriteAsync(Csv(["id", "partition", "key_id", shape.KeyColumn, shape.ValueColumn, .. names, "records", "filter"]) + ending).ConfigureAwait(false);
+            await writer.WriteAsync(Csv(["id", "partition", "key_id", shape.KeyColumn, shape.ValueColumn, .. names, "records", "filter", DimensionColumnNames.InsertedColumn, DimensionColumnNames.UpdatedColumn]) + ending).ConfigureAwait(false);
         }
 
         long rows = 0;
         await foreach (var row in DimensionTable.StreamAsync(ledger, dimension, ct).ConfigureAwait(false))
         {
             var line = format == DimensionExportFormat.Csv
-                ? Csv([Number(row.Id), partition, Number(row.KeyId), row.Key, row.Value, .. row.Attributes, Number(row.Records), row.Filter])
+                ? Csv([Number(row.Id), partition, Number(row.KeyId), row.Key, row.Value, .. row.Attributes, Number(row.Records), row.Filter, Instant(row.InsertedUtc), Instant(row.UpdatedUtc)])
                 : Json(w =>
                 {
                     w.WriteNumber("id", row.Id);
@@ -326,6 +326,8 @@ public static class DimensionExport
 
                     w.WriteNumber("records", row.Records);
                     w.WriteString("filter", row.Filter);
+                    w.WriteString(DimensionColumnNames.InsertedColumn, Instant(row.InsertedUtc));
+                    w.WriteString(DimensionColumnNames.UpdatedColumn, Instant(row.UpdatedUtc));
                 });
             await writer.WriteAsync(line + ending).ConfigureAwait(false);
             rows++;
@@ -399,6 +401,9 @@ public static class DimensionExport
     private static string Bool(bool value) => value ? "true" : "false";
 
     private static string Instant(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+
+    /// <summary>A row's time as <see cref="Instant(DateTime)"/> writes it; null where its table holds none yet.</summary>
+    private static string? Instant(DateTime? utc) => utc is { } at ? Instant(at) : null;
 
     /// <summary>A part of a file name: letters, digits, dots, dashes and underscores, anything else a dash.</summary>
     private static string Safe(string part)

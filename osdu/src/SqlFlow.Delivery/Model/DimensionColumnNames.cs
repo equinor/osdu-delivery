@@ -22,8 +22,23 @@ public static class DimensionColumnNames
     /// <summary>The word the value's column is asked for by whatever it is named, and its name in a table made before dimensions named their columns.</summary>
     public const string ValueRole = "value";
 
+    /// <summary>
+    /// The column holding when a build first wrote a row of a dimension's table, in UTC: SQLFlow's audit column of the same
+    /// name, type and rule, so a table of the module reads as SQLFlow's own tables do. It holds the time of the build's write
+    /// and stays for as long as the row keeps its <c>id</c>.
+    /// </summary>
+    public const string InsertedColumn = "InsertedDate_DW";
+
+    /// <summary>
+    /// The column holding when a build last changed a row of a dimension's table, in UTC: SQLFlow's audit column of the same
+    /// name, type and rule. A row a build adds takes the build's time here too, and a later build that rewrites the row's
+    /// key, value, records, filter or an attribute sets it again; a build that finds the row as it was leaves it, so it says
+    /// when the row's data last changed and a reader picks up what changed since a time by it.
+    /// </summary>
+    public const string UpdatedColumn = "UpdatedDate_DW";
+
     /// <summary>The columns every dimension's table has under the same name, which neither the key's nor the value's can take.</summary>
-    public static readonly IReadOnlyList<string> Fixed = ["id", "partition", "key_id", "records", "filter"];
+    public static readonly IReadOnlyList<string> Fixed = ["id", "partition", "key_id", "records", "filter", InsertedColumn, UpdatedColumn];
 
     /// <summary>The rule a column's name keeps to, as messages state it.</summary>
     public const string Rule = "a letter, then letters, digits and underscores, at most 64";

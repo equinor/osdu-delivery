@@ -79,9 +79,11 @@ public sealed record DeliveryDimensionDto(
 /// <summary>
 /// One row of a dimension's table: the row's number (what a table of facts joins on), the key's number, the key, its
 /// value, its attributes in the order of the table's <c>Attributes</c> (null where the key has none), the records of the
-/// row, and the search filter finding the key's records.
+/// row, the search filter finding the key's records, and when a build first wrote the row and last changed it, in UTC (the
+/// table's <c>InsertedDate_DW</c> and <c>UpdatedDate_DW</c>; null from a table its next build has yet to give them).
 /// </summary>
-public sealed record DeliveryDimensionTableRowDto(long Id, long KeyId, string Key, string Value, IReadOnlyList<string?> Attributes, long Records, string? Filter);
+public sealed record DeliveryDimensionTableRowDto(
+    long Id, long KeyId, string Key, string Value, IReadOnlyList<string?> Attributes, long Records, string? Filter, DateTime? InsertedUtc, DateTime? UpdatedUtc);
 
 /// <summary>
 /// A page of a dimension's table: the table's name, the names of the columns that hold each row's <c>Key</c> and its
@@ -458,7 +460,7 @@ public static partial class DeliveryDimensionEndpoints
                 page.KeyColumn,
                 page.ValueColumn,
                 page.Attributes,
-                page.Rows.Select(r => new DeliveryDimensionTableRowDto(r.Id, r.KeyId, r.Key, r.Value, r.Attributes, r.Records, r.Filter)).ToList(),
+                page.Rows.Select(r => new DeliveryDimensionTableRowDto(r.Id, r.KeyId, r.Key, r.Value, r.Attributes, r.Records, r.Filter, r.InsertedUtc, r.UpdatedUtc)).ToList(),
                 page.More,
                 page.Total));
         }
