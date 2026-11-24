@@ -32,7 +32,10 @@ related:
   - delivery-concept-removal-and-reversal
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Ddms.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.DdmsCollections.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.DeliveryTarget.cs
   - osdu/src/SqlFlow.Delivery/Model/DdmsCatalog.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/WellboreDdmsBulkLimits.cs

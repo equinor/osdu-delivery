@@ -52,7 +52,9 @@ related:
   - flow-batch
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Dimensions.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs
   - osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/AssertionDimensions.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionSetReport.cs

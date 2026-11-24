@@ -37,6 +37,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/RetrievalDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/RetrievalLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Retrieval.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
   - osdu/src/SqlFlow.Delivery/Documents/OsduKind.cs
   - osdu/src/SqlFlow.Delivery/Model/RetrievalDefinition.cs

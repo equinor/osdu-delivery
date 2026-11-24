@@ -48,6 +48,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduHttpClient.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/Etp/EtpConnection.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/ProductionTimeSeriesShape.cs
@@ -406,7 +407,7 @@ for a run of another environment, and for a run whose history has been removed.
 | A run found from a value or an id, and the search's runs category | `osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunLookup.cs`, `RunSearchContributor.cs` |
 | Finding and reading the repository document | `Documents/RepositoryDocuments.cs`, `Documents/RepositoryDocumentKind.cs`, `Model/RepositoryDefinition.cs`, `Documents/CompanionFiles.cs` |
 | The kinds' operation codes | `Model/FlowTelemetry.cs` |
-| `telemetry.operation` and the header refusal | `Documents/DeliveryDocumentLoader.cs` |
+| `telemetry.operation` and the header refusal | `Documents/FlowMapper.cs` |
 | Putting the value on requests | `Engine/Protocols/OsduHttpClient.cs`, `Engine/Protocols/Etp/EtpConnection.cs`, `Engine/Workflows/WorkflowXCom.cs`, `Engine/Protocols/Ddms/ProductionTimeSeriesShape.cs`, `osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs` |
 | The product's operations' codes | `Engine/Operations/DeliveryOperations.cs` and each operation, `Engine/Search/PartitionSchemaIndex.cs` |
 | Naming the value in errors and issues | `Http/HttpExecutor.cs`, `Ledger/ProblemSignature.cs` |

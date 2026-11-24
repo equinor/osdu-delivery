@@ -33,6 +33,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs
+  - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Lookups.cs
   - osdu/tests/SqlFlow.Delivery.Tests/AccessListTests.cs
   - osdu/tests/SqlFlow.Delivery.Tests/FindAllContainsTests.cs
 ---

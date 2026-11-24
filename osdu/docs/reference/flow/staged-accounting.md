@@ -34,6 +34,7 @@ related:
   - delivery-concept-gui-build
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Subjects.cs
   - osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedAccounting.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedDeliveries.cs

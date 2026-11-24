@@ -46,6 +46,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Cache.cs
   - osdu/src/SqlFlow.Delivery/Model/CacheDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs

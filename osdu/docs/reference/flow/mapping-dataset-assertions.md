@@ -41,6 +41,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs
   - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs
+  - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Assertions.cs
   - osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionLoaderTests.cs
   - osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionRenderTests.cs
   - osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionRunTests.cs

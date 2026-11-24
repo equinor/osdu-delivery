@@ -49,6 +49,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Removal.cs
   - osdu/src/SqlFlow.Delivery/Model/RemovalFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Engine/RemovalExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs

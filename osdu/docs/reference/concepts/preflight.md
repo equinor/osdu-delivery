@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Checks.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs
   - osdu/src/SqlFlow.Delivery/Validation/RecordValidator.cs

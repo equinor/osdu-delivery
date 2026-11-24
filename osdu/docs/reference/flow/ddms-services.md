@@ -30,6 +30,9 @@ related:
   - delivery-cli-check
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Ddms.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.DdmsCollections.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Target.cs
   - osdu/src/SqlFlow.Delivery/Model/DdmsCatalog.cs
   - osdu/src/SqlFlow.Delivery/Model/EtpTarget.cs
   - osdu/src/SqlFlow.Delivery/Model/DspdmTarget.cs

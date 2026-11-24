@@ -3157,6 +3157,7 @@
         "osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Partitions.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/CacheExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RetrievalExecutor.cs",
@@ -3228,6 +3229,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Checks.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
         "osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs",
         "osdu/src/SqlFlow.Delivery/Validation/RecordValidator.cs",
@@ -3614,6 +3616,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduHttpClient.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/Etp/EtpConnection.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/ProductionTimeSeriesShape.cs",
@@ -4125,8 +4128,13 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Tests.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Subjects.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Values.cs",
         "osdu/src/SqlFlow.Delivery/Documents/AssertionLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DdmsCatalog.cs",
@@ -4179,8 +4187,10 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Assertions.cs",
         "osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs"
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs"
       ]
     },
     {
@@ -4241,7 +4251,9 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionDimensions.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionSetReport.cs",
@@ -4311,6 +4323,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Cache.cs",
         "osdu/src/SqlFlow.Delivery/Model/CacheDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs",
@@ -4507,7 +4520,9 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Curves.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/KnownCurves.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/CurveKeys.cs",
@@ -4553,7 +4568,10 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Ddms.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.DdmsCollections.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.DeliveryTarget.cs",
         "osdu/src/SqlFlow.Delivery/Model/DdmsCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/WellboreDdmsBulkLimits.cs",
@@ -4607,6 +4625,9 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Ddms.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.DdmsCollections.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Target.cs",
         "osdu/src/SqlFlow.Delivery/Model/DdmsCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Model/EtpTarget.cs",
         "osdu/src/SqlFlow.Delivery/Model/DspdmTarget.cs",
@@ -4684,9 +4705,15 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Source.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Target.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Reliability.cs",
         "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Delivery.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.DeliveryTarget.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLayout.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -4744,9 +4771,13 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Source.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Checks.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs"
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Delivery.cs"
       ]
     },
     {
@@ -4787,6 +4818,7 @@
         "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Source.cs",
         "osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs",
         "osdu/src/SqlFlow.Delivery/Engine/SourceSync.cs",
         "osdu/docs/census/keys.delivery.json"
@@ -4835,6 +4867,7 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Lookups.cs",
         "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.Lookups.cs",
@@ -5020,6 +5053,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Dimension.cs",
         "osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DimensionColumnNames.cs",
         "osdu/src/SqlFlow.Delivery/Model/DimensionPath.cs",
@@ -5514,6 +5548,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Download.cs",
         "osdu/src/SqlFlow.Delivery/Model/DownloadFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DownloadExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs",
@@ -5573,9 +5608,11 @@
         "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Mapping.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Enrich.cs",
         "osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
         "osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs",
         "osdu/src/SqlFlow.Delivery/Rendering/EnrichTrace.cs",
@@ -5759,7 +5796,9 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Workflow.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/ProtocolFactory.cs",
@@ -5811,7 +5850,11 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Interfaces.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Routes.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Partitions.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Delivery.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlOverlay.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -5881,6 +5924,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Inventory.cs",
         "osdu/src/SqlFlow.Delivery/Model/InventoryFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/InventoryExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
@@ -6122,7 +6166,10 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.KnownValues.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.KnownPaths.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs",
         "osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionTemplates.cs",
@@ -6219,6 +6266,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Mapping.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
@@ -6306,6 +6354,7 @@
         "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
         "osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Assertions.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261010205917_RecordAssertions.cs",
         "osdu/src/SqlFlow.Delivery.Cli/FindingLines.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/MappingAssertionLoaderTests.cs",
@@ -6366,6 +6415,7 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Values.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildMappingTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildRenderTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildRecordReadTests.cs",
@@ -6420,6 +6470,7 @@
         "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Assertions.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionLoaderTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionRenderTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DatasetAssertionRunTests.cs",
@@ -6469,6 +6520,7 @@
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.FromDefinition.cs",
         "osdu/docs/census/keys.mapping.json"
       ]
     },
@@ -6610,7 +6662,8 @@
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
-        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs"
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Lookups.cs"
       ]
     },
     {
@@ -6652,6 +6705,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Lookups.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/AccessListTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/FindAllContainsTests.cs"
       ]
@@ -7099,6 +7153,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/KindRunInputs.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Operations/ScopeValuesOperation.cs",
@@ -7163,6 +7218,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Model/RemovalFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RemovalExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
@@ -7317,6 +7373,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/RetrievalDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RetrievalLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Retrieval.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/OsduKind.cs",
         "osdu/src/SqlFlow.Delivery/Model/RetrievalDefinition.cs",
@@ -7375,8 +7432,11 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Routes.cs",
         "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.DeliveryTarget.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Workflow.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/PayloadParts.cs",
         "osdu/src/SqlFlow.Delivery/Model/WorkflowCatalog.cs",
@@ -7448,6 +7508,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Subjects.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedAccounting.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedDeliveries.cs",
@@ -7498,8 +7559,11 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Tests.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.KnownValues.cs",
         "osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionOperands.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedSql.cs",
@@ -8226,6 +8290,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Interfaces.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
         "osdu/src/SqlFlow.Delivery/Model/InterfaceOrder.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",

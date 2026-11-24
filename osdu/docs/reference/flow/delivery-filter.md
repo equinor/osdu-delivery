@@ -32,6 +32,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Source.cs
   - osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs
   - osdu/src/SqlFlow.Delivery/Engine/SourceSync.cs
   - osdu/docs/census/keys.delivery.json

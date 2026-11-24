@@ -19,8 +19,10 @@ related:
   - delivery-flow-staged-accounting
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.Assertions.cs
   - osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Assertion.cs
 ---
 
 # Assertion flow load errors: what sqlflow validate refuses in a flowType: assertion document, and each message

@@ -34,6 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Download.cs
   - osdu/src/SqlFlow.Delivery/Model/DownloadFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Engine/DownloadExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs

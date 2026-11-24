@@ -27,6 +27,7 @@ related:
   - guide-table-to-table-ingestion
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Interfaces.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Model/InterfaceOrder.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs

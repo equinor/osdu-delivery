@@ -32,6 +32,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/InventoryDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Inventory.cs
   - osdu/src/SqlFlow.Delivery/Model/InventoryFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Engine/InventoryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs

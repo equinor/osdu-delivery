@@ -45,6 +45,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
   - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs
+  - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Values.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ChildMappingTests.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ChildRenderTests.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ChildRecordReadTests.cs

@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs
   - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs
+  - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.FromDefinition.cs
   - osdu/docs/census/keys.mapping.json
 ---
 

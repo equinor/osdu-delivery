@@ -122,6 +122,11 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   timeout: 60_000,
+  // How long an expectation waits before it fails. Playwright's 5 s is too short on a machine other work keeps busy: on
+  // 2026-11-25 a page's 12 chunks, asked for in one wave right after its menu click, each took about 5 s to be served by
+  // the production build while builds and test runs loaded the machine, and the spec failed with the page on its way. A
+  // passing expectation returns the moment it holds, so this costs only a failure's time to report.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: E2E.guiBaseUrl,
     trace: "retain-on-failure",

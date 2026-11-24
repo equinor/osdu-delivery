@@ -82,6 +82,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/YamlModels.Dimension.cs
   - osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/DimensionColumnNames.cs
   - osdu/src/SqlFlow.Delivery/Model/DimensionPath.cs

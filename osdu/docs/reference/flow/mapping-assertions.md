@@ -52,6 +52,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs
   - osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs
   - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs
+  - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.Assertions.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261010205917_RecordAssertions.cs
   - osdu/src/SqlFlow.Delivery.Cli/FindingLines.cs
   - osdu/tests/SqlFlow.Delivery.Tests/MappingAssertionLoaderTests.cs

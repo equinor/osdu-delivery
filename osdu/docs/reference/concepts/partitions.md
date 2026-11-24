@@ -53,6 +53,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
+  - osdu/src/SqlFlow.Delivery/Documents/FlowMapper.Partitions.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/CacheExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/RetrievalExecutor.cs
