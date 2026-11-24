@@ -42,6 +42,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/WellboreDdmsV3Shape.cs
   - osdu/src/SqlFlow.Delivery/Model/PayloadParts.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Preflight.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Undo.cs
   - osdu/src/SqlFlow.Delivery/Engine/SourceRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/UndoRunner.cs
@@ -56,6 +58,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Http/UrlGuard.cs
   - osdu/src/SqlFlow.Delivery/Http/NetworkPolicy.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs
   - osdu/specs/core/legal/openapi.yaml
 ---
 

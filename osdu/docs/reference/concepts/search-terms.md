@@ -39,6 +39,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.Via.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerVia.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/gui/src/features/delivery/searchTerms/SearchTermsPage.tsx
   - osdu/gui/src/features/delivery/explorer/explorerTerms.ts
   - osdu/gui/src/features/delivery/explorer/ExplorerFilterEditor.tsx

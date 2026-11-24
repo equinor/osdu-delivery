@@ -20,6 +20,7 @@ related:
   - delivery-table-dimension-change
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs

@@ -40,6 +40,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Rendering/EnrichLinks.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EnrichParts.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Related.cs
   - osdu/src/SqlFlow.Delivery/Validation/PayloadLocations.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs

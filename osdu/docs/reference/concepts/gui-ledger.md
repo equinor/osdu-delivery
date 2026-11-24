@@ -35,6 +35,9 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeliveryActivitySheet.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordPage.tsx
   - osdu/gui/src/features/delivery/RecordJourney.tsx
+  - osdu/gui/src/features/delivery/RecordMilestones.tsx
+  - osdu/gui/src/features/delivery/recordJourneyStory.ts
+  - osdu/gui/src/features/delivery/recordJourneyAttempts.tsx
   - osdu/gui/src/features/delivery/RecordSourceTab.tsx
   - osdu/gui/src/features/delivery/RecordRenderTab.tsx
   - osdu/gui/src/features/delivery/RecordOsduView.tsx

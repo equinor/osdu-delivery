@@ -19,6 +19,7 @@ related:
   - delivery-table-activity-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Purges.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Recency.cs

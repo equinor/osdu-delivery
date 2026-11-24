@@ -42,6 +42,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Worker/UndoRunner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Undo.cs
   - osdu/src/SqlFlow.Delivery/Engine/UndoSummary.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/ArtifactUndo.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/WorkflowRuns.cs

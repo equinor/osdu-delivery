@@ -26,6 +26,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTableTarget.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableWrite.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Write.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableRead.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Remove.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.Views.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs

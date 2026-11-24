@@ -18,6 +18,7 @@ related:
   - delivery-table-partition
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Directory.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs
 ---

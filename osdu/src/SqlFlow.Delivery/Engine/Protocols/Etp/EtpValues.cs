@@ -5,7 +5,7 @@ namespace SqlFlow.Delivery.Engine.Protocols.Etp;
 
 /// <summary>
 /// One ETP 1.2 message: what protocol and message type its header carries, and how its body is written. The bodies are
-/// the records of <c>EtpMessages.cs</c>, generated from the pinned protocol
+/// the records of <c>EtpMessages.*.cs</c>, a file per protocol, generated from the pinned protocol
 /// (osdu/specs/reservoir-ddms/etp-1.2.avpr).
 /// </summary>
 public interface IEtpMessage

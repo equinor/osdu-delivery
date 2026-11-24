@@ -86,6 +86,8 @@ sourceRefs:
   - osdu/gui/src/features/delivery/explorer/explorerKinds.ts
   - osdu/gui/src/features/delivery/explorer/dimension/DimensionBuildPanel.tsx
   - osdu/gui/src/features/delivery/OsduRecordInspector.tsx
+  - osdu/gui/src/features/delivery/OsduRecordInspectorViews.tsx
+  - osdu/gui/src/features/delivery/OsduRecordInspectorHeader.tsx
   - osdu/specs/core/search/openapi.yaml
   - osdu/specs/core/storage/openapi.yaml
   - osdu/specs/core/schema_service/openapi.yaml

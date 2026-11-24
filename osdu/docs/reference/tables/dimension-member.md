@@ -18,7 +18,9 @@ related:
   - delivery-table-dimension-value
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
 ---
 
@@ -62,7 +64,7 @@ marked removed, and the next build's write deletes it once no key is under it
 ## Written and read by
 
 - **Written** by a build's merge, which adds, rewrites, marks removed and brings back members in one transaction under the
-  dimension's lock (`SqlServerDimensionStore.cs`).
+  dimension's lock (`SqlServerDimensionStore.Merge.cs`).
 - **Deleted** when removed and no key is under it, by the next build's write (`SqlServerDimensionStore.Purge.cs`).
 - **Read** by the dimension's values page, `sqlflow dimensions`, a composed search, a cache flow capturing the dimension,
   and the build that lays out the dimension's table.

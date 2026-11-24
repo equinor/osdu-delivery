@@ -40,6 +40,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableRead.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Remove.cs
   - osdu/src/SqlFlow.Delivery.Search/OsduQuery.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs
   - sqlflow/src/SqlFlow.Cli/Hosting/CliVerbContext.cs

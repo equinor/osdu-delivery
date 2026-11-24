@@ -47,6 +47,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Worker.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/ReferenceReader.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/FailureGuard.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
@@ -56,6 +57,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerRecords.cs
   - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260916221306_DeliveryInterfaces.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPipelines.cs

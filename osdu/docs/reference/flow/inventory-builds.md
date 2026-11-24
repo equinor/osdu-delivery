@@ -30,6 +30,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261008024435_InventoryFlows.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261009094531_InventoryCheckedUtc.cs
 ---

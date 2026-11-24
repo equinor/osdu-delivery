@@ -18,6 +18,7 @@ related:
   - delivery-table-removed-key
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs
   - osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261022223524_RemovalFlows.cs

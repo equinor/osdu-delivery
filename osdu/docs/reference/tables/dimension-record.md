@@ -18,7 +18,10 @@ related:
   - delivery-table-dimension-run
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Lookups.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs
 ---
 
@@ -51,6 +54,6 @@ incremental load rewrites those of the records it read
 
 ## Written and read by
 
-- **Written** by the loads of a flow with an `incremental` block (`SqlServerDimensionStore.cs`).
+- **Written** by the loads of a flow with an `incremental` block (`SqlServerDimensionStore.Merge.cs`).
 - **Deleted** with its key, when a build removed the key, by the next build's write (`SqlServerDimensionStore.Purge.cs`).
 - **Read** by an incremental load (`DimensionRunner.Incremental.cs`).

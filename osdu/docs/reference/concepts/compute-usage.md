@@ -44,6 +44,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Model/RepositoryDefinition.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.ComputeUsage.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryComputeUsageEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs
   - osdu/gui/src/features/delivery/compute/ComputeUsagePage.tsx

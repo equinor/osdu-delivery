@@ -33,7 +33,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Intake.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Stats.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs
   - osdu/docs/census/keys.mapping.json
 ---
 

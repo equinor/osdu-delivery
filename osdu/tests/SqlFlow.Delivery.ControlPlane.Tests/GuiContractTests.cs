@@ -8,10 +8,11 @@ using Xunit;
 namespace SqlFlow.Delivery.ControlPlane.Tests;
 
 /// <summary>
-/// The GUI's API types against the control plane's (<c>osdu/gui/src/api</c>): every field a TypeScript interface declares
-/// is one the C# type of the same name, or of that name with <c>Dto</c>, carries under the same JSON name. A field the GUI
-/// reads that the API never sends, or sends under another name, is absent at run time and fails no type check on either
-/// side; this finds it. The GUI may leave out what it does not read, so only its own fields are checked.
+/// The GUI's API types against the control plane's (<c>osdu/gui/src/api</c> and its folders, such as <c>api/delivery/</c>):
+/// every field a TypeScript interface declares is one the C# type of the same name, or of that name with <c>Dto</c>,
+/// carries under the same JSON name. A field the GUI reads that the API never sends, or sends under another name, is
+/// absent at run time and fails no type check on either side; this finds it. The GUI may leave out what it does not read,
+/// so only its own fields are checked.
 /// </summary>
 public sealed partial class GuiContractTests
 {
@@ -69,7 +70,7 @@ public sealed partial class GuiContractTests
     private static Dictionary<string, (HashSet<string> Fields, IReadOnlyList<string> Extends)> TypeScriptInterfaces(string folder)
     {
         var found = new Dictionary<string, (HashSet<string>, IReadOnlyList<string>)>(StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(folder, "*.ts"))
+        foreach (var file in Directory.EnumerateFiles(folder, "*.ts", SearchOption.AllDirectories))
         {
             var text = File.ReadAllText(file);
             foreach (Match head in InterfaceHead().Matches(text))

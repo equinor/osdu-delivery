@@ -30,6 +30,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs
 ---
 
 # The cache merge

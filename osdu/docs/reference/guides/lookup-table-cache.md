@@ -42,6 +42,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/ReplaceTables.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Cache.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Modifiers.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerCacheSets.cs

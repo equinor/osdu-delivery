@@ -18,12 +18,14 @@ related:
   - delivery-table-purged-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Activities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Interventions.cs
 ---
 
 # osdu.ActivityRecord: each record an intervention for many records changed, named once

@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260928053849_PartitionRegistry.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261014052816_ConfiguredPartitions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs

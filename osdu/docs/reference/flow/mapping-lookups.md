@@ -33,6 +33,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Cache.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.FindBy.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.FindAll.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Search.cs
   - osdu/src/SqlFlow.Delivery/Rendering/CachedReferences.cs
   - osdu/src/SqlFlow.Delivery/Rendering/SearchFields.cs
   - osdu/src/SqlFlow.Delivery/Rendering/IRecordSearch.cs

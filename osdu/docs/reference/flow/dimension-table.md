@@ -25,6 +25,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
   - osdu/src/SqlFlow.Delivery/Model/DimensionColumnNames.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableRead.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableSchema.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableWrite.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261001163440_DimensionTables.cs
 ---
 

@@ -17,7 +17,9 @@ related:
   - delivery-table-dimension-attribute-name
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
 ---
 
@@ -52,5 +54,5 @@ shown as it ([The tables a dimension keeps](../concepts/dimension-tables.md)).
 
 ## Written and read by
 
-- **Written** by the build that settles the collected field (`SqlServerDimensionStore.cs`).
+- **Written** by the build that settles the collected field (`SqlServerDimensionStore.Merge.cs`).
 - **Read** by composed searches (`sqlflow dimensions search` and the dimension's search panel).

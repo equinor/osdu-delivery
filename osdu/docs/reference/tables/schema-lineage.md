@@ -17,6 +17,7 @@ related:
   - delivery-wiki-0016-osdu-order
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/src/SqlFlow.Delivery/Ordering/SchemaLineageStore.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
 ---

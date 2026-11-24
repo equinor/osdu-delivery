@@ -40,6 +40,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Modifiers.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Conversion.cs
   - osdu/src/SqlFlow.Delivery/Rendering/DateValues.cs
   - osdu/src/SqlFlow.Delivery/Rendering/NumberValues.cs
   - osdu/src/SqlFlow.Delivery/Rendering/ReplaceTables.cs

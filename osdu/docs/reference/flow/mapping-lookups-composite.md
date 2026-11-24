@@ -25,6 +25,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Cache.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.FindBy.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/ReferenceSnapshot.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs

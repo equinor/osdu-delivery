@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Related.cs
   - osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs
   - osdu/src/SqlFlow.Delivery/Engine/OsduRecordSearch.cs
   - osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs

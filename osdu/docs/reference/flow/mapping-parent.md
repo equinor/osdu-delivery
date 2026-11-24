@@ -41,6 +41,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Related.cs
   - osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs
   - osdu/src/SqlFlow.Delivery/Rendering/IRecordSearch.cs
   - osdu/src/SqlFlow.Delivery/Rendering/SearchFields.cs

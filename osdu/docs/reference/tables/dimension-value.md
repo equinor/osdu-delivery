@@ -19,7 +19,9 @@ related:
   - delivery-table-dimension-attribute
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
 ---
 
@@ -69,7 +71,7 @@ the next build's write deletes it with its attributes, elements and records ([Wh
 
 ## Written and read by
 
-- **Written** by a build's merge, in one transaction under the dimension's lock (`SqlServerDimensionStore.cs`); the two
+- **Written** by a build's merge, in one transaction under the dimension's lock (`SqlServerDimensionStore.Merge.cs`); the two
   hashes are written with the elements and attribute values they stand for, so a key's are rewritten only when they
   moved ([decision 0058](../../wiki/decisions/0058-dimension-keys-by-their-text.md)).
 - **Deleted** when removed, by the next build's write, a few keys a round with everything naming them

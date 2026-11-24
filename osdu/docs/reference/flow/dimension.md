@@ -102,6 +102,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Write.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Remove.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionViews.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionViewExpressions.cs
@@ -119,6 +121,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/dimensions/DimensionViewTabs.tsx
   - osdu/gui/src/features/delivery/dimensions/DimensionViewSuggest.tsx
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs
   - osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260930103543_DimensionFlows.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261001163440_DimensionTables.cs

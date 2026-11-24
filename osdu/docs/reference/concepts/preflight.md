@@ -50,6 +50,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs
   - osdu/src/SqlFlow.Delivery/Engine/SourceRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Preflight.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Worker.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/ValidationGate.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/ReferenceCheck.cs

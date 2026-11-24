@@ -61,6 +61,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheSteps.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Deliver.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.CacheSteps.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.FanOut.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs

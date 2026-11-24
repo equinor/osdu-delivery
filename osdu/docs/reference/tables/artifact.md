@@ -21,6 +21,7 @@ related:
   - delivery-wiki-0012-atomic-delivery
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs
   - osdu/src/SqlFlow.Delivery/Ledger/Artifacts.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Artifacts.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Artifacts.cs

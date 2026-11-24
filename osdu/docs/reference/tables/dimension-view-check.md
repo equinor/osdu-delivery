@@ -16,6 +16,7 @@ related:
   - delivery-table-dimension-view
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
 ---
 

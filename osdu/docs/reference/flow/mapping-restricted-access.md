@@ -35,19 +35,24 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Composite.cs
   - osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EnrichParts.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
   - osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Preflight.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs
   - osdu/src/SqlFlow.Delivery/Engine/Reversals/VersionWriteBack.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DocumentAccess.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Stats.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Queries.cs
   - osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs
   - osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs
   - osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx

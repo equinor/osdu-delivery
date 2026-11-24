@@ -36,6 +36,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs
   - osdu/src/SqlFlow.Delivery/Ledger/AttemptResult.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.UpdateTags.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Submissions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.Records.cs

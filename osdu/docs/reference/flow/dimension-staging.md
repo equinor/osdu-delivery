@@ -21,6 +21,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Write.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261026192825_DimensionStagePerBuild.cs
   - osdu/tests/SqlFlow.Delivery.Tests/DimensionStageTests.cs
 ---

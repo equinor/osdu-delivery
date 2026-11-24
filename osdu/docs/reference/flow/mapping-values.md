@@ -39,6 +39,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Composite.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Id.cs
   - osdu/src/SqlFlow.Delivery/Rendering/ListValues.cs
   - osdu/src/SqlFlow.Delivery/Rendering/NumberValues.cs

@@ -17,6 +17,7 @@ related:
   - delivery-table-ledger
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Ledger/LedgerBindings.cs

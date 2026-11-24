@@ -41,6 +41,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs
   - osdu/src/SqlFlow.Delivery/Protocols/RecordAccess.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Removals.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.RemovalChunks.cs
   - osdu/src/SqlFlow.Delivery/Engine/RecordRemoval.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Restrictions.cs

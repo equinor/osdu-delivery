@@ -32,6 +32,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/CliPartitions.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Preflight.cs
   - osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs
   - osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs
   - osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs

@@ -16,6 +16,7 @@ related:
   - delivery-table-compute-usage
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.ComputeUsage.cs
   - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs
 ---
 

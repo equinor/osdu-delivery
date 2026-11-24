@@ -17,6 +17,7 @@ related:
   - delivery-table-partition
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs
   - osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs
   - osdu/src/SqlFlow.Delivery/Ledger/AccessRestrictions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAccessRestrictionEndpoints.cs

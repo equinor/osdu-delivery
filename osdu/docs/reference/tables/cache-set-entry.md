@@ -19,7 +19,9 @@ related:
   - delivery-table-update-tag
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.CacheSets.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.CacheSets.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.CacheSets.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261115192942_CacheSetValues.cs

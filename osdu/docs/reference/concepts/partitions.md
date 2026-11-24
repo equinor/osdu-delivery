@@ -63,6 +63,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261014052816_ConfiguredPartitions.cs
   - osdu/src/SqlFlow.Delivery.Cli/CliPartitions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Configuration/DeliveryModuleOptions.cs

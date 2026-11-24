@@ -16,6 +16,7 @@ related:
   - delivery-table-schema-lineage
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/src/SqlFlow.Delivery/Ordering/SchemaLineageStore.cs
   - osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs
 ---

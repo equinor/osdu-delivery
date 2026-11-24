@@ -35,6 +35,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/IdTemplate.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Modifiers.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Id.cs
   - osdu/src/SqlFlow.Delivery/Rendering/IdValues.cs
   - osdu/src/SqlFlow.Delivery/Rendering/ReplaceTables.cs

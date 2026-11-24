@@ -19,7 +19,9 @@ related:
   - delivery-table-dimension-value
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
 ---
 
@@ -58,7 +60,7 @@ not by a row here ([The tables a dimension keeps](../concepts/dimension-tables.m
 ## Written and read by
 
 - **Written** by a build's merge, which logs every change it makes with the original's and the values' text as they read
-  then (`SqlServerDimensionStore.cs`), so a change still says what it was once the next build has deleted what it removed
+  then (`SqlServerDimensionStore.Merge.cs`), so a change still says what it was once the next build has deleted what it removed
   ([What a build keeps](../flow/dimension.md#what-a-build-keeps)). Migration `DimensionChangeTexts` gave the changes written before it
   the text of the rows they name.
 - **Read** by the dimension's changes page, `sqlflow dimensions` and the delivery API.

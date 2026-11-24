@@ -40,6 +40,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs
   - osdu/src/SqlFlow.Delivery.Data/OsduDbContextDesignTimeFactory.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Configuration.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/tests/SqlFlow.Delivery.Tests/MigrationScriptTests.cs
 ---

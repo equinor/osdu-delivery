@@ -35,6 +35,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheDeclaration.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Cache.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
   - osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json

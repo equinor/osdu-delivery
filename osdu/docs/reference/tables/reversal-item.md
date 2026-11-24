@@ -19,6 +19,7 @@ related:
   - delivery-table-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs

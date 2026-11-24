@@ -18,7 +18,9 @@ related:
   - delivery-table-dimension-attribute-name
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs
 ---
 
 # osdu.DimensionElement: each field of each object of a nested array a dimension's keys hold
@@ -50,6 +52,6 @@ table, numbered in its `element` column ([The tables a dimension keeps](../conce
 
 ## Written and read by
 
-- **Written** by a build, which rewrites the elements of the keys it found (`SqlServerDimensionStore.cs`).
+- **Written** by a build, which rewrites the elements of the keys it found (`SqlServerDimensionStore.Merge.cs`).
 - **Deleted** with its key, when a build removed the key, by the next build's write (`SqlServerDimensionStore.Purge.cs`).
 - **Read** by the build that lays out the dimension's table.

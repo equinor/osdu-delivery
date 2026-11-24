@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryConfigStore.cs
   - osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Configuration.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationReferences.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs

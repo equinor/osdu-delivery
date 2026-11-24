@@ -35,6 +35,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerActivities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerCacheSets.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Activities.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.CacheSets.cs
   - osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs
   - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs

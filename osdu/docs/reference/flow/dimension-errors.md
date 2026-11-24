@@ -20,6 +20,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Write.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.TableSchema.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs
 ---

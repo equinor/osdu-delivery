@@ -20,6 +20,7 @@ related:
   - delivery-wiki-0006-work-batches
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerSubmissions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/LedgerRows.cs

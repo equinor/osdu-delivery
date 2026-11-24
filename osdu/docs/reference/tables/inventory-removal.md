@@ -21,6 +21,7 @@ related:
   - delivery-wiki-0014-inventory-removals
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRestore.cs

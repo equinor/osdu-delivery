@@ -20,6 +20,7 @@ related:
   - delivery-table-inventory-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs
 ---

@@ -20,8 +20,10 @@ related:
   - delivery-table-source-watermark
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Submissions.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
 ---
 

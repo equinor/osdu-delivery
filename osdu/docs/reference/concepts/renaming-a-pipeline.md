@@ -56,6 +56,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeleteOrphanedDialog.tsx
   - osdu/gui/src/features/delivery/OrphanedLedgersNotice.tsx
   - osdu/gui/src/features/delivery/RecordJourney.tsx
+  - osdu/gui/src/features/delivery/recordJourneyRequests.tsx
 ---
 
 # Renaming, copying or deleting a flow: what happens to its ledger

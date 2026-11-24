@@ -19,6 +19,7 @@ related:
   - delivery-table-repository-team
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.ComputeUsage.cs
   - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs
   - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageMeter.cs
   - osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageRecorder.cs
