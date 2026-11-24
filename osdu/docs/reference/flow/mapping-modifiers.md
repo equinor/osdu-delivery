@@ -2,11 +2,12 @@
 id: delivery-flow-mapping-modifiers
 title: "Mapping modifiers ($modifiers): trim, upper, lower, split, replace, equals, date, number, id and ref"
 type: flow-reference
-summary: "Every modifier a mapping applies to an incoming value: cleaning text, translating codes from a table or the cache, reading dates and numbers, building OSDU ids."
+summary: "Every modifier a mapping applies to a value: cleaning text, replace to translate codes from a table or the cache, reading dates and numbers, building OSDU ids."
 keywords:
   - "$modifiers"
   - replace
   - "replace: $cache"
+  - replace a value from the cache
   - otherwise
   - split
   - equals

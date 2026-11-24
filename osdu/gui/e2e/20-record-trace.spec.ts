@@ -71,9 +71,11 @@ test.describe.serial("record trace", () => {
     expect(workbook.suggestedFilename()).toMatch(/^records-.*pending\.xlsx$/);
     expectRecordsWorkbook(await workbook.path());
 
-    // A row opens the record, whose timeline tells the one chapter it has lived so far: its row arrived, the ledger
-    // picked it up and reserved its OSDU id, and the document waits to be sent. Nothing was sent, and no row of the
-    // timeline stands for its current state, which the header and the milestones say.
+    // A row opens the record, whose timeline tells the chapters it has lived, newest first: the first began when its row
+    // arrived, the ledger picked it up and reserved its OSDU id, and the one it is in now waits to be sent. A fresh estate
+    // has lived that one chapter only; the suite's estate lives on between runs, and a record an operator held and
+    // released since has a chapter more. Nothing was sent, and no row of the timeline stands for its current state, which
+    // the header and the milestones say.
     await rows.first().click();
     await expect(adminPage.getByTestId("page-delivery-record")).toBeVisible();
     await expect(adminPage.getByTestId("record-journey")).toBeVisible();
@@ -83,9 +85,10 @@ test.describe.serial("record trace", () => {
     await expect(adminPage.getByTestId("journey-planned")).toBeVisible();
     await expect(adminPage.getByTestId("journey-planned")).toContainText("Picked up for delivery");
     await expect(adminPage.getByTestId("journey-planned")).toContainText("OSDU id reserved for this flow");
-    await expect(adminPage.getByTestId("journey-chapter")).toHaveCount(1);
-    await expect(adminPage.getByTestId("journey-chapter-trigger")).toContainText("Row arrived in silver.WellLog");
-    await expect(adminPage.getByTestId("journey-chapter-outcome")).toContainText("Queued to send");
+    const chapters = adminPage.getByTestId("journey-chapter");
+    await expect(chapters.first()).toBeVisible();
+    await expect(chapters.last().getByTestId("journey-chapter-trigger")).toContainText("Row arrived in silver.WellLog");
+    await expect(chapters.first().getByTestId("journey-chapter-outcome")).toContainText("Queued to send");
 
     // The row's arrival, before the ledger: the file it came in from and when it reached the ingestion table. They are
     // the record's own facts; the runs that made them are their evidence, found by the file the landing processed and

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { E2E, connectionParts, connectionValue, hostRun } from "../playwright.config";
 import { CACHE, CACHE_RECORDS, DELIVERY_FLOW, FixtureMeta, LOADING_FLOWS, LOOKUPS, REFERENCE, REFERENCE_RECORDS, REPO_NAME, SOURCE, TEMPLATES, folderOf } from "./global-setup";
 import { importCacheRecords } from "./delivery-cli";
-import { adminSession, expect, test } from "./helpers";
+import { adminSession, expect, FIRST_PAGE_MS, test } from "./helpers";
 
 // Seeds the estate THROUGH the product: imports the fixture reference records as the cache's first version, registers the
 // fixture git repo as a source from the Repos page in the GUI, then watches the control plane's managed sync pull it, record
@@ -258,7 +258,7 @@ test.describe.serial("seed the estate via repo source sync", () => {
 
   test("the synced pipeline appears in the catalog", async ({ adminPage }) => {
     await adminPage.getByTestId("nav-pipelines").click();
-    await expect(adminPage.getByTestId("page-pipelines")).toBeVisible();
+    await expect(adminPage.getByTestId("page-pipelines")).toBeVisible({ timeout: FIRST_PAGE_MS });
     // The page lists a repo's flows as the folder tree they are; a search expands it onto the matching rows.
     await adminPage.getByTestId("filter-name").fill(DELIVERY_FLOW);
     const row = adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW });

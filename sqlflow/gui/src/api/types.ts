@@ -3401,6 +3401,86 @@ export interface DataStreams {
   streams: DataStream[];
 }
 
+/** What a node of a stream's path stands for without drawing it, counted where it was cut. "producers": flows writing
+ * what this flow reads, past the ones drawn; "inputs": objects this flow reads that are not on the path; "outputs":
+ * objects it writes that are not; "readers": flows reading this object that are not drawn (checks and reports, which
+ * write nothing, and those past the ones drawn); "upstream" and "downstream": flows past the depth the path is walked
+ * to. count is the whole number; names lists at most fifty, flows by name and objects by qualified name. */
+export interface StreamPathOmission {
+  what: "producers" | "inputs" | "outputs" | "readers" | "upstream" | "downstream";
+  count: number;
+  names: string[];
+}
+
+/** One node of a stream's path: a flow (pipelineId, kind, wave) or an object (objectKey, its kind as the lineage graph
+ * captions it, its qualified name). role is the side of the selected flow it was reached from; external marks an object
+ * nothing in the estate writes, which is where data enters it. */
+export interface StreamPathNode {
+  id: string;
+  type: "flow" | "object";
+  role: "selected" | "upstream" | "downstream";
+  name: string;
+  kind: string;
+  pipelineId: string | null;
+  wave: number | null;
+  objectKey: string | null;
+  qualifiedName: string | null;
+  external: boolean;
+  omitted: StreamPathOmission[];
+}
+
+/** Data moving from one node of a path to the next: a flow writing an object, or an object read by a flow. */
+export interface StreamPathEdge {
+  from: string;
+  to: string;
+}
+
+/** The files one run took in, totalled; newestModified is when the source last changed what the run read. */
+export interface StreamPathFiles {
+  files: number;
+  rows: number;
+  bytes: number;
+  newestModified: string | null;
+}
+
+/** One flow's run in a fire: the run as the runs list shows it (resultCounts included), how many parts it split its
+ * work into over the fleet (0 when none), and the files it took in (null when none). */
+export interface StreamPathRun {
+  run: RunSummary;
+  parts: number;
+  files: StreamPathFiles | null;
+}
+
+/** One fire through a path: the runs of its flows one start set going, in execution order. A run group (a schedule's
+ * fire, a flow run with its descendants) is keyed by its group id; a run started on its own is a fire of one, keyed by
+ * its run id. startedUtc is when its first run started or was queued. */
+export interface StreamPathFire {
+  key: string;
+  groupId: string | null;
+  startedUtc: string;
+  runs: StreamPathRun[];
+}
+
+/** One stream followed end to end (GET /api/v1/datastreams/{pipelineId}/path): the path its data takes, each flow's
+ * verdict over the window as the board judges it, and the latest fires through the path, newest first. totalFires
+ * counts every fire in the window; olderThanUtc, when set, is the `before` that reads the fires older than these.
+ * lineageKnown is false for a flow with no lineage, whose path is the flow alone. */
+export interface StreamPath {
+  pipelineId: string;
+  flowName: string;
+  windowDays: number;
+  fromUtc: string;
+  asOfUtc: string;
+  includeBackfills: boolean;
+  lineageKnown: boolean;
+  nodes: StreamPathNode[];
+  edges: StreamPathEdge[];
+  streams: DataStream[];
+  fires: StreamPathFire[];
+  totalFires: number;
+  olderThanUtc: string | null;
+}
+
 // ---- Warehouse health probe results (compute-task result shapes) ---------------------------------------------------------------
 
 /** One missing-index advisory from sys.dm_db_missing_index_*, with a ready-to-review CREATE INDEX. */

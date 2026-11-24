@@ -20,7 +20,7 @@ interface StreamVerdictCardProps {
   known?: DataStream;
   windowDays: number;
   includeBackfills: boolean;
-  /** Open the full stream (chart, detectors, learned pattern) for this flow. */
+  /** Open the stream's own page: its path end to end, fire by fire, with every verdict on it. */
   onOpen: (pipelineId: string, flowName: string) => void;
 }
 
@@ -69,7 +69,7 @@ export function StreamVerdictCard({
             <StreamStatusBadge status={stream.status} severity={stream.severity} />
             <span className="text-[11px] text-muted-foreground">{finding(stream)}</span>
           </div>
-          {/* How much to trust it, in the same words the detail sheet uses: a verdict a reader cannot
+          {/* How much to trust it, in the same words the stream's page uses: a verdict a reader cannot
               weigh is a verdict they either over-trust or ignore. */}
           <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground/80">{evidence(stream)}</p>
           <div className="mt-1.5">

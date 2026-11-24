@@ -2731,40 +2731,11 @@ public static class LineageEndpoints
                 return "subscriber";
             }
 
-            // A dataset of an external system is captioned by its system ("record type", "message queue"), which
-            // says what the node is far better than the generic kind would.
-            if (ServerIdentity.DatasetSystem(key) is { } datasetSystem)
-            {
-                return datasetSystem.Replace('-', ' ');
-            }
-
-            // An object only lineage descriptions name is captioned by its system for the same reason.
-            if (LineageDescribedObject.SystemOf(key) is { } describedSystem)
-            {
-                return describedSystem.Replace('-', ' ');
-            }
-
-            if (key.StartsWith("file|", StringComparison.Ordinal))
-            {
-                // A "file" node whose identity is a remote endpoint is the acquisition's external SOURCE, not a
-                // lake file: caption it by what it is so the graph reads "api -> flow -> file -> table".
-                var name = key[(key.LastIndexOf('|') + 1)..];
-                if (name.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                    || name.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                {
-                    return "api";
-                }
-
-                return name.StartsWith("sftp://", StringComparison.OrdinalIgnoreCase) ? "sftp" : "file";
-            }
-
-            if (locations.TryGetValue(key, out var l) && !string.IsNullOrEmpty(l.Kind)
-                && !string.Equals(l.Kind, "Unknown", StringComparison.OrdinalIgnoreCase))
-            {
-                return l.Kind!.ToLowerInvariant();
-            }
-
-            return viewKeys.Contains(key) ? "view" : "table";
+            // What the key says (a dataset's or a described object's system, a file location's reach), then what
+            // the registry records: the rule every drawing captions an object by (LineageObjectKinds).
+            return LineageObjectKinds.OfKey(key)
+                ?? LineageObjectKinds.OfRegistry(locations.TryGetValue(key, out var l) ? l.Kind : null)
+                ?? (viewKeys.Contains(key) ? "view" : "table");
         }
 
         var includedSet = includedObjects as ISet<string> ?? new HashSet<string>(includedObjects, StringComparer.Ordinal);

@@ -109,6 +109,14 @@ mod tests {
     /// were learned from, which the documentation describes generically.
     const FORBIDDEN: &[&str] = &["\u{2014}", "recall", "equinor", "petrodb", "stat_comp", "norway_welldb", "statoil"];
 
+    /// The pages about the GUI's Equinor design (decision 0047), the one place a page names that company: the design is
+    /// called so, and loads the company's typeface and logo from its own service. Every other page stays generic.
+    const NAME_THE_DESIGN: &[&str] = &[
+        "osdu/docs/reference/concepts/gui-designs.md",
+        "osdu/docs/reference/concepts/gui.md",
+        "osdu/docs/wiki/decisions/0047-designs-picked-per-person.md",
+    ];
+
     fn repo_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().expect("the repository root")
     }
@@ -255,7 +263,11 @@ mod tests {
     fn pages_are_generic_and_follow_the_writing_rules() {
         for page in pages() {
             let lower = page.body.to_lowercase();
+            let names_the_design = NAME_THE_DESIGN.contains(&page.meta.path.as_str());
             for word in FORBIDDEN {
+                if *word == "equinor" && names_the_design {
+                    continue;
+                }
                 assert!(!lower.contains(word), "{} contains {word:?}", page.meta.path);
             }
         }

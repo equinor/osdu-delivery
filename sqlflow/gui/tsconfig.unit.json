@@ -37,6 +37,7 @@
     "src/features/chat/columnLineage.ts",
     "src/features/chat/explain.ts",
     "src/features/chat/queryResultPlan.ts",
+    "src/features/datastreams/streamPathModel.ts",
     "src/features/lineage/graphBands.ts",
     "src/features/lineage/graphLayout.ts",
     "src/features/lineage/graphModel.ts",

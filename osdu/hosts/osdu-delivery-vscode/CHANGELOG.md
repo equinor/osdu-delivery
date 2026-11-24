@@ -5,6 +5,15 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.6]
 
+### Data streams
+
+- **A data stream has a page of its own.** A row on the Data streams board, or **Open data stream** in the lineage graph,
+  opens the stream followed end to end: where its data enters, the `pre` table, the ingestion flow and what it keys into,
+  and every flow after it, with a strip of fires to pick one from and each card saying what happened in that fire (the
+  files that arrived, what each run took in and changed, what a delivery delivered, where the data stopped). A node opens
+  on the right with its run in the fire and its verdict over the window
+  ([following one data stream](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/guides/follow-a-data-stream.md)).
+
 ### Saving an environment
 
 - Saving an environment in a window that opened before the extension was installed or updated said only that

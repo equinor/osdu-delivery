@@ -376,6 +376,29 @@ public static class RunEndpoints
         return items.Select(i => i with { StartedBy = startedBy[i.RunId] }).ToList();
     }
 
+    /// <summary>
+    /// The summaries of the runs named, in the shape the runs list serves them (<see cref="RunSummaryDto"/>, with what
+    /// started each and, when asked, the counts its result reports), for a surface that picks its runs by its own rule
+    /// and shows them as the runs list would: a data stream's path, which groups the runs of several flows by the fire
+    /// that started them. Unordered; a run id that names no run is left out.
+    /// </summary>
+    internal static async Task<List<RunSummaryDto>> SummariesOfAsync(
+        CatalogDbContext db, IReadOnlyCollection<Guid> runIds, bool resultCounts, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(runIds);
+        if (runIds.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = runIds.Distinct().ToList();
+        var items = await ProjectSummaries(db, JoinPipelines(db, db.Runs.AsNoTracking().Where(r => ids.Contains(r.RunId))), false)
+            .ToListAsync(ct).ConfigureAwait(false);
+        items = await WithStartedByAsync(db, items, ct).ConfigureAwait(false);
+        return resultCounts ? await WithResultCountsAsync(db, items, ct).ConfigureAwait(false) : items;
+    }
+
     /// <summary>The page's summaries with the counts each run's result reports (<see cref="RunResultCounts"/>), read for
     /// the whole page in one query by run id. Only a list asked for them pays for it: a result runs to
     /// <see cref="CatalogProjection.MaxResultJsonChars"/> characters, and SQLFlow's own kinds have their row counts on the
@@ -1131,7 +1154,7 @@ public static class RunEndpoints
     /// value (how query-string binding materializes an ISO instant with a 'Z' suffix) is converted, an already-UTC
     /// value is kept, and an unspecified-kind value is taken to be UTC (every timestamp in the API is UTC by
     /// contract).</summary>
-    private static DateTime ToUtc(DateTime value)
+    internal static DateTime ToUtc(DateTime value)
         => value.Kind switch
         {
             DateTimeKind.Utc => value,

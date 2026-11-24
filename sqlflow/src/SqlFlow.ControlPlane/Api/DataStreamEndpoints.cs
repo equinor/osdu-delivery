@@ -161,7 +161,7 @@ public sealed record DataStreamsDto(
 /// The analysis itself is <see cref="StreamAnomalyDetector"/>, which shares its estimators with the
 /// health-check engine so the two surfaces cannot disagree about what abnormal means.
 /// </summary>
-public static class DataStreamEndpoints
+public static partial class DataStreamEndpoints
 {
     /// <summary>The widest window the board accepts. Past this the per-stream change-point search stops being
     /// an interactive read, and the older history is a different regime anyway.</summary>
@@ -230,6 +230,7 @@ public static class DataStreamEndpoints
         var streams = group.MapGroup("/datastreams").WithTags("DataStreams");
         streams.MapGet(string.Empty, GetDataStreamsAsync).WithName("GetDataStreams");
         streams.MapGet("/{pipelineId:guid}", GetDataStreamAsync).WithName("GetDataStream");
+        streams.MapGet("/{pipelineId:guid}/path", GetStreamPathAsync).WithName("GetStreamPath");
 
         return group;
     }
@@ -331,7 +332,7 @@ public static class DataStreamEndpoints
     private static async Task<DataStreamsDto> ComputeAsync(
         CatalogDbContext db, TimeProvider clock, DataStreamOptions classification, int windowDays, Guid? repoId,
         string? batch, bool includeBackfills, bool includeUnscheduled, string scope,
-        IReadOnlyList<Guid>? pipelineIds, bool includeSeries, CancellationToken ct)
+        IReadOnlyList<Guid>? pipelineIds, bool includeSeries, CancellationToken ct, ScopeGraph? loadedGraph = null)
     {
         var now = clock.GetUtcNow().UtcDateTime;
         var fromUtc = now.Date.AddDays(-(windowDays - 1));
@@ -388,7 +389,7 @@ public static class DataStreamEndpoints
         // The written object and its SCHEMA, for every candidate. Resolved before the analysis rather than
         // after the ranking, because which side of the source/internal split a stream falls on decides whether
         // it is analysed at all.
-        var graph = await LoadScopeGraphAsync(db, repoId, ct).ConfigureAwait(false);
+        var graph = loadedGraph ?? await LoadScopeGraphAsync(db, repoId, ct).ConfigureAwait(false);
         var classifier = new ScopeClassifier(
             graph,
             meta.ToDictionary(m => m.Key, m => m.Value.Kind),
@@ -636,14 +637,17 @@ public static class DataStreamEndpoints
     }
 
     /// <summary>
-    /// The lineage a stream is classified from: what each pipeline writes (with the schema, for the override),
-    /// what each pipeline reads, and which pipelines produce each object. Two queries over the repo's edges,
-    /// joined to the object registry for the write side.
+    /// The lineage a stream is classified from: what each pipeline writes (its target, with the schema for the
+    /// override), what each pipeline reads, and which pipelines produce each object, all over the objects the registry
+    /// holds; and, for following a stream's path, every object each pipeline writes, registered or not (an export's
+    /// file location has no registry row, and is still where that flow's data goes). Two queries over the repo's
+    /// edges, the write side joined to the object registry.
     /// </summary>
     private sealed record ScopeGraph(
         Dictionary<Guid, (string? Name, string? Schema, string? Key, string? Kind)> Targets,
         Dictionary<Guid, List<string>> Reads,
-        Dictionary<string, List<Guid>> Producers);
+        Dictionary<string, List<Guid>> Producers,
+        Dictionary<Guid, List<string>> Writes);
 
     /// <summary>
     /// The target's QUALIFIED name. The bare object name is not an identity: one dataset routinely exists as a
@@ -661,32 +665,46 @@ public static class DataStreamEndpoints
     private static async Task<ScopeGraph> LoadScopeGraphAsync(
         CatalogDbContext db, Guid? repoId, CancellationToken ct)
     {
-        var writes = await db.LineageEdges.AsNoTracking()
-            .Where(e => e.PipelineId != null && e.Relation == "Writes" && (repoId == null || e.RepoId == repoId))
-            .Join(db.Objects.AsNoTracking(), e => e.ObjectKey, o => o.Key, (e, o) => new
-            {
-                PipelineId = e.PipelineId!.Value, e.ObjectKey, e.ObjectName, e.Tier,
-                o.Database, o.Schema, ObjectRealName = o.Name, o.Kind,
-            })
+        var allWrites = await (
+                from e in db.LineageEdges.AsNoTracking()
+                where e.PipelineId != null && e.Relation == "Writes" && (repoId == null || e.RepoId == repoId)
+                join o in db.Objects.AsNoTracking() on e.ObjectKey equals o.Key into registered
+                from o in registered.DefaultIfEmpty()
+                select new
+                {
+                    PipelineId = e.PipelineId!.Value, e.ObjectKey, e.ObjectName, e.Tier,
+                    Database = o != null ? o.Database : null,
+                    Schema = o != null ? o.Schema : null,
+                    ObjectRealName = o != null ? o.Name : null,
+                    Kind = o != null ? o.Kind : null,
+                    Registered = o != null,
+                })
             .ToListAsync(ct).ConfigureAwait(false);
+        var writes = allWrites.Where(w => w.Registered).ToList();
 
         var reads = await db.LineageEdges.AsNoTracking()
             .Where(e => e.PipelineId != null && e.Relation == "Reads" && (repoId == null || e.RepoId == repoId))
             .Select(e => new { PipelineId = e.PipelineId!.Value, e.ObjectKey })
             .ToListAsync(ct).ConfigureAwait(false);
 
-        // A flow can write several objects (a staging table and its target). The DECLARED edge is the flow's
-        // own target; anything else is derived from a module body, so it is used only when nothing declared
-        // exists.
+        // A flow can write several objects (a staging table and its target, a table and a view over it). The
+        // DECLARED edge is the flow's own target; anything else is derived from a module body, so it is used only
+        // when nothing declared exists. Among several declared, a table outranks a view over it, and the key
+        // decides the rest, so the same flow names the same target on every read rather than whichever edge the
+        // query happened to return first.
         var targets = writes
             .GroupBy(w => w.PipelineId)
             .ToDictionary(
                 g => g.Key,
                 g =>
                 {
-                    var best = g.FirstOrDefault(w => w.Tier == "Declared") ?? g.First();
+                    var best = g
+                        .OrderBy(w => w.Tier == "Declared" ? 0 : 1)
+                        .ThenBy(w => string.Equals(w.Kind, "table", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                        .ThenBy(w => w.ObjectKey, StringComparer.Ordinal)
+                        .First();
                     return ((string?)Qualify(best.Database, best.Schema, best.ObjectRealName ?? best.ObjectName),
-                        best.Schema, (string?)best.ObjectKey, (string?)best.Kind);
+                        (string?)best.Schema, (string?)best.ObjectKey, (string?)best.Kind);
                 });
 
         return new ScopeGraph(
@@ -695,7 +713,15 @@ public static class DataStreamEndpoints
                 .ToDictionary(g => g.Key, g => g.Select(r => r.ObjectKey).Distinct().ToList()),
             writes.GroupBy(w => w.ObjectKey, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Select(w => w.PipelineId).Distinct().ToList(),
-                    StringComparer.OrdinalIgnoreCase));
+                    StringComparer.OrdinalIgnoreCase),
+            allWrites.GroupBy(w => w.PipelineId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(w => w.Tier == "Declared" ? 0 : 1)
+                        .ThenBy(w => w.ObjectKey, StringComparer.Ordinal)
+                        .Select(w => w.ObjectKey)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()));
     }
 
     /// <summary>

@@ -103,7 +103,7 @@ export function recentWeek(sparkline: StreamSparkline): { actual: number; expect
 
 /** A volume finding with its size in it, when the last week points the same way the finding does. When it
  * does not (an outlying day the week has since recovered from), the bare label is the honest headline and the
- * numbers stay in the hover panel and the detail sheet. */
+ * numbers stay in the hover panel and the stream's own page. */
 function volumeFinding(stream: DataStream, label: string, direction: "below" | "above"): string {
   const week = recentWeek(stream.sparkline);
   if (week === null || week.expected <= 0) {
@@ -188,7 +188,7 @@ export function evidence(stream: DataStream): string {
 
 /**
  * The recurring delivery in a few words, for the one line a board row can spare: "bigger load every 14 days",
- * "bigger load once a month". The full sentence, with sizes and the next due date, is in the detail sheet.
+ * "bigger load once a month". The full sentence, with sizes and the next due date, is on the stream's own page.
  */
 export function cycleHint(pattern: StreamPattern): string | null {
   const cycle = pattern.cycle;

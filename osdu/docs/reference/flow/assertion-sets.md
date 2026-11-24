@@ -214,7 +214,7 @@ line reads at, with what it is about beside it:
   (`60 ± 0.0001`), **Found** (`53.1875`, with the row it was read from) and **Off by** (`-6.8125`).
 - **The checks that hold**, a line each: the mark that says it holds, what the check tests, whole
   (`data.WellboreID resolves to a master-data--Wellbore`, `record count equals 1`), under the `name` its document gives
-  it when it gives one, and the value it found (`STAT_COMP`, `m (3), gAPI (2), g/cm3, +5 more`, `6 proof values`). The
+  it when it gives one, and the value it found (`ACME_COMP`, `m (3), gAPI (2), g/cm3, +5 more`, `6 proof values`). The
   line never says in words that the check holds: its mark does. With more than 3 of them under cards they are folded
   behind one line.
 - **What the check did**, a click on a check's line, or the line of that name on a card

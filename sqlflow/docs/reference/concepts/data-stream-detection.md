@@ -43,8 +43,8 @@ Every run the platform records carries how many rows it inserted, updated, and d
 It is exposed in four places, all computing the same analysis on each request (nothing is stored):
 
 - The control plane's `GET /api/v1/datastreams` (the board, ranked most urgent first) and `GET /api/v1/datastreams/{pipelineId}` (one stream with its full day-by-day series), in `src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs`. The board also takes a repeatable `pipelineId` query parameter (at most `MaxNamedStreams`, 200) for a caller that already knows which streams it is asking about; the other filters still apply on top of it, so such a caller normally sends `scope=all&includeUnscheduled=true` with it.
-- The GUI's **Data streams** page, which renders the board with a two-week sparkline per row and a detail sheet per stream.
-- The GUI's **Lineage graph**, which names the flows it has drawn on the board endpoint and shows their verdicts in its Details panel: the counts over the whole drawing, a glyph beside each flow in the wave list and the edge legend, and, for whichever node is focused, the verdict of the flow that writes it (a table, view or landed file is judged by its producer). The full sheet is the same one the Data streams page opens.
+- The GUI's **Data streams** page, which renders the board with a two-week sparkline per row; a row opens the stream's own page, which follows it end to end with every flow's verdict on its path ([following one data stream](../guides/follow-a-data-stream.md), served by `GET /api/v1/datastreams/{pipelineId}/path`).
+- The GUI's **Lineage graph**, which names the flows it has drawn on the board endpoint and shows their verdicts in its Details panel: the counts over the whole drawing, a glyph beside each flow in the wave list and the edge legend, and, for whichever node is focused, the verdict of the flow that writes it (a table, view or landed file is judged by its producer). **Open data stream** there opens the same stream page.
 - The MCP tool `detect_stream_anomalies`, which returns the board or, given `pipelineId` or `flowName`, the single-stream drill-down with every detector's reasoning.
 
 ## What is analysed, and what is not
@@ -155,7 +155,7 @@ The confirmation rule: `ConfirmationThreshold` = 2 independent detectors must ag
 
 ## Reading one stream's evidence
 
-The single-stream response (`pipelineId` or `flowName` on the tool, the detail sheet in the GUI) carries everything the verdict rests on:
+The single-stream response (`pipelineId` or `flowName` on the tool, a flow's panel on the stream's page in the GUI) carries everything the verdict rests on:
 
 - `signals`: all six detectors with `fired`, `score`, `direction`, `primary`, and the `detail` sentence. The quiet ones say what they measured, which is the case FOR the stream.
 - `profile`: the learned pattern (`shape`, `loadDays`, `typicalRows` with its `lowRows` to `highRows` band, `reliability`, `changeDriven`, any `cycle` with its period, size and next due date, and a `description` sentence), the run cadence and where it came from, `deliveryShare`, `expectedDays`, `unexpectedNullDays` split into `emptyRunDays` and `noRunDays`, `predictedNullDays`, `trimmedLoadDays` and the `trimFence`, the trend, and the averages per run and per loading day.
@@ -184,3 +184,4 @@ flow runs: it wrote rows on 1 of the 23 day(s) its flow ran and succeeded".
 - [Health-check detection engine internals](healthcheck-engine.md): the trend, imputation, ESD, PELT and robust statistics this detector reuses.
 - [Health-check flow (flowType: hc)](../flow/hc.md): the per-table health check for the tables that warrant one.
 - [Control plane](control-plane.md): the API surface the board and the MCP tool read.
+- [Following one data stream end to end](../guides/follow-a-data-stream.md): one stream's path, fire by fire, with these verdicts on every flow of it.

@@ -3733,6 +3733,47 @@
       ]
     },
     {
+      "id": "guide-follow-a-data-stream",
+      "corpus": "reference",
+      "path": "guides/follow-a-data-stream.md",
+      "title": "Following one data stream end to end: what arrived, and what each flow did with it",
+      "type": "guide",
+      "summary": "A stream's own page: the path its data takes, the fires through it, what each flow's run did in one fire, and the API answer behind it.",
+      "keywords": [
+        "data streams",
+        "follow a stream",
+        "stream path",
+        "what did the vendor deliver",
+        "pre table",
+        "ingestion table",
+        "fire",
+        "run group",
+        "files delivered",
+        "where did the data stop",
+        "datastreams path"
+      ],
+      "related": [
+        "concept-data-stream-detection",
+        "guide-lineage-graph",
+        "concept-lineage-graph-and-plan",
+        "concept-control-plane"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.Path.cs",
+        "src/SqlFlow.ControlPlane/Api/StreamPathWalk.cs",
+        "src/SqlFlow.ControlPlane/Api/DataStreamEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunEndpoints.cs",
+        "gui/src/features/datastreams/StreamPathPage.tsx",
+        "gui/src/features/datastreams/StreamPathCanvas.tsx",
+        "gui/src/features/datastreams/StreamPathPanel.tsx",
+        "gui/src/features/datastreams/StreamFireStrip.tsx",
+        "gui/src/features/datastreams/streamPathModel.ts",
+        "gui/unit/streamPath.test.ts",
+        "tests/SqlFlow.ControlPlane.Tests/StreamPathWalkTests.cs",
+        "tests/SqlFlow.ControlPlane.Tests/StreamPathApiTests.cs"
+      ]
+    },
+    {
       "id": "guide-foreign-db-ingestion",
       "corpus": "reference",
       "path": "guides/foreign-db-ingestion.md",

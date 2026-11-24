@@ -148,7 +148,9 @@ further away stay collapsed: the trace is exact where you are looking and coarse
 
 A click selects a node: its producers light up in violet, its consumers in green, the rest fades, and the details
 panel opens with what the node is, how many nodes are upstream and downstream of it, its delivery verdict from the data
-streams board, and the lists of what it reads and writes (or, for a folder or a stack, what it holds). A double click
+streams board (**Open data stream** follows that stream end to end on its own page, see
+[following one data stream](follow-a-data-stream.md)), and the lists of what it reads and writes (or, for a folder or
+a stack, what it holds). A double click
 opens what the node stands for: a folder's flows, a stack's nodes, a flow's pipeline page, an object in the explorer.
 The right-click menu offers the same, the node's YAML or SQL, and running a flow of the scope's own repository.
 

@@ -7,7 +7,7 @@ import type {
   AccessToken, AllSearchResult, Attention, AuthProviders,
   ChatAskRequest, ChatCapabilities, ChatConversation, ChatConversationsPurged, ChatMessage, ChatTranscription,
   ColumnHit, ComputeTask, ComputeTaskAccepted, ComputeTaskRequest,
-  DataStream, DataStreams, DispatchSnapshot, EstateEnvironments,
+  DataStream, DataStreams, DispatchSnapshot, EstateEnvironments, StreamPath,
   ComputeTaskSummary, CreateAccessTokenRequest, CreateNotificationSubscriptionRequest, CreateScheduleRequest, CreatedAccessToken,
   CheckRepoAccessRequest, CreateUserRequest, Dashboard, Datasource, DefinitionHit, DiscoveredFlow,
   GitCredentialsStatus, GitHubAppCheck,
@@ -133,6 +133,10 @@ export const dataStreamApi = {
   /** One stream in full: the day-by-day series the chart draws, and every detector's reasoning. */
   get: (pipelineId: string, days?: number, includeBackfills?: boolean) =>
     get<DataStream>(`/api/v1/datastreams/${pipelineId}`, { days, includeBackfills }),
+  /** One stream followed end to end: the path its data takes, each flow's verdict, and the latest fires through it.
+   * `before` is the previous answer's olderThanUtc, to read the fires older than those it held. */
+  path: (pipelineId: string, query: { days?: number; includeBackfills?: boolean; before?: string } = {}) =>
+    get<StreamPath>(`/api/v1/datastreams/${pipelineId}/path`, query as QueryParams),
 };
 
 // ---- Repos and pipelines ----------------------------------------------------------------------------------------------

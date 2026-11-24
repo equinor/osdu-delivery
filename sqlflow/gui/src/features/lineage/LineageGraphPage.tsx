@@ -28,7 +28,6 @@ import type { DataStream, RunScope, StreamStatus } from "../../api/types";
 import { CodeView } from "../../components/CodeView";
 import { CorrelationError } from "../../components/CorrelationError";
 import { EmptyState } from "../../components/EmptyState";
-import { StreamDetailSheet } from "../datastreams/StreamDetailSheet";
 import { statusIcons, statusInk } from "../datastreams/StreamStatusBadge";
 import { statusLabels, statusRank } from "../datastreams/streamPresentation";
 import { StreamVerdictCard } from "../datastreams/StreamVerdictCard";
@@ -179,7 +178,6 @@ export default function LineageGraphPage() {
   const [nodeMenu, setNodeMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [scriptTarget, setScriptTarget] = useState<{ key: string; view?: "object" } | null>(null);
   const [runDialog, setRunDialog] = useState<{ flowName: string; scope: RunScope } | null>(null);
-  const [streamTarget, setStreamTarget] = useState<{ pipelineId: string; flowName: string } | null>(null);
   const [centerRequest, setCenterRequest] = useState<CenterRequest | null>(null);
   const [previewWaves, setPreviewWaves] = useState<ReadonlySet<number> | null>(null);
   // The data-streams board owns these two preferences; the graph reads them rather than keeping its own, so a
@@ -1051,7 +1049,7 @@ export default function LineageGraphPage() {
                                 known={verdictByFlow.get(producer.pipelineId)}
                                 windowDays={streamWindowDays}
                                 includeBackfills={streamIncludeBackfills}
-                                onOpen={(pipelineId, flowName) => setStreamTarget({ pipelineId, flowName })}
+                                onOpen={(pipelineId) => navigate(`/datastreams/${pipelineId}`)}
                               />
                             ))}
                           </div>
@@ -1197,13 +1195,6 @@ export default function LineageGraphPage() {
 
       {/* The full analysis behind the panel's verdict: the same sheet the data-streams board opens, so a
           stream checked while tracing lineage and one checked from the board are the same page. */}
-      <StreamDetailSheet
-        pipelineId={streamTarget?.pipelineId ?? null}
-        flowName={streamTarget?.flowName ?? null}
-        windowDays={streamWindowDays}
-        includeBackfills={streamIncludeBackfills}
-        onClose={() => setStreamTarget(null)}
-      />
     </div>
   );
 }

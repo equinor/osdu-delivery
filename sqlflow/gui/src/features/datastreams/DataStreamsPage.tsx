@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Activity, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +22,6 @@ import { RelativeTime } from "../../components/RelativeTime";
 import { RichTooltip } from "../../components/RichTooltip";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { pollingInterval } from "../../hooks/usePolling";
-import { StreamDetailSheet } from "./StreamDetailSheet";
 import { StreamSparkline } from "./StreamSparkline";
 import { StreamStatusBadge, StreamStatusCounts } from "./StreamStatusBadge";
 import {
@@ -155,7 +155,8 @@ function missedCaption(profile: StreamProfile): string {
  * underneath. Then the proof: the last two weeks drawn as bars against the expectation, so "less data than
  * usual" is a shape rather than a claim; when data last arrived against how often it is expected; and how many
  * expected days went by with nothing, always as "n of m days" so a zero can never be mistaken for zero rows.
- * The statistics behind each of those live one click away in the detail sheet.
+ * Clicking a row follows that stream end to end on its own page: what the vendor delivered and what each flow
+ * after it did with it, fire by fire, with the statistics behind every verdict on the path.
  *
  * Two switches change what the numbers MEAN rather than just what is shown, which is why they sit on the page
  * rather than in a menu. "Include backfills" puts operator-driven reprocessing back into the baseline, and a
@@ -174,7 +175,7 @@ export default function DataStreamsPage() {
   const [includeUnscheduled, setIncludeUnscheduled] =
     useLocalStorageState<boolean>("datastreams.includeUnscheduled", false);
   const [includeBackfills, setIncludeBackfills] = useLocalStorageState<boolean>("datastreams.includeBackfills", false);
-  const [drill, setDrill] = useState<{ pipelineId: string; flowName: string } | null>(null);
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -194,8 +195,8 @@ export default function DataStreamsPage() {
    * Re-run the analysis against the catalog as it stands right now. Every verdict on this page is computed
    * from run history on each request, so a load that landed since the last poll is invisible until something
    * asks again, and the two-minute poll is far too slow for the "I just ran it, did it help" loop. Invalidating
-   * the whole "datastreams" key deliberately takes the open detail sheet with it: a board that says one thing
-   * and a sheet that says another is worse than either alone.
+   * the whole "datastreams" key deliberately takes every stream's path with it: a board that says one thing and a
+   * stream's page that says another is worse than either alone.
    */
   const recheck = () => {
     void queryClient.invalidateQueries({ queryKey: ["datastreams"] });
@@ -570,7 +571,7 @@ export default function DataStreamsPage() {
               columns={columns}
               rows={board.streams}
               rowKey={(s) => s.pipelineId}
-              onRowClick={(s) => setDrill({ pipelineId: s.pipelineId, flowName: s.flowName })}
+              onRowClick={(s) => navigate(`/datastreams/${s.pipelineId}`)}
               grouping={grouping}
               emptyMessage="No tables to show."
               // Below this the columns would compress and clip their content instead of the card scrolling.
@@ -580,14 +581,6 @@ export default function DataStreamsPage() {
           )}
         </CardContent>
       </Card>
-
-      <StreamDetailSheet
-        pipelineId={drill?.pipelineId ?? null}
-        flowName={drill?.flowName ?? null}
-        windowDays={days}
-        includeBackfills={includeBackfills}
-        onClose={() => setDrill(null)}
-      />
     </Page>
   );
 }
