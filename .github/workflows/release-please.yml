@@ -14,3 +14,18 @@ jobs:
       contents: write # Required to update changelog file
       pull-requests: write # Required to create release PRs
     uses: equinor/ops-actions/.github/workflows/release-please-manifest.yml@af5bad1a47ab8f8c333f8910f06c1938dd962dac # v9.43.0
+
+  deploy-test:
+    name: Deploy Test
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true' || github.event_name == 'workflow_dispatch'
+    concurrency:
+      group: deploy-test
+      cancel-in-progress: false
+    permissions:
+      contents: read # Required to checkout the repository
+      id-token: write # Required to login to Azure using OIDC
+    uses: ./.github/workflows/build-and-deploy.yml
+    with:
+      environment: test
+      version: test-${{ github.run_number }}
