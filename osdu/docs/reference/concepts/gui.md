@@ -306,9 +306,7 @@ reports (`runMeasures.ts`):
 
 A node's panel lists the kind's other counts for the day (a delivery flow's unchanged, held, blocked and waiting
 records). A flow of a kind with no measure of its own (`retrieval`, `download`, `removal`) is said to have moved the
-rows its run loaded. The rail under the canvas adds up what moved through the drawing, one row per measure (records
-delivered, rows built, items cached). An `assertion` and an `inventory` flow check and move no data on (`movesData:
-false`), so the rail has no row for them.
+rows its run loaded. A selected flow's panel also holds its own days, each with what the kind counted that day.
 
 ## Runs and the trigger dialog
 

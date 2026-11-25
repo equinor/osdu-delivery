@@ -1,14 +1,14 @@
 // The lineage graph's data view (sqlflow/docs/reference/guides/lineage-graph.md, What moved): what a flow did in a
-// day or in one fire, what that says on the cards of the flows and objects around it, how the lines between them are
-// inked and weighed, the day rail's measures and tallies, and the days and fires the address names.
+// day, what that says on the cards of the flows and objects around it, how the lines between them are inked and
+// weighed, a node's own days, which days anything ran, and the day the address names.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FlowActivity, FlowActivityDay, FlowFire, FlowFireRun, RunSummary } from "../src/api/types.ts";
 import {
-  changesText, dayIndex, dayKey, dayLabel, dayTallies, edgeFigure, edgeWidth, figureLine, figureOf, figuresByDay, figuresOfFire,
-  fireFlows, firesOf, firesShareAMinute, fireTallyText, formatCount, latestDay, movementAmount, movementDays, movementRows,
-  movementText, neighbourDay, NO_RUN, nodeBars, nodeFigure, startsWeek, totalsOfDay, totalsOfRuns, type Figure, type LensNodeSpec,
+  changesText, dayIndex, dayKey, dayLabel, dayTallies, edgeFigure, edgeWidth, figureLine, figureOf, figuresByDay, firesOf,
+  formatCount, latestDay, neighbourDay, NO_RUN, nodeBars, nodeDays, nodeFigure, startsWeek, totalsOfDay, totalsOfRuns, type Figure,
+  type LensNodeSpec,
 } from "../src/features/lineage/dataLens.ts";
 import { followDataPath, readGraphParams, writeGraphParams } from "../src/features/lineage/graphUrl.ts";
 import type { RunMeasureOf } from "../src/modules/runMeasure.ts";
@@ -282,45 +282,14 @@ describe("the window, day by day", () => {
     assert.equal(neighbourDay(tallies, 3, 1), null);
   });
 
-  it("adds up what moved under each measure, in the order data goes through, and leaves a check out", () => {
-    const checked: RunMeasureOf = (counts) => ({ moved: counts.passed ?? 0, label: "checks passed", movesData: false });
-    const window: FlowActivity = {
-      ...activity,
-      flows: [
-        ...activity.flows,
-        { pipelineId: "load", days: [day({ day: 1, rowsRead: 20, files: 2, fileRows: 20, fileBytes: 512 })] },
-        { pipelineId: "check", days: [day({ day: 3, counts: { passed: 7 } })] },
-      ],
-    };
-    const byDay = figuresByDay(window, (flowId) => (flowId === "del" ? delivered : flowId === "check" ? checked : undefined));
-    const at = (flowId: string, index: number) => byDay.get(flowId)?.[index] ?? NO_RUN;
-    const rows = movementRows(
-      [
-        { id: "del", order: 3, measure: delivered },
-        { id: "check", order: 4, measure: checked },
-        { id: "ing", order: 2 },
-        { id: "pre", order: 1 },
-        { id: "load", order: 0 },
-        // A flow with no run in the window says neither what it counts nor an amount.
-        { id: "idle", order: 0 },
-      ],
-      byDay,
-    );
-    // Rows read, rows changed and records delivered are three measures: a check counts no data, and has no row.
-    assert.deepEqual(rows.map((row) => [row.key, row.title, row.flows]), [
-      ["rows-read", "Rows read", ["load"]],
-      ["rows-changed", "Rows changed", ["ing", "pre"]],
-      ["records-delivered", "Records delivered", ["del"]],
-    ]);
-
-    const changed = movementDays(rows[1], 5, at);
-    assert.deepEqual(changed[1], { ran: 2, failed: 0, moved: 9, files: 0, fileBytes: 0 });
-    assert.deepEqual(changed[3], { ran: 2, failed: 1, moved: 5, files: 0, fileBytes: 0 });
-    assert.deepEqual(changed[0], { ran: 0, failed: 0, moved: 0, files: 0, fileBytes: 0 });
-    assert.equal(movementText(changed[3]), "5, 1 flow failed");
-    assert.equal(movementText(changed[0]), "no run");
-    assert.equal(movementText(movementAmount(rows[0], (flowId) => at(flowId, 1))), "20 in 2 files");
-    assert.equal(movementText(movementAmount(rows[2], (flowId) => at(flowId, 3))), "2");
+  it("lists the days a node ran, the latest first, and steps between them", () => {
+    const bars = nodeBars(flow("ing"), 5, on);
+    assert.deepEqual(nodeDays(bars, 3, 5), { ran: [1, 3], earlier: 1, later: null, listed: [3, 1] });
+    // A day it did not run on is stepped away from in both directions, and is not a row of the list.
+    assert.deepEqual(nodeDays(bars, 2, 1), { ran: [1, 3], earlier: 1, later: 3, listed: [3] });
+    // The day looked at stays in the short list however old it is.
+    assert.deepEqual(nodeDays(bars, 1, 1).listed, [3, 1]);
+    assert.deepEqual(nodeDays(nodeBars(flow("other"), 5, on), 2, 5), { ran: [], earlier: null, later: null, listed: [] });
   });
 
   it("names a day by its UTC date, and finds it again", () => {
@@ -358,22 +327,6 @@ describe("a day's fires", () => {
     assert.deepEqual(firesOf([alone, morning], new Set(["other"])).map((fire) => fire.key), ["g1"]);
     assert.deepEqual(firesOf([alone], new Set(["pre"])), []);
   });
-
-  it("give each flow its figure in one fire", () => {
-    const figures = figuresOfFire(morning, () => undefined);
-    assert.equal(figures.get("pre")?.moved, 9);
-    assert.equal(figures.get("ing")?.outcome, "failed");
-    assert.equal(figuresOfFire(alone, () => undefined).get("pre"), undefined);
-  });
-
-  it("are told in words, and apart when they start in one minute", () => {
-    assert.equal(fireTallyText(morning), "3 runs, 1 failed");
-    assert.equal(fireTallyText(alone), "1 run, succeeded");
-    assert.equal(firesShareAMinute([morning, alone]), true);
-    assert.equal(firesShareAMinute([morning, { ...alone, startedUtc: "2026-01-05T18:00:00Z" }]), false);
-    assert.equal(fireFlows(morning), "orders_pre, orders_ing, other_ing");
-    assert.equal(fireFlows(morning, 2), "orders_pre, orders_ing and 1 more");
-  });
 });
 
 describe("the words and numbers", () => {
@@ -392,15 +345,14 @@ describe("the words and numbers", () => {
 });
 
 describe("the address", () => {
-  it("holds the data view, its day and its fire, and leaves them out when the view is off", () => {
-    const on = readGraphParams(new URLSearchParams("repoId=r&data=on&day=2026-01-08&fire=g1"));
+  it("holds the data view and its day, and leaves the day out when the view is off", () => {
+    const on = readGraphParams(new URLSearchParams("repoId=r&data=on&day=2026-01-08"));
     assert.equal(on.data, true);
     assert.equal(on.day, "2026-01-08");
-    assert.equal(on.fire, "g1");
-    assert.equal(writeGraphParams(on).toString(), "repoId=r&data=on&day=2026-01-08&fire=g1");
+    assert.equal(writeGraphParams(on).toString(), "repoId=r&data=on&day=2026-01-08");
 
     assert.equal(writeGraphParams({ ...on, data: false }).toString(), "repoId=r");
-    // A fire belongs to its day: with no day it names nothing.
+    // No day named looks at the latest one anything ran.
     assert.equal(writeGraphParams({ ...on, day: "" }).toString(), "repoId=r&data=on");
     // A day that is not a date is no day.
     assert.equal(readGraphParams(new URLSearchParams("data=on&day=today")).day, "");

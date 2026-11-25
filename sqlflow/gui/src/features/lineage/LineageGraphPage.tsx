@@ -40,13 +40,14 @@ import { GraphCanvas, type CanvasLens, type CenterRequest } from "./GraphCanvas"
 import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { kindContribution } from "../../modules/registry";
 import {
-  dayIndex, dayKey, dayLabel, dayTallies, edgeFigure, figureLine, figuresByDay, figuresOfFire, fireTime, firesOf, latestDay,
-  movementAmount, movementDays, movementRows, NO_RUN, nodeBars, nodeFigure,
-  type Figure, type LensBar, type LensNodeSpec, type MovingFlow, type NodeFigure,
+  dayIndex, dayKey, dayLabel, dayTallies, edgeFigure, figureLine, figuresByDay, firesOf, latestDay,
+  NO_RUN, nodeBars, nodeFigure,
+  type Figure, type LensBar, type LensNodeSpec, type NodeFigure,
 } from "./dataLens";
-import { DataRail, type RailRow } from "./DataRail";
+import { DayControl } from "./DayControl";
 import {
   CompactControl, DataControl, DescribedControl, KindFilter, LevelControl, MoreMenu, OrientationControl, TraceControl, ViewMenu, WaveRange,
+  WindowControl,
 } from "./GraphControls";
 import { GraphDetails } from "./GraphDetails";
 import { counted, kindLook } from "./graphKinds";
@@ -80,6 +81,7 @@ import {
   type GraphParams,
 } from "./graphUrl";
 import { createLensHoverStore, LensHoverContext } from "./lensHover";
+import { LensNodeDays } from "./LensNodeDays";
 import { LensNodeDetail } from "./LensNodeDetail";
 import { cardCaption, cardTitle, type CardActions, type CardLens } from "./LineageNodeCard";
 import { ProjectSelect, type ScopeChoice } from "./ProjectSelect";
@@ -107,6 +109,9 @@ const MAX_LENS_FLOWS = 200;
 /** The details panel's width: wider while it also says what the node did in the day looked at. */
 const DETAILS_WIDTH = 300;
 const LENS_DETAILS_WIDTH = 372;
+
+/** The chart of a node whose days are not read yet. */
+const NO_BARS: readonly LensBar[] = [];
 
 /** A card of the data view before its figures are read: its size holds, so nothing moves when they arrive. */
 const READING: NodeFigure = {
@@ -146,11 +151,11 @@ const NO_LAYOUT: BandedLayout = { positions: new Map(), lanes: [], crossStart: 0
  *     chains stay joined), folders and look-alikes drawn as one node, the steps other systems run, and which way data
  *     runs.
  *   - The line under the bar counts what is drawn, holds a trace's controls while a node is traced (only what is
- *     upstream and downstream of it, within a number of hops), and names each reduction the reader made, each one
- *     taken back there.
+ *     upstream and downstream of it, within a number of hops), names the day the data view looks at between the
+ *     arrows that step it, and names each reduction the reader made, each one taken back there.
  *   - Nothing stands on the canvas but the drawing and one control in its lower left corner (the zoom buttons, under
- *     a map of a drawing too large to see whole). A node's details dock to the canvas's right edge, and the data
- *     view's rail of what moved, day by day, to its foot.
+ *     a map of a drawing too large to see whole), and nothing stands under it. A node's details dock to the
+ *     canvas's right edge; in the data view they hold the node's own days, each with what it moved.
  *
  * Whatever is drawn is laid in bands, one per execution wave, in running order: a flow in the band of its wave, what
  * it writes under it, what it reads first above it. The order is the point of the graph, so no control breaks it.
@@ -472,7 +477,6 @@ export default function LineageGraphPage() {
       hops: null,
       direction: "both",
       day: "",
-      fire: "",
     });
   }, [patch]);
 
@@ -494,7 +498,6 @@ export default function LineageGraphPage() {
       direction: "both",
       level: null,
       day: "",
-      fire: "",
     });
   }, [patch]);
 
@@ -514,7 +517,6 @@ export default function LineageGraphPage() {
       described: false,
       data: false,
       day: "",
-      fire: "",
     }));
     setUnfoldedState({ key: drawingKey, openStacks: NOTHING, revealUp: NOTHING, revealDown: NOTHING });
   }, [patch, drawingKey]);
@@ -638,7 +640,8 @@ export default function LineageGraphPage() {
         all.add(id);
       }
     }
-    // The day rail counts the flows drawn as cards; a drawing of data alone has none, and counts the flows behind it.
+    // The day the view opens on is the latest one a flow drawn as a card ran; a drawing of data alone has no such
+    // card, and takes the flows behind its objects.
     return { tallied: [...(cards.size > 0 ? cards : all)].sort(), all: [...all].sort(), set: all };
   }, [lensSpecs]);
   const lensFlowIds = useMemo(
@@ -674,7 +677,7 @@ export default function LineageGraphPage() {
   const lensDayRan = lensDay !== null && tallies[lensDay] !== undefined
     && tallies[lensDay].moved + tallies[lensDay].empty + tallies[lensDay].failed > 0;
 
-  // The day's fires, for narrowing to one start and for each run's own detail. A day nothing ran has none to read.
+  // The day's fires, for each run's own detail in a node's details. A day nothing ran has none to read.
   const firesQuery = useQuery({
     queryKey: ["lineage-graph-fires", lensFlowIds, lensDayKey],
     enabled: lensOn && !lensTooBig && lensDayKey !== "" && lensDayRan,
@@ -684,41 +687,16 @@ export default function LineageGraphPage() {
     () => (!lensDayRan ? [] : firesQuery.data === undefined ? undefined : firesOf(firesQuery.data.fires, lensDrawn.set)),
     [lensDayRan, firesQuery.data, lensDrawn],
   );
-  const lensFire = params.fire === "" ? null : dayFires?.find((fire) => fire.key === params.fire) ?? null;
-  const fireFigures = useMemo(
-    () => (lensFire === null ? null : figuresOfFire(lensFire, measureOf)),
-    [lensFire, measureOf],
-  );
 
-  /** A flow's figure in the period looked at: the one fire picked, or the whole day. */
-  const figureFor = useCallback((flowId: string): Figure => {
-    if (fireFigures !== null) {
-      return fireFigures.get(flowId) ?? NO_RUN;
-    }
-    return lensDay === null ? NO_RUN : dayFigures?.get(flowId)?.[lensDay] ?? NO_RUN;
-  }, [fireFigures, dayFigures, lensDay]);
+  /** A flow's figure on the day looked at. */
+  const figureFor = useCallback(
+    (flowId: string): Figure => (lensDay === null ? NO_RUN : dayFigures?.get(flowId)?.[lensDay] ?? NO_RUN),
+    [dayFigures, lensDay],
+  );
   const figureOn = useCallback(
     (flowId: string, day: number): Figure => dayFigures?.get(flowId)?.[day] ?? NO_RUN,
     [dayFigures],
   );
-
-  // What moved through the drawing, one row per measure, for the day rail: each drawn flow is counted under what
-  // its kind measures, in the order data goes through the waves, so no row adds rows to records.
-  const railRows = useMemo<RailRow[]>(() => {
-    if (activity === undefined || dayFigures === null) {
-      return [];
-    }
-    const moving: MovingFlow[] = lensDrawn.tallied.map((id) => ({
-      id, order: flowById.get(id)?.wave ?? Number.MAX_SAFE_INTEGER, measure: measureOf(id),
-    }));
-    return movementRows(moving, dayFigures).map((row) => ({
-      key: row.key,
-      title: row.title,
-      flows: row.flows.length,
-      days: movementDays(row, activity.windowDays, figureOn),
-      fire: fireFigures === null ? null : movementAmount(row, (flowId) => fireFigures.get(flowId) ?? NO_RUN),
-    }));
-  }, [activity, dayFigures, lensDrawn, flowById, measureOf, figureOn, fireFigures]);
 
   // Each card's chart is the window's, whatever day is looked at, so it is drawn once for the drawing.
   const lensBars = useMemo(() => {
@@ -765,7 +743,7 @@ export default function LineageGraphPage() {
 
   const pickDay = useCallback((day: number) => {
     if (activity !== undefined) {
-      patch({ day: dayKey(activity.fromUtc, day), fire: "" });
+      patch({ day: dayKey(activity.fromUtc, day) });
     }
   }, [activity, patch]);
   const describeDay = useCallback((id: string, day: number) => {
@@ -777,7 +755,7 @@ export default function LineageGraphPage() {
 
   /** Turns the data view on around one node: its trace, with every object on it, on the latest day it ran. */
   const followData = useCallback((id: string) => {
-    patch({ data: true, trace: id, level: "all", hops: null, direction: "both", day: "", fire: "" });
+    patch({ data: true, trace: id, level: "all", hops: null, direction: "both", day: "" });
     setUnfoldedState({ ...unfolded, revealUp: NOTHING, revealDown: NOTHING });
     select(id);
   }, [patch, unfolded, select]);
@@ -797,9 +775,7 @@ export default function LineageGraphPage() {
     describeDay,
   }), [unfolded, patch, pickDay, describeDay]);
 
-  const lensPeriod = activity === undefined || lensDay === null
-    ? ""
-    : `${dayLabel(activity.fromUtc, lensDay)}${lensFire === null ? "" : `, fire of ${fireTime(lensFire.startedUtc)}`}`;
+  const lensPeriod = activity === undefined || lensDay === null ? "" : dayLabel(activity.fromUtc, lensDay);
   const selectedSpec = selectedNode === null ? undefined : lensSpecs.get(selectedNode.id);
 
   // ---- What the page says about itself ----------------------------------------------------------------------------
@@ -827,8 +803,8 @@ export default function LineageGraphPage() {
       return [];
     }
     // Only what the reader took out of the drawing, each part taken back on its own. The scope and the level are
-    // read off the bar, the trace off its own controls beside these parts, and the day looked at off the rail
-    // under the canvas; a stack is the drawing's default and says on its own node how many it holds.
+    // read off the bar, the trace and the day looked at off their own controls beside these parts; a stack is the
+    // drawing's default and says on its own node how many it holds.
     const parts: StatusPart[] = [];
     const folders = view.nodes.filter((node) => node.type === "group").length;
     if (folders > 0) {
@@ -968,7 +944,7 @@ export default function LineageGraphPage() {
         <div className="flex flex-1 basis-0 items-center justify-end gap-1">
           {scopeHasNodes && sizes !== null && view !== null && (
             <>
-              <DataControl value={params.data} onChange={(data) => patch({ data, day: "", fire: "" })} />
+              <DataControl value={params.data} onChange={(data) => patch({ data, day: "" })} />
               {/* A range half dragged when the menu closes is let go of, so the canvas does not keep its preview. */}
               <ViewMenu changes={viewChanges} onClose={() => setPreviewWaves(null)}>
                 {level !== "objects" && waveStops.length > 1 && (
@@ -1005,6 +981,7 @@ export default function LineageGraphPage() {
                   <DescribedControl value={params.described} onChange={(described) => patch({ described })} />
                 )}
                 <OrientationControl value={params.orientation} onChange={(orientation) => patch({ orientation })} />
+                {lensOn && <WindowControl value={streamWindowDays} onChange={setStreamWindowDays} />}
               </ViewMenu>
             </>
           )}
@@ -1048,6 +1025,20 @@ export default function LineageGraphPage() {
               onClear={stopTracing}
             />
           )}
+          data={lensOn && hasContent && !lensTooBig && !activityQuery.isError && (
+            activity === undefined || lensDay === null ? (
+              <Skeleton className="h-4 w-48 rounded-sm" data-testid="graph-day-loading" />
+            ) : (
+              <DayControl
+                fromUtc={activity.fromUtc}
+                day={lensDay}
+                tallies={tallies}
+                pinned={pickedDay !== null}
+                onPickDay={pickDay}
+                onLatest={() => patch({ day: "" })}
+              />
+            )
+          )}
           parts={statusParts}
           canReset={params.level !== null || params.grouped !== null || !params.stacked || params.waves !== null
             || params.hide.length > 0 || params.open.length > 0 || traceId !== "" || params.expand.length > 0
@@ -1073,6 +1064,13 @@ export default function LineageGraphPage() {
                     </Button>
                   )}
                   <Button variant="outline" size="xs" className="h-5" onClick={stopTracing}>Stop tracing</Button>
+                </span>
+              )}
+              {lensOn && hasContent && lensTooBig && (
+                <span className="inline-flex items-center gap-1.5 text-warning" data-testid="graph-day-too-big">
+                  <TriangleAlert aria-hidden className="size-3.5" />
+                  {lensFlowIds.length} flows are drawn, more than one read of what moved takes ({MAX_LENS_FLOWS}): trace a node,
+                  pick a project or narrow the waves.
                 </span>
               )}
               {payload?.truncated && (
@@ -1140,6 +1138,16 @@ export default function LineageGraphPage() {
             </>
           )}
         />
+      )}
+
+      {/* A read of what moved that failed says so here, where the day would have stood: the cards have no figures
+          to show, and a reader must not take that for a day nothing ran. */}
+      {lensOn && hasContent && !queryError && !lensTooBig && activityQuery.isError && (
+        <div className="shrink-0 border-b border-border bg-card px-3 py-2" data-testid="graph-day-error">
+          {isApiError(activityQuery.error)
+            ? <CorrelationError error={activityQuery.error} />
+            : <p className="text-[13px] text-destructive">{String(activityQuery.error)}</p>}
+        </div>
       )}
 
       <div className="relative min-h-0 flex-1">
@@ -1253,17 +1261,26 @@ export default function LineageGraphPage() {
                     onViewScript={() => setScriptTarget(selectedIsFlow ? { key: selectedNode.id, view: "object" } : { key: selectedNode.id })}
                     onViewYaml={() => setScriptTarget({ key: selectedNode.id })}
                     width={detailsWidth}
-                    data={lensOn && selectedSpec !== undefined && activity !== undefined && (
-                      <LensNodeDetail
-                        spec={selectedSpec}
-                        period={lensPeriod}
-                        fires={lensFire !== null ? [lensFire] : dayFires}
-                        firesLoading={firesQuery.isLoading}
-                        figureFor={figureFor}
-                        flowName={(id) => flowById.get(id)?.name ?? id}
-                        flowKind={(id) => flowById.get(id)?.kind ?? ""}
-                        onPick={pick}
-                      />
+                    data={lensOn && selectedSpec !== undefined && activity !== undefined && lensDay !== null && (
+                      <>
+                        <LensNodeDays
+                          fromUtc={activity.fromUtc}
+                          bars={lensBars.get(selectedSpec.id) ?? NO_BARS}
+                          day={lensDay}
+                          lineOf={(day) => figureLine(nodeFigure(selectedSpec, (flowId) => figureOn(flowId, day)))}
+                          onPick={pickDay}
+                        />
+                        <LensNodeDetail
+                          spec={selectedSpec}
+                          period={lensPeriod}
+                          fires={dayFires}
+                          firesLoading={firesQuery.isLoading}
+                          figureFor={figureFor}
+                          flowName={(id) => flowById.get(id)?.name ?? id}
+                          flowKind={(id) => flowById.get(id)?.kind ?? ""}
+                          onPick={pick}
+                        />
+                      </>
                     )}
                     stream={selectedStreams === null ? null : lensOn && selectedIsFlow ? (
                       // Beside what the flow did that day: whether that is its normal, with the pattern learned
@@ -1313,43 +1330,6 @@ export default function LineageGraphPage() {
           </ReactFlowProvider>
         )}
       </div>
-
-      {lensOn && hasContent && !queryError && (
-        lensTooBig ? (
-          <div className="shrink-0 border-t border-border bg-card px-3 py-2 text-[12px] text-muted-foreground" data-testid="data-rail-too-big">
-            {lensFlowIds.length} flows are drawn, more than one read of what moved takes ({MAX_LENS_FLOWS}). Trace a node, pick
-            a project, or narrow the waves to see what moved.
-          </div>
-        ) : activityQuery.isError ? (
-          <div className="shrink-0 border-t border-border bg-card px-3 py-2" data-testid="data-rail-error">
-            {isApiError(activityQuery.error)
-              ? <CorrelationError error={activityQuery.error} />
-              : <p className="text-[13px] text-destructive">{String(activityQuery.error)}</p>}
-          </div>
-        ) : activity === undefined || lensDay === null ? (
-          <div className="shrink-0 border-t border-border bg-card px-3 py-2" data-testid="data-rail-loading">
-            <Skeleton className="h-[60px] rounded-md" />
-          </div>
-        ) : (
-          <DataRail
-            fromUtc={activity.fromUtc}
-            tallies={tallies}
-            day={lensDay}
-            pinned={pickedDay !== null}
-            rows={railRows}
-            fires={dayFires}
-            firesLoading={firesQuery.isLoading}
-            totalFires={firesQuery.data?.totalFires ?? 0}
-            fireKey={lensFire?.key ?? ""}
-            windowDays={streamWindowDays}
-            onPickDay={pickDay}
-            onLatest={() => patch({ day: "", fire: "" })}
-            onPickFire={(key) => patch({ day: lensDayKey, fire: key })}
-            onWindowDays={setStreamWindowDays}
-            onClose={() => patch({ data: false, day: "", fire: "" })}
-          />
-        )
-      )}
 
       <DropdownMenu
         open={nodeMenu !== null}

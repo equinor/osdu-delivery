@@ -2,7 +2,8 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 
 /**
  * The day under the pointer in the data view, shared by every chart on the page: pointing at a day in one card's
- * chart, or in the day rail, lights the same day in all of them, so a day is read down the whole chain at a glance.
+ * chart, or in the selected node's days, lights the same day in all of them, so a day is read down the whole chain
+ * at a glance.
  * Held outside React's state on purpose. It changes with every pointer move across a chart, and only the charts need
  * to hear of it: through the page's state each move would redraw the canvas, its cards and its lines.
  */

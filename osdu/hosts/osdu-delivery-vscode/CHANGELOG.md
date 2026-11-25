@@ -17,10 +17,10 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 - **The lineage graph shows what moved.** **What moved** in the graph's bar makes every card say what its node did in
   the day looked at (the files that arrived, the rows a flow read and changed, what landed in a table, the records a
   delivery flow delivered) and chart it over the window, and inks and weighs every line by what it carried, so a
-  delivery is followed from where it enters to where it stopped. A rail under the canvas says how much moved on each
-  day, one row per measure (rows read, rows changed, records delivered), and picks the day, or one start of it; a node's
-  panel lists its runs that day. A row on the Data streams board opens its flow's trace this way ([following data on the
-  lineage
+  delivery is followed from where it enters to where it stopped. The line under the bar names the day looked at,
+  between the arrows that step it, and nothing stands under the canvas. A selected node's panel holds that node's own
+  days, each with what it moved, and its runs that day. A row on the Data streams board opens its flow's trace this way
+  ([following data on the lineage
   graph](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/guides/follow-a-data-stream.md)).
 
 ### Saving an environment

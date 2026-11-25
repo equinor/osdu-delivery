@@ -281,9 +281,9 @@ export function LensNodeDetail({
   spec, period, fires, firesLoading, figureFor, flowName, flowKind, onPick,
 }: {
   spec: LensNodeSpec;
-  /** The period in words: "Mon 16 Nov", or "Mon 16 Nov, fire of 04:00". */
+  /** The day looked at, in words: "Mon 16 Nov". */
   period: string;
-  /** The fires of the period through the drawn flows (the one fire looked at, or the day's); undefined while read. */
+  /** The day's fires through the drawn flows; undefined while they are read. */
   fires: readonly FlowFire[] | undefined;
   firesLoading: boolean;
   figureFor: (flowId: string) => Figure;

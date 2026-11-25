@@ -98,7 +98,7 @@ export function DataControl({ value, onChange }: { value: boolean; onChange: (va
       <TooltipContent className="max-w-xs">
         {value
           ? "Every card says what its node did in the day looked at, and charts it over the window; every line is inked and weighed by what it carried. Turn off to draw only how the nodes connect."
-          : "Show what moved through this drawing, day by day: the files that arrived, the rows each flow read and changed, what landed in each table, and where the data stopped."}
+          : "Show what moved through this drawing on a day: the files that arrived, the rows each flow read and changed, what landed in each table, and where the data stopped. A node's details then hold its own days."}
       </TooltipContent>
     </Tooltip>
   );
@@ -459,6 +459,41 @@ export function DescribedControl({ value, onChange }: { value: boolean; onChange
         onChange={onChange}
         testId="graph-described-toggle"
       />
+    </ViewSection>
+  );
+}
+
+const WINDOWS = [30, 60, 90] as const;
+
+/**
+ * How many days the data view reads: how far back every card's chart and a node's own days go. Set once in a while,
+ * so it is here and not beside the day; offered only while the graph shows what moved, where it changes something.
+ */
+export function WindowControl({ value, onChange }: { value: number; onChange: (days: number) => void }) {
+  return (
+    <ViewSection label="Days charted" testId="graph-window-control">
+      <ToggleGroup
+        type="single"
+        spacing={0.5}
+        value={String(value)}
+        onValueChange={(next) => {
+          if (next !== "") {
+            onChange(Number(next));
+          }
+        }}
+        aria-label="How many days are charted"
+        data-testid="graph-window"
+        className={cn(SEGMENTS, "w-full")}
+      >
+        {WINDOWS.map((days) => (
+          <ToggleGroupItem key={days} value={String(days)} data-testid={`graph-window-${days}`} className={cn(SEGMENT, PRESSED, "flex-1 tabular-nums")}>
+            {days} days
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      <p className="text-[11px] leading-4 text-muted-foreground">
+        How far back each card's chart and a node's own days go while What moved is on.
+      </p>
     </ViewSection>
   );
 }

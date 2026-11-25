@@ -24,20 +24,20 @@ function Entry({ stroke, dash, width, opacity = 1, name, children }: {
 }
 
 /**
- * What the data view's ink means, one click from the rail that picks its day: a line is drawn by what it carried in
- * the day looked at, and a card's chart and the rail's rows use the same inks for the same things. Each line is told
- * by its shape as well as its colour (solid, dashed, dotted), so the reading does not rest on colour. It opens on
- * request and stands on nothing: the words on the cards at a line's two ends already say what the line shows.
+ * What the data view's ink means, one click from the day it looks at: a line is drawn by what it carried in the day
+ * looked at, and every chart uses the same inks for the same things. Each line is told by its shape as well as its
+ * colour (solid, dashed, dotted), so the reading does not rest on colour. It opens on request and stands on nothing:
+ * the words on the cards at a line's two ends already say what the line shows.
  */
 export function LensLegend() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="xs" className="h-6 px-2 text-muted-foreground aria-expanded:bg-accent" data-testid="lens-legend-open">
+        <Button variant="ghost" size="xs" className="h-5 px-1.5 text-muted-foreground aria-expanded:bg-accent" data-testid="lens-legend-open">
           Key
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-72 p-3" data-testid="lens-legend">
+      <PopoverContent side="bottom" align="start" className="w-72 p-3" data-testid="lens-legend">
         <ul className="flex flex-col gap-2">
           <Entry name="Data moved" stroke="var(--chart-1)" width={3}>
             The line is heavier the more it carried.
@@ -53,7 +53,7 @@ export function LensLegend() {
           </Entry>
         </ul>
         <p className="mt-2.5 border-t border-border pt-2 text-[11px] leading-4 text-muted-foreground">
-          A bar is how much moved on its day, on a card and in the rows below. A red foot under a bar is a failed run.
+          A bar is how much moved on its day, on a card and in a node's details. A red foot under a bar is a failed run.
         </p>
       </PopoverContent>
     </Popover>

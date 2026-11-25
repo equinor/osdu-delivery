@@ -12,8 +12,6 @@ export interface KindMeasure {
   problems?: number;
   problemsLabel?: string;
   details?: { label: string; value: number }[];
-  /** False for a kind that moves no data on, so the totals of what moved through a drawing leave it out. */
-  movesData?: boolean;
 }
 
 type Counts = Readonly<Record<string, number>>;
@@ -91,7 +89,6 @@ export function assertionMeasure(counts: Counts): KindMeasure {
       { label: "warned", value: of(counts, "warned") },
       { label: "skipped", value: of(counts, "skipped") },
     ],
-    movesData: false,
   };
 }
 
@@ -103,6 +100,5 @@ export function inventoryMeasure(counts: Counts): KindMeasure {
     label: words(completed, "inventory completed", "inventories completed"),
     problems: of(counts, "failed"),
     problemsLabel: "failed",
-    movesData: false,
   };
 }

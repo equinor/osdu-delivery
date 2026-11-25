@@ -46,8 +46,6 @@ export interface GraphParams {
   data: boolean;
   /** The UTC day the data view looks at (`2026-01-31`); empty looks at the latest day anything drawn ran. */
   day: string;
-  /** The one fire of that day looked at, by its key; empty looks at the whole day. */
-  fire: string;
 }
 
 const LEVELS: readonly GraphLevel[] = ["flows", "handovers", "all", "objects"];
@@ -109,7 +107,6 @@ export function readGraphParams(search: URLSearchParams): GraphParams {
     described: search.get("described") === "on",
     data: search.get("data") === "on",
     day: /^\d{4}-\d{2}-\d{2}$/.test(search.get("day") ?? "") ? search.get("day") as string : "",
-    fire: search.get("fire") ?? "",
   };
 }
 
@@ -158,8 +155,6 @@ export function writeGraphParams(params: GraphParams): URLSearchParams {
   if (params.data) {
     search.set("data", "on");
     set("day", params.day);
-    // A fire belongs to its day: without the day it names nothing.
-    set("fire", params.day === "" ? "" : params.fire);
   }
   return search;
 }

@@ -238,7 +238,7 @@ test.describe.serial("lineage", () => {
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("layout")).toBeNull();
   });
 
-  test("the graph shows what moved, day by day, and takes it back", async ({ adminPage }) => {
+  test("the graph shows what moved on a day, and takes it back", async ({ adminPage }) => {
     await adminPage.goto("/lineage");
     await adminPage.getByTestId("graph-project-select").click();
     await adminPage.getByTestId("graph-scope-repo").first().click();
@@ -251,46 +251,49 @@ test.describe.serial("lineage", () => {
     await adminPage.goto(`/lineage?repoId=${repoId}&group=off&stacks=off`);
     await expect(graph.getByTestId("graph-node").filter({ hasText: DELIVERY_FLOW })).toHaveCount(1, { timeout: 30_000 });
 
-    // The graph says how nodes connect until it is asked what moved: no card carries a figure, and there is no rail.
+    // The graph says how nodes connect until it is asked what moved: no card carries a figure, and the line under the
+    // bar names no day.
     await expect(figures).toHaveCount(0);
-    await expect(graph.getByTestId("data-rail")).toHaveCount(0);
+    await expect(graph.getByTestId("graph-day-control")).toHaveCount(0);
 
-    // What moved puts a figure and a chart on every card and a rail of days under the canvas, and is in the address.
+    // What moved puts a figure and a chart on every card and the day looked at in the line under the bar, and is in
+    // the address. Nothing is added under the canvas.
     await graph.getByTestId("graph-data-toggle").click();
-    const rail = graph.getByTestId("data-rail");
-    await expect(rail).toBeVisible({ timeout: 30_000 });
+    const day = graph.getByTestId("graph-day-control");
+    await expect(day).toBeVisible({ timeout: 30_000 });
     await expect(graph.getByTestId("graph-data-toggle")).toHaveAttribute("aria-pressed", "true");
     expect(new URL(adminPage.url()).searchParams.get("data")).toBe("on");
     await expect(figures.first()).toBeVisible();
     await expect(figures.filter({ hasText: "Reading" })).toHaveCount(0);
     await expect(graph.getByTestId("lens-bars").first()).toBeVisible();
-    // The rail says how much moved, one row per measure: the seed ran the estate's flows, so the latest day anything
-    // ran has a measure with an amount. What each line means opens from the rail's Key.
-    await expect(rail.getByTestId("data-rail-measure").first()).toBeVisible();
-    await rail.getByTestId("lens-legend-open").click();
+    // The seed ran the estate's flows, so the latest day anything ran has a card that moved data. What each line
+    // means opens from the Key beside the day.
+    await expect(graph.locator('[data-testid="lens-figure"][data-outcome="moved"]').first()).toBeVisible();
+    await day.getByTestId("lens-legend-open").click();
     await expect(adminPage.getByTestId("lens-legend")).toContainText("Data moved");
     await adminPage.keyboard.press("Escape");
     await expect(adminPage.getByTestId("lens-legend")).toHaveCount(0);
-    await expect(graph.locator('[data-testid="lens-figure"][data-outcome="moved"]').first()).toBeVisible();
 
-    // Looking at another day names it in the address, and Latest lets go of it again.
-    await rail.getByTestId("data-rail-column").first().click();
+    // A day clicked in a card's chart is looked at and named in the address, and Latest lets go of it again.
+    await graph.getByTestId("lens-bars").first().click({ position: { x: 2, y: 5 } });
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("day")).not.toBeNull();
-    await rail.getByTestId("data-rail-latest").click();
+    await day.getByTestId("graph-day-latest").click();
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("day")).toBeNull();
 
     // The data view places a drawing for reading, from its top, so a later wave may stand below the canvas's foot:
-    // the canvas's own control fits the whole of it. A flow's panel then says what it did that day beside what it
-    // reads and writes.
+    // the canvas's own control fits the whole of it. A flow's panel then leads with the flow's own days, over what it
+    // did on the day looked at, beside what it reads and writes.
     await graph.getByTestId("graph-zoom-fit").click();
     await graph.getByTestId("graph-node").filter({ hasText: DELIVERY_FLOW }).first().click();
     const panel = graph.getByTestId("graph-focus-panel");
+    await expect(panel.getByTestId("lens-days")).toBeVisible();
     await expect(panel.getByTestId("lens-detail")).toBeVisible();
     await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
 
     // The same button takes it back, and the graph is drawn as it was.
     await graph.getByTestId("graph-data-toggle").click();
-    await expect(rail).toHaveCount(0);
+    await expect(day).toHaveCount(0);
+    await expect(panel.getByTestId("lens-days")).toHaveCount(0);
     await expect(figures).toHaveCount(0);
     expect(new URL(adminPage.url()).searchParams.get("data")).toBeNull();
   });

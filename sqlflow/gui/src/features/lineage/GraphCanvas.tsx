@@ -226,7 +226,7 @@ const CONTROL_BUTTON = "inline-flex h-7 min-w-7 shrink-0 cursor-pointer items-ce
  * The one thing that stands on the canvas: the map of the whole drawing, where one is drawn, over the three zoom
  * buttons, as a single control in the lower left corner. A drawing small enough to see whole has the buttons alone,
  * stacked, so they take the least width beside the bands' names. Everything else about the drawing is said in the
- * page's own edges: the line over the canvas, the rail under it and the details beside it.
+ * page's own edges: the line over the canvas and the details beside it.
  */
 function CanvasControl({ onFit, children }: { onFit: () => void; children: ReactNode }) {
   const flow = useReactFlow();

@@ -20,12 +20,14 @@ const INK: Record<LensBar["outcome"], string> = {
  * flatten the ordinary ones into the baseline. Nothing rests on colour alone: the tooltip names the day and says in
  * words what happened on it.
  */
-function LensBarsInner({ bars, day, width, height, describe, onPick }: {
+function LensBarsInner({ bars, day, width, height, fluid, describe, onPick }: {
   bars: readonly LensBar[];
   /** The day looked at. */
   day: number;
   width: number;
   height: number;
+  /** Drawn at the width of what holds it, in the proportions `width` and `height` give; a card's chart is not. */
+  fluid?: boolean;
   /** A day in words, for the tooltip: its date and what the node did on it. */
   describe: (day: number) => string;
   onPick: (day: number) => void;
@@ -69,6 +71,7 @@ function LensBarsInner({ bars, day, width, height, describe, onPick }: {
           // The chart takes its own clicks: a click on a day looks at that day, and must neither select the card's
           // node nor start dragging it.
           className="nodrag nopan block cursor-pointer overflow-visible"
+          style={fluid === true ? { width: "100%", height: "auto" } : undefined}
           onMouseEnter={() => setHere(true)}
           onMouseMove={(event) => store.set(dayAt(event))}
           onMouseLeave={() => {

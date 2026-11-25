@@ -123,6 +123,7 @@ the canvas redrawing behind it, and each choice says under its name what it does
 | **Draw as one** | **Folders** collapses each folder's flows into one node; **Stacks** collapses look-alike nodes. |
 | **Other systems** | **Described steps** also draws what [lineage descriptions](../flow/lin.md) say of steps other systems run: where a landed file comes from, and what reads a table after the estate. Off unless switched on, and offered only when a description touches what is drawn. Described steps and the arrows to them are dotted: stated in a document, never run or observed here ([described lineage](../concepts/described-lineage.md)). |
 | **Layout** | Which way data runs: top to bottom, or left to right. |
+| **Days charted** | How far back each card's chart and a node's own days go: 30, 60 or 90 days. There only while **What moved** is on. |
 
 ### Folders
 
@@ -182,20 +183,22 @@ be derived (a dashed warning edge, with the reason on hover and in the panel).
 **What moved** in the bar turns on the graph's data view. The drawing stays the same and every node says what happened
 to it: a card leads with what its node did in the day looked at (the files that arrived, the rows a flow read and
 changed, what landed in a table) and charts it over the window, and every line is inked and weighed by what it carried,
-so a delivery is followed from where it enters to where it stopped. A rail under the canvas says how much moved on each
-day, one row per measure (rows read, rows changed, what a module's kinds count), and picks the day and one start of it.
-A row of the Data streams board opens here, on its flow's trace. [Following data on the lineage
-graph](follow-a-data-stream.md) explains every part of it.
+so a delivery is followed from where it enters to where it stopped. The line under the bar names the day looked at,
+between the arrows that step it, and a selected node's details hold that node's own days, each with what it moved.
+Nothing stands under the canvas, and nothing adds one node's amounts to another's. A row of the Data streams board
+opens here, on its flow's trace. [Following data on the lineage graph](follow-a-data-stream.md) explains every part
+of it.
 
 ## The line under the bar
 
 The line counts how many nodes are drawn of how many are in scope, holds a trace's controls while a node is traced
-([Trace](#trace)), and names each reduction the reader made: folders collapsed, the wave range, hidden kinds, nodes the
-walk was continued past. Each has a remove button that undoes just that one, and **Reset** returns the drawing to how
-its scope opens. What the bar and the canvas already say is not repeated here: the scope and the level are read off the
-bar, the day looked at off the rail of the data view, and a stack says on its own node how many it holds. So on a
-drawing nothing was done to, the line is one count. On the right it reports what affects the drawing's truth: a scope
-cut short, flows whose lineage was not derived, and how many data streams need a look (each one a jump to its flow).
+([Trace](#trace)), names the day looked at while **What moved** is on ([What moved](#what-moved)), and names each
+reduction the reader made: folders collapsed, the wave range, hidden kinds, nodes the walk was continued past. Each
+has a remove button that undoes just that one, and **Reset** returns the drawing to how its scope opens. What the bar
+and the canvas already say is not repeated here: the scope and the level are read off the bar, and a stack says on its
+own node how many it holds. So on a drawing nothing was done to, the line is one count. On the right it reports what
+affects the drawing's truth: a scope cut short, flows whose lineage was not derived, and how many data streams need a
+look (each one a jump to its flow).
 
 ## A drawing is a link
 
@@ -214,7 +217,7 @@ The whole drawing is in the address, so it can be shared and survives a reload.
 | `trace`, `hops`, `dir` | The traced node, how many hops (left out: all), and `up` or `down` for one side. |
 | `layout` | `right` draws left to right. Left out, the graph runs top to bottom. |
 | `expand` | A node the walk was continued past; repeated. |
-| `data`, `day`, `fire` | `data=on` shows what moved; `day` (`2026-01-31`) is the day looked at, the latest day anything drawn ran when left out; `fire` is one start of that day. |
+| `data`, `day` | `data=on` shows what moved; `day` (`2026-01-31`) is the day looked at, the latest day anything drawn ran when left out. |
 
 Links written for the earlier page still open: `view=objects` is `show=objects`, and `wave=3` is `waves=3-3`.
 

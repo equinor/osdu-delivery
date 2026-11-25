@@ -14,16 +14,18 @@ export interface StatusPart {
 
 /**
  * What the canvas is showing, in as few words as say it: how much of the scope is drawn, the node the drawing is
- * traced around with the trace's own controls, and each reduction the reader made, which is taken back from here on
- * its own; Reset takes every choice back. What the bar already says (the scope, how much is drawn, the day looked
- * at) is not said a second time here, so on a drawing nothing was done to and nothing is wrong with, the line is one
- * quiet count. It has no edge of its own: it belongs to the canvas under it.
+ * traced around with the trace's own controls, the day the data view looks at with the arrows that step it, and each
+ * reduction the reader made, which is taken back from here on its own; Reset takes every choice back. What the bar
+ * already says (the scope, how much is drawn) is not said a second time here, so on a drawing nothing was done to and
+ * nothing is wrong with, the line is one quiet count. It has no edge of its own: it belongs to the canvas under it.
  */
-export function GraphStatusLine({ drawn, total, trace, parts, attention, canReset, onReset }: {
+export function GraphStatusLine({ drawn, total, trace, data, parts, attention, canReset, onReset }: {
   drawn: number;
   total: number;
   /** The trace's controls, while a node is traced. */
   trace?: ReactNode;
+  /** The day the data view looks at, while the graph shows what moved. */
+  data?: ReactNode;
   parts: readonly StatusPart[];
   /** Things the reader should know about the drawing's truth: a truncated walk, lineage not derived, stalled streams. */
   attention?: ReactNode;
@@ -46,6 +48,12 @@ export function GraphStatusLine({ drawn, total, trace, parts, attention, canRese
         <>
           <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
           {trace}
+        </>
+      )}
+      {data && (
+        <>
+          <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
+          {data}
         </>
       )}
       {parts.map((part) => (

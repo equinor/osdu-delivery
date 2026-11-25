@@ -56,7 +56,7 @@ drawn: what did the vendor deliver, and what did each of our flows do with it.
   flows, a project, a trace, or the data alone. A node's right-click menu has **Follow its data, day by day**, which
   traces the node and turns the view on, and so does **Follow its data** beside a delivery verdict in the details panel.
 
-Turning it off (the same button, or the cross at the end of the day rail) draws the graph as it was.
+Turning it off (the same button) draws the graph as it was.
 
 ## What a card says
 
@@ -105,32 +105,33 @@ shop_orders_02_ing     No change   130 read
 arc.Orders             No change
 ```
 
-**Key**, at the end of the rail under the canvas, opens what each line means. A flow that reads back the table it writes
-carries nothing on, so that line stays faint.
+**Key**, beside the day in the line under the bar, opens what each line means. A flow that reads back the table it
+writes carries nothing on, so that line stays faint.
 
 ## The day looked at
 
-The rail under the canvas says how much moved through the drawing, day by day. It holds one row per measure, in the
-order data goes through the drawing: the rows its loads read (**Rows read**, with the files they came in), the rows its
-ingestions changed (**Rows changed**), and one row for each measure a module's kinds count (records delivered, rows
-built). A row names its measure, writes its amount for the day looked at, and draws one bar per day of the window. Each
-row is drawn against its own largest day, since the measures count different things, and no row adds rows to records. A
-bar with a red foot is a day a flow of that measure failed, and a stub at the baseline is a day it ran and moved
-nothing. A flow that only checks moves no data on and has no row.
+Every card is about one day, and the line under the bar names it while the view is on. The view opens on the latest day
+anything drawn ran, and follows it.
 
-- Point at a day to read its amounts. Click it to look at that day; the arrows, and the arrow keys with the rail
-  focused, step to the nearest day anything drawn ran. **Latest** returns to the latest day anything ran, and follows
-  it.
-- A day with several starts lists them: **Whole day**, or one start and only what it ran. A start is a run group (a
-  schedule's fire, a flow run with its descendants) or a run started on its own.
-- The window is the Data streams board's own (30, 60 or 90 days), set here or there.
+- The arrows beside the day step to the nearest earlier or later day anything drawn ran. **Latest** returns to the
+  latest day, and follows it again.
+- A click on a day in any card's chart looks at that day, and so does a click in a node's own days ([a node's
+  panel](#a-nodes-panel)).
+- How far back the charts go is the Data streams board's own window (30, 60 or 90 days), set as **Days charted** under
+  **View**, or on the board.
 
 Looking at another day changes the cards and the lines at once. It never moves the canvas, and nothing is read again
-but that day's starts.
+but that day's runs.
+
+Nothing stands under the canvas, and nothing on the page adds one node's amounts to another's: how much a node moved is
+on its card, and its days are in its panel.
 
 ## A node's panel
 
-A click opens the node on the right, as in the graph, with a section for the day looked at:
+A click opens the node on the right, as in the graph. In the data view it leads with the node's own days, **Day by
+day**: its card's chart at the panel's width, and under it each day it ran with what it did that day, the latest first
+(five of them, the rest on request). A click on a bar or on a row looks at that day in the whole drawing, and the
+arrows beside the heading step over the days this node ran. Under it is a section for the day looked at:
 
 - **A flow**: what it read and changed (or its kind's counts), the files it took in, how many runs and how long, then
   each run of the day: when it started, how it went, its error whole with a copy button, the files it took in by name,
@@ -162,9 +163,6 @@ fits everything.
 - One of SQLFlow's own kinds moved what it inserted, updated and deleted, or what it read when it reports no such
   breakdown (a file load, an export). A kind a module adds says what a run of it moved through
   `FlowKindContribution.runMeasure`, read from the counts its result reports; without one it moved the rows it loaded.
-- The rail adds up the drawn flows that count the same thing, and never two measures together. A kind whose measure says
-  it moves no data on (`RunMeasure.movesData` false: a check, an inventory) has no row there; its cards still lead with
-  what it counted. A flow with no run in the window has nothing to chart.
 - An object's card says what its writers moved. A flow reports one total, so a flow writing a table and a view over it
   shows that total on both.
 - One read takes at most 200 flows. A scope within that is read whole, so drawing more or less of it asks for nothing
@@ -172,8 +170,8 @@ fits everything.
 
 ## The address
 
-The data view is part of the drawing, so it is part of the link: `data=on` turns it on, `day=2026-01-31` names the day
-looked at (left out, the latest day anything drawn ran), and `fire=...` the one start of that day.
+The data view is part of the drawing, so it is part of the link: `data=on` turns it on, and `day=2026-01-31` names the day
+looked at (left out, the latest day anything drawn ran).
 
 ## The API
 
