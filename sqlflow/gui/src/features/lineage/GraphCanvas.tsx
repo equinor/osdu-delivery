@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Background,
-  Controls,
   MarkerType,
   MiniMap,
+  Panel,
   ReactFlow,
   useNodesState,
   useReactFlow,
+  useStore,
   useStoreApi,
   type Viewport,
   type Edge as FlowEdge,
   type Node as FlowNode,
   type OnNodesChange,
 } from "@xyflow/react";
+import { Maximize, Minus, Plus } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { StreamStatus } from "../../api/types";
 import { edgeWidth, type Outcome } from "./dataLens";
 import { type CardSize, type Orientation, type Position } from "./graphLayout";
@@ -34,10 +38,11 @@ const MINIMAP_ABOVE = 60;
 const ARROW_SIZE = 18;
 /** The data view's cards are larger and placed for reading, so far fewer of them fill a window. */
 const MAP_DATA_ABOVE = 6;
-/** The data view's map, in the canvas's top left corner, and the room a drawing placed for reading leaves it. */
+/** The map of the whole drawing, over the zoom buttons in the canvas's lower left corner. */
 const MAP_WIDTH = 132;
-const MAP_HEIGHT = 164;
-const MAP_ROOM = MAP_WIDTH + 24;
+const MAP_HEIGHT = 124;
+/** The room a placed drawing keeps clear on its left for the map, where one is drawn. */
+const MAP_ROOM = MAP_WIDTH + 28;
 
 /** Up to this many edges, each one names the flows it stands for; past it the names would bury the drawing. */
 const LABEL_EVERY_EDGE_UP_TO = 30;
@@ -46,25 +51,28 @@ const LABEL_SELECTED_EDGES_UP_TO = 10;
 /** The room kept clear beside the details panel when a drawing is fitted with a node selected. */
 const DETAILS_MARGIN = 24;
 /**
- * The room a placed drawing keeps clear on its left, where the zoom control stands in the canvas's lower corner: a
- * band's name is the first thing on that side, and the control would cover the name of whichever band ends there.
+ * The room a placed drawing keeps clear on its left, where the zoom buttons stand in the canvas's lower corner: a
+ * band's name is the first thing on that side, and the buttons would cover the name of whichever band ends there.
  */
 const CONTROLS_ROOM = 56;
-/** The gap a placed drawing keeps under whatever the page stands at the canvas's top. */
-const TOP_ROOM_MARGIN = 14;
 
-/** The room the data view's map takes beside the canvas's top left corner, or none while the map is not drawn. */
-export function lensMapRoom(lensOn: boolean, nodes: number): number {
-  return lensOn && nodes > MAP_DATA_ABOVE ? MAP_ROOM : 0;
+/** Whether a drawing gets a map: one seen whole needs none, and a map of it would only cover part of it. */
+function hasMap(lensOn: boolean, nodes: number): boolean {
+  return nodes > (lensOn ? MAP_DATA_ABOVE : MINIMAP_ABOVE);
 }
 
-function fitOptions(detailsWidth: number, topRoom: number) {
+/** The room the canvas's own control takes on the left: the map over the zoom buttons, or the buttons alone. */
+function controlRoom(mapped: boolean): number {
+  return mapped ? MAP_ROOM : CONTROLS_ROOM;
+}
+
+function fitOptions(detailsWidth: number, mapped: boolean) {
   return {
     maxZoom: 1,
     padding: {
-      top: `${Math.max(24, topRoom + TOP_ROOM_MARGIN)}px`,
+      top: "24px",
       bottom: "24px",
-      left: `${CONTROLS_ROOM}px`,
+      left: `${controlRoom(mapped)}px`,
       right: `${detailsWidth > 0 ? detailsWidth + DETAILS_MARGIN : 32}px`,
     },
   } as const;
@@ -77,14 +85,19 @@ const READABLE_ZOOM = 0.74;
  * Where the data view places a drawing: whole and centred when that leaves it readable, otherwise at the least
  * readable zoom from its top, where data enters, with the node asked for (the traced or selected one) in view.
  * A chain of seven steps is taller than a window is high; shrunk to fit, none of its figures could be read, so
- * the page shows the start of it at a size that can and the reader moves down it.
+ * the page shows the start of it at a size that can and the reader moves down it. Across the reading direction
+ * the node asked for stands in the middle of the room: a traced chain is read down its own column, and a wide
+ * row of what depends on it far below would otherwise push that column to the canvas's edge.
  */
 function readableViewport(
   positions: ReadonlyMap<string, Position>,
   size: CardSize,
   canvas: { width: number; height: number },
-  room: { left: number; right: number; top: number },
+  /** `control` is the canvas's own control on the left; `left` is what the drawing itself reaches past its cards. */
+  room: { control: number; left: number; right: number },
   anchorId: string | null,
+  /** Whether the drawing reads top to bottom; otherwise it reads left to right. */
+  down: boolean,
 ): Viewport | null {
   if (positions.size === 0 || canvas.width <= 0 || canvas.height <= 0) {
     return null;
@@ -103,28 +116,36 @@ function readableViewport(
   minX -= room.left;
 
   const pad = 24;
-  const top = Math.max(pad, room.top + TOP_ROOM_MARGIN);
-  const wide = canvas.width - CONTROLS_ROOM - room.right;
+  const top = pad;
+  const wide = canvas.width - room.control - room.right;
   const high = canvas.height - top - pad;
   const zoom = Math.max(READABLE_ZOOM, Math.min(1, wide / (maxX - minX), high / (maxY - minY)));
   const anchor = anchorId === null ? undefined : positions.get(anchorId);
-  // Along one axis: centred when the drawing fits; otherwise from its start, moved only as far as brings the
-  // anchor a third of the way in, and never past either end of the drawing.
-  const along = (start: number, end: number, space: number, offset: number, anchorAt: number | undefined, anchorSize: number) => {
+  // Along one axis: centred when the drawing fits. Otherwise, in the reading direction, from its start, moved
+  // only as far as brings the anchor a third of the way in; across it, with the anchor in the middle. Never
+  // past either end of the drawing.
+  const along = (
+    start: number, end: number, space: number, offset: number, anchorAt: number | undefined, anchorSize: number, reading: boolean,
+  ) => {
     const length = (end - start) * zoom;
     if (length <= space) {
       return offset + (space - length) / 2 - start * zoom;
     }
     const fromStart = offset - start * zoom;
-    if (anchorAt === undefined || (anchorAt + anchorSize - start) * zoom <= space) {
+    if (anchorAt === undefined) {
       return fromStart;
     }
     const toEnd = offset + space - end * zoom;
-    return Math.max(toEnd, Math.min(fromStart, offset + space / 3 - anchorAt * zoom));
+    if (!reading) {
+      return Math.max(toEnd, Math.min(fromStart, offset + space / 2 - (anchorAt + anchorSize / 2) * zoom));
+    }
+    return (anchorAt + anchorSize - start) * zoom <= space
+      ? fromStart
+      : Math.max(toEnd, Math.min(fromStart, offset + space / 3 - anchorAt * zoom));
   };
   return {
-    x: along(minX, maxX, wide, CONTROLS_ROOM, anchor?.x, size.width),
-    y: along(minY, maxY, high, top, anchor?.y, size.height),
+    x: along(minX, maxX, wide, room.control, anchor?.x, size.width, !down),
+    y: along(minY, maxY, high, top, anchor?.y, size.height, down),
     zoom,
   };
 }
@@ -181,8 +202,6 @@ interface CanvasProps {
   lens: CanvasLens | null;
   /** The width the details panel covers on the right while a node is selected. */
   detailsWidth: number;
-  /** How far down from the canvas's top the page covers it (a trace's bar), which a placed drawing starts under. */
-  topRoom: number;
   /** The node a drawing placed for reading keeps in view: the one traced or selected. */
   anchorId: string | null;
   centerRequest: CenterRequest | null;
@@ -191,6 +210,76 @@ interface CanvasProps {
   onActivate: (id: string) => void;
   onNodeContextMenu: (id: string, position: { x: number; y: number }) => void;
   children?: ReactNode;
+}
+
+/**
+ * The map inside the canvas's control: the library places a map over a corner as a panel of its own, and here it is
+ * one part of a control that is already placed, so it takes its place in that control's flow and wears no edge.
+ */
+const MAP_STYLE: CSSProperties = {
+  position: "relative", margin: 0, width: MAP_WIDTH, height: MAP_HEIGHT, border: "none", borderRadius: 0,
+};
+
+const CONTROL_BUTTON = "inline-flex h-7 min-w-7 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground";
+
+/**
+ * The one thing that stands on the canvas: the map of the whole drawing, where one is drawn, over the three zoom
+ * buttons, as a single control in the lower left corner. A drawing small enough to see whole has the buttons alone,
+ * stacked, so they take the least width beside the bands' names. Everything else about the drawing is said in the
+ * page's own edges: the line over the canvas, the rail under it and the details beside it.
+ */
+function CanvasControl({ onFit, children }: { onFit: () => void; children: ReactNode }) {
+  const flow = useReactFlow();
+  const atLeast = useStore((state) => state.transform[2] <= state.minZoom);
+  const atMost = useStore((state) => state.transform[2] >= state.maxZoom);
+  const mapped = children !== null && children !== undefined && children !== false;
+  const side = mapped ? "top" as const : "right" as const;
+  return (
+    <Panel position="bottom-left" className="!m-3">
+      <div
+        data-testid="graph-canvas-control"
+        className="flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm"
+      >
+        {children}
+        <div className={cn("flex", mapped ? "border-t border-border" : "flex-col")} role="group" aria-label="Zoom">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button" className={cn(CONTROL_BUTTON, mapped && "flex-1")} disabled={atMost} aria-label="Zoom in"
+                onClick={() => void flow.zoomIn({ duration: 160 })} data-testid="graph-zoom-in"
+              >
+                <Plus aria-hidden className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={side}>Zoom in</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button" className={cn(CONTROL_BUTTON, mapped ? "flex-1 border-x border-border" : "border-y border-border")}
+                disabled={atLeast} aria-label="Zoom out"
+                onClick={() => void flow.zoomOut({ duration: 160 })} data-testid="graph-zoom-out"
+              >
+                <Minus aria-hidden className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={side}>Zoom out</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button" className={cn(CONTROL_BUTTON, mapped && "flex-1")} aria-label="Fit the whole drawing"
+                onClick={onFit} data-testid="graph-zoom-fit"
+              >
+                <Maximize aria-hidden className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={side}>Fit the whole drawing in the canvas</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </Panel>
+  );
 }
 
 function edgeLabel(edge: ViewEdge, nameOf: (id: string) => string): string {
@@ -212,7 +301,7 @@ function edgeLabel(edge: ViewEdge, nameOf: (id: string) => string): string {
  */
 export function GraphCanvas({
   view, positions, orientation, lanes, laneReach, selection, statuses, previewWaves, nameOf, colorMode, size, lens, detailsWidth,
-  topRoom, anchorId, centerRequest, actions,
+  anchorId, centerRequest, actions,
   onSelect, onActivate, onNodeContextMenu, children,
 }: CanvasProps) {
   const flow = useReactFlow();
@@ -240,15 +329,19 @@ export function GraphCanvas({
   // How a drawing is placed on the canvas. The graph of how nodes connect is fitted whole, as it always was. The
   // data view is placed for reading: its cards carry figures, and a chain shrunk until it fits shows none of them.
   // Read when a drawing is placed, never a reason to place one, so selecting a node does not move the canvas.
-  const mapped = lensMapRoom(lens !== null, view.nodes.length) > 0;
-  const placing = useRef({ readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation, topRoom });
+  const mapped = hasMap(lens !== null, view.nodes.length);
+  const placing = useRef({ readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation });
   useEffect(() => {
-    placing.current = { readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation, topRoom };
-  }, [lens, mapped, anchorId, positions, size, lanes, orientation, topRoom]);
+    placing.current = { readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation };
+  }, [lens, mapped, anchorId, positions, size, lanes, orientation]);
+  /** The whole drawing in the canvas, clear of the canvas's control on the left and of the details on the right. */
+  const fitWhole = useRef((duration: number) => {
+    void flow.fitView({ duration, ...fitOptions(detailsOpen.current, placing.current.mapped) });
+  });
   const place = useRef((duration: number) => {
     const now = placing.current;
     if (!now.readable) {
-      void flow.fitView({ duration, ...fitOptions(detailsOpen.current, now.topRoom) });
+      fitWhole.current(duration);
       return;
     }
     const { width, height } = store.getState();
@@ -258,13 +351,14 @@ export function GraphCanvas({
       : 0;
     const viewport = readableViewport(
       now.positions, now.size, { width, height },
-      // The map stands in the top left corner, so the drawing starts beside it and not under it.
+      // The canvas's control stands in the lower left corner, so the drawing starts beside it and never under it.
       {
-        left: labelRoom + (now.mapped ? MAP_ROOM : 0),
+        control: controlRoom(now.mapped),
+        left: labelRoom,
         right: detailsOpen.current > 0 ? detailsOpen.current + DETAILS_MARGIN : 24,
-        top: now.topRoom,
       },
       now.anchorId,
+      now.orientation === "down",
     );
     if (viewport !== null) {
       void flow.setViewport(viewport, { duration });
@@ -447,36 +541,34 @@ export function GraphCanvas({
           }
         }}
         fitView={lens === null}
-        fitViewOptions={fitOptions(selection !== null ? detailsWidth : 0, topRoom)}
+        fitViewOptions={fitOptions(selection !== null ? detailsWidth : 0, mapped)}
         minZoom={0.05}
         nodesConnectable={false}
         nodesDraggable
         zoomOnDoubleClick={false}
       >
         <Background />
-        <Controls showInteractive={false} />
-        {lens === null && view.nodes.length > MINIMAP_ABOVE && (
-          <MiniMap pannable zoomable nodeColor={(node) => (node.type === "lane" ? "transparent" : "var(--input)")} />
-        )}
-        {/* The data view is placed for reading, so a chain often runs past the window: its map shows the whole of
-            it at once, each node in the ink of what happened there, which is where the data stopped at a glance. */}
-        {lens !== null && mapped && (
-          <MiniMap
-            pannable
-            zoomable
-            position="top-left"
-            style={{ width: MAP_WIDTH, height: MAP_HEIGHT }}
-            ariaLabel="The whole drawing, each node in the ink of what happened there"
-            nodeBorderRadius={6}
-            nodeColor={(node) => {
-              if (node.type === "lane") {
-                return "transparent";
-              }
-              const outcome = lens.cards.get(node.id)?.figure.outcome ?? "absent";
-              return outcome === "absent" ? "var(--input)" : LENS_INK[outcome].stroke;
-            }}
-          />
-        )}
+        <CanvasControl onFit={() => fitWhole.current(240)}>
+          {/* A drawing too large to see whole gets a map of all of it. In the data view, which is placed for
+              reading and so often runs past the window, each node is in the ink of what happened there, which is
+              where the data stopped at a glance. */}
+          {mapped && (
+            <MiniMap
+              pannable
+              zoomable
+              style={MAP_STYLE}
+              ariaLabel={lens === null ? "The whole drawing" : "The whole drawing, each node in the ink of what happened there"}
+              nodeBorderRadius={6}
+              nodeColor={(node) => {
+                if (node.type === "lane") {
+                  return "transparent";
+                }
+                const outcome = lens?.cards.get(node.id)?.figure.outcome ?? "absent";
+                return outcome === "absent" ? "var(--input)" : LENS_INK[outcome].stroke;
+              }}
+            />
+          )}
+        </CanvasControl>
         {children}
       </ReactFlow>
     </CardActionsContext.Provider>

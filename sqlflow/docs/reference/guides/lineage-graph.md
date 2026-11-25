@@ -2,7 +2,7 @@
 id: guide-lineage-graph
 title: "Reading the lineage graph: scope, level, folders, stacks, waves, kinds and trace"
 type: guide
-summary: How the GUI's lineage graph decides what to draw, what its bar, its View menu and a trace's bar each change, and how a drawing is shared as a link.
+summary: How the GUI's lineage graph decides what to draw, what its bar, its View menu and a trace's controls each change, and how a drawing is shared as a link.
 keywords:
   - lineage graph
   - lineage page
@@ -41,11 +41,13 @@ sourceRefs:
 
 # Reading the lineage graph: scope, level, folders, stacks, waves, kinds and trace
 
-A repository's lineage is hundreds of nodes: every flow, and every table, view, file and dataset a flow reads or
-writes. A reader has one question at a time, so the graph at **Explore > Lineage** never draws everything it knows. It
-opens on the smallest drawing that still tells the order of things, and each control widens or narrows that drawing in
-one predictable way. The page shows as few controls as the step at hand needs: the bar holds what is chosen every
-time, the **View** menu holds how the drawing is made, and a trace brings its own bar onto the canvas.
+A repository's lineage is hundreds of nodes: every flow, and every table, view, file and dataset a flow reads or writes.
+A reader has one question at a time, so the graph at **Explore > Lineage** never draws everything it knows. It opens on
+the smallest drawing that still tells the order of things, and each control widens or narrows that drawing in one
+predictable way. The page shows as few controls as the step at hand needs: the bar holds what is chosen every time, the
+**View** menu holds how the drawing is made, and a trace's controls stand in the line under the bar. Nothing stands on
+the canvas but the drawing and one control in its lower left corner: the zoom buttons, under a map of the whole drawing
+when it is too large to see whole.
 
 ## The order: one band per wave
 
@@ -151,8 +153,8 @@ joins what they joined, so hiding `ing` flows leaves the landed table pointing a
 
 ## Trace
 
-**Trace** on a selected node (or on its menu) draws only what is upstream and downstream of it. While a node is
-traced, a bar of its own stands on the canvas, naming the node and offering:
+**Trace** on a selected node (or on its menu) draws only what is upstream and downstream of it. While a node is traced,
+the line under the bar names it and offers:
 
 - **Upstream**, **Both**, **Downstream**: what the node is made from, what a change to it reaches, or both.
 - **1, 2, 3, All**: how many hops from the node are drawn.
@@ -164,34 +166,36 @@ further away stay collapsed: the trace is exact where you are looking and coarse
 
 ## Selecting a node
 
-A click selects a node: its producers light up in violet, its consumers in green, the rest fades, and the details
-panel opens with what the node is, how many nodes are upstream and downstream of it, its delivery verdict from the data
-streams board (**Follow its data** traces the flow and turns the data view on, see [What moved](#what-moved)), and the
-lists of what it reads and writes (or, for a folder or a stack, what it holds). A double click
-opens what the node stands for: a folder's flows, a stack's nodes, a flow's pipeline page, an object in the explorer.
-The right-click menu offers the same, the node's YAML or SQL, and running a flow of the scope's own repository.
+A click selects a node: its producers light up in violet, its consumers in green, the rest fades, and the details panel
+opens along the canvas's right edge with what the node is, how many nodes are upstream and downstream of it, its
+delivery verdict from the data streams board (**Follow its data** traces the flow and turns the data view on, see [What
+moved](#what-moved)), and the lists of what it reads and writes (or, for a folder or a stack, what it holds). A double
+click opens what the node stands for: a folder's flows, a stack's nodes, a flow's pipeline page, an object in the
+explorer. The right-click menu offers the same, the node's YAML or SQL, and running a flow of the scope's own
+repository.
 
 A node wears a mark only when something needs a look: a delivery verdict other than healthy, or lineage that could not
 be derived (a dashed warning edge, with the reason on hover and in the panel).
 
 ## What moved
 
-**What moved** in the bar turns on the graph's data view. The drawing stays the same and every node says
-what happened to it: a card leads with what its node did in the day looked at (the files that arrived, the rows a flow
-read and changed, what landed in a table) and charts it over the window, and every line is inked and weighed by what
-it carried, so a delivery is followed from where it enters to where it stopped. A rail under the canvas picks the day,
-and one start of it. A row of the Data streams board opens here, on its flow's trace.
-[Following data on the lineage graph](follow-a-data-stream.md) explains every part of it.
+**What moved** in the bar turns on the graph's data view. The drawing stays the same and every node says what happened
+to it: a card leads with what its node did in the day looked at (the files that arrived, the rows a flow read and
+changed, what landed in a table) and charts it over the window, and every line is inked and weighed by what it carried,
+so a delivery is followed from where it enters to where it stopped. A rail under the canvas says how much moved on each
+day, one row per measure (rows read, rows changed, what a module's kinds count), and picks the day and one start of it.
+A row of the Data streams board opens here, on its flow's trace. [Following data on the lineage
+graph](follow-a-data-stream.md) explains every part of it.
 
 ## The line under the bar
 
-The line counts how many nodes are drawn of how many are in scope, and names each reduction the reader made: folders
-collapsed, the wave range, hidden kinds, nodes the walk was continued past. Each has a remove button that undoes just
-that one, and **Reset** returns the drawing to how its scope opens. What the bar and the canvas already say is not
-repeated here: the scope and the level are read off the bar, the trace off its own bar, the day looked at off the rail
-of the data view, and a stack says on its own node how many it holds. So on a drawing nothing was done to, the line is
-one count. On the right it reports what affects the drawing's truth: a scope cut short, flows whose lineage was not
-derived, and how many data streams need a look (each one a jump to its flow).
+The line counts how many nodes are drawn of how many are in scope, holds a trace's controls while a node is traced
+([Trace](#trace)), and names each reduction the reader made: folders collapsed, the wave range, hidden kinds, nodes the
+walk was continued past. Each has a remove button that undoes just that one, and **Reset** returns the drawing to how
+its scope opens. What the bar and the canvas already say is not repeated here: the scope and the level are read off the
+bar, the day looked at off the rail of the data view, and a stack says on its own node how many it holds. So on a
+drawing nothing was done to, the line is one count. On the right it reports what affects the drawing's truth: a scope
+cut short, flows whose lineage was not derived, and how many data streams need a look (each one a jump to its flow).
 
 ## A drawing is a link
 

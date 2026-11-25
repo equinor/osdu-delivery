@@ -523,21 +523,6 @@ export function dayTallies(
   return tallies;
 }
 
-/** "12 flows moved data, 3 ran with no change, 1 failed": a day's tally in words, the bad news first. */
-export function tallyText(tally: DayTally): string {
-  const parts: string[] = [];
-  if (tally.failed > 0) {
-    parts.push(`${tally.failed} failed`);
-  }
-  if (tally.moved > 0) {
-    parts.push(`${tally.moved} moved data`);
-  }
-  if (tally.empty > 0) {
-    parts.push(`${tally.empty} ran with no change`);
-  }
-  return parts.length === 0 ? "nothing ran" : parts.join(", ");
-}
-
 /** The latest day any of the flows ran on; null when none ran in the window. */
 export function latestDay(tallies: readonly DayTally[]): number | null {
   for (let day = tallies.length - 1; day >= 0; day--) {
@@ -556,6 +541,118 @@ export function neighbourDay(tallies: readonly DayTally[], day: number, step: -1
     }
   }
   return null;
+}
+
+/** A drawn flow the day rail may count: where data reaches it in the order of execution, and its kind's measure. */
+export interface MovingFlow {
+  id: string;
+  /** Its place in the reading order (its wave): the rail lists what moved in the order data went through. */
+  order: number;
+  measure?: RunMeasureOf;
+}
+
+/**
+ * One measure of what moved through a drawing: the drawn flows that count the same thing, so their amounts add up
+ * to a figure that means something. Rows read by the loads, rows changed by the ingestions and records delivered are
+ * three measures, never one sum.
+ */
+export interface MovementRow {
+  key: string;
+  /** The measure as a heading: "Rows read", "Rows changed", "Records delivered". */
+  title: string;
+  flows: readonly string[];
+}
+
+/** What a measure's flows moved in one period, added up. */
+export interface MovementAmount {
+  /** How many of its flows ran, and how many of those had a failed run. */
+  ran: number;
+  failed: number;
+  moved: number;
+  /** The files its flows took in, for a measure of flows that read files. */
+  files: number;
+  fileBytes: number;
+}
+
+const ROWS_READ = "Rows read";
+const ROWS_CHANGED = "Rows changed";
+
+/**
+ * The measures of a drawing, in the order data goes through them. A kind with a measure of its own is counted under
+ * that measure's words, and one that moves no data on (a check) is left out: what it counts is not data that moved.
+ * One of SQLFlow's own kinds counts the rows it changed when its runs say what they inserted, updated and deleted,
+ * and the rows it read otherwise (a file load, an export); one with no run in the window says neither, and has
+ * nothing to chart.
+ */
+export function movementRows(
+  flows: readonly MovingFlow[], figures: ReadonlyMap<string, readonly (Figure | undefined)[]>,
+): MovementRow[] {
+  const rows = new Map<string, { title: string; order: number; flows: string[] }>();
+  for (const flow of flows) {
+    let title: string;
+    if (flow.measure !== undefined) {
+      const measured = flow.measure({});
+      if (measured.movesData === false) {
+        continue;
+      }
+      title = measured.label === "" ? "Moved" : measured.label.charAt(0).toUpperCase() + measured.label.slice(1);
+    } else {
+      const ran = (figures.get(flow.id) ?? []).filter((figure) => figure !== undefined && figure.outcome !== "absent");
+      if (ran.length === 0) {
+        continue;
+      }
+      title = ran.some((figure) => figure !== undefined && figure.changes !== null) ? ROWS_CHANGED : ROWS_READ;
+    }
+
+    const row = rows.get(title);
+    if (row === undefined) {
+      rows.set(title, { title, order: flow.order, flows: [flow.id] });
+    } else {
+      row.order = Math.min(row.order, flow.order);
+      row.flows.push(flow.id);
+    }
+  }
+
+  return [...rows.values()]
+    .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+    .map((row) => ({ key: row.title.toLowerCase().replace(/[^a-z0-9]+/g, "-"), title: row.title, flows: row.flows }));
+}
+
+/** What a measure's flows moved in one period: `figureFor` gives a flow's figure in it. */
+export function movementAmount(row: MovementRow, figureFor: (flowId: string) => Figure): MovementAmount {
+  const amount: MovementAmount = { ran: 0, failed: 0, moved: 0, files: 0, fileBytes: 0 };
+  for (const flowId of row.flows) {
+    const figure = figureFor(flowId);
+    if (figure.outcome === "absent") {
+      continue;
+    }
+
+    amount.ran += 1;
+    amount.failed += figure.failed > 0 ? 1 : 0;
+    amount.moved += figure.moved;
+    amount.files += figure.files;
+    amount.fileBytes += figure.fileBytes;
+  }
+  return amount;
+}
+
+/** A measure's amount on each day of the window, oldest first: what its row of the day rail charts. */
+export function movementDays(
+  row: MovementRow, days: number, figureOn: (flowId: string, day: number) => Figure,
+): MovementAmount[] {
+  return Array.from({ length: days }, (_, day) => movementAmount(row, (flowId) => figureOn(flowId, day)));
+}
+
+/** A measure's amount in words: "991k in 57 files", "0", "1,204, 2 flows failed", "no run". */
+export function movementText(amount: MovementAmount): string {
+  if (amount.ran === 0) {
+    return "no run";
+  }
+
+  const moved = amount.files > 0
+    ? `${formatCount(amount.moved)} in ${formatCount(amount.files)} ${plural(amount.files, "file", "files")}`
+    : formatCount(amount.moved);
+  return amount.failed > 0 ? `${moved}, ${amount.failed} ${plural(amount.failed, "flow", "flows")} failed` : moved;
 }
 
 const DAY_MS = 86_400_000;

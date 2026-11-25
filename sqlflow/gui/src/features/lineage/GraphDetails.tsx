@@ -108,10 +108,12 @@ export function GraphDetails({
     .sort(byName);
 
   return (
+    // Docked to the canvas's right edge over its whole height, as the page's own side: it slides in over the
+    // drawing without taking the canvas from it, and reads as part of the frame, not as one more box on the drawing.
     <div
       data-testid="graph-focus-panel"
       style={{ width }}
-      className="flex max-h-[calc(100%-16px)] max-w-[85%] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+      className="flex h-full max-w-full flex-col overflow-hidden border-l border-border bg-card"
     >
       <div className="flex shrink-0 items-start gap-2 border-b border-border px-3 py-2">
         <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${look.iconClass}`} />

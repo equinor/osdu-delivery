@@ -74,4 +74,12 @@ describe("the other kinds' measures", () => {
       assert.equal(measure({}).moved, 0);
     }
   });
+
+  it("a check and an inventory move no data on, so what moved through a drawing leaves them out", () => {
+    assert.equal(assertionMeasure({}).movesData, false);
+    assert.equal(inventoryMeasure({}).movesData, false);
+    for (const measure of [deliveryMeasure, dimensionMeasure, cacheMeasure]) {
+      assert.notEqual(measure({}).movesData, false);
+    }
+  });
 });

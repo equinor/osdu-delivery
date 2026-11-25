@@ -13,15 +13,17 @@ export interface StatusPart {
 }
 
 /**
- * What the canvas is showing, in as few words as say it: how much of the scope is drawn, and each reduction the
- * reader made, which is taken back from here on its own; Reset takes every choice back. What the bar and the canvas
- * already say (the scope, how much is drawn, the trace, the day looked at) is not said a second time here, so on a
- * drawing nothing was done to and nothing is wrong with, the line is one quiet count. It has no edge of its own: it
- * belongs to the canvas under it.
+ * What the canvas is showing, in as few words as say it: how much of the scope is drawn, the node the drawing is
+ * traced around with the trace's own controls, and each reduction the reader made, which is taken back from here on
+ * its own; Reset takes every choice back. What the bar already says (the scope, how much is drawn, the day looked
+ * at) is not said a second time here, so on a drawing nothing was done to and nothing is wrong with, the line is one
+ * quiet count. It has no edge of its own: it belongs to the canvas under it.
  */
-export function GraphStatusLine({ drawn, total, parts, attention, canReset, onReset }: {
+export function GraphStatusLine({ drawn, total, trace, parts, attention, canReset, onReset }: {
   drawn: number;
   total: number;
+  /** The trace's controls, while a node is traced. */
+  trace?: ReactNode;
   parts: readonly StatusPart[];
   /** Things the reader should know about the drawing's truth: a truncated walk, lineage not derived, stalled streams. */
   attention?: ReactNode;
@@ -40,6 +42,12 @@ export function GraphStatusLine({ drawn, total, parts, attention, canReset, onRe
         <span className="font-medium text-foreground tabular-nums">{total}</span>
         {" drawn"}
       </span>
+      {trace && (
+        <>
+          <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
+          {trace}
+        </>
+      )}
       {parts.map((part) => (
         <span
           key={part.key}

@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import {
-  Activity, ArrowDown, ArrowRight, ChevronDown, Download, Ellipsis, Eye, EyeOff, Rows3, SlidersHorizontal, X,
+  Activity, ArrowDown, ArrowRight, ChevronDown, Crosshair, Download, Ellipsis, Eye, EyeOff, Rows3, SlidersHorizontal, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -516,12 +516,16 @@ const SIDES: readonly { value: TraceDirection; label: string; testId: string; ef
   { value: "downstream", label: "Downstream", testId: "graph-trace-downstream", effect: "Downstream only: what a change to it reaches." },
 ];
 
+/** The segments of a control that stands in the line under the bar: the same control, at the line's height. */
+const LINE_SEGMENTS = "rounded-[5px] border border-border p-px";
+const LINE_SEGMENT = "h-5 min-w-0 rounded-[3px] border border-transparent px-2 text-[12px] font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-foreground";
+
 /**
- * A trace's own controls, on the canvas the trace is drawn on and there only while a node is traced: which node,
- * which side of it, how far, and the way out. They act on one node of the drawing, so they stand with the drawing
- * and not in the bar, which then holds nothing that comes and goes.
+ * A trace's own controls, in the line under the bar and there only while a node is traced: which node, which side
+ * of it, how far, and the way out. A trace is the largest reduction a reader makes to a drawing, so it is said where
+ * the line says what is drawn, and nothing of it floats over the drawing or moves when a node's details open.
  */
-export function TraceBar({ name, hops, direction, onHops, onDirection, onClear }: {
+export function TraceControl({ name, hops, direction, onHops, onDirection, onClear }: {
   name: string;
   hops: number | null;
   direction: TraceDirection;
@@ -530,15 +534,16 @@ export function TraceBar({ name, hops, direction, onHops, onDirection, onClear }
   onClear: () => void;
 }) {
   return (
-    <div
+    <span
       role="group"
       aria-label={`Trace of ${name}`}
       data-testid="graph-trace-control"
-      className="pointer-events-auto flex max-w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-card py-1 pr-1 pl-3 shadow-sm"
+      className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
     >
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className="text-[12px] text-muted-foreground">Tracing</span>
-        <span className="max-w-[260px] truncate font-mono text-[12px] font-medium" title={name} data-testid="graph-trace-name">{name}</span>
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <Crosshair aria-hidden className="size-3.5 shrink-0 text-primary" />
+        <span className="text-muted-foreground">Tracing</span>
+        <span className="max-w-[280px] truncate font-mono font-medium" title={name} data-testid="graph-trace-name">{name}</span>
       </span>
       <ToggleGroup
         type="single"
@@ -551,12 +556,12 @@ export function TraceBar({ name, hops, direction, onHops, onDirection, onClear }
         }}
         aria-label="Side of the traced node that is drawn"
         data-testid="graph-trace-direction"
-        className={SEGMENTS}
+        className={LINE_SEGMENTS}
       >
         {SIDES.map((side) => (
           <Tooltip key={side.value}>
             <TooltipTrigger asChild>
-              <ToggleGroupItem value={side.value} data-testid={side.testId} className={cn(SEGMENT, PRESSED)}>
+              <ToggleGroupItem value={side.value} data-testid={side.testId} className={cn(LINE_SEGMENT, PRESSED)}>
                 {side.label}
               </ToggleGroupItem>
             </TooltipTrigger>
@@ -564,7 +569,7 @@ export function TraceBar({ name, hops, direction, onHops, onDirection, onClear }
           </Tooltip>
         ))}
       </ToggleGroup>
-      <span className="flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-1.5">
         <ToggleGroup
           type="single"
           spacing={0.5}
@@ -576,12 +581,12 @@ export function TraceBar({ name, hops, direction, onHops, onDirection, onClear }
           }}
           aria-label="Hops drawn around the traced node"
           data-testid="graph-trace-hops"
-          className={SEGMENTS}
+          className={LINE_SEGMENTS}
         >
           {HOPS.map((option) => (
             <Tooltip key={option.value}>
               <TooltipTrigger asChild>
-                <ToggleGroupItem value={option.value} data-testid={`graph-trace-hops-${option.value}`} className={cn(SEGMENT, PRESSED, "px-2 tabular-nums")}>
+                <ToggleGroupItem value={option.value} data-testid={`graph-trace-hops-${option.value}`} className={cn(LINE_SEGMENT, PRESSED, "px-1.5 tabular-nums")}>
                   {option.label}
                 </ToggleGroupItem>
               </TooltipTrigger>
@@ -591,16 +596,22 @@ export function TraceBar({ name, hops, direction, onHops, onDirection, onClear }
             </Tooltip>
           ))}
         </ToggleGroup>
-        <span className="text-[12px] text-muted-foreground">hops</span>
+        <span className="text-muted-foreground">hops</span>
       </span>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" onClick={onClear} aria-label="Stop tracing" data-testid="graph-trace-clear">
-            <X />
-          </Button>
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label="Stop tracing"
+            data-testid="graph-trace-clear"
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X aria-hidden className="size-3.5" />
+          </button>
         </TooltipTrigger>
         <TooltipContent>Stop tracing and draw the whole scope again.</TooltipContent>
       </Tooltip>
-    </div>
+    </span>
   );
 }

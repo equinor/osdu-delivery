@@ -1,14 +1,14 @@
 // The lineage graph's data view (sqlflow/docs/reference/guides/lineage-graph.md, What moved): what a flow did in a
 // day or in one fire, what that says on the cards of the flows and objects around it, how the lines between them are
-// inked and weighed, the day rail's tallies, and the days and fires the address names.
+// inked and weighed, the day rail's measures and tallies, and the days and fires the address names.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FlowActivity, FlowActivityDay, FlowFire, FlowFireRun, RunSummary } from "../src/api/types.ts";
 import {
   changesText, dayIndex, dayKey, dayLabel, dayTallies, edgeFigure, edgeWidth, figureLine, figureOf, figuresByDay, figuresOfFire,
-  fireFlows, firesOf, firesShareAMinute, fireTallyText, formatCount, latestDay, neighbourDay, NO_RUN, nodeBars, nodeFigure,
-  startsWeek, tallyText, totalsOfDay, totalsOfRuns, type Figure, type LensNodeSpec,
+  fireFlows, firesOf, firesShareAMinute, fireTallyText, formatCount, latestDay, movementAmount, movementDays, movementRows,
+  movementText, neighbourDay, NO_RUN, nodeBars, nodeFigure, startsWeek, totalsOfDay, totalsOfRuns, type Figure, type LensNodeSpec,
 } from "../src/features/lineage/dataLens.ts";
 import { followDataPath, readGraphParams, writeGraphParams } from "../src/features/lineage/graphUrl.ts";
 import type { RunMeasureOf } from "../src/modules/runMeasure.ts";
@@ -274,15 +274,53 @@ describe("the window, day by day", () => {
     assert.deepEqual(tallies[1], { moved: 1, empty: 1, failed: 0 });
     assert.deepEqual(tallies[3], { moved: 2, empty: 0, failed: 1 });
     assert.deepEqual(tallies[0], { moved: 0, empty: 0, failed: 0 });
-    assert.equal(tallyText(tallies[3]), "1 failed, 2 moved data");
-    assert.equal(tallyText(tallies[1]), "1 moved data, 1 ran with no change");
-    assert.equal(tallyText(tallies[0]), "nothing ran");
     assert.equal(latestDay(tallies), 3);
     assert.equal(latestDay(dayTallies(["other"], 5, figures)), null);
     assert.equal(neighbourDay(tallies, 3, -1), 1);
     assert.equal(neighbourDay(tallies, 1, -1), null);
     assert.equal(neighbourDay(tallies, 1, 1), 3);
     assert.equal(neighbourDay(tallies, 3, 1), null);
+  });
+
+  it("adds up what moved under each measure, in the order data goes through, and leaves a check out", () => {
+    const checked: RunMeasureOf = (counts) => ({ moved: counts.passed ?? 0, label: "checks passed", movesData: false });
+    const window: FlowActivity = {
+      ...activity,
+      flows: [
+        ...activity.flows,
+        { pipelineId: "load", days: [day({ day: 1, rowsRead: 20, files: 2, fileRows: 20, fileBytes: 512 })] },
+        { pipelineId: "check", days: [day({ day: 3, counts: { passed: 7 } })] },
+      ],
+    };
+    const byDay = figuresByDay(window, (flowId) => (flowId === "del" ? delivered : flowId === "check" ? checked : undefined));
+    const at = (flowId: string, index: number) => byDay.get(flowId)?.[index] ?? NO_RUN;
+    const rows = movementRows(
+      [
+        { id: "del", order: 3, measure: delivered },
+        { id: "check", order: 4, measure: checked },
+        { id: "ing", order: 2 },
+        { id: "pre", order: 1 },
+        { id: "load", order: 0 },
+        // A flow with no run in the window says neither what it counts nor an amount.
+        { id: "idle", order: 0 },
+      ],
+      byDay,
+    );
+    // Rows read, rows changed and records delivered are three measures: a check counts no data, and has no row.
+    assert.deepEqual(rows.map((row) => [row.key, row.title, row.flows]), [
+      ["rows-read", "Rows read", ["load"]],
+      ["rows-changed", "Rows changed", ["ing", "pre"]],
+      ["records-delivered", "Records delivered", ["del"]],
+    ]);
+
+    const changed = movementDays(rows[1], 5, at);
+    assert.deepEqual(changed[1], { ran: 2, failed: 0, moved: 9, files: 0, fileBytes: 0 });
+    assert.deepEqual(changed[3], { ran: 2, failed: 1, moved: 5, files: 0, fileBytes: 0 });
+    assert.deepEqual(changed[0], { ran: 0, failed: 0, moved: 0, files: 0, fileBytes: 0 });
+    assert.equal(movementText(changed[3]), "5, 1 flow failed");
+    assert.equal(movementText(changed[0]), "no run");
+    assert.equal(movementText(movementAmount(rows[0], (flowId) => at(flowId, 1))), "20 in 2 files");
+    assert.equal(movementText(movementAmount(rows[2], (flowId) => at(flowId, 3))), "2");
   });
 
   it("names a day by its UTC date, and finds it again", () => {

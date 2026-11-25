@@ -115,7 +115,7 @@ test.describe.serial("lineage", () => {
     await expect(graph.getByText(DELIVERY_FLOW, { exact: true }).first()).toBeVisible();
 
     // The jump names the repository, so the graph opens on the type's trace through it, as flows alone: the flows that
-    // lead to the type, and nothing else of the repository. The trace's bar, on the canvas, names what is traced.
+    // lead to the type, and nothing else of the repository. The line under the bar names what is traced.
     await expect(graph.getByTestId("graph-trace-name")).toContainText("osdu:wks:work-product-component--WellLog:1.4.0");
     await expect(graph.getByTestId("graph-level-flows")).toHaveAttribute("aria-checked", "true");
     await expect(graph.getByText(WELL_LOG_MAPPING, { exact: true })).toHaveCount(0);
@@ -177,8 +177,8 @@ test.describe.serial("lineage", () => {
     await expect(panel.getByTestId("graph-detail-reads")).toContainText(WELL_LOG_MAPPING);
     await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
 
-    // Trace draws only what is upstream and downstream of it, and brings its own bar onto the canvas: what is traced,
-    // which side of it, and how far.
+    // Trace draws only what is upstream and downstream of it, and puts its controls in the line under the bar: what
+    // is traced, which side of it, and how far.
     await panel.getByTestId("graph-trace-selected").click();
     const trace = graph.getByTestId("graph-trace-control");
     await expect(trace.getByTestId("graph-trace-name")).toHaveText(DELIVERY_FLOW);
@@ -264,9 +264,13 @@ test.describe.serial("lineage", () => {
     await expect(figures.first()).toBeVisible();
     await expect(figures.filter({ hasText: "Reading" })).toHaveCount(0);
     await expect(graph.getByTestId("lens-bars").first()).toBeVisible();
-    await expect(graph.getByTestId("lens-legend")).toContainText("data moved");
-    // The seed ran the estate's flows, so the latest day anything ran is one some flow moved data on.
-    await expect(rail.getByTestId("data-rail-caption")).toContainText("moved data");
+    // The rail says how much moved, one row per measure: the seed ran the estate's flows, so the latest day anything
+    // ran has a measure with an amount. What each line means opens from the rail's Key.
+    await expect(rail.getByTestId("data-rail-measure").first()).toBeVisible();
+    await rail.getByTestId("lens-legend-open").click();
+    await expect(adminPage.getByTestId("lens-legend")).toContainText("Data moved");
+    await adminPage.keyboard.press("Escape");
+    await expect(adminPage.getByTestId("lens-legend")).toHaveCount(0);
     await expect(graph.locator('[data-testid="lens-figure"][data-outcome="moved"]').first()).toBeVisible();
 
     // Looking at another day names it in the address, and Latest lets go of it again.
@@ -275,7 +279,10 @@ test.describe.serial("lineage", () => {
     await rail.getByTestId("data-rail-latest").click();
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("day")).toBeNull();
 
-    // A flow's panel says what it did that day beside what it reads and writes.
+    // The data view places a drawing for reading, from its top, so a later wave may stand below the canvas's foot:
+    // the canvas's own control fits the whole of it. A flow's panel then says what it did that day beside what it
+    // reads and writes.
+    await graph.getByTestId("graph-zoom-fit").click();
     await graph.getByTestId("graph-node").filter({ hasText: DELIVERY_FLOW }).first().click();
     const panel = graph.getByTestId("graph-focus-panel");
     await expect(panel.getByTestId("lens-detail")).toBeVisible();

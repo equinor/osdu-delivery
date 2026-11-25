@@ -36,16 +36,17 @@ import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { ExplainPageButton } from "../chat/ExplainPageButton";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
 import { useThemeMode } from "../../theme/ThemeModeContext";
-import { GraphCanvas, lensMapRoom, type CanvasLens, type CenterRequest } from "./GraphCanvas";
+import { GraphCanvas, type CanvasLens, type CenterRequest } from "./GraphCanvas";
 import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { kindContribution } from "../../modules/registry";
 import {
   dayIndex, dayKey, dayLabel, dayTallies, edgeFigure, figureLine, figuresByDay, figuresOfFire, fireTime, firesOf, latestDay,
-  NO_RUN, nodeBars, nodeFigure, type Figure, type LensBar, type LensNodeSpec, type NodeFigure,
+  movementAmount, movementDays, movementRows, NO_RUN, nodeBars, nodeFigure,
+  type Figure, type LensBar, type LensNodeSpec, type MovingFlow, type NodeFigure,
 } from "./dataLens";
-import { DataRail } from "./DataRail";
+import { DataRail, type RailRow } from "./DataRail";
 import {
-  CompactControl, DataControl, DescribedControl, KindFilter, LevelControl, MoreMenu, OrientationControl, TraceBar, ViewMenu, WaveRange,
+  CompactControl, DataControl, DescribedControl, KindFilter, LevelControl, MoreMenu, OrientationControl, TraceControl, ViewMenu, WaveRange,
 } from "./GraphControls";
 import { GraphDetails } from "./GraphDetails";
 import { counted, kindLook } from "./graphKinds";
@@ -79,11 +80,9 @@ import {
   type GraphParams,
 } from "./graphUrl";
 import { createLensHoverStore, LensHoverContext } from "./lensHover";
-import { LensLegend } from "./LensLegend";
 import { LensNodeDetail } from "./LensNodeDetail";
 import { cardCaption, cardTitle, type CardActions, type CardLens } from "./LineageNodeCard";
 import { ProjectSelect, type ScopeChoice } from "./ProjectSelect";
-import { useElementHeight } from "./useElementHeight";
 import "@xyflow/react/dist/style.css";
 
 /** The node-key prefix every data subscriber carries (subscribers live on a synthetic server identity), so a
@@ -108,13 +107,6 @@ const MAX_LENS_FLOWS = 200;
 /** The details panel's width: wider while it also says what the node did in the day looked at. */
 const DETAILS_WIDTH = 300;
 const LENS_DETAILS_WIDTH = 372;
-
-/**
- * Where the trace's bar ends, from the canvas's top, on one line: what a drawing placed under it leaves clear before
- * the bar has been measured. Once it has, its real height counts, since it wraps where the canvas is narrow.
- */
-const TRACE_BAR_TOP = 8;
-const TRACE_BAR_ROOM = TRACE_BAR_TOP + 42;
 
 /** A card of the data view before its figures are read: its size holds, so nothing moves when they arrive. */
 const READING: NodeFigure = {
@@ -153,9 +145,12 @@ const NO_LAYOUT: BandedLayout = { positions: new Map(), lanes: [], crossStart: 0
  *   - View, one word of the bar, holds how the drawing is made: the range of waves, the kinds of node (a hidden kind's
  *     chains stay joined), folders and look-alikes drawn as one node, the steps other systems run, and which way data
  *     runs.
- *   - A trace (only what is upstream and downstream of one node, within a number of hops) brings its own bar onto the
- *     canvas, and takes it away again.
- *   - The line under the bar counts what is drawn and names each reduction the reader made, each one taken back there.
+ *   - The line under the bar counts what is drawn, holds a trace's controls while a node is traced (only what is
+ *     upstream and downstream of it, within a number of hops), and names each reduction the reader made, each one
+ *     taken back there.
+ *   - Nothing stands on the canvas but the drawing and one control in its lower left corner (the zoom buttons, under
+ *     a map of a drawing too large to see whole). A node's details dock to the canvas's right edge, and the data
+ *     view's rail of what moved, day by day, to its foot.
  *
  * Whatever is drawn is laid in bands, one per execution wave, in running order: a flow in the band of its wave, what
  * it writes under it, what it reads first above it. The order is the point of the graph, so no control breaks it.
@@ -707,6 +702,24 @@ export default function LineageGraphPage() {
     [dayFigures],
   );
 
+  // What moved through the drawing, one row per measure, for the day rail: each drawn flow is counted under what
+  // its kind measures, in the order data goes through the waves, so no row adds rows to records.
+  const railRows = useMemo<RailRow[]>(() => {
+    if (activity === undefined || dayFigures === null) {
+      return [];
+    }
+    const moving: MovingFlow[] = lensDrawn.tallied.map((id) => ({
+      id, order: flowById.get(id)?.wave ?? Number.MAX_SAFE_INTEGER, measure: measureOf(id),
+    }));
+    return movementRows(moving, dayFigures).map((row) => ({
+      key: row.key,
+      title: row.title,
+      flows: row.flows.length,
+      days: movementDays(row, activity.windowDays, figureOn),
+      fire: fireFigures === null ? null : movementAmount(row, (flowId) => fireFigures.get(flowId) ?? NO_RUN),
+    }));
+  }, [activity, dayFigures, lensDrawn, flowById, measureOf, figureOn, fireFigures]);
+
   // Each card's chart is the window's, whatever day is looked at, so it is drawn once for the drawing.
   const lensBars = useMemo(() => {
     const bars = new Map<string, LensBar[]>();
@@ -814,8 +827,8 @@ export default function LineageGraphPage() {
       return [];
     }
     // Only what the reader took out of the drawing, each part taken back on its own. The scope and the level are
-    // read off the bar, the trace off its own bar on the canvas, and the day looked at off the rail under it; a
-    // stack is the drawing's default and says on its own node how many it holds.
+    // read off the bar, the trace off its own controls beside these parts, and the day looked at off the rail
+    // under the canvas; a stack is the drawing's default and says on its own node how many it holds.
     const parts: StatusPart[] = [];
     const folders = view.nodes.filter((node) => node.type === "group").length;
     if (folders > 0) {
@@ -876,7 +889,6 @@ export default function LineageGraphPage() {
   ].filter(Boolean).length;
   const tracing = view !== null && traceId !== "" && !view.traceMissing;
   const detailsWidth = params.data ? LENS_DETAILS_WIDTH : DETAILS_WIDTH;
-  const [traceBarRef, traceBarHeight] = useElementHeight();
 
   // Export the drawing as an SVG of the current layout in the active theme, built from the same nodes and
   // positions the canvas shows.
@@ -919,9 +931,10 @@ export default function LineageGraphPage() {
     <LensHoverContext.Provider value={lensHover}>
     <div
       data-testid="page-lineage-graph"
-      // Full-bleed: negative margins cancel the editor's content padding so the page runs edge to edge, and the
-      // height claims the viewport below the fixed chrome (title bar 36px + tab strip 35px + status bar 22px).
-      className="relative -m-4 flex h-[calc(100vh-93px)] min-w-0 flex-col overflow-hidden bg-background md:-m-6"
+      // Full-bleed: the page takes the whole of the page area it is shown in, edge to edge. It is placed on that
+      // area and not sized from the window, so it fits every frame a page is shown in (the workbench, a window of
+      // its own, an editor's tab), whose bars differ in height, and stays whole beside an open bottom panel.
+      className="absolute inset-0 flex min-w-0 flex-col overflow-hidden bg-background"
     >
       {/* A new drawing's nodes slide to their places (the canvas sets the class for the length of the move), so a
           change of scope is followed, not re-read. The rule outranks the library's own node rule by naming both. */}
@@ -1025,6 +1038,16 @@ export default function LineageGraphPage() {
         <GraphStatusLine
           drawn={view.nodes.length}
           total={view.total}
+          trace={tracing && (
+            <TraceControl
+              name={traceName}
+              hops={params.hops}
+              direction={params.direction}
+              onHops={(hops) => patch({ trace: traceId, hops })}
+              onDirection={(direction) => patch({ trace: traceId, direction })}
+              onClear={stopTracing}
+            />
+          )}
           parts={statusParts}
           canReset={params.level !== null || params.grouped !== null || !params.stacked || params.waves !== null
             || params.hide.length > 0 || params.open.length > 0 || traceId !== "" || params.expand.length > 0
@@ -1120,29 +1143,6 @@ export default function LineageGraphPage() {
       )}
 
       <div className="relative min-h-0 flex-1">
-        {/* The trace's bar stands on the canvas from its left, clear of the map before it and of the details panel
-            after it, so opening a node's details never moves it; where the two leave too little room, it wraps. */}
-        {scopeHasNodes && tracing && !queryError && (
-          <div
-            ref={traceBarRef}
-            className="pointer-events-none absolute inset-x-0 z-10 flex justify-start"
-            style={{
-              top: TRACE_BAR_TOP,
-              paddingLeft: 12 + (hasContent ? lensMapRoom(lensOn, view.nodes.length) : 0),
-              paddingRight: 12 + (hasContent && selectedNode !== null ? detailsWidth + 8 : 0),
-            }}
-          >
-            <TraceBar
-              name={traceName}
-              hops={params.hops}
-              direction={params.direction}
-              onHops={(hops) => patch({ trace: traceId, hops })}
-              onDirection={(direction) => patch({ trace: traceId, direction })}
-              onClear={stopTracing}
-            />
-          </div>
-        )}
-
         {queryError !== undefined && (
           <div className="absolute top-3 right-3 left-3 z-10 max-w-2xl">
             {isApiError(queryError)
@@ -1224,7 +1224,6 @@ export default function LineageGraphPage() {
               size={cardSize}
               lens={canvasLens}
               detailsWidth={detailsWidth}
-              topRoom={tracing ? Math.max(TRACE_BAR_ROOM, TRACE_BAR_TOP + traceBarHeight) : 0}
               anchorId={selectedId ?? (traceId === "" ? null : traceId)}
               centerRequest={centerRequest}
               actions={cardActions}
@@ -1232,14 +1231,9 @@ export default function LineageGraphPage() {
               onActivate={activate}
               onNodeContextMenu={(id, position) => setNodeMenu({ id, x: position.x, y: position.y })}
             >
-              {lensOn && (
-                // Beside the zoom controls, as a map's legend sits on the map.
-                <Panel position="bottom-left" className="!mb-3 !ml-14">
-                  <LensLegend />
-                </Panel>
-              )}
               {selectedNode !== null && selection !== null && (
-                <Panel position="top-right" className="!m-2 flex h-[calc(100%-16px)] items-start">
+                // Over the library's own corner mark while it is open, as the page's side stands over the canvas.
+                <Panel position="top-right" className="!z-10 !m-0 flex h-full max-w-[85%]">
                   <GraphDetails
                     // A fresh panel per node, so a list opened for one node is not left open for the next.
                     key={selectedNode.id}
@@ -1342,7 +1336,7 @@ export default function LineageGraphPage() {
             tallies={tallies}
             day={lensDay}
             pinned={pickedDay !== null}
-            flows={lensDrawn.tallied.length}
+            rows={railRows}
             fires={dayFires}
             firesLoading={firesQuery.isLoading}
             totalFires={firesQuery.data?.totalFires ?? 0}

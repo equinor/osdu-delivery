@@ -19,6 +19,11 @@ export interface RunMeasure {
   problemsLabel?: string;
   /** Other counts worth listing where there is room, largest news first. Zeroes are left out by the reader. */
   details?: readonly { label: string; value: number }[];
+  /**
+   * False for a kind that moves no data on: a check counts what passed, an inventory what it completed. Its cards
+   * still lead with the amount, and the totals of what moved through a drawing leave it out. Absent means it does.
+   */
+  movesData?: boolean;
 }
 
 /**

@@ -105,16 +105,22 @@ shop_orders_02_ing     No change   130 read
 arc.Orders             No change
 ```
 
-The legend sits on the canvas, beside the zoom controls. A flow that reads back the table it writes carries nothing
-on, so that line stays faint.
+**Key**, at the end of the rail under the canvas, opens what each line means. A flow that reads back the table it writes
+carries nothing on, so that line stays faint.
 
 ## The day looked at
 
-The rail under the canvas is one column per day of the window. A column stands for how many of the drawn flows moved
-data, ran with no change, or had a failed run, the failed at its foot, so the days worth looking at are found by eye.
+The rail under the canvas says how much moved through the drawing, day by day. It holds one row per measure, in the
+order data goes through the drawing: the rows its loads read (**Rows read**, with the files they came in), the rows its
+ingestions changed (**Rows changed**), and one row for each measure a module's kinds count (records delivered, rows
+built). A row names its measure, writes its amount for the day looked at, and draws one bar per day of the window. Each
+row is drawn against its own largest day, since the measures count different things, and no row adds rows to records. A
+bar with a red foot is a day a flow of that measure failed, and a stub at the baseline is a day it ran and moved
+nothing. A flow that only checks moves no data on and has no row.
 
-- Click a column to look at that day; the arrows, and the arrow keys with the rail focused, step to the nearest day
-  anything drawn ran. **Latest** returns to the latest day anything ran, and follows it.
+- Point at a day to read its amounts. Click it to look at that day; the arrows, and the arrow keys with the rail
+  focused, step to the nearest day anything drawn ran. **Latest** returns to the latest day anything ran, and follows
+  it.
 - A day with several starts lists them: **Whole day**, or one start and only what it ran. A start is a run group (a
   schedule's fire, a flow run with its descendants) or a run started on its own.
 - The window is the Data streams board's own (30, 60 or 90 days), set here or there.
@@ -141,9 +147,10 @@ Every flow named there selects its node.
 
 A chain of seven steps is taller than a window is high, and shrunk until it fits none of its figures could be read. So
 the data view places a drawing whole when that leaves it readable, and otherwise at the least readable zoom from its
-top, where data enters, with the traced node in view. The map in the corner shows the whole drawing at once, each node
-in the ink of what happened there, which is where the data stopped at a glance; drag it, or the canvas, to move down
-the chain. The fit button still fits everything.
+top, where data enters, with the traced node in view and in the middle of the canvas's width. The map over the zoom
+buttons, in the canvas's lower left corner, shows the whole drawing at once, each node in the ink of what happened
+there, which is where the data stopped at a glance; drag it, or the canvas, to move down the chain. The fit button still
+fits everything.
 
 ## What is counted
 
@@ -155,6 +162,9 @@ the chain. The fit button still fits everything.
 - One of SQLFlow's own kinds moved what it inserted, updated and deleted, or what it read when it reports no such
   breakdown (a file load, an export). A kind a module adds says what a run of it moved through
   `FlowKindContribution.runMeasure`, read from the counts its result reports; without one it moved the rows it loaded.
+- The rail adds up the drawn flows that count the same thing, and never two measures together. A kind whose measure says
+  it moves no data on (`RunMeasure.movesData` false: a check, an inventory) has no row there; its cards still lead with
+  what it counted. A flow with no run in the window has nothing to chart.
 - An object's card says what its writers moved. A flow reports one total, so a flow writing a table and a view over it
   shows that total on both.
 - One read takes at most 200 flows. A scope within that is read whole, so drawing more or less of it asks for nothing
