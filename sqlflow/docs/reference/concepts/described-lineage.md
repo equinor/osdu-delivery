@@ -90,7 +90,7 @@ Nothing returns described lineage unless it is asked to. Each surface has one wa
 
 | Surface | Default | With described lineage |
 | --- | --- | --- |
-| Lineage graph in the GUI | The estate's own flows and objects. | The **Described steps** switch, under **Other systems**. Offered only when a description touches what is drawn. |
+| Lineage graph in the GUI | The estate's own flows and objects. | The **Described steps** switch, under **Other systems** in the graph's **View** menu. Offered only when a description touches what is drawn. |
 | `GET /lineage/project-graph` | No description among the seeds, no described edge. `describedAvailable` says whether there is any. | `described=true`. The graph then also takes each description that writes an object it draws, with what that description reads, up the described chain, wherever the description is kept. Also included without asking when the graph is seeded on a description or a described object. |
 | `GET /lineage/objects/graph` (the lineage walk) | Stops where the estate ends. `describedAvailable` says whether descriptions continue from there. | `described=true`. Each hop a description carries is marked `described`. |
 | `GET /repos/{id}/lineage/edges` | Described edges left out. | `described=true`, or `relation=DescribedWrites`. |

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **The lineage graph shows what moved.** **What moved: Day by day** turns the graph into a view of what happened on
+- **The lineage graph shows what moved.** **What moved** in the graph's bar turns the graph into a view of what happened on
   it: every card leads with what its node did in the day looked at (the files that arrived, the rows a flow read and
   changed, what landed in a table, the records a delivery flow delivered) and charts it over the window, and every line
   is inked and weighed by what it carried, so a delivery is followed from where it enters to where it stopped. A rail
@@ -799,6 +799,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- **The lineage graph's bar is one row.** The graph showed every control at once: two rows of labelled groups over a
+  line that said most of them again. The bar now holds what is chosen every time (the search, the scope, how much is
+  drawn, **What moved**). **View** holds how the drawing is made (the wave range, kinds, folders and stacks, described
+  steps, the layout), each choice saying what it does, and wears a mark while one differs from how the scope opens. A
+  trace brings its own bar onto the canvas, **More** holds Download as SVG and the object explorer, and the line under
+  the bar counts what is drawn and names only the reductions made. Every choice and every link works as before; a
+  level's node count is on hover
+  ([reading the lineage graph](sqlflow/docs/reference/guides/lineage-graph.md#the-bar)).
 - **`sqlflow records adopt --key` takes the partition typed back.** Every adoption from the command line now takes
   `--confirm <partition>`, records named by `--key` as well as every record or an issue's, the rule the API's flow routes
   already kept; a command without it, or with another partition, asks nothing. The refusals of a release or an adoption

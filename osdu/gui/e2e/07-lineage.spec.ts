@@ -115,20 +115,22 @@ test.describe.serial("lineage", () => {
     await expect(graph.getByText(DELIVERY_FLOW, { exact: true }).first()).toBeVisible();
 
     // The jump names the repository, so the graph opens on the type's trace through it, as flows alone: the flows that
-    // lead to the type, and nothing else of the repository.
-    await expect(graph.getByTestId("graph-status-trace")).toContainText("trace of osdu:wks:work-product-component--WellLog:1.4.0");
-    await expect(graph.getByTestId("graph-status-line")).toContainText("flows only");
+    // lead to the type, and nothing else of the repository. The trace's bar, on the canvas, names what is traced.
+    await expect(graph.getByTestId("graph-trace-name")).toContainText("osdu:wks:work-product-component--WellLog:1.4.0");
+    await expect(graph.getByTestId("graph-level-flows")).toHaveAttribute("aria-checked", "true");
     await expect(graph.getByText(WELL_LOG_MAPPING, { exact: true })).toHaveCount(0);
 
     // Everything draws the data between them. The flow's mapping is drawn between what it reads and the flow, captioned
     // by its system and where it is filed, with a cache type it only checks its ids against feeding it. The cache types
     // one mapping reads look alike (one kind, the same flow before them and the same mapping after), so they are one
-    // stack until stacks are turned off.
-    // The two clicks come one straight after the other, and both must hold: the address is a render behind, and a
-    // control that started from it would drop the click before.
+    // stack until stacks are turned off, in the View menu.
+    // The level and the switch are chosen one straight after the other, with only the menu's opening between them, and
+    // both must hold: the address is a render behind, and a control that started from it would drop the choice before.
     await graph.getByTestId("graph-level-all").click();
-    await graph.getByTestId("graph-stack-toggle").click();
-    await expect(graph.getByTestId("graph-status-line")).toContainText("everything");
+    await graph.getByTestId("graph-view-menu").click();
+    await adminPage.getByTestId("graph-stack-toggle").click();
+    await adminPage.keyboard.press("Escape");
+    await expect(graph.getByTestId("graph-level-all")).toHaveAttribute("aria-checked", "true");
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("stacks")).toBe("off");
     await expect(graph.getByText(WELL_LOG_MAPPING, { exact: true }).first()).toBeVisible();
     await expect(graph.getByText(`osdu mapping · ${PARTITION}.${SOURCE}/mappings`).first()).toBeVisible();
@@ -146,9 +148,11 @@ test.describe.serial("lineage", () => {
     const named = (name: string) => nodes.filter({ hasText: name });
     const data = graph.locator('[data-testid="graph-node"][data-node-type="object"]');
 
-    // A repository opens as its flows alone: no table, file, mapping or OSDU type is drawn until it is asked for.
-    await expect(status).toContainText("flows only", { timeout: 30_000 });
+    // A repository opens as its flows alone: no table, file, mapping or OSDU type is drawn until it is asked for. The
+    // bar says so on the level it has pressed, and the line under it counts what is drawn of what is in scope.
+    await expect(graph.getByTestId("graph-level-flows")).toHaveAttribute("aria-checked", "true", { timeout: 30_000 });
     await expect(nodes.first()).toBeVisible({ timeout: 30_000 });
+    await expect(status).toContainText(/\d+ of \d+ drawn/);
     await expect(data).toHaveCount(0);
     const repoId = new URL(adminPage.url()).searchParams.get("repoId");
     expect(repoId).not.toBeNull();
@@ -160,7 +164,7 @@ test.describe.serial("lineage", () => {
 
     // Everything draws the data beside the flows, and the level is in the address.
     await graph.getByTestId("graph-level-all").click();
-    await expect(status).toContainText("everything");
+    await expect(graph.getByTestId("graph-level-all")).toHaveAttribute("aria-checked", "true");
     await expect(data.first()).toBeVisible();
     expect(new URL(adminPage.url()).searchParams.get("show")).toBe("all");
     await graph.getByTestId("graph-level-flows").click();
@@ -173,14 +177,16 @@ test.describe.serial("lineage", () => {
     await expect(panel.getByTestId("graph-detail-reads")).toContainText(WELL_LOG_MAPPING);
     await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
 
-    // Trace draws only what is upstream and downstream of it; the bar gains the trace's reach and side, and the line
-    // under it says what is traced.
+    // Trace draws only what is upstream and downstream of it, and brings its own bar onto the canvas: what is traced,
+    // which side of it, and how far.
     await panel.getByTestId("graph-trace-selected").click();
-    await expect(graph.getByTestId("graph-status-trace")).toContainText(`trace of ${DELIVERY_FLOW}`);
+    const trace = graph.getByTestId("graph-trace-control");
+    await expect(trace.getByTestId("graph-trace-name")).toHaveText(DELIVERY_FLOW);
     await expect(named("welldb-welllog-02-header-ing")).toHaveCount(1);
-    await graph.getByTestId("graph-trace-hops-1").click();
-    await graph.getByTestId("graph-trace-upstream").click();
-    await expect(graph.getByTestId("graph-status-trace")).toContainText("1 hop, upstream only");
+    await trace.getByTestId("graph-trace-hops-1").click();
+    await trace.getByTestId("graph-trace-upstream").click();
+    await expect(trace.getByTestId("graph-trace-hops-1")).toHaveAttribute("aria-checked", "true");
+    await expect(trace.getByTestId("graph-trace-upstream")).toHaveAttribute("aria-checked", "true");
     const traced = new URL(adminPage.url()).searchParams;
     expect([traced.get("hops"), traced.get("dir")]).toEqual(["1", "up"]);
 
@@ -188,39 +194,47 @@ test.describe.serial("lineage", () => {
     await panel.getByTestId("graph-detail-reads").getByTestId("graph-detail-node").filter({ hasText: WELL_LOG_MAPPING }).first().click();
     await expect(named(WELL_LOG_MAPPING)).toHaveCount(1);
 
-    // Taking the trace back from the line draws the repository again.
-    await graph.getByTestId("graph-status-remove-trace").click();
-    await expect(graph.getByTestId("graph-status-trace")).toHaveCount(0);
-    await expect(graph.getByTestId("graph-trace-control")).toHaveCount(0);
+    // Stopping the trace from its bar draws the repository again, and takes the bar away.
+    await trace.getByTestId("graph-trace-clear").click();
+    await expect(trace).toHaveCount(0);
 
-    // A hidden kind leaves the drawing, and the line names it.
+    // How the drawing is made is in the View menu, which stays open while its choices are made. A hidden kind leaves
+    // the drawing, and the line under the bar names it; the kinds are one line of the menu until opened.
     await graph.getByTestId("graph-clear-focus").click();
-    await graph.getByTestId("graph-kind-filter").click();
-    await adminPage.locator('[data-testid="graph-kind-option"][data-kind="flow:ing"]').click();
-    await adminPage.keyboard.press("Escape");
+    await graph.getByTestId("graph-view-menu").click();
+    const view = adminPage.getByTestId("graph-view-panel");
+    await view.getByTestId("graph-kind-filter").click();
+    await view.locator('[data-testid="graph-kind-option"][data-kind="flow:ing"]').click();
     await expect(graph.getByTestId("graph-status-kinds")).toContainText("hidden: Ingestion");
     await expect(named("welldb-welllog-02-header-ing")).toHaveCount(0);
 
     // The wave range trims the drawing from either end, by the keyboard as by dragging.
-    await graph.getByRole("slider", { name: "First wave drawn" }).press("ArrowRight");
+    await view.getByRole("slider", { name: "First wave drawn" }).press("ArrowRight");
     await expect(graph.getByTestId("graph-status-waves")).toContainText("wave");
     expect(new URL(adminPage.url()).searchParams.get("waves")).not.toBeNull();
+
+    // Closed, the menu's button wears a mark while a choice in it differs from how the scope opens.
+    await adminPage.keyboard.press("Escape");
+    await expect(view).toHaveCount(0);
+    await expect(graph.getByTestId("graph-view-changed")).toBeVisible();
 
     // Reset takes every choice back.
     await graph.getByTestId("graph-reset").click();
     await expect(graph.getByTestId("graph-status-kinds")).toHaveCount(0);
     await expect(graph.getByTestId("graph-status-waves")).toHaveCount(0);
+    await expect(graph.getByTestId("graph-view-changed")).toHaveCount(0);
     const reset = new URL(adminPage.url()).searchParams;
     expect([reset.get("hide"), reset.get("waves"), reset.get("group"), reset.get("stacks")]).toEqual([null, null, null, null]);
     // The range is back at the first wave: a step by the keyboard leaves no preview of its own behind.
-    await expect(graph.getByRole("slider", { name: "First wave drawn" })).toHaveAttribute("aria-valuenow", "0");
+    await graph.getByTestId("graph-view-menu").click();
+    await expect(view.getByRole("slider", { name: "First wave drawn" })).toHaveAttribute("aria-valuenow", "0");
 
     // Data runs top to bottom unless the reader turns the drawing, and the choice is in the address.
     expect(reset.get("layout")).toBeNull();
-    await graph.getByTestId("graph-orientation-right").click();
+    await view.getByTestId("graph-orientation-right").click();
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("layout")).toBe("right");
     await expect(nodes.first()).toBeVisible();
-    await graph.getByTestId("graph-orientation-down").click();
+    await view.getByTestId("graph-orientation-down").click();
     await expect.poll(() => new URL(adminPage.url()).searchParams.get("layout")).toBeNull();
   });
 
@@ -241,11 +255,11 @@ test.describe.serial("lineage", () => {
     await expect(figures).toHaveCount(0);
     await expect(graph.getByTestId("data-rail")).toHaveCount(0);
 
-    // Day by day puts a figure and a chart on every card and a rail of days under the canvas, and is in the address.
+    // What moved puts a figure and a chart on every card and a rail of days under the canvas, and is in the address.
     await graph.getByTestId("graph-data-toggle").click();
     const rail = graph.getByTestId("data-rail");
     await expect(rail).toBeVisible({ timeout: 30_000 });
-    await expect(graph.getByTestId("graph-status-data")).toContainText("what moved on");
+    await expect(graph.getByTestId("graph-data-toggle")).toHaveAttribute("aria-pressed", "true");
     expect(new URL(adminPage.url()).searchParams.get("data")).toBe("on");
     await expect(figures.first()).toBeVisible();
     await expect(figures.filter({ hasText: "Reading" })).toHaveCount(0);
@@ -267,8 +281,8 @@ test.describe.serial("lineage", () => {
     await expect(panel.getByTestId("lens-detail")).toBeVisible();
     await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
 
-    // Taking it back from the line under the bar draws the graph as it was.
-    await graph.getByTestId("graph-status-remove-data").click();
+    // The same button takes it back, and the graph is drawn as it was.
+    await graph.getByTestId("graph-data-toggle").click();
     await expect(rail).toHaveCount(0);
     await expect(figures).toHaveCount(0);
     expect(new URL(adminPage.url()).searchParams.get("data")).toBeNull();

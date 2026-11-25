@@ -2,7 +2,7 @@
 id: guide-lineage-graph
 title: "Reading the lineage graph: scope, level, folders, stacks, waves, kinds and trace"
 type: guide
-summary: How the GUI's lineage graph decides what to draw, what each control of its bar changes, and how a drawing is shared as a link.
+summary: How the GUI's lineage graph decides what to draw, what its bar, its View menu and a trace's bar each change, and how a drawing is shared as a link.
 keywords:
   - lineage graph
   - lineage page
@@ -14,6 +14,8 @@ keywords:
   - handovers
   - graph level
   - hide kinds
+  - view menu
+  - trace bar
   - project-graph
   - whole repository
 related:
@@ -41,8 +43,9 @@ sourceRefs:
 
 A repository's lineage is hundreds of nodes: every flow, and every table, view, file and dataset a flow reads or
 writes. A reader has one question at a time, so the graph at **Explore > Lineage** never draws everything it knows. It
-opens on the smallest drawing that still tells the order of things, and each control of its bar widens or narrows that
-drawing in one predictable way. The line under the bar says in words what is drawn and why.
+opens on the smallest drawing that still tells the order of things, and each control widens or narrows that drawing in
+one predictable way. The page shows as few controls as the step at hand needs: the bar holds what is chosen every
+time, the **View** menu holds how the drawing is made, and a trace brings its own bar onto the canvas.
 
 ## The order: one band per wave
 
@@ -59,7 +62,8 @@ So every arrow runs down the page, from a band to a later one. The exceptions ar
 wrote itself, or two flows the plan leaves unordered, draw one arrow upwards. A band too wide for one line is laid in
 several staggered lines. A band is named by its wave only when every flow in it runs in that wave: a flow of another
 repository, or a folder holding several waves, takes the first band after everything it reads from, and that band has
-no name. **Layout** turns the drawing left to right for those who prefer it, with the bands as columns.
+no name. **Layout**, in the **View** menu, turns the drawing left to right for those who prefer it, with the bands as
+columns.
 
 With **Described steps** on, the steps other systems run are drawn in bands of their own, named **Other systems**,
 between the waves: above Wave 1 for a chain that leads into the estate, and right after the wave it reads for a step
@@ -70,8 +74,8 @@ on or off.
 
 | You arrive by | Scope | What is drawn |
 | --- | --- | --- |
-| Picking a repository in **Scope** | The repository's active flows and what is downstream of them, in any repository | Flows only, laid wave by wave. |
-| Picking a project (a root folder) in **Scope** | That folder's flows and what is downstream of them | The same, for the project. |
+| Picking a repository in the scope picker | The repository's active flows and what is downstream of them, in any repository | Flows only, laid wave by wave. |
+| Picking a project (a root folder) in the scope picker | That folder's flows and what is downstream of them | The same, for the project. |
 | A link or a search hit naming a flow, or an object with its repository | The whole repository | The trace of that node: only what is upstream and downstream of it. |
 | A link or a search hit naming an object with no repository | The object's own neighbourhood, across every repository: its producers, what they read, and its consumers downstream | Everything, with the object selected. |
 
@@ -79,23 +83,21 @@ A walk downstream stops after three hops outside the scope's own flows, and a sc
 walk stopped at carries **more** under it; clicking it loads what is beyond. A scope that was cut short says so
 in the line under the bar.
 
-## The bar, left to right
+## The bar
 
-The bar is in the order a drawing is made in: what to look at, how much of it, then which part.
+The bar is one row, in the order a drawing is made in: what to look at, then how much of it. It holds only what a
+reader chooses every time, and nothing in it comes and goes.
 
 | Control | What it changes |
 | --- | --- |
-| **Find** | Searches the drawing and the whole catalog. A node in scope is drawn (its folder opens, its stack unstacks), selected and centered. A flow found in the catalog opens its repository traced around it; an object opens its own neighbourhood. |
-| **Scope** | A whole repository, or one of its projects. |
-| **Show** | The level: how much data is drawn beside the flows. Each choice carries the number of nodes it draws for the whole scope. |
-| **Draw as one** | **Folders** collapses each folder's flows into one node; **Stacks** collapses look-alike nodes. |
-| **Waves** | Trims the drawing to a range of execution waves. |
-| **Kinds** | The legend, and the filter: hides kinds of node. |
-| **Layout** | Which way data runs: top to bottom, or left to right. |
-| **Other systems** | **Described steps** also draws what [lineage descriptions](../flow/lin.md) say of steps other systems run: where a landed file comes from, and what reads a table after the estate. Off unless switched on, and offered only when a description touches what is drawn. Described steps and the arrows to them are dotted: stated in a document, never run or observed here ([described lineage](../concepts/described-lineage.md)). |
-| **Trace** | Shown while a node is traced: how many hops around it, and which side. |
+| The search | Searches the drawing and the whole catalog. A node in scope is drawn (its folder opens, its stack unstacks), selected and centered. A flow found in the catalog opens its repository traced around it; an object opens its own neighbourhood. |
+| The scope | A whole repository, or one of its projects. Once chosen, it reads as the drawing's title. |
+| **Flows**, **Handovers**, **Everything**, **Data only** | The level: how much data is drawn beside the flows. Each choice says on hover what it draws, and how many nodes that is for the whole scope. |
+| **What moved** | Turns the graph's data view on and off ([What moved](#what-moved)). |
+| **View** | Opens the menu that holds how the drawing is made ([The View menu](#the-view-menu)). It wears a mark while a choice in it differs from how the scope opens. |
+| **More** (three dots) | **Download as SVG** writes the drawing as a picture; **Open the object explorer** leaves for the explorer. With nothing drawn the explorer's button stands here by itself. |
 
-### Show: the level
+### The level
 
 | Level | Draws | An arrow means |
 | --- | --- | --- |
@@ -106,6 +108,19 @@ The bar is in the order a drawing is made in: what to look at, how much of it, t
 
 A flow's card has no room for what the level folds away. Selecting the flow lists everything it reads and writes in the
 details panel, whatever the level draws, and an entry of those lists draws its node.
+
+## The View menu
+
+**View** holds the choices that are made once in a while and then left alone. The menu stays open while they are made,
+the canvas redrawing behind it, and each choice says under its name what it does.
+
+| Part | What it changes |
+| --- | --- |
+| **Waves** | Trims the drawing to a range of execution waves. |
+| **Kinds** | The legend, and the filter: hides kinds of node. One line of the menu until opened; open by itself while a kind is hidden. |
+| **Draw as one** | **Folders** collapses each folder's flows into one node; **Stacks** collapses look-alike nodes. |
+| **Other systems** | **Described steps** also draws what [lineage descriptions](../flow/lin.md) say of steps other systems run: where a landed file comes from, and what reads a table after the estate. Off unless switched on, and offered only when a description touches what is drawn. Described steps and the arrows to them are dotted: stated in a document, never run or observed here ([described lineage](../concepts/described-lineage.md)). |
+| **Layout** | Which way data runs: top to bottom, or left to right. |
 
 ### Folders
 
@@ -134,12 +149,14 @@ dropped and nothing is bridged. Flows lineage gave no wave are the last stop.
 **Kinds** lists every kind of node the drawing holds with its glyph and count. Hiding a kind takes its nodes out and
 joins what they joined, so hiding `ing` flows leaves the landed table pointing at the table the flow filled.
 
-### Trace
+## Trace
 
-**Trace** on a selected node (or on its menu) draws only what is upstream and downstream of it. The bar then offers:
+**Trace** on a selected node (or on its menu) draws only what is upstream and downstream of it. While a node is
+traced, a bar of its own stands on the canvas, naming the node and offering:
 
+- **Upstream**, **Both**, **Downstream**: what the node is made from, what a change to it reaches, or both.
 - **1, 2, 3, All**: how many hops from the node are drawn.
-- **Upstream only**, **Both sides**, **Downstream only**: what the node is made from, or what a change to it reaches.
+- The cross: stops tracing and draws the whole scope again.
 
 A producer or consumer the trace left out beside a drawn node is counted above or below that node (`+3`); clicking the count
 draws exactly those. With folders on, the folders of the traced node and of the flows next to it are open, and folders
@@ -159,7 +176,7 @@ be derived (a dashed warning edge, with the reason on hover and in the panel).
 
 ## What moved
 
-**What moved: Day by day** in the bar turns on the graph's data view. The drawing stays the same and every node says
+**What moved** in the bar turns on the graph's data view. The drawing stays the same and every node says
 what happened to it: a card leads with what its node did in the day looked at (the files that arrived, the rows a flow
 read and changed, what landed in a table) and charts it over the window, and every line is inked and weighed by what
 it carried, so a delivery is followed from where it enters to where it stopped. A rail under the canvas picks the day,
@@ -168,11 +185,13 @@ and one start of it. A row of the Data streams board opens here, on its flow's t
 
 ## The line under the bar
 
-The line states how many nodes are drawn of how many are in scope, the scope and the level, and every reduction in
-force: folders collapsed, look-alikes stacked, the wave range, hidden kinds, the trace. Each reduction has a remove
-button that undoes just that one, and **Reset** returns the drawing to how its scope opens. On the right it reports
-what affects the drawing's truth: a scope cut short, flows whose lineage was not derived, and how many data streams
-need a look (each one a jump to its flow).
+The line counts how many nodes are drawn of how many are in scope, and names each reduction the reader made: folders
+collapsed, the wave range, hidden kinds, nodes the walk was continued past. Each has a remove button that undoes just
+that one, and **Reset** returns the drawing to how its scope opens. What the bar and the canvas already say is not
+repeated here: the scope and the level are read off the bar, the trace off its own bar, the day looked at off the rail
+of the data view, and a stack says on its own node how many it holds. So on a drawing nothing was done to, the line is
+one count. On the right it reports what affects the drawing's truth: a scope cut short, flows whose lineage was not
+derived, and how many data streams need a look (each one a jump to its flow).
 
 ## A drawing is a link
 
@@ -200,7 +219,7 @@ Links written for the earlier page still open: `view=objects` is `show=objects`,
 One request, `GET /api/v1/lineage/project-graph`, returns the scope: `repoId` seeds every active flow of the repository,
 `repoId` with `project` the flows of that root folder, and `expand` a node (an object key, or a pipeline id) with its
 producers and consumers. Every reduction above is applied in the browser to that one answer, in a fixed order: level,
-kinds, waves, folders, trace, stacks. The **Download** button writes the drawing as an SVG.
+kinds, waves, folders, trace, stacks. **Download as SVG**, under **More** in the bar, writes the drawing as an SVG.
 
 ## See also
 

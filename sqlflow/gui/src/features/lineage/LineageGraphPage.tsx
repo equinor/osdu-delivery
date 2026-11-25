@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Panel, ReactFlowProvider } from "@xyflow/react";
-import { CircleAlert, Download, Loader2, Rows3, TriangleAlert } from "lucide-react";
+import { CircleAlert, Loader2, Rows3, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +36,7 @@ import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { ExplainPageButton } from "../chat/ExplainPageButton";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
 import { useThemeMode } from "../../theme/ThemeModeContext";
-import { GraphCanvas, type CanvasLens, type CenterRequest } from "./GraphCanvas";
+import { GraphCanvas, lensMapRoom, type CanvasLens, type CenterRequest } from "./GraphCanvas";
 import { isLineageDescription } from "../../modules/lineageDescriptionKind";
 import { kindContribution } from "../../modules/registry";
 import {
@@ -45,7 +45,7 @@ import {
 } from "./dataLens";
 import { DataRail } from "./DataRail";
 import {
-  CompactControl, DataControl, DescribedControl, Field, KindFilter, LevelControl, OrientationControl, TraceControl, WaveRange,
+  CompactControl, DataControl, DescribedControl, KindFilter, LevelControl, MoreMenu, OrientationControl, TraceBar, ViewMenu, WaveRange,
 } from "./GraphControls";
 import { GraphDetails } from "./GraphDetails";
 import { counted, kindLook } from "./graphKinds";
@@ -63,7 +63,6 @@ import {
   levelSizes,
   reveal,
   waveCounts,
-  type GraphLevel,
   type ViewOptions,
 } from "./graphModel";
 import { GraphSearch } from "./GraphSearch";
@@ -84,6 +83,7 @@ import { LensLegend } from "./LensLegend";
 import { LensNodeDetail } from "./LensNodeDetail";
 import { cardCaption, cardTitle, type CardActions, type CardLens } from "./LineageNodeCard";
 import { ProjectSelect, type ScopeChoice } from "./ProjectSelect";
+import { useElementHeight } from "./useElementHeight";
 import "@xyflow/react/dist/style.css";
 
 /** The node-key prefix every data subscriber carries (subscribers live on a synthetic server identity), so a
@@ -109,6 +109,13 @@ const MAX_LENS_FLOWS = 200;
 const DETAILS_WIDTH = 300;
 const LENS_DETAILS_WIDTH = 372;
 
+/**
+ * Where the trace's bar ends, from the canvas's top, on one line: what a drawing placed under it leaves clear before
+ * the bar has been measured. Once it has, its real height counts, since it wraps where the canvas is narrow.
+ */
+const TRACE_BAR_TOP = 8;
+const TRACE_BAR_ROOM = TRACE_BAR_TOP + 42;
+
 /** A card of the data view before its figures are read: its size holds, so nothing moves when they arrive. */
 const READING: NodeFigure = {
   outcome: "absent", value: "", label: "Reading...", note: "", someFailed: false, volume: 0,
@@ -116,13 +123,6 @@ const READING: NodeFigure = {
 };
 
 const NO_FLOWS: readonly string[] = [];
-
-const LEVEL_WORDS: Readonly<Record<GraphLevel, string>> = {
-  flows: "flows only",
-  handovers: "flows and handovers",
-  all: "everything",
-  objects: "data only",
-};
 
 /** The verdicts worth a mark on a node: a healthy stream, and one too new to judge, stay quiet. */
 function needsAttention(status: StreamStatus): boolean {
@@ -143,14 +143,19 @@ const NO_LAYOUT: BandedLayout = { positions: new Map(), lanes: [], crossStart: 0
 /**
  * The lineage graph. A repository's lineage is hundreds of nodes, and a reader has one question at a time, so the
  * page never draws everything it knows: it opens on the smallest drawing that still tells the order of things (the
- * flows, wave by wave), and every control narrows or widens that drawing in a way the status line states in words.
+ * flows, wave by wave), and every control narrows or widens that drawing.
  *
- *   - Scope: a whole repository, one of its projects, or the neighbourhood of a node a link landed on.
- *   - Show: flows alone, flows with the objects they hand over, everything, or the data alone.
- *   - Folders and stacks: a folder's flows, and nodes that look alike, draw as one node until opened.
- *   - Waves and kinds: trim the drawing to a range of waves, or hide kinds of node (their chains stay joined).
- *   - Trace: only what is upstream and downstream of one node, within a number of hops.
- *   - Layout: data runs top to bottom, or left to right when the reader prefers it.
+ * The page shows a reader as few controls as the step they are on needs, and each one where it acts:
+ *
+ *   - The bar holds what is chosen every time: the search, the scope (a whole repository, one of its projects, or the
+ *     neighbourhood of a node a link landed on), how much is drawn (flows alone, flows with the objects they hand
+ *     over, everything, or the data alone), and whether the drawing says what moved through it.
+ *   - View, one word of the bar, holds how the drawing is made: the range of waves, the kinds of node (a hidden kind's
+ *     chains stay joined), folders and look-alikes drawn as one node, the steps other systems run, and which way data
+ *     runs.
+ *   - A trace (only what is upstream and downstream of one node, within a number of hops) brings its own bar onto the
+ *     canvas, and takes it away again.
+ *   - The line under the bar counts what is drawn and names each reduction the reader made, each one taken back there.
  *
  * Whatever is drawn is laid in bands, one per execution wave, in running order: a flow in the band of its wave, what
  * it writes under it, what it reads first above it. The order is the point of the graph, so no control breaks it.
@@ -808,14 +813,10 @@ export default function LineageGraphPage() {
     if (view === null) {
       return [];
     }
+    // Only what the reader took out of the drawing, each part taken back on its own. The scope and the level are
+    // read off the bar, the trace off its own bar on the canvas, and the day looked at off the rail under it; a
+    // stack is the drawing's default and says on its own node how many it holds.
     const parts: StatusPart[] = [];
-    parts.push({
-      key: "scope",
-      label: scope === "node"
-        ? `around ${nameOf(params.focus)}`
-        : scope === "project" ? `${repoName} / ${params.project}` : repoName,
-    });
-    parts.push({ key: "level", label: LEVEL_WORDS[level] });
     const folders = view.nodes.filter((node) => node.type === "group").length;
     if (folders > 0) {
       parts.push({
@@ -831,16 +832,6 @@ export default function LineageGraphPage() {
         label: `${counted(params.open.length, "folder")} open`,
         removeHint: "Collapse the opened folders again",
         onRemove: () => patch({ open: [] }),
-      });
-    }
-    const stacks = view.nodes.filter((node) => node.type === "stack");
-    if (stacks.length > 0) {
-      const inStacks = stacks.reduce((sum, node) => sum + node.members.length, 0);
-      parts.push({
-        key: "stacks",
-        label: `${inStacks} look-alikes in ${counted(stacks.length, "stack")}`,
-        removeHint: "Draw stacked nodes one by one",
-        onRemove: () => patch({ stacked: false }),
       });
     }
     if (waveSet !== null) {
@@ -863,24 +854,6 @@ export default function LineageGraphPage() {
         onRemove: () => patch({ hide: [] }),
       });
     }
-    if (traceId !== "" && !view.traceMissing) {
-      const reach = params.hops === null ? "whole trace" : counted(params.hops, "hop");
-      const side = params.direction === "both" ? "" : `, ${params.direction} only`;
-      parts.push({
-        key: "trace",
-        label: `trace of ${traceName}: ${reach}${side}`,
-        removeHint: "Stop tracing and draw the whole scope",
-        onRemove: stopTracing,
-      });
-    }
-    if (lensOn) {
-      parts.push({
-        key: "data",
-        label: lensPeriod === "" ? "what moved" : `what moved on ${lensPeriod}`,
-        removeHint: "Stop showing data, and draw how the nodes connect",
-        onRemove: () => patch({ data: false, day: "", fire: "" }),
-      });
-    }
     if (params.expand.length > 0) {
       parts.push({
         key: "expand",
@@ -890,8 +863,20 @@ export default function LineageGraphPage() {
       });
     }
     return parts;
-  }, [view, scope, nameOf, params, repoName, level, grouped, waveSet, waveStops, waveIndexes, kinds, traceId, traceName, patch, stopTracing,
-    lensOn, lensPeriod]);
+  }, [view, params, grouped, waveSet, waveStops, waveIndexes, kinds, patch]);
+
+  // How many of the View menu's choices differ from how a scope opens, which its button wears as a mark.
+  const viewChanges = [
+    waveSet !== null,
+    kinds.some((kind) => params.hide.includes(kind.key)),
+    grouped,
+    !params.stacked,
+    params.described,
+    params.orientation === "right",
+  ].filter(Boolean).length;
+  const tracing = view !== null && traceId !== "" && !view.traceMissing;
+  const detailsWidth = params.data ? LENS_DETAILS_WIDTH : DETAILS_WIDTH;
+  const [traceBarRef, traceBarHeight] = useElementHeight();
 
   // Export the drawing as an SVG of the current layout in the active theme, built from the same nodes and
   // positions the canvas shows.
@@ -947,114 +932,90 @@ export default function LineageGraphPage() {
         }
       `}</style>
 
-      {/* The bar reads left to right in the order a drawing is made: what to look at, how much of it, which part. */}
+      {/* The bar holds what a reader chooses every time, in the order it is chosen: what to look at, then how much of
+          it. How the drawing is made is behind View, and a trace's own controls are on the canvas with the trace, so
+          nothing in the bar comes and goes. The two ends take equal room, which keeps the level in the middle. */}
       <div
         data-testid="graph-toolbar"
-        className="flex shrink-0 flex-wrap items-end gap-x-4 gap-y-2 border-b border-border bg-card px-3 py-2"
+        className="@container/graph-bar flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2"
       >
-        <Field label="Find">
+        <div className="flex flex-1 basis-0 flex-wrap items-center gap-2">
           <GraphSearch options={searchOptions} onPickNode={pick} onPickCatalog={seedFocus} />
-        </Field>
-        <Field label="Scope">
           <ProjectSelect
             items={projectsQuery.data ?? []}
+            loading={projectsQuery.isPending}
             repoId={params.repoId}
             project={params.project}
             onSelect={selectScope}
           />
-        </Field>
+        </div>
         {scopeHasNodes && sizes !== null && view !== null && (
-          <>
-            <Field label="Show">
-              <LevelControl value={level} sizes={sizes} onChange={(next) => patch({ level: next })} />
-            </Field>
-            <Field label="What moved" testId="graph-data-control">
-              <DataControl value={params.data} onChange={(data) => patch({ data, day: "", fire: "" })} />
-            </Field>
-            <Field label="Draw as one">
-              <CompactControl
-                grouped={grouped}
-                groupable={level !== "objects" && view.groupable}
-                stacked={params.stacked}
-                onGrouped={(value) => patch({ grouped: value })}
-                onStacked={(value) => patch({ stacked: value })}
-              />
-            </Field>
-            {level !== "objects" && waveStops.length > 1 && (
-              <Field label="Waves">
-                <WaveRange
-                  stops={waveStops}
-                  range={waveIndexes}
-                  onPreview={(range) => setPreviewWaves(range === null
-                    ? null
-                    : new Set(waveStops.slice(range[0], range[1] + 1).map((stop) => stop.wave)))}
-                  onCommit={(range) => patch({
-                    waves: range[0] === 0 && range[1] === waveStops.length - 1
-                      ? null
-                      : { from: waveStops[range[0]].wave, to: waveStops[range[1]].wave },
-                  })}
-                />
-              </Field>
-            )}
-            <Field label="Kinds">
-              <KindFilter
-                kinds={kinds}
-                hidden={options.hiddenKinds}
-                onToggle={(key) => patch((current) => ({
-                  hide: current.hide.includes(key) ? current.hide.filter((item) => item !== key) : [...current.hide, key],
-                }))}
-                onShowAll={() => patch({ hide: [] })}
-              />
-            </Field>
-            <Field label="Layout">
-              <OrientationControl value={params.orientation} onChange={(orientation) => patch({ orientation })} />
-            </Field>
-            {/* Offered only where it changes the drawing: a description touches what is drawn, or it is already on. */}
-            {(params.described || payload?.describedAvailable === true) && (
-              <Field label="Other systems" testId="graph-described-control">
-                <DescribedControl value={params.described} onChange={(described) => patch({ described })} />
-              </Field>
-            )}
-            {traceId !== "" && !view.traceMissing && (
-              <Field label="Trace" testId="graph-trace-control">
-                <TraceControl
-                  name={traceName}
-                  hops={params.hops}
-                  direction={params.direction}
-                  orientation={params.orientation}
-                  onHops={(hops) => patch({ trace: traceId, hops })}
-                  onDirection={(direction) => patch({ trace: traceId, direction })}
-                  onClear={stopTracing}
-                />
-              </Field>
-            )}
-          </>
+          <LevelControl value={level} sizes={sizes} onChange={(next) => patch({ level: next })} />
         )}
-        <div className="ml-auto flex h-8 items-center gap-1">
-          {hasContent && (
+        <div className="flex flex-1 basis-0 items-center justify-end gap-1">
+          {scopeHasNodes && sizes !== null && view !== null && (
+            <>
+              <DataControl value={params.data} onChange={(data) => patch({ data, day: "", fire: "" })} />
+              {/* A range half dragged when the menu closes is let go of, so the canvas does not keep its preview. */}
+              <ViewMenu changes={viewChanges} onClose={() => setPreviewWaves(null)}>
+                {level !== "objects" && waveStops.length > 1 && (
+                  <WaveRange
+                    stops={waveStops}
+                    range={waveIndexes}
+                    onPreview={(range) => setPreviewWaves(range === null
+                      ? null
+                      : new Set(waveStops.slice(range[0], range[1] + 1).map((stop) => stop.wave)))}
+                    onCommit={(range) => patch({
+                      waves: range[0] === 0 && range[1] === waveStops.length - 1
+                        ? null
+                        : { from: waveStops[range[0]].wave, to: waveStops[range[1]].wave },
+                    })}
+                  />
+                )}
+                <KindFilter
+                  kinds={kinds}
+                  hidden={options.hiddenKinds}
+                  onToggle={(key) => patch((current) => ({
+                    hide: current.hide.includes(key) ? current.hide.filter((item) => item !== key) : [...current.hide, key],
+                  }))}
+                  onShowAll={() => patch({ hide: [] })}
+                />
+                <CompactControl
+                  grouped={grouped}
+                  groupable={level !== "objects" && view.groupable}
+                  stacked={params.stacked}
+                  onGrouped={(value) => patch({ grouped: value })}
+                  onStacked={(value) => patch({ stacked: value })}
+                />
+                {/* Offered only where it changes the drawing: a description touches what is drawn, or it is already on. */}
+                {(params.described || payload?.describedAvailable === true) && (
+                  <DescribedControl value={params.described} onChange={(described) => patch({ described })} />
+                )}
+                <OrientationControl value={params.orientation} onChange={(orientation) => patch({ orientation })} />
+              </ViewMenu>
+            </>
+          )}
+          {hasContent ? (
+            // A page with nothing drawn has only the explorer to offer, and a menu of one entry is a button with an
+            // extra click, so there it is the button.
+            <MoreMenu onDownload={downloadLineage} onOpenExplorer={() => navigate("/lineage/objects")} />
+          ) : (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={downloadLineage} aria-label="Download SVG" data-testid="download-lineage">
-                  <Download />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => navigate("/lineage/objects")}
+                  aria-label="Open explorer"
+                  className="text-muted-foreground hover:text-foreground"
+                  data-testid="open-lineage-objects"
+                >
+                  <Rows3 />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Download this drawing as an SVG</TooltipContent>
+              <TooltipContent>Open the object explorer</TooltipContent>
             </Tooltip>
           )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => navigate("/lineage/objects")}
-                aria-label="Open explorer"
-                data-testid="open-lineage-objects"
-              >
-                <Rows3 />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Open the object explorer</TooltipContent>
-          </Tooltip>
           {/* The graph's bar is its header: Explain sits at its end, as it sits beside a title elsewhere. */}
           <ExplainPageButton size="icon-sm" />
         </div>
@@ -1067,7 +1028,7 @@ export default function LineageGraphPage() {
           parts={statusParts}
           canReset={params.level !== null || params.grouped !== null || !params.stacked || params.waves !== null
             || params.hide.length > 0 || params.open.length > 0 || traceId !== "" || params.expand.length > 0
-            || unfolded.openStacks.size > 0 || params.data}
+            || unfolded.openStacks.size > 0 || params.described || params.data}
           onReset={reset}
           attention={(
             <>
@@ -1159,6 +1120,29 @@ export default function LineageGraphPage() {
       )}
 
       <div className="relative min-h-0 flex-1">
+        {/* The trace's bar stands on the canvas from its left, clear of the map before it and of the details panel
+            after it, so opening a node's details never moves it; where the two leave too little room, it wraps. */}
+        {scopeHasNodes && tracing && !queryError && (
+          <div
+            ref={traceBarRef}
+            className="pointer-events-none absolute inset-x-0 z-10 flex justify-start"
+            style={{
+              top: TRACE_BAR_TOP,
+              paddingLeft: 12 + (hasContent ? lensMapRoom(lensOn, view.nodes.length) : 0),
+              paddingRight: 12 + (hasContent && selectedNode !== null ? detailsWidth + 8 : 0),
+            }}
+          >
+            <TraceBar
+              name={traceName}
+              hops={params.hops}
+              direction={params.direction}
+              onHops={(hops) => patch({ trace: traceId, hops })}
+              onDirection={(direction) => patch({ trace: traceId, direction })}
+              onClear={stopTracing}
+            />
+          </div>
+        )}
+
         {queryError !== undefined && (
           <div className="absolute top-3 right-3 left-3 z-10 max-w-2xl">
             {isApiError(queryError)
@@ -1239,7 +1223,8 @@ export default function LineageGraphPage() {
               colorMode={mode}
               size={cardSize}
               lens={canvasLens}
-              detailsWidth={params.data ? LENS_DETAILS_WIDTH : DETAILS_WIDTH}
+              detailsWidth={detailsWidth}
+              topRoom={tracing ? Math.max(TRACE_BAR_ROOM, TRACE_BAR_TOP + traceBarHeight) : 0}
               anchorId={selectedId ?? (traceId === "" ? null : traceId)}
               centerRequest={centerRequest}
               actions={cardActions}
@@ -1273,7 +1258,7 @@ export default function LineageGraphPage() {
                     onPick={pick}
                     onViewScript={() => setScriptTarget(selectedIsFlow ? { key: selectedNode.id, view: "object" } : { key: selectedNode.id })}
                     onViewYaml={() => setScriptTarget({ key: selectedNode.id })}
-                    width={params.data ? LENS_DETAILS_WIDTH : DETAILS_WIDTH}
+                    width={detailsWidth}
                     data={lensOn && selectedSpec !== undefined && activity !== undefined && (
                       <LensNodeDetail
                         spec={selectedSpec}

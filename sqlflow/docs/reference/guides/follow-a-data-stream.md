@@ -52,12 +52,11 @@ drawn: what did the vendor deliver, and what did each of our flows do with it.
 
 - **From the Data streams board.** Click a row. The graph opens on that flow's trace, with every object on it drawn
   and the data view on, on the latest day anything on the trace ran.
-- **In the graph.** **What moved: Day by day** in the bar turns the view on for whatever is drawn: a whole repository's
+- **In the graph.** **What moved** in the bar turns the view on for whatever is drawn: a whole repository's
   flows, a project, a trace, or the data alone. A node's right-click menu has **Follow its data, day by day**, which
   traces the node and turns the view on, and so does **Follow its data** beside a delivery verdict in the details panel.
 
-Turning it off (the same button, the cross at the end of the day rail, or the part in the line under the bar) draws
-the graph as it was.
+Turning it off (the same button, or the cross at the end of the day rail) draws the graph as it was.
 
 ## What a card says
 

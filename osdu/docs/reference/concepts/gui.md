@@ -290,7 +290,7 @@ a delivery split over nodes, a run queued behind another), leading to the **Runs
 
 ## What the lineage graph says the module's flows moved
 
-SQLFlow's lineage graph has a data view (**What moved: Day by day**) in which every flow's card leads with what the
+SQLFlow's lineage graph has a data view (**What moved**) in which every flow's card leads with what the
 flow did in the day looked at and every line is weighed by it
 ([following data on the lineage graph](../../../../sqlflow/docs/reference/guides/follow-a-data-stream.md)). The
 module's kinds count something other than rows, so each says what a run of it moved, read from the counts its result

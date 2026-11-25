@@ -45,11 +45,28 @@ const LABEL_EVERY_EDGE_UP_TO = 30;
 const LABEL_SELECTED_EDGES_UP_TO = 10;
 /** The room kept clear beside the details panel when a drawing is fitted with a node selected. */
 const DETAILS_MARGIN = 24;
+/**
+ * The room a placed drawing keeps clear on its left, where the zoom control stands in the canvas's lower corner: a
+ * band's name is the first thing on that side, and the control would cover the name of whichever band ends there.
+ */
+const CONTROLS_ROOM = 56;
+/** The gap a placed drawing keeps under whatever the page stands at the canvas's top. */
+const TOP_ROOM_MARGIN = 14;
 
-function fitOptions(detailsWidth: number) {
+/** The room the data view's map takes beside the canvas's top left corner, or none while the map is not drawn. */
+export function lensMapRoom(lensOn: boolean, nodes: number): number {
+  return lensOn && nodes > MAP_DATA_ABOVE ? MAP_ROOM : 0;
+}
+
+function fitOptions(detailsWidth: number, topRoom: number) {
   return {
     maxZoom: 1,
-    padding: { top: "24px", bottom: "24px", left: "32px", right: `${detailsWidth > 0 ? detailsWidth + DETAILS_MARGIN : 32}px` },
+    padding: {
+      top: `${Math.max(24, topRoom + TOP_ROOM_MARGIN)}px`,
+      bottom: "24px",
+      left: `${CONTROLS_ROOM}px`,
+      right: `${detailsWidth > 0 ? detailsWidth + DETAILS_MARGIN : 32}px`,
+    },
   } as const;
 }
 
@@ -66,7 +83,7 @@ function readableViewport(
   positions: ReadonlyMap<string, Position>,
   size: CardSize,
   canvas: { width: number; height: number },
-  room: { left: number; right: number },
+  room: { left: number; right: number; top: number },
   anchorId: string | null,
 ): Viewport | null {
   if (positions.size === 0 || canvas.width <= 0 || canvas.height <= 0) {
@@ -86,8 +103,9 @@ function readableViewport(
   minX -= room.left;
 
   const pad = 24;
-  const wide = canvas.width - pad - room.right;
-  const high = canvas.height - pad * 2;
+  const top = Math.max(pad, room.top + TOP_ROOM_MARGIN);
+  const wide = canvas.width - CONTROLS_ROOM - room.right;
+  const high = canvas.height - top - pad;
   const zoom = Math.max(READABLE_ZOOM, Math.min(1, wide / (maxX - minX), high / (maxY - minY)));
   const anchor = anchorId === null ? undefined : positions.get(anchorId);
   // Along one axis: centred when the drawing fits; otherwise from its start, moved only as far as brings the
@@ -105,8 +123,8 @@ function readableViewport(
     return Math.max(toEnd, Math.min(fromStart, offset + space / 3 - anchorAt * zoom));
   };
   return {
-    x: along(minX, maxX, wide, pad, anchor?.x, size.width),
-    y: along(minY, maxY, high, pad, anchor?.y, size.height),
+    x: along(minX, maxX, wide, CONTROLS_ROOM, anchor?.x, size.width),
+    y: along(minY, maxY, high, top, anchor?.y, size.height),
     zoom,
   };
 }
@@ -163,6 +181,8 @@ interface CanvasProps {
   lens: CanvasLens | null;
   /** The width the details panel covers on the right while a node is selected. */
   detailsWidth: number;
+  /** How far down from the canvas's top the page covers it (a trace's bar), which a placed drawing starts under. */
+  topRoom: number;
   /** The node a drawing placed for reading keeps in view: the one traced or selected. */
   anchorId: string | null;
   centerRequest: CenterRequest | null;
@@ -192,7 +212,7 @@ function edgeLabel(edge: ViewEdge, nameOf: (id: string) => string): string {
  */
 export function GraphCanvas({
   view, positions, orientation, lanes, laneReach, selection, statuses, previewWaves, nameOf, colorMode, size, lens, detailsWidth,
-  anchorId, centerRequest, actions,
+  topRoom, anchorId, centerRequest, actions,
   onSelect, onActivate, onNodeContextMenu, children,
 }: CanvasProps) {
   const flow = useReactFlow();
@@ -220,15 +240,15 @@ export function GraphCanvas({
   // How a drawing is placed on the canvas. The graph of how nodes connect is fitted whole, as it always was. The
   // data view is placed for reading: its cards carry figures, and a chain shrunk until it fits shows none of them.
   // Read when a drawing is placed, never a reason to place one, so selecting a node does not move the canvas.
-  const mapped = lens !== null && view.nodes.length > MAP_DATA_ABOVE;
-  const placing = useRef({ readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation });
+  const mapped = lensMapRoom(lens !== null, view.nodes.length) > 0;
+  const placing = useRef({ readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation, topRoom });
   useEffect(() => {
-    placing.current = { readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation };
-  }, [lens, mapped, anchorId, positions, size, lanes, orientation]);
+    placing.current = { readable: lens !== null, mapped, anchorId, positions, size, lanes, orientation, topRoom };
+  }, [lens, mapped, anchorId, positions, size, lanes, orientation, topRoom]);
   const place = useRef((duration: number) => {
     const now = placing.current;
     if (!now.readable) {
-      void flow.fitView({ duration, ...fitOptions(detailsOpen.current) });
+      void flow.fitView({ duration, ...fitOptions(detailsOpen.current, now.topRoom) });
       return;
     }
     const { width, height } = store.getState();
@@ -239,7 +259,11 @@ export function GraphCanvas({
     const viewport = readableViewport(
       now.positions, now.size, { width, height },
       // The map stands in the top left corner, so the drawing starts beside it and not under it.
-      { left: labelRoom + (now.mapped ? MAP_ROOM : 0), right: detailsOpen.current > 0 ? detailsOpen.current + DETAILS_MARGIN : 24 },
+      {
+        left: labelRoom + (now.mapped ? MAP_ROOM : 0),
+        right: detailsOpen.current > 0 ? detailsOpen.current + DETAILS_MARGIN : 24,
+        top: now.topRoom,
+      },
       now.anchorId,
     );
     if (viewport !== null) {
@@ -423,7 +447,7 @@ export function GraphCanvas({
           }
         }}
         fitView={lens === null}
-        fitViewOptions={fitOptions(selection !== null ? detailsWidth : 0)}
+        fitViewOptions={fitOptions(selection !== null ? detailsWidth : 0, topRoom)}
         minZoom={0.05}
         nodesConnectable={false}
         nodesDraggable

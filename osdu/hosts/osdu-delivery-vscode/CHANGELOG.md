@@ -7,7 +7,12 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ### Lineage
 
-- **The lineage graph shows what moved.** **What moved: Day by day** in the graph's bar makes every card say what its
+- **The lineage graph's bar is one row.** The bar holds the search, the scope, how much is drawn and **What moved**.
+  **View** holds how the drawing is made (the wave range, kinds, folders and stacks, described steps, the layout), a
+  trace brings its own bar onto the canvas, and **More** holds Download as SVG and the object explorer. The line under
+  the bar counts what is drawn and names only the reductions made
+  ([reading the lineage graph](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/guides/lineage-graph.md#the-bar)).
+- **The lineage graph shows what moved.** **What moved** in the graph's bar makes every card say what its
   node did in the day looked at (the files that arrived, the rows a flow read and changed, what landed in a table, the
   records a delivery flow delivered) and chart it over the window, and inks and weighs every line by what it carried, so
   a delivery is followed from where it enters to where it stopped. A rail under the canvas picks the day, or one start

@@ -4018,7 +4018,7 @@
       "path": "guides/lineage-graph.md",
       "title": "Reading the lineage graph: scope, level, folders, stacks, waves, kinds and trace",
       "type": "guide",
-      "summary": "How the GUI's lineage graph decides what to draw, what each control of its bar changes, and how a drawing is shared as a link.",
+      "summary": "How the GUI's lineage graph decides what to draw, what its bar, its View menu and a trace's bar each change, and how a drawing is shared as a link.",
       "keywords": [
         "lineage graph",
         "lineage page",
@@ -4030,6 +4030,8 @@
         "handovers",
         "graph level",
         "hide kinds",
+        "view menu",
+        "trace bar",
         "project-graph",
         "whole repository"
       ],

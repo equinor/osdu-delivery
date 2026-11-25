@@ -49,8 +49,8 @@ test.describe("explore", () => {
     await expect(node.or(noLineage)).toBeVisible({ timeout: 60_000 });
 
     if (await node.isVisible()) {
-      // A repository opens as its flows alone, and the line under the bar says so.
-      await expect(adminPage.getByTestId("graph-status-line")).toContainText("flows only");
+      // A repository opens as its flows alone, and the bar says so on the level it has pressed.
+      await expect(adminPage.getByTestId("graph-level-flows")).toHaveAttribute("aria-checked", "true");
       await expect(adminPage.locator('[data-testid="graph-node"][data-node-type="object"]')).toHaveCount(0);
 
       // Click focuses (upstream/downstream trace) instead of leaving the page; the panel opens the pipeline.
@@ -88,11 +88,10 @@ test.describe("explore", () => {
     await flowHit.click();
     await expect(adminPage.getByTestId("graph-focus-panel")).toBeVisible({ timeout: 60_000 });
     expect(new URL(adminPage.url()).searchParams.get("focus")).not.toBeNull();
-    await expect(adminPage.getByTestId("graph-status-trace")).toContainText("trace of Csv_Basic");
+    await expect(adminPage.getByTestId("graph-trace-name")).toContainText("Csv_Basic");
 
-    // Taking the trace back from the status line draws the whole repository again.
-    await adminPage.getByTestId("graph-status-remove-trace").click();
-    await expect(adminPage.getByTestId("graph-status-trace")).toHaveCount(0);
+    // Stopping the trace from its bar on the canvas draws the whole repository again, and takes the bar away.
+    await adminPage.getByTestId("graph-trace-clear").click();
     await expect(adminPage.getByTestId("graph-trace-control")).toHaveCount(0);
   });
 
@@ -110,7 +109,7 @@ test.describe("explore", () => {
     if (await node.isVisible()) {
       expect(await adminPage.locator(".react-flow__node").count()).toBeGreaterThanOrEqual(2);
       await expect(adminPage.locator(".react-flow__edge").first()).toBeVisible();
-      await expect(adminPage.getByTestId("graph-status-line")).toContainText("data only");
+      await expect(adminPage.getByTestId("graph-level-objects")).toHaveAttribute("aria-checked", "true");
 
       // Focusing an object shows its trace and deep-links into the explorer.
       await node.click();

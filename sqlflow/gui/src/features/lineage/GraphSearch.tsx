@@ -75,7 +75,9 @@ export function GraphSearch({ options, onPickNode, onPickCatalog }: {
   return (
     <Command
       shouldFilter={false}
-      className="relative w-60 overflow-visible rounded-md border border-input bg-transparent **:data-[slot=command-input-wrapper]:h-8 **:data-[slot=command-input-wrapper]:border-b-0"
+      // A well set into the bar, as tall as the bar's other controls with its edge: the search is found at a glance
+      // without a second box beside the scope's. It gives up width where the bar is narrow, so the bar stays one line.
+      className="relative h-8 w-64 @max-[1000px]/graph-bar:w-44 overflow-visible rounded-md border border-border bg-background focus-within:border-ring **:data-[slot=command-input-wrapper]:h-[30px] **:data-[slot=command-input-wrapper]:border-b-0"
     >
       <CommandInput
         value={query}
@@ -83,7 +85,7 @@ export function GraphSearch({ options, onPickNode, onPickCatalog }: {
         placeholder="Search objects and flows"
         aria-label="Search objects and flows"
         data-testid="graph-node-search"
-        className="h-8 py-0 text-[13px]"
+        className="h-[30px] py-0 text-[13px]"
       />
       {open && (
         <CommandList

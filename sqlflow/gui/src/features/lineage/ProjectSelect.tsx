@@ -3,6 +3,8 @@ import { CheckIcon, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type { LineageProject } from "../../api/types";
 import { counted } from "./graphKinds";
 
@@ -19,8 +21,10 @@ export interface ScopeChoice {
  * holds, filterable by name. The whole repository leads each group because it is the map everything else is a
  * part of; a project narrows it to that folder's flows and what is downstream of them.
  */
-export function ProjectSelect({ items, repoId, project, onSelect }: {
+export function ProjectSelect({ items, loading, repoId, project, onSelect }: {
   items: LineageProject[];
+  /** Whether the list of repositories is still being read, so a scope the address names has no name to show yet. */
+  loading: boolean;
   repoId: string;
   project: string;
   onSelect: (choice: ScopeChoice | null) => void;
@@ -41,6 +45,11 @@ export function ProjectSelect({ items, repoId, project, onSelect }: {
   const label = selectedRepo === undefined
     ? null
     : project === "" ? selectedRepo.repoName : `${selectedRepo.repoName} / ${project}`;
+  // The address names a scope before the list says what it is called. Until the list is read the picker keeps the
+  // shape it will have, with a placeholder where the name goes, so the bar does not open on a box asking for a choice
+  // already made and then redraw itself.
+  const naming = label === null && repoId !== "" && loading;
+  const titled = label !== null || naming;
 
   const choose = (choice: ScopeChoice | null) => {
     setOpen(false);
@@ -50,18 +59,23 @@ export function ProjectSelect({ items, repoId, project, onSelect }: {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
+        {/* A chosen scope reads as the drawing's title, with no box of its own; until one is chosen the picker is the
+            page's first step, and is drawn as the control to reach for. */}
         <Button
-          variant="outline"
+          variant={titled ? "ghost" : "outline"}
           size="sm"
           role="combobox"
           aria-expanded={open}
           aria-label="Scope: a repository or a project"
+          aria-busy={naming || undefined}
           data-testid="graph-project-select"
-          className="h-8 w-[220px] justify-between font-normal"
+          className={cn("h-8 max-w-[280px] justify-between gap-1.5", titled ? "px-2 font-medium" : "w-[220px] font-normal")}
         >
           {label !== null
             ? <span className="truncate">{label}</span>
-            : <span className="text-muted-foreground">Pick a repository or project</span>}
+            : naming
+              ? <Skeleton className="h-4 w-24" />
+              : <span className="text-muted-foreground">Pick a repository or project</span>}
           <ChevronsUpDown className="text-muted-foreground" />
         </Button>
       </PopoverTrigger>
