@@ -184,7 +184,7 @@ public sealed class CacheRefresher
 
         foreach (var type in spec.Types.Where(t => t.Origin == CacheOrigin.Dimension))
         {
-            captured.Add(await DimensionCapture.CaptureAsync(DimensionLedger(flow, type), scope, type, _logger, ct).ConfigureAwait(false));
+            captured.Add(await DimensionCapture.CaptureAsync(DimensionLedger(flow, type).Dimensions, scope, type, _logger, ct).ConfigureAwait(false));
             origins.Add(type.Describe());
         }
 
@@ -302,7 +302,7 @@ public sealed class CacheRefresher
 
         foreach (var type in spec.Types.Where(t => t.Origin == CacheOrigin.Dimension))
         {
-            var dimension = await DimensionCapture.FindAsync(DimensionLedger(flow, type), scope, type, ct).ConfigureAwait(false);
+            var dimension = await DimensionCapture.FindAsync(DimensionLedger(flow, type).Dimensions, scope, type, ct).ConfigureAwait(false);
             _logger.LogInformation(
                 "plan {Type}: dimension {Dimension} of {Flow} holds {Members} member(s) from {Originals} original(s)",
                 type.Name, dimension.Name, dimension.FlowName, dimension.Members, dimension.Originals);

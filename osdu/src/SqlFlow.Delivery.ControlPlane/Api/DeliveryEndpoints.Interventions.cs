@@ -728,7 +728,7 @@ public static partial class DeliveryEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryLiftResult>, Accepted<DeliveryLiftResult>, ProblemHttpResult>> LiftFlowRemovalsAsync(
         Guid pipelineId, DeliveryLiftRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
-        DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedgerSubmissions ledger, IRunDispatcher dispatcher,
         ClaimsPrincipal user, CancellationToken ct)
     {
         if (request?.Keys is not { Count: > 0 } named || named.Count > FlowRuntime.MaxLift)

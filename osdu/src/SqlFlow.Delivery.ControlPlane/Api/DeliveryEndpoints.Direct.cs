@@ -72,7 +72,7 @@ public static partial class DeliveryEndpoints
     }
 
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ReadRecordAsync(
-        Guid flowId, Guid key, DeliveryReadRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+        Guid flowId, Guid key, DeliveryReadRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerRecords ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
     {
         if (InvalidVersion(request) is { } invalid)
         {

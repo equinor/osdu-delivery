@@ -58,14 +58,14 @@ public sealed class RetrievalRunner
     private readonly IReadOnlyDictionary<string, string> _values;
     private readonly OsduHttpClient _client;
     private readonly FileStoreRegistry _stores;
-    private readonly ILedger? _ledger;
+    private readonly ILedgerActivities? _ledger;
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
     private readonly OsduSearch _search;
     private readonly StorageRecords _storage;
     private readonly ConcurrentDictionary<string, List<string>> _missingIds = new(StringComparer.Ordinal);
 
-    public RetrievalRunner(RetrievalDefinition flow, IReadOnlyDictionary<string, string> values, OsduHttpClient client, FileStoreRegistry stores, ILedger? ledger, TimeProvider time, ILogger logger)
+    public RetrievalRunner(RetrievalDefinition flow, IReadOnlyDictionary<string, string> values, OsduHttpClient client, FileStoreRegistry stores, ILedgerActivities? ledger, TimeProvider time, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(values);

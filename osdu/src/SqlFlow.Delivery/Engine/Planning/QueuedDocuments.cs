@@ -22,7 +22,7 @@ namespace SqlFlow.Delivery.Engine.Planning;
 public sealed class QueuedDocuments
 {
     private readonly FileStoreRegistry _stores;
-    private readonly ILedger _ledger;
+    private readonly ILedgerSubmissions _ledger;
     private readonly Guid _submissionId;
     private readonly string _workRoot;
     private readonly ConcurrentDictionary<(Guid SubmissionId, int Batch), Task<bool>> _batches = new();
@@ -32,7 +32,7 @@ public sealed class QueuedDocuments
     /// <param name="ledger">The ledger, asked where another submission's batches are kept.</param>
     /// <param name="submissionId">The submission the run plans into.</param>
     /// <param name="workRoot">Where the run reads that submission's batches from: its own resolution of the flow's work location.</param>
-    public QueuedDocuments(FileStoreRegistry stores, ILedger ledger, Guid submissionId, string workRoot)
+    public QueuedDocuments(FileStoreRegistry stores, ILedgerSubmissions ledger, Guid submissionId, string workRoot)
     {
         ArgumentNullException.ThrowIfNull(stores);
         ArgumentNullException.ThrowIfNull(ledger);

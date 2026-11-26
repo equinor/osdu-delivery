@@ -77,7 +77,7 @@ public sealed class InventoryReportTests : IDisposable
         await ledger.Inventories.ReconcileAsync(_inventoryFlow, inventory.InventoryId, [], Now);
 
         using var all = new StringWriter();
-        Assert.Equal(ids, await InventoryExport.WriteAsync(ledger, inventory, null, all, CancellationToken.None));
+        Assert.Equal(ids, await InventoryExport.WriteAsync(ledger, ledger.Inventories, inventory, null, all, CancellationToken.None));
         var lines = all.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(ids + 1, lines.Length);
         Assert.StartsWith("inventory_record_id,id,name,kind,version,finding,", lines[0], StringComparison.Ordinal);
@@ -87,11 +87,11 @@ public sealed class InventoryReportTests : IDisposable
         Assert.Contains(lines, l => l.Contains("\"'=HYPERLINK(\"\"x\"\")\"", StringComparison.Ordinal));
 
         using var foreign = new StringWriter();
-        Assert.Equal(ids, await InventoryExport.WriteAsync(ledger, inventory, InventoryFindings.Foreign, foreign, CancellationToken.None));
+        Assert.Equal(ids, await InventoryExport.WriteAsync(ledger, ledger.Inventories, inventory, InventoryFindings.Foreign, foreign, CancellationToken.None));
         using var orphans = new StringWriter();
-        Assert.Equal(0, await InventoryExport.WriteAsync(ledger, inventory, InventoryFindings.Orphan, orphans, CancellationToken.None));
+        Assert.Equal(0, await InventoryExport.WriteAsync(ledger, ledger.Inventories, inventory, InventoryFindings.Orphan, orphans, CancellationToken.None));
         Assert.Single(orphans.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries));
-        await Assert.ThrowsAsync<DeliveryException>(() => InventoryExport.WriteAsync(ledger, inventory, "lost", new StringWriter(), CancellationToken.None));
+        await Assert.ThrowsAsync<DeliveryException>(() => InventoryExport.WriteAsync(ledger, ledger.Inventories, inventory, "lost", new StringWriter(), CancellationToken.None));
         Assert.Equal("report-inventory-dev-WellLogs-foreign.csv", InventoryExport.FileName(inventory, InventoryFindings.Foreign));
         Assert.Equal("report-inventory-dev-WellLogs-all.csv", InventoryExport.FileName(inventory, null));
     }

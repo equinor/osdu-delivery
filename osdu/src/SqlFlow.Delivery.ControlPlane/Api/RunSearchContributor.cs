@@ -22,12 +22,12 @@ public sealed class RunSearchContributor : ISearchContributor
     public const string CategoryKey = "runs";
 
     private readonly CatalogDbContext _catalog;
-    private readonly ILedger _ledger;
+    private readonly ILedgerSubmissions _ledger;
     private readonly IEnumerable<IRunOutcomeDescriber> _describers;
     private readonly ILogger<RunSearchContributor> _log;
 
     public RunSearchContributor(
-        CatalogDbContext catalog, ILedger ledger, IEnumerable<IRunOutcomeDescriber> describers, ILogger<RunSearchContributor> log)
+        CatalogDbContext catalog, ILedgerSubmissions ledger, IEnumerable<IRunOutcomeDescriber> describers, ILogger<RunSearchContributor> log)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(ledger);

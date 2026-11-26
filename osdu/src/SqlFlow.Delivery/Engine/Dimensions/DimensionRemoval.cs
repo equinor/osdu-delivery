@@ -24,22 +24,23 @@ public static class DimensionRemoval
     /// A cache flow of the dimension's partition captures it, it is no longer in the ledger, or a build held its write lock
     /// past the timeout.
     /// </exception>
-    public static async Task<DimensionRemoved> RemoveAsync(ILedger ledger, DimensionState dimension, string actor, TimeProvider clock, CancellationToken ct)
+    public static async Task<DimensionRemoved> RemoveAsync(ILedgerActivities ledger, DimensionStore dimensions, DimensionState dimension, string actor, TimeProvider clock, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentNullException.ThrowIfNull(dimension);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         ArgumentNullException.ThrowIfNull(clock);
 
         // A view reading the dimension's table would read a table that is gone: its flow's next build writes it without the
         // dimension, once the flow no longer joins it.
-        if (dimension.TableName is { } table && await ledger.Dimensions.ViewsReadingAsync(table, ct).ConfigureAwait(false) is { Count: > 0 } views)
+        if (dimension.TableName is { } table && await dimensions.ViewsReadingAsync(table, ct).ConfigureAwait(false) is { Count: > 0 } views)
         {
             throw new DeliveryException(
                 $"Dimension {dimension.Name} of {dimension.FlowName} is read by view{(views.Count == 1 ? string.Empty : "s")} {string.Join(", ", views)}, so it is not removed: the view would read a table that is gone. Take the dimension out of the view's joins and build the flow, which writes the view without it, then remove the dimension.");
         }
 
-        var captures = await ledger.Dimensions.CapturesAsync(dimension.DimensionId, ct).ConfigureAwait(false);
+        var captures = await dimensions.CapturesAsync(dimension.DimensionId, ct).ConfigureAwait(false);
         if (captures.Count > 0)
         {
             throw new DeliveryException(
@@ -59,7 +60,7 @@ public static class DimensionRemoval
             ct).ConfigureAwait(false);
         try
         {
-            var removed = await ledger.Dimensions.RemoveAsync(dimension.DimensionId, ct).ConfigureAwait(false)
+            var removed = await dimensions.RemoveAsync(dimension.DimensionId, ct).ConfigureAwait(false)
                 ?? throw new DeliveryException($"Dimension {dimension.Name} of {dimension.FlowName} is no longer in the ledger: another removal took it first.");
             await ledger.CompleteActivityAsync(activity.ActivityId, "completed", removed.Describe(), null, clock.GetUtcNow().UtcDateTime, ct: CancellationToken.None).ConfigureAwait(false);
             return removed;

@@ -353,7 +353,7 @@ public sealed class DimensionViewRunTests : IDisposable
 
         // A dimension a view reads is not removed: the view would read a table that is gone.
         var unit = (await ledger.Dimensions.FindAsync(flow.LedgerId, "TestUnit"))!;
-        var refused = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, unit, "user:admin", _clock, CancellationToken.None));
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, ledger.Dimensions, unit, "user:admin", _clock, CancellationToken.None));
         Assert.Contains("is read by view TestCurveView, so it is not removed", refused.Message, StringComparison.Ordinal);
 
         var (without, _, _) = Runner(Flow(string.Empty));

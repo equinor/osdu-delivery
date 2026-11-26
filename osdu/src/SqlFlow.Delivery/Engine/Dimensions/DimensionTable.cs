@@ -32,29 +32,29 @@ public static class DimensionTable
     }
 
     /// <summary>Makes sure the dimension has its table with its rows, and answers whether the table had to be made or widened.</summary>
-    public static Task<bool> EnsureAsync(ILedger ledger, DimensionState dimension, CancellationToken ct)
+    public static Task<bool> EnsureAsync(DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
-        return ledger.Dimensions.EnsureTableAsync(dimension.DimensionId, SpecOf(dimension), ct);
+        ArgumentNullException.ThrowIfNull(dimensions);
+        return dimensions.EnsureTableAsync(dimension.DimensionId, SpecOf(dimension), ct);
     }
 
     /// <summary>The table's name, the names of the columns that hold its key and its value, and its attribute columns.</summary>
-    public static async Task<DimensionTableShape> ShapeAsync(ILedger ledger, DimensionState dimension, CancellationToken ct)
-        => await WithTableAsync(ledger, dimension, () => ledger.Dimensions.TableShapeAsync(dimension.DimensionId, ct), ct).ConfigureAwait(false)
+    public static async Task<DimensionTableShape> ShapeAsync(DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
+        => await WithTableAsync(dimensions, dimension, () => dimensions.TableShapeAsync(dimension.DimensionId, ct), ct).ConfigureAwait(false)
             ?? throw Gone(dimension);
 
     /// <summary>A page of the dimension's table, as <paramref name="query"/> narrows and orders it.</summary>
     /// <exception cref="DeliveryException">The query names a column the table does not have, or the dimension is gone.</exception>
-    public static async Task<DimensionTablePage> ReadAsync(ILedger ledger, DimensionState dimension, DimensionTableQuery query, CancellationToken ct)
-        => await WithTableAsync(ledger, dimension, () => ledger.Dimensions.ReadTableAsync(dimension.DimensionId, query, ct), ct).ConfigureAwait(false)
+    public static async Task<DimensionTablePage> ReadAsync(DimensionStore dimensions, DimensionState dimension, DimensionTableQuery query, CancellationToken ct)
+        => await WithTableAsync(dimensions, dimension, () => dimensions.ReadTableAsync(dimension.DimensionId, query, ct), ct).ConfigureAwait(false)
             ?? throw Gone(dimension);
 
     /// <summary>Every row of the dimension's table, by value then row number, one at a time.</summary>
-    public static async IAsyncEnumerable<DimensionTableRow> StreamAsync(ILedger ledger, DimensionState dimension, [EnumeratorCancellation] CancellationToken ct)
+    public static async IAsyncEnumerable<DimensionTableRow> StreamAsync(DimensionStore dimensions, DimensionState dimension, [EnumeratorCancellation] CancellationToken ct)
     {
         // The shape is read first, which makes the table when it is missing, so the rows are read from a table that is there.
-        _ = await ShapeAsync(ledger, dimension, ct).ConfigureAwait(false);
-        await foreach (var row in ledger.Dimensions.StreamTableAsync(dimension.DimensionId, ct).ConfigureAwait(false))
+        _ = await ShapeAsync(dimensions, dimension, ct).ConfigureAwait(false);
+        await foreach (var row in dimensions.StreamTableAsync(dimension.DimensionId, ct).ConfigureAwait(false))
         {
             yield return row;
         }
@@ -64,9 +64,9 @@ public static class DimensionTable
     /// Reads the table, making it first when the database does not hold it, and reading once more; and once more when a
     /// build renamed a column of it between the read's two steps, which finds the column under its name.
     /// </summary>
-    private static async Task<T> WithTableAsync<T>(ILedger ledger, DimensionState dimension, Func<Task<T>> read, CancellationToken ct)
+    private static async Task<T> WithTableAsync<T>(DimensionStore dimensions, DimensionState dimension, Func<Task<T>> read, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentNullException.ThrowIfNull(dimension);
         try
         {
@@ -74,7 +74,7 @@ public static class DimensionTable
         }
         catch (DimensionTableMissingException)
         {
-            await EnsureAsync(ledger, dimension, ct).ConfigureAwait(false);
+            await EnsureAsync(dimensions, dimension, ct).ConfigureAwait(false);
             return await read().ConfigureAwait(false);
         }
         catch (DimensionTableRenamedException)

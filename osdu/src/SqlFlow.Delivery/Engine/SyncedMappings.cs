@@ -44,7 +44,7 @@ public static class SyncedMappings
     /// where it has the module database and no engine.
     /// </summary>
     public static async Task<(MappingDefinition? Mapping, string? Problem)> ByReferenceAsync(
-        ILedger? ledger, Catalog.IRepositoryFolders folders, DeliveryDocumentLoader loader, string reference, CancellationToken ct)
+        ILedgerDocuments? ledger, Catalog.IRepositoryFolders folders, DeliveryDocumentLoader loader, string reference, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(folders);
         ArgumentNullException.ThrowIfNull(loader);
@@ -80,7 +80,7 @@ public static class SyncedMappings
     /// folders).
     /// </summary>
     private static async Task<(MappingDefinition? Mapping, string? Problem)> ParseAsync(
-        ILedger ledger, Catalog.IRepositoryFolders folders, DeliveryDocumentLoader loader, SyncedMapping synced, CancellationToken ct)
+        ILedgerDocuments ledger, Catalog.IRepositoryFolders folders, DeliveryDocumentLoader loader, SyncedMapping synced, CancellationToken ct)
     {
         if (!synced.Valid)
         {

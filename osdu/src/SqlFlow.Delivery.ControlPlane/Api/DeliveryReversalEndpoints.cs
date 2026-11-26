@@ -158,7 +158,7 @@ public static class DeliveryReversalEndpoints
     /// </summary>
     private static async Task<Results<Accepted<DeliveryReversalAccepted>, ProblemHttpResult>> ReverseAsync(
         Guid pipelineId, DeliveryReversalRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, IRunDispatcher dispatcher, ClaimsPrincipal user,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedgerReversals ledger, IRunDispatcher dispatcher, ClaimsPrincipal user,
         CancellationToken ct)
     {
         if (SourceOf(request) is not { } source)
@@ -217,7 +217,7 @@ public static class DeliveryReversalEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryReversibleDto>, ProblemHttpResult>> ReversibleAsync(
         Guid pipelineId, Guid? runId, Guid? submissionId, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, CancellationToken ct)
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedgerReversals ledger, CancellationToken ct)
     {
         if (SourceOf(runId, submissionId) is not { } source)
         {
@@ -238,7 +238,7 @@ public static class DeliveryReversalEndpoints
 
     /// <summary>Whether <paramref name="source"/> has anything to reverse now in the interface's ledger, a reverse run of it queued or running included.</summary>
     private static async Task<ReversalAvailability> AvailabilityAsync(
-        CatalogDbContext db, ILedger ledger, DeliveryEndpoints.FlowContext flow, ReversalSource source, CancellationToken ct)
+        CatalogDbContext db, ILedgerReversals ledger, DeliveryEndpoints.FlowContext flow, ReversalSource source, CancellationToken ct)
         => await ReversalAvailability.ReadAsync(ledger, flow.FlowId, source, await ActiveReverseRunAsync(db, flow, source, ct).ConfigureAwait(false), ct)
             .ConfigureAwait(false);
 
@@ -429,7 +429,7 @@ public static class DeliveryReversalEndpoints
         }
     }
 
-    private static async Task<DeliveryReversalDto> ToDtoAsync(ILedger ledger, ReversalState reversal, bool counted, CancellationToken ct)
+    private static async Task<DeliveryReversalDto> ToDtoAsync(ILedgerReversals ledger, ReversalState reversal, bool counted, CancellationToken ct)
         => ToDto(reversal, counted ? await ledger.CountReversalAsync(reversal.ReversalId, ct).ConfigureAwait(false) : null);
 
     private static DeliveryReversalDto ToDto(ReversalState reversal, ReversalCounts? counts) => new(

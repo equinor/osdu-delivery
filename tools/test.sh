@@ -6,7 +6,8 @@
 #                                       GitHub action's tests, and the VS Code extension's. It is what CI's Build and test runs on a pull request, and
 #                                       what the pre-push hook runs. It needs no database.
 #   bash tools/test.sh --full           everything: the whole .NET suite against SQL Server (and a test GitHub App when
-#                                       one is configured), the MCP server's crates and the GUI end-to-end suite. Run it
+#                                       one is configured), the MCP server's crates and the GUI end-to-end suite, on a
+#                                       fresh OsduDeliveryE2E unless SQLFLOW_E2E_CATALOG_DB names its database. Run it
 #                                       before opening a pull request; CI runs it on a release tag, and on a pull request
 #                                       labelled full-tests.
 #   bash tools/test.sh --install-hook   makes git run the unit tier before every push (git config core.hooksPath).
@@ -224,6 +225,27 @@ osdu_gui_e2e() {
   npm run e2e
 }
 
+# The end-to-end suite's estate, fresh for the full tier as it is in CI. A run otherwise brings OsduDeliveryE2E forward
+# from whatever the runs before it left (playwright.config.ts), and an estate that old has failed specs that were not
+# about the change under test: a flow's submissions past the first page of its tab, records left held, a source still
+# registered to a deleted worktree's fixture. Only the suite's default local database is dropped, never one
+# SQLFLOW_E2E_CATALOG_DB names, and never while anything is connected to it, since another run's host would lose its
+# estate under it. The suite's host creates the database again (its bootstrap may create one) and the seed fills it.
+osdu_gui_e2e_fresh_estate() {
+  if [ -n "${SQLFLOW_E2E_CATALOG_DB:-}" ]; then
+    echo "SQLFLOW_E2E_CATALOG_DB names the suite's database, so the suite brings that estate forward as it is."
+    return 0
+  fi
+  local connected
+  connected="$(sqlcmd -S localhost -E -C -b -h -1 -W -Q "SET NOCOUNT ON; SELECT CONCAT(program_name, N', process ', host_process_id, N', on ', host_name) FROM sys.dm_exec_sessions WHERE database_id = DB_ID(N'OsduDeliveryE2E');")"
+  if [ -n "$connected" ]; then
+    echo "OsduDeliveryE2E is in use, so the full tier does not drop it for a fresh estate. Stop what holds it and run again; connected now:" >&2
+    echo "$connected" >&2
+    return 1
+  fi
+  sqlcmd -S localhost -E -C -b -h -1 -Q "SET NOCOUNT ON; IF DB_ID(N'OsduDeliveryE2E') IS NULL PRINT N'There is no OsduDeliveryE2E yet: the suite''s host creates it and the seed fills it.'; ELSE BEGIN DROP DATABASE OsduDeliveryE2E; PRINT N'OsduDeliveryE2E dropped: the suite''s host creates it again and the seed fills it.'; END"
+}
+
 stages_begin
 
 # --- .NET ---
@@ -293,8 +315,9 @@ if [ "$mode" = full ]; then
   stage_run "MCP server (OSDU Delivery): tests" -- \
     cargo test --locked --no-fail-fast --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
 
-  # --- The GUI end-to-end suite, on the Release build ---
-  stage_run "OSDU GUI end-to-end suite" --needs "$build" --needs "OSDU GUI: install" -- osdu_gui_e2e
+  # --- The GUI end-to-end suite, on the Release build and a fresh estate ---
+  stage_run "OSDU GUI end-to-end suite: a fresh estate" -- osdu_gui_e2e_fresh_estate
+  stage_run "OSDU GUI end-to-end suite" --needs "$build" --needs "OSDU GUI: install"     --needs "OSDU GUI end-to-end suite: a fresh estate" -- osdu_gui_e2e
 fi
 
 status=0

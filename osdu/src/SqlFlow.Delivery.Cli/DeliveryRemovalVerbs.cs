@@ -79,7 +79,7 @@ internal static class DeliveryRemovalVerbs
     }
 
     /// <summary>A delivery flow's deletions: the keys its source removed, a page at a time in key order, of one state with --state.</summary>
-    public static async Task<int> RemovedAsync(CliVerbContext context, ILedger ledger, Guid flowId, string label, CancellationToken ct)
+    public static async Task<int> RemovedAsync(CliVerbContext context, ILedgerRemovals ledger, Guid flowId, string label, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(ledger);

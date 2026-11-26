@@ -47,13 +47,13 @@ public static class InventoryExport
     /// Writes every id of the inventory with <paramref name="finding"/> (every id when null) to <paramref name="output"/> as UTF-8,
     /// and returns how many it wrote. The stream is left open.
     /// </summary>
-    public static async Task<long> WriteAsync(ILedger ledger, InventoryState inventory, string? finding, Stream output, CancellationToken ct)
+    public static async Task<long> WriteAsync(ILedgerRegistry ledger, InventoryStore inventories, InventoryState inventory, string? finding, Stream output, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(output);
         var writer = new StreamWriter(output, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), bufferSize: 64 * 1024, leaveOpen: true);
         await using (writer.ConfigureAwait(false))
         {
-            var rows = await WriteAsync(ledger, inventory, finding, writer, ct).ConfigureAwait(false);
+            var rows = await WriteAsync(ledger, inventories, inventory, finding, writer, ct).ConfigureAwait(false);
             await writer.FlushAsync(ct).ConfigureAwait(false);
             return rows;
         }
@@ -64,9 +64,10 @@ public static class InventoryExport
     /// line ending in CRLF whatever the writer's own line ending is, and returns how many it wrote.
     /// </summary>
     /// <exception cref="DeliveryException"><paramref name="finding"/> is not a finding.</exception>
-    public static async Task<long> WriteAsync(ILedger ledger, InventoryState inventory, string? finding, TextWriter output, CancellationToken ct)
+    public static async Task<long> WriteAsync(ILedgerRegistry ledger, InventoryStore inventories, InventoryState inventory, string? finding, TextWriter output, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(inventories);
         ArgumentNullException.ThrowIfNull(inventory);
         ArgumentNullException.ThrowIfNull(output);
         if (finding is not null && !InventoryFindings.IsKnown(finding))
@@ -81,7 +82,7 @@ public static class InventoryExport
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.Inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, finding, after, Page, ct).ConfigureAwait(false);
+            var page = await inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, finding, after, Page, ct).ConfigureAwait(false);
             foreach (var record in page)
             {
                 string? ledgerName = null;
@@ -120,9 +121,10 @@ public static class InventoryExport
     /// it wrote; the stream is left open.
     /// </summary>
     public static async Task<long> WriteSelectionAsync(
-        ILedger ledger, InventoryState inventory, long selectionId, IReadOnlyList<string> columns, string? finding, Stream output, CancellationToken ct)
+        ILedgerRegistry ledger, InventoryStore inventories, InventoryState inventory, long selectionId, IReadOnlyList<string> columns, string? finding, Stream output, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(inventories);
         ArgumentNullException.ThrowIfNull(inventory);
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentNullException.ThrowIfNull(output);
@@ -141,7 +143,7 @@ public static class InventoryExport
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                var page = await ledger.Inventories.ListSelectionRecordsAsync(inventory.Partition, selectionId, finding, after, Page, ct).ConfigureAwait(false);
+                var page = await inventories.ListSelectionRecordsAsync(inventory.Partition, selectionId, finding, after, Page, ct).ConfigureAwait(false);
                 foreach (var selected in page)
                 {
                     var record = selected.Record;

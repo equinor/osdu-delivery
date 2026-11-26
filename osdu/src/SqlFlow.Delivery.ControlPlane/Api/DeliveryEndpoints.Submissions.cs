@@ -81,7 +81,7 @@ public static partial class DeliveryEndpoints
 
     /// <summary>A retrieval flow's runs, newest first. The flow id derives from the pipeline's name, as the executor derives it.</summary>
     private static async Task<Results<Ok<IReadOnlyList<DeliveryRetrievalDto>>, ProblemHttpResult>> ListRetrievalsAsync(
-        Guid pipelineId, int? max, CatalogDbContext db, ILedger ledger, CancellationToken ct)
+        Guid pipelineId, int? max, CatalogDbContext db, ILedgerActivities ledger, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null)
@@ -103,7 +103,7 @@ public static partial class DeliveryEndpoints
     }
 
     private static async Task<Results<Ok<DeliverySubmissionDetailDto>, ProblemHttpResult>> GetSubmissionAsync(
-        Guid submissionId, CatalogDbContext db, OsduDbContext osdu, ILedger ledger, CancellationToken ct)
+        Guid submissionId, CatalogDbContext db, OsduDbContext osdu, ILedgerSubmissions ledger, CancellationToken ct)
     {
         var submission = await ledger.GetSubmissionAsync(submissionId, ct).ConfigureAwait(false);
         if (submission is null)
@@ -133,7 +133,7 @@ public static partial class DeliveryEndpoints
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryWorkBatchDto>>, ProblemHttpResult>> ListSubmissionBatchesAsync(
-        Guid submissionId, string? status, int? page, int? pageSize, ILedger ledger, CancellationToken ct)
+        Guid submissionId, string? status, int? page, int? pageSize, ILedgerSubmissions ledger, CancellationToken ct)
     {
         var submission = await ledger.GetSubmissionAsync(submissionId, ct).ConfigureAwait(false);
         if (submission is null)

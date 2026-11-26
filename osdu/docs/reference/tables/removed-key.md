@@ -20,6 +20,7 @@ related:
   - delivery-concept-removal-and-reversal
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs

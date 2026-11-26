@@ -33,7 +33,7 @@ public sealed record VerifySummary(int Checked, int Matched, int Drifted, int Mi
 /// </summary>
 public sealed class Verifier
 {
-    private readonly ILedger _ledger;
+    private readonly ILedgerRecords _ledger;
     private readonly IDeliveryProtocol _protocol;
     private readonly FlowDefinition _flow;
     private readonly TimeProvider _time;
@@ -43,7 +43,7 @@ public sealed class Verifier
     /// <summary>The trace of the run the pass is part of, which paces its progress lines; null outside a run.</summary>
     public RunTrace? Trace { get; init; }
 
-    public Verifier(ILedger ledger, IDeliveryProtocol protocol, FlowDefinition flow, TimeProvider time, IDeliveryListener listener, ILogger<Verifier> logger)
+    public Verifier(ILedgerRecords ledger, IDeliveryProtocol protocol, FlowDefinition flow, TimeProvider time, IDeliveryListener listener, ILogger<Verifier> logger)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(protocol);

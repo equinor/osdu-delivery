@@ -11,12 +11,12 @@ namespace SqlFlow.Delivery.Engine.Intake;
 /// </summary>
 public sealed class SubmissionHolds : IAsyncDisposable, IDisposable
 {
-    private readonly ILedger _ledger;
+    private readonly ILedgerSubmissions _ledger;
     private readonly Dictionary<Guid, SubmissionHold> _held = [];
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
-    public SubmissionHolds(ILedger ledger)
+    public SubmissionHolds(ILedgerSubmissions ledger)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         _ledger = ledger;

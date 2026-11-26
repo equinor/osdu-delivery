@@ -78,7 +78,7 @@ public sealed partial class LedgerMoveService : BackgroundService
     public async Task<IReadOnlyList<LedgerMoveResult>> PassAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
+        var ledger = scope.ServiceProvider.GetRequiredService<ILedgerRegistry>();
         var results = await ledger.CompleteLedgerMovesAsync(null, ct).ConfigureAwait(false);
         foreach (var result in results)
         {

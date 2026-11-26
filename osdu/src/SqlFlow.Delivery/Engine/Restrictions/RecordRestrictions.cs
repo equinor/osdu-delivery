@@ -40,7 +40,7 @@ public sealed record RestrictionCheck(string? Identity, string? Refusal, IReadOn
 public sealed class RecordRestrictions
 {
     private readonly FlowDefinition _flow;
-    private readonly ILedger _ledger;
+    private readonly ILedgerRestrictions _ledger;
     private readonly IDeliveryProtocol _protocol;
     private readonly IRecordAccess? _access;
     private readonly string? _accessRefusal;
@@ -57,7 +57,7 @@ public sealed class RecordRestrictions
     /// <param name="actor">Who asked, as each record's attempt names them.</param>
     /// <param name="runId">The run that asked.</param>
     /// <param name="restriction">The restriction to restrict under; null for a lift.</param>
-    public RecordRestrictions(FlowDefinition flow, ILedger ledger, IDeliveryProtocol protocol, TimeProvider time, string actor, Guid? runId, AccessRestrictionState? restriction)
+    public RecordRestrictions(FlowDefinition flow, ILedgerRestrictions ledger, IDeliveryProtocol protocol, TimeProvider time, string actor, Guid? runId, AccessRestrictionState? restriction)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(ledger);

@@ -21,11 +21,11 @@ public sealed class ReferenceCheck
     /// <summary>How many of a record's missing references its hold names; the rest are counted.</summary>
     private const int Named = 5;
 
-    private readonly ILedger _ledger;
+    private readonly ILedgerRecords _ledger;
     private readonly OsduHttpClient _client;
     private readonly string _batchPath;
 
-    public ReferenceCheck(ILedger ledger, OsduHttpClient client, string batchPath)
+    public ReferenceCheck(ILedgerRecords ledger, OsduHttpClient client, string batchPath)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(client);

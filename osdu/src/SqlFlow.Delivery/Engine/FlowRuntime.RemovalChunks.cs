@@ -131,7 +131,7 @@ public sealed partial class FlowRuntime
     /// says removed. The hold is renewed every half of the flow's lease while the removal goes on, and let go when it
     /// ends, whatever its outcome; a removal that stops lets its records go once that lease runs out.
     /// </summary>
-    private async Task<T> UnderRemovalHoldAsync<T>(ILedger ledger, IReadOnlyCollection<DeliveryKey> keys, Func<string?, Task<T>> remove, CancellationToken ct)
+    private async Task<T> UnderRemovalHoldAsync<T>(ILedgerLeases ledger, IReadOnlyCollection<DeliveryKey> keys, Func<string?, Task<T>> remove, CancellationToken ct)
     {
         var length = TimeSpan.FromSeconds(Math.Max(Flow.Reliability.LeaseSeconds, 1));
         var hold = await ledger.HoldForRemovalAsync(Flow.Id, keys, RemovalOwner, length, _context.Time.GetUtcNow().UtcDateTime, RunId, ct).ConfigureAwait(false);
@@ -164,7 +164,7 @@ public sealed partial class FlowRuntime
     }
 
     /// <summary>Renews a removal's hold every half lease until <paramref name="ct"/> says the removal ended.</summary>
-    private async Task KeepRemovalHoldAsync(ILedger ledger, string token, TimeSpan length, CancellationToken ct)
+    private async Task KeepRemovalHoldAsync(ILedgerLeases ledger, string token, TimeSpan length, CancellationToken ct)
     {
         var interval = TimeSpan.FromMilliseconds(Math.Max(length.TotalMilliseconds / 2, 1000));
         try

@@ -41,9 +41,9 @@ public static class DimensionFilters
     /// <see cref="MaxOriginalsPerFilter"/>, or no build has settled the dimension's field.
     /// </exception>
     public static async Task<DimensionFilterSet> ForMembersAsync(
-        ILedger ledger, DimensionState dimension, IReadOnlyCollection<long> memberIds, IReadOnlyCollection<string> values, CancellationToken ct)
+        DimensionStore dimensions, DimensionState dimension, IReadOnlyCollection<long> memberIds, IReadOnlyCollection<string> values, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentNullException.ThrowIfNull(dimension);
         ArgumentNullException.ThrowIfNull(memberIds);
         ArgumentNullException.ThrowIfNull(values);
@@ -61,7 +61,7 @@ public static class DimensionFilters
 
         var field = FieldOf(dimension.Path, dimension.Field)
             ?? throw new DeliveryException($"Dimension {dimension.Name} has not been built with a field yet, so no filter can be written for it. Build it first.");
-        var found = await ledger.Dimensions.GetMembersAsync(dimension.DimensionId, memberIds, values, ct).ConfigureAwait(false);
+        var found = await dimensions.GetMembersAsync(dimension.DimensionId, memberIds, values, ct).ConfigureAwait(false);
         var missing = memberIds.Where(id => found.All(m => m.MemberId != id)).Select(id => id.ToString(CultureInfo.InvariantCulture))
             .Concat(values.Where(v => found.All(m => !string.Equals(m.Value, v, StringComparison.Ordinal))))
             .Distinct(StringComparer.Ordinal)
@@ -75,7 +75,7 @@ public static class DimensionFilters
                 $"The {held.Count} value(s) named hold {total} keys, more than the {MaxOriginalsPerFilter} one filter covers. Ask for fewer values at a time.");
         }
 
-        var originals = await ledger.Dimensions.MemberOriginalsAsync(dimension.DimensionId, held.Select(m => m.MemberId).ToList(), ct).ConfigureAwait(false);
+        var originals = await dimensions.MemberOriginalsAsync(dimension.DimensionId, held.Select(m => m.MemberId).ToList(), ct).ConfigureAwait(false);
         var filterable = originals.Where(o => o.Filterable).Select(o => o.Original).ToList();
         var unfilterable = originals.Where(o => !o.Filterable).Select(o => o.Original).ToList();
         IReadOnlyList<string> queries = filterable.Count == 0 ? [] : Of(field, filterable);

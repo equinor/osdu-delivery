@@ -122,7 +122,7 @@ public sealed partial class FlowRuntime
     /// record the removal itself holds (<paramref name="holder"/>) counts as one no worker holds.
     /// </summary>
     private async Task<(UndoSummary Undone, IReadOnlySet<DeliveryKey> Unsettled)> UndoForRemovalAsync(
-        ILedger ledger, IDeliveryProtocol protocol, IReadOnlyList<RecordState> records, bool open, bool minted, string? holder, CancellationToken ct)
+        ILedgerArtifacts ledger, IDeliveryProtocol protocol, IReadOnlyList<RecordState> records, bool open, bool minted, string? holder, CancellationToken ct)
     {
         var free = records.Where(r => r.LeaseOwner is null || string.Equals(r.LeaseOwner, holder, StringComparison.Ordinal)).ToDictionary(r => r.DeliveryKey);
         if (!protocol.Undoes || free.Count == 0)

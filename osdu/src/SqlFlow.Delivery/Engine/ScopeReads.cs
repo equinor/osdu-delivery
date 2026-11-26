@@ -72,7 +72,7 @@ public static class ScopeReads
 {
     /// <summary>What a run of <paramref name="flow"/> with <paramref name="values"/>, rendering with <paramref name="rendering"/>, reads of its scope.</summary>
     public static async Task<ScopeRead> DecideAsync(
-        ILedger? ledger, FlowDefinition flow, IReadOnlyDictionary<string, string> values, RenderContext rendering, CancellationToken ct = default)
+        ILedgerRecords? ledger, FlowDefinition flow, IReadOnlyDictionary<string, string> values, RenderContext rendering, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(values);

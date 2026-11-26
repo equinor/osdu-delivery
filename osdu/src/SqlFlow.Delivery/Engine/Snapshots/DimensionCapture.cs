@@ -30,12 +30,12 @@ internal static class DimensionCapture
     private const int MaxAttributeValues = 1000;
 
     /// <summary>The members of the dimension <paramref name="type"/> holds, in <paramref name="partition"/>, as a lookup table.</summary>
-    public static async Task<ReferenceType> CaptureAsync(ILedger ledger, string partition, ReferenceTypeSpec type, ILogger log, CancellationToken ct)
+    public static async Task<ReferenceType> CaptureAsync(DimensionStore dimensions, string partition, ReferenceTypeSpec type, ILogger log, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(log);
-        var dimension = await FindAsync(ledger, partition, type, ct).ConfigureAwait(false);
+        var dimension = await FindAsync(dimensions, partition, type, ct).ConfigureAwait(false);
         var carried = type.Fields.Skip(DimensionColumns.Fields.Count).Select(f => f.Name).ToList();
         var declared = DimensionRunner.AttributesOf(dimension.AttributesJson);
         var unread = carried.Where(name => declared.All(a => !string.Equals(a.Name, name, StringComparison.Ordinal))).ToList();
@@ -56,7 +56,7 @@ internal static class DimensionCapture
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.Dimensions.ListMembersAsync(
+            var page = await dimensions.ListMembersAsync(
                 dimension.DimensionId, new DimensionMemberQuery(null, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
             members.AddRange(page);
             if (page.Count < DimensionStore.MaxPage)
@@ -71,7 +71,7 @@ internal static class DimensionCapture
         foreach (var chunk in members.Select(m => m.MemberId).Chunk(OriginalsChunk))
         {
             ct.ThrowIfCancellationRequested();
-            foreach (var original in await ledger.Dimensions.MemberOriginalsAsync(dimension.DimensionId, chunk, ct).ConfigureAwait(false))
+            foreach (var original in await dimensions.MemberOriginalsAsync(dimension.DimensionId, chunk, ct).ConfigureAwait(false))
             {
                 if (original.MemberId is { } memberId)
                 {
@@ -87,7 +87,7 @@ internal static class DimensionCapture
             foreach (var chunk in members.Select(m => m.MemberId).Chunk(OriginalsChunk))
             {
                 ct.ThrowIfCancellationRequested();
-                foreach (var held in await ledger.Dimensions.MemberAttributesAsync(dimension.DimensionId, chunk, MaxAttributeValues, ct).ConfigureAwait(false))
+                foreach (var held in await dimensions.MemberAttributesAsync(dimension.DimensionId, chunk, MaxAttributeValues, ct).ConfigureAwait(false))
                 {
                     attributes[held.MemberId] = held.Attributes;
                 }
@@ -144,12 +144,12 @@ internal static class DimensionCapture
     /// which a completed build has written.
     /// </summary>
     /// <exception cref="DeliveryException">No build of the dimension has completed in the partition.</exception>
-    public static async Task<DimensionState> FindAsync(ILedger ledger, string partition, ReferenceTypeSpec type, CancellationToken ct)
+    public static async Task<DimensionState> FindAsync(DimensionStore dimensions, string partition, ReferenceTypeSpec type, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);
         ArgumentNullException.ThrowIfNull(type);
-        var kept = await ledger.Dimensions.ListAsync(partition, null, ct).ConfigureAwait(false);
+        var kept = await dimensions.ListAsync(partition, null, ct).ConfigureAwait(false);
         var dimension = kept.FirstOrDefault(d => string.Equals(d.FlowName, type.DimensionFlow, StringComparison.OrdinalIgnoreCase)
             && string.Equals(d.Name, type.Dimension, StringComparison.OrdinalIgnoreCase));
         if (dimension is null || dimension.LastRunId is null)

@@ -62,7 +62,7 @@ public sealed class RetrievalExecutor : KindExecutor<RetrievalFlowDocument, Retr
     /// every retrieval it records is kept under that partition (osdu/docs/reference/concepts/ledger.md, Ledgers, flows
     /// and partitions).
     /// </summary>
-    private static async Task RegisterLedgerAsync(EngineContext context, Ledger.ILedger ledger, RetrievalDefinition flow, CancellationToken ct)
+    private static async Task RegisterLedgerAsync(EngineContext context, Ledger.ILedgerRegistry ledger, RetrievalDefinition flow, CancellationToken ct)
     {
         var declared = flow.Source.Headers.FirstOrDefault(h => h.Key.Equals(SqlFlow.Delivery.Snapshots.CacheScope.PartitionHeader, StringComparison.OrdinalIgnoreCase)).Value;
         if (string.IsNullOrWhiteSpace(declared))

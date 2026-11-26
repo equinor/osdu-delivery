@@ -151,7 +151,7 @@ public static class DeliveryIssueEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryIssueReleaseResult>, Accepted<DeliveryIssueReleaseResult>, ProblemHttpResult>> ReleaseIssueAsync(
         Guid pipelineId, string issue, DeliveryIssueReleaseRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedger ledger,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedgerSubmissions ledger,
         IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
         if (Parse(issue) is not { } hash)
@@ -201,7 +201,7 @@ public static class DeliveryIssueEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryIssueAdoptResult>, Accepted<DeliveryIssueAdoptResult>, ProblemHttpResult>> AdoptIssueAsync(
         Guid pipelineId, string issue, DeliveryIssueAdoptRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedger ledger,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedgerSubmissions ledger,
         IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
         if (Parse(issue) is not { } hash)

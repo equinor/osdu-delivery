@@ -343,8 +343,9 @@ public sealed class NotificationDigestStoreTests
             Assert.Null(armed.Digest);
             Assert.True(armed.NextDueUtc > start);
 
-            // Inside the window the tick stands down.
-            var idle = await NotificationService.RunDigestTickAsync(db, start.AddMinutes(1), 60, 0, null);
+            // Inside the window the tick stands down. The window ends at the next boundary of the hour, so the tick looks
+            // halfway there: a fixed minute after the start is past it when the test runs in the last minute of an hour.
+            var idle = await NotificationService.RunDigestTickAsync(db, start + ((armed.NextDueUtc - start) / 2), 60, 0, null);
             Assert.Equal(DigestTickOutcome.Idle, idle.Outcome);
             Assert.Null(idle.Digest);
 

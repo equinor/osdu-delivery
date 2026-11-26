@@ -46,7 +46,7 @@ public static class DeliveryLedgerEndpoints
     /// </summary>
     private static async Task<Results<Accepted<DeliveryLedgerDeleteAccepted>, ProblemHttpResult>> DeleteLedgerAsync(
         Guid pipelineId, DeliveryLedgerDeleteRequest? request, [FromQuery] string? partition,
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, IRunDispatcher dispatcher, ClaimsPrincipal user,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedgerRegistry ledger, IRunDispatcher dispatcher, ClaimsPrincipal user,
         CancellationToken ct)
     {
         if (PartitionConfirmation.Typed(request?.Confirm) is not { } confirm)
@@ -112,7 +112,7 @@ public static class DeliveryLedgerEndpoints
     }
 
     /// <summary>The partition the ledger's directory holds a ledger of one of <paramref name="source"/>'s interfaces in, or null when it holds none.</summary>
-    private static async Task<string?> KeptPartitionAsync(ILedger ledger, SourceDefinition source, CancellationToken ct)
+    private static async Task<string?> KeptPartitionAsync(ILedgerRegistry ledger, SourceDefinition source, CancellationToken ct)
     {
         foreach (var flow in source.Interfaces)
         {

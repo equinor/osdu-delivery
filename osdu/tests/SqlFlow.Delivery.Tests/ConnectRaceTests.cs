@@ -17,7 +17,11 @@ public sealed class ConnectRaceTests
     private static readonly IPAddress V4a = IPAddress.Parse("40.126.53.17");
     private static readonly IPAddress V4b = IPAddress.Parse("20.190.181.5");
 
-    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
+    /// <summary>
+    /// How long a test waits for what a working race does at once. Only a failing test reaches it, so it is generous: a
+    /// machine running every test assembly at once has held a timer back for seconds.
+    /// </summary>
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
     [Fact]
     public void Addresses_alternate_between_the_families_keeping_the_resolver_order_within_each()
@@ -83,14 +87,30 @@ public sealed class ConnectRaceTests
     public async Task The_connect_timeout_cancels_every_attempt_still_running()
     {
         var cancelled = new List<IPAddress>();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+        var started = 0;
+        var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timeout = new CancellationTokenSource();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => HttpClientBuilder.RaceAsync(
+        // The timeout fires once both attempts are under way, however late a busy machine starts the second: a timeout
+        // fixed in time can fire before the 20 ms stagger does, and the race then rightly starts no second attempt.
+        var race = HttpClientBuilder.RaceAsync(
             "login.example.com",
             [V6a, V4a],
-            (address, token) => Blackhole(address, cancelled, token),
+            (address, token) =>
+            {
+                if (Interlocked.Increment(ref started) == 2)
+                {
+                    bothStarted.TrySetResult();
+                }
+
+                return Blackhole(address, cancelled, token);
+            },
             TimeSpan.FromMilliseconds(20),
-            timeout.Token).WaitAsync(Patience));
+            timeout.Token);
+        await bothStarted.Task.WaitAsync(Patience);
+        await timeout.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => race.WaitAsync(Patience));
 
         await WaitUntil(() => { lock (cancelled) { return cancelled.Count == 2; } });
         lock (cancelled)

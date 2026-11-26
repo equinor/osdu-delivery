@@ -53,29 +53,29 @@ internal static class DeliveryDimensionVerbs
         var flow = await CliPartitions.DimensionAsync(context, engine.Documents.LoadDimension(flowPath), ct).ConfigureAwait(false);
         if (verb == "list")
         {
-            return await ListAsync(context, ledger, flow, ct).ConfigureAwait(false);
+            return await ListAsync(context, ledger.Dimensions, flow, ct).ConfigureAwait(false);
         }
 
         if (verb == "search")
         {
-            return await SearchAsync(context, ledger, flow, ct).ConfigureAwait(false);
+            return await SearchAsync(context, ledger.Dimensions, flow, ct).ConfigureAwait(false);
         }
 
         if (verb == "remove")
         {
-            return await RemoveAsync(context, ledger, flow, engine.Time, ct).ConfigureAwait(false);
+            return await RemoveAsync(context, ledger, ledger.Dimensions, flow, engine.Time, ct).ConfigureAwait(false);
         }
 
         if (verb == "views")
         {
             return context.Arguments.GetOption("--suggest") is { } from && !string.IsNullOrWhiteSpace(from)
                 ? await SuggestAsync(context, flow, from.Trim(), engine.DocumentTemplates, ct).ConfigureAwait(false)
-                : await ViewsAsync(context, ledger, flow, ct).ConfigureAwait(false);
+                : await ViewsAsync(context, ledger.Dimensions, flow, ct).ConfigureAwait(false);
         }
 
         if (verb == "remove-view")
         {
-            return await RemoveViewAsync(context, ledger, flow, engine.Time, ct).ConfigureAwait(false);
+            return await RemoveViewAsync(context, ledger, ledger.Dimensions, flow, engine.Time, ct).ConfigureAwait(false);
         }
 
         if (verb is not ("table" or "values" or "keys" or "attributes" or "filter" or "history" or "changes" or "export"))
@@ -83,17 +83,17 @@ internal static class DeliveryDimensionVerbs
             return context.UsageError("say what to do: list, table, values, keys, attributes, filter, search, history, changes, export, remove, views or remove-view.");
         }
 
-        var dimension = await DimensionAsync(context, ledger, flow, ct).ConfigureAwait(false);
+        var dimension = await DimensionAsync(context, ledger.Dimensions, flow, ct).ConfigureAwait(false);
         return verb switch
         {
-            "table" => await TableAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            "values" => await ValuesAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            "keys" => await KeysAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            "attributes" => await AttributesAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            "filter" => await FilterAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            "history" => await HistoryAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            "changes" => await ChangesAsync(context, ledger, dimension, ct).ConfigureAwait(false),
-            _ => await ExportAsync(context, ledger, dimension, ct).ConfigureAwait(false),
+            "table" => await TableAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            "values" => await ValuesAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            "keys" => await KeysAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            "attributes" => await AttributesAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            "filter" => await FilterAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            "history" => await HistoryAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            "changes" => await ChangesAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
+            _ => await ExportAsync(context, ledger.Dimensions, dimension, ct).ConfigureAwait(false),
         };
     }
 
@@ -103,7 +103,7 @@ internal static class DeliveryDimensionVerbs
     /// flow captures. The removal is an activity of the flow, recorded under the operating system user and machine that ran
     /// it (<c>cli:&lt;user&gt;@&lt;machine&gt;</c>), as every command line action is.
     /// </summary>
-    private static async Task<int> RemoveAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, TimeProvider clock, CancellationToken ct)
+    private static async Task<int> RemoveAsync(CliVerbContext context, ILedgerActivities ledger, DimensionStore dimensions, DimensionFlowDefinition flow, TimeProvider clock, CancellationToken ct)
     {
         if (context.Arguments.GetOption("--dimension") is not { } asked || string.IsNullOrWhiteSpace(asked))
         {
@@ -117,11 +117,11 @@ internal static class DeliveryDimensionVerbs
                 $"{flow.Name} declares dimension {declared.Name}, so it is not removed. Take it out of the flow's file first: only a dimension the flow no longer declares is removed.");
         }
 
-        var held = await ledger.Dimensions.ListAsync(null, flow.LedgerId, ct).ConfigureAwait(false);
+        var held = await dimensions.ListAsync(null, flow.LedgerId, ct).ConfigureAwait(false);
         var dimension = held.FirstOrDefault(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase))
             ?? throw new FlowValidationException(
                 $"{flow.LedgerName} holds no dimension named '{name}'{(held.Count == 0 ? string.Empty : $"; it holds {string.Join(", ", held.Select(d => d.Name).Order(StringComparer.Ordinal))}")}.");
-        var removed = await DimensionRemoval.RemoveAsync(ledger, dimension, RunActors.LocalAccount(), clock, ct).ConfigureAwait(false);
+        var removed = await DimensionRemoval.RemoveAsync(ledger, dimensions, dimension, RunActors.LocalAccount(), clock, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -150,15 +150,15 @@ internal static class DeliveryDimensionVerbs
     /// declared and its last check, then each a build of it wrote that it no longer declares; with --view, one view with its
     /// joins, its columns, its newest checks and its SQL.
     /// </summary>
-    private static async Task<int> ViewsAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, CancellationToken ct)
+    private static async Task<int> ViewsAsync(CliVerbContext context, DimensionStore dimensions, DimensionFlowDefinition flow, CancellationToken ct)
     {
-        var recorded = await ledger.Dimensions.ListViewsAsync(flow.Name, ct).ConfigureAwait(false);
+        var recorded = await dimensions.ListViewsAsync(flow.Name, ct).ConfigureAwait(false);
         if (context.Arguments.GetOption("--view") is { } asked && !string.IsNullOrWhiteSpace(asked))
         {
             var name = asked.Trim();
             var declared = flow.Views.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
             var detail = recorded.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase))
-                ? await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false)
+                ? await dimensions.GetViewAsync(name, ct).ConfigureAwait(false)
                 : null;
             if (declared is null && detail is null)
             {
@@ -179,7 +179,7 @@ internal static class DeliveryDimensionVerbs
         var checks = new Dictionary<string, DimensionViewCheckState>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows.Where(r => r.State is not null))
         {
-            if ((await ledger.Dimensions.GetViewAsync(row.Name, ct).ConfigureAwait(false))?.Checks is { Count: > 0 } held)
+            if ((await dimensions.GetViewAsync(row.Name, ct).ConfigureAwait(false))?.Checks is { Count: > 0 } held)
             {
                 checks[row.Name] = held[0];
             }
@@ -372,7 +372,7 @@ internal static class DeliveryDimensionVerbs
     /// write it again. The removal is an activity of the flow's ledger, recorded under the operating system user and machine
     /// that ran it.
     /// </summary>
-    private static async Task<int> RemoveViewAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, TimeProvider clock, CancellationToken ct)
+    private static async Task<int> RemoveViewAsync(CliVerbContext context, ILedgerActivities ledger, DimensionStore dimensions, DimensionFlowDefinition flow, TimeProvider clock, CancellationToken ct)
     {
         if (context.Arguments.GetOption("--view") is not { } asked || string.IsNullOrWhiteSpace(asked))
         {
@@ -386,7 +386,7 @@ internal static class DeliveryDimensionVerbs
                 $"{flow.Name} declares view {declared.Name}, so it is not removed: its next build would write it again. Take it out of the flow's file and build the flow, which drops it.");
         }
 
-        var detail = await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false);
+        var detail = await dimensions.GetViewAsync(name, ct).ConfigureAwait(false);
         if (detail is null || !string.Equals(detail.View.FlowName, flow.Name, StringComparison.OrdinalIgnoreCase))
         {
             throw new FlowValidationException(
@@ -395,7 +395,7 @@ internal static class DeliveryDimensionVerbs
                     : $"View {detail.View.Name} was written by flow {detail.View.FlowName}, not {flow.Name}; remove it with that flow's file.");
         }
 
-        var removed = await DimensionViewRemoval.RemoveAsync(ledger, detail.View, RunActors.LocalAccount(), clock, ct).ConfigureAwait(false);
+        var removed = await DimensionViewRemoval.RemoveAsync(ledger, dimensions, detail.View, RunActors.LocalAccount(), clock, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -414,12 +414,12 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>Each dimension the flow declares in its partition, with what it holds and its newest build.</summary>
-    private static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, CancellationToken ct)
+    private static async Task<int> ListAsync(CliVerbContext context, DimensionStore dimensions, DimensionFlowDefinition flow, CancellationToken ct)
     {
-        var held = (await ledger.Dimensions.ListAsync(null, flow.LedgerId, ct).ConfigureAwait(false))
+        var held = (await dimensions.ListAsync(null, flow.LedgerId, ct).ConfigureAwait(false))
             .GroupBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var latest = (await ledger.Dimensions.LatestRunsAsync(held.Values.Select(d => d.DimensionId).ToList(), ct).ConfigureAwait(false))
+        var latest = (await dimensions.LatestRunsAsync(held.Values.Select(d => d.DimensionId).ToList(), ct).ConfigureAwait(false))
             .ToDictionary(r => r.DimensionId);
         if (context.Json)
         {
@@ -506,14 +506,14 @@ internal static class DeliveryDimensionVerbs
     /// dimension names them). The key and its value are written under the names their columns have in the table. A
     /// dimension built before dimensions had a table has its table made here.
     /// </summary>
-    private static async Task<int> TableAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> TableAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
         DimensionTablePage page;
         try
         {
             page = await DimensionTable.ReadAsync(
-                ledger,
+                dimensions,
                 dimension,
                 new DimensionTableQuery(
                     context.Arguments.GetOption("--search"), TableMatches(context), context.Arguments.GetOption("--order"), context.Arguments.HasFlag("--desc"), 0, max),
@@ -611,7 +611,7 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>A page of the dimension's values, in value order or with the most records first, each with its commonest keys.</summary>
-    private static async Task<int> ValuesAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> ValuesAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var order = context.Arguments.GetOption("--order")?.Trim().ToLowerInvariant() switch
         {
@@ -621,11 +621,11 @@ internal static class DeliveryDimensionVerbs
         };
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
         var matches = AttributeMatches(context, dimension);
-        var members = await ledger.Dimensions.ListMembersAsync(
+        var members = await dimensions.ListMembersAsync(
             dimension.DimensionId,
             new DimensionMemberQuery(context.Arguments.GetOption("--search"), context.Arguments.HasFlag("--removed"), null, max, order, matches),
             ct).ConfigureAwait(false);
-        var top = (await ledger.Dimensions.TopMemberOriginalsAsync(dimension.DimensionId, members.Select(m => m.MemberId).ToList(), ShownKeys, ct).ConfigureAwait(false))
+        var top = (await dimensions.TopMemberOriginalsAsync(dimension.DimensionId, members.Select(m => m.MemberId).ToList(), ShownKeys, ct).ConfigureAwait(false))
             .GroupBy(v => v.MemberId ?? 0)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.Count).ThenBy(v => v.ValueId).Select(v => v.Original).ToList());
         if (context.Json)
@@ -672,7 +672,7 @@ internal static class DeliveryDimensionVerbs
     /// A page of the dimension's keys, each exactly as the index holds it with its label and filter: every one, a value's, or
     /// those of no value, in arrival order or most records first.
     /// </summary>
-    private static async Task<int> KeysAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> KeysAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var order = context.Arguments.GetOption("--order")?.Trim().ToLowerInvariant() switch
         {
@@ -689,11 +689,11 @@ internal static class DeliveryDimensionVerbs
                 return context.UsageError("a key of a value is not left out: give --value or --left-out, not both.");
             }
 
-            memberId = (await ValuesNamedAsync(ledger, dimension, [named], ct).ConfigureAwait(false))[0].MemberId;
+            memberId = (await ValuesNamedAsync(dimensions, dimension, [named], ct).ConfigureAwait(false))[0].MemberId;
         }
 
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var keys = await ledger.Dimensions.ListValuesAsync(
+        var keys = await dimensions.ListValuesAsync(
             dimension.DimensionId,
             new DimensionValueQuery(
                 context.Arguments.GetOption("--search"), memberId, leftOut, context.Arguments.HasFlag("--removed"), null, max, order, AttributeMatches(context, dimension)),
@@ -745,7 +745,7 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>The search that finds the records of the values --value names, one query a line, ready to send.</summary>
-    private static async Task<int> FilterAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> FilterAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var named = context.Arguments.GetOptions("--value");
         if (named.Count == 0)
@@ -753,7 +753,7 @@ internal static class DeliveryDimensionVerbs
             return context.UsageError("name the values to filter by, exactly as the dimension holds them: --value <value> (repeat it for more).");
         }
 
-        var filter = await DimensionFilters.ForMembersAsync(ledger, dimension, [], named, ct).ConfigureAwait(false);
+        var filter = await DimensionFilters.ForMembersAsync(dimensions, dimension, [], named, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -806,7 +806,7 @@ internal static class DeliveryDimensionVerbs
     /// dimension, AND across them, in the kind every dimension reads or the one --kind names, narrowed by --within. The query
     /// goes to the console alone, so a script takes it as it is; with --json, the whole composition with the request to send.
     /// </summary>
-    private static async Task<int> SearchAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, CancellationToken ct)
+    private static async Task<int> SearchAsync(CliVerbContext context, DimensionStore dimensions, DimensionFlowDefinition flow, CancellationToken ct)
     {
         var given = context.Arguments.GetOptions("--pick");
         var where = context.Arguments.GetOptions("--where");
@@ -852,13 +852,13 @@ internal static class DeliveryDimensionVerbs
         {
             var spec = flow.Dimension(name)
                 ?? throw new FlowValidationException($"{flow.Name} declares no dimension named '{name}'; it declares {string.Join(", ", flow.Dimensions.Select(d => d.Name))}.");
-            var dimension = await ledger.Dimensions.FindAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
+            var dimension = await dimensions.FindAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
                 ?? throw new FlowValidationException(
                     $"Dimension {spec.Name} has not been built in {flow.LedgerName} yet. Build it with: sqlflow run <flow.yaml> --payload '{{\"dimensions\":[\"{spec.Name}\"]}}'");
             picks.Add(new DimensionPick(dimension, [], values.Distinct(StringComparer.Ordinal).ToList(), byAttribute.GetValueOrDefault(name)));
         }
 
-        var set = await DimensionSearch.ComposeAsync(ledger, picks, context.Arguments.GetOption("--kind"), context.Arguments.GetOption("--within"), ct).ConfigureAwait(false);
+        var set = await DimensionSearch.ComposeAsync(dimensions, picks, context.Arguments.GetOption("--kind"), context.Arguments.GetOption("--within"), ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -909,10 +909,10 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>The dimension's builds, newest first: what each came to, how it read, and what it changed.</summary>
-    private static async Task<int> HistoryAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> HistoryAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var runs = await ledger.Dimensions.ListRunsAsync(dimension.DimensionId, max, ct).ConfigureAwait(false);
+        var runs = await dimensions.ListRunsAsync(dimension.DimensionId, max, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -944,7 +944,7 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>The change log, newest first: of every build, of the one --build names, of one value, or of one kind of change.</summary>
-    private static async Task<int> ChangesAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> ChangesAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         long? build = null;
         if (context.Arguments.GetOption("--build") is { } asked)
@@ -963,11 +963,11 @@ internal static class DeliveryDimensionVerbs
         long? memberId = null;
         if (context.Arguments.GetOption("--value") is { } value)
         {
-            memberId = (await ValuesNamedAsync(ledger, dimension, [value], ct).ConfigureAwait(false))[0].MemberId;
+            memberId = (await ValuesNamedAsync(dimensions, dimension, [value], ct).ConfigureAwait(false))[0].MemberId;
         }
 
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var changes = await ledger.Dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(build, null, memberId, change, null, max), ct).ConfigureAwait(false);
+        var changes = await dimensions.ListChangesAsync(dimension.DimensionId, new DimensionChangeQuery(build, null, memberId, change, null, max), ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -1025,7 +1025,7 @@ internal static class DeliveryDimensionVerbs
         => attribute.Records is { } records ? string.Create(CultureInfo.InvariantCulture, $"{attribute.Value} ({records:N0})") : attribute.Value;
 
     /// <summary>The dimension's values, keys or table, whole, as CSV or JSON Lines, to --out or the console.</summary>
-    private static async Task<int> ExportAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> ExportAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var set = DimensionExport.SetOf(context.Arguments.GetOption("--set"))
             ?? throw new FlowValidationException($"--set '{context.Arguments.GetOption("--set")}' is not one of values, keys, table.");
@@ -1033,7 +1033,7 @@ internal static class DeliveryDimensionVerbs
             ?? throw new FlowValidationException($"--format '{context.Arguments.GetOption("--format")}' is not one of csv, jsonl.");
         if (context.Arguments.GetOption("--out") is not { } outPath)
         {
-            await DimensionExport.WriteAsync(ledger, dimension, set, format, context.Out, ct).ConfigureAwait(false);
+            await DimensionExport.WriteAsync(dimensions, dimension, set, format, context.Out, ct).ConfigureAwait(false);
             await context.Out.FlushAsync(ct).ConfigureAwait(false);
             return 0;
         }
@@ -1052,7 +1052,7 @@ internal static class DeliveryDimensionVerbs
             var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
             await using (file.ConfigureAwait(false))
             {
-                rows = await DimensionExport.WriteAsync(ledger, dimension, set, format, file, ct).ConfigureAwait(false);
+                rows = await DimensionExport.WriteAsync(dimensions, dimension, set, format, file, ct).ConfigureAwait(false);
             }
 
             File.Move(partial, full, overwrite: true);
@@ -1074,7 +1074,7 @@ internal static class DeliveryDimensionVerbs
     /// names, so each select of a cascade lists what the other picks leave. An --attr of the attribute itself does not
     /// narrow its own list.
     /// </summary>
-    private static async Task<int> AttributesAsync(CliVerbContext context, ILedger ledger, DimensionState dimension, CancellationToken ct)
+    private static async Task<int> AttributesAsync(CliVerbContext context, DimensionStore dimensions, DimensionState dimension, CancellationToken ct)
     {
         var declared = DimensionRunner.AttributesOf(dimension.AttributesJson);
         if (context.Arguments.GetOption("--attribute") is not { } asked || string.IsNullOrWhiteSpace(asked))
@@ -1090,8 +1090,8 @@ internal static class DeliveryDimensionVerbs
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
         var matches = AttributeMatches(context, dimension);
         var named = context.Arguments.GetOptions("--value");
-        var memberIds = named.Count == 0 ? null : (await ValuesNamedAsync(ledger, dimension, named, ct).ConfigureAwait(false)).Select(m => m.MemberId).ToList();
-        var values = await ledger.Dimensions.ListAttributeValuesAsync(
+        var memberIds = named.Count == 0 ? null : (await ValuesNamedAsync(dimensions, dimension, named, ct).ConfigureAwait(false)).Select(m => m.MemberId).ToList();
+        var values = await dimensions.ListAttributeValuesAsync(
             dimension.DimensionId, new DimensionAttributeValueQuery(attribute.Name, context.Arguments.GetOption("--search"), max, matches, memberIds), ct).ConfigureAwait(false);
         if (context.Json)
         {
@@ -1155,7 +1155,7 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>The dimension --dimension names, as the flow's ledger in its partition holds it.</summary>
-    private static async Task<DimensionState> DimensionAsync(CliVerbContext context, ILedger ledger, DimensionFlowDefinition flow, CancellationToken ct)
+    private static async Task<DimensionState> DimensionAsync(CliVerbContext context, DimensionStore dimensions, DimensionFlowDefinition flow, CancellationToken ct)
     {
         if (context.Arguments.GetOption("--dimension") is not { } name || string.IsNullOrWhiteSpace(name))
         {
@@ -1165,15 +1165,15 @@ internal static class DeliveryDimensionVerbs
 
         var spec = flow.Dimension(name)
             ?? throw new FlowValidationException($"{flow.Name} declares no dimension named '{name}'; it declares {string.Join(", ", flow.Dimensions.Select(d => d.Name))}.");
-        return await ledger.Dimensions.FindAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
+        return await dimensions.FindAsync(flow.LedgerId, spec.Name, ct).ConfigureAwait(false)
             ?? throw new FlowValidationException(
                 $"Dimension {spec.Name} has not been built in {flow.LedgerName} yet. Build it with: sqlflow run <flow.yaml> --payload '{{\"dimensions\":[\"{spec.Name}\"]}}'");
     }
 
     /// <summary>The values named, each one the dimension holds, in the order named.</summary>
-    private static async Task<IReadOnlyList<DimensionMemberState>> ValuesNamedAsync(ILedger ledger, DimensionState dimension, IReadOnlyList<string> values, CancellationToken ct)
+    private static async Task<IReadOnlyList<DimensionMemberState>> ValuesNamedAsync(DimensionStore dimensions, DimensionState dimension, IReadOnlyList<string> values, CancellationToken ct)
     {
-        var found = await ledger.Dimensions.GetMembersAsync(dimension.DimensionId, [], values, ct).ConfigureAwait(false);
+        var found = await dimensions.GetMembersAsync(dimension.DimensionId, [], values, ct).ConfigureAwait(false);
         return values.Select(v => found.FirstOrDefault(m => string.Equals(m.Value, v, StringComparison.Ordinal))
                 ?? throw new FlowValidationException($"Dimension {dimension.Name} has no value '{v}'. Values are named exactly as the dimension holds them."))
             .ToList();

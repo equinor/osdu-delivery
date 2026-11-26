@@ -84,7 +84,7 @@ public sealed partial class CacheUpdateRolloutService : BackgroundService
     private async Task PassAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
+        var ledger = scope.ServiceProvider.GetRequiredService<ILedgerCacheSets>();
 
         // A change whose records are all marked closes when the last flow reading it has rendered them again.
         var settled = await ledger.SettleRolloutsAsync(_clock.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);

@@ -128,9 +128,9 @@ public sealed partial class DimensionRunner
     /// </summary>
     internal TimeSpan MemberStartGrace { get; set; } = TimeSpan.FromMinutes(3);
 
-    /// <summary>What every dimension build of one run shares: the ledger, the search, the templates, and who asked for what.</summary>
+    /// <summary>What every dimension build of one run shares: the dimension store, the search, the templates, and who asked for what.</summary>
     private sealed record BuildScope(
-        ILedger Ledger, OsduSearch Search, TemplateCache Templates, string Partition, DimensionLoadRequest Load, Guid RunId, string Actor);
+        DimensionStore Dimensions, OsduSearch Search, TemplateCache Templates, string Partition, DimensionLoadRequest Load, Guid RunId, string Actor);
 
     /// <summary>
     /// The build spread over nodes, or null when this run builds every dimension itself: the flow keeps its builds on one
@@ -214,7 +214,7 @@ public sealed partial class DimensionRunner
 
         // What each part kept is read from the ledger, which holds every build under the run that made it: a dimension a part
         // completed or failed is that part's, and one it never built, or stopped building, is built here.
-        var names = (await scope.Ledger.Dimensions.ListAsync(scope.Partition, _flow.LedgerId, ct).ConfigureAwait(false))
+        var names = (await scope.Dimensions.ListAsync(scope.Partition, _flow.LedgerId, ct).ConfigureAwait(false))
             .ToDictionary(d => d.DimensionId, d => d.Name);
         var left = new List<DimensionSpec>();
         for (var i = 0; i < members.Count; i++)
@@ -224,7 +224,7 @@ public sealed partial class DimensionRunner
             var member = wait.State.Members.FirstOrDefault(m => m.RunId == runId)
                 ?? throw new DeliveryException(
                     string.Create(CultureInfo.InvariantCulture, $"Part {i + 2} (run {runId:D}) is missing from the state of its group ({handle.GroupId:D}), so whether it built {Names(share)} cannot be told. The dimensions this run built are kept; build the flow again."));
-            var kept = (await scope.Ledger.Dimensions.RunsOfAsync(runId, ct).ConfigureAwait(false))
+            var kept = (await scope.Dimensions.RunsOfAsync(runId, ct).ConfigureAwait(false))
                 .Where(b => b.Status is DimensionRunStatus.Completed or DimensionRunStatus.Failed && names.ContainsKey(b.DimensionId))
                 .GroupBy(b => names[b.DimensionId], StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.DimensionRunId).First(), StringComparer.Ordinal);
@@ -275,7 +275,7 @@ public sealed partial class DimensionRunner
                 async (dimension, token) =>
                 {
                     var query = Query(dimension, scope.Partition);
-                    var loading = await PlanLoadAsync(scope.Ledger, dimension, query, scope.Load, Now, token).ConfigureAwait(false);
+                    var loading = await PlanLoadAsync(scope.Dimensions, dimension, query, scope.Load, Now, token).ConfigureAwait(false);
                     records[dimension.Name] = await RecordsReadAsync(scope.Search, dimension, query, loading, token).ConfigureAwait(false);
                 }).ConfigureAwait(false);
         }
@@ -296,7 +296,7 @@ public sealed partial class DimensionRunner
     private async Task<IReadOnlyDictionary<string, DimensionBuildCost>> LastFullBuildsAsync(BuildScope scope, IReadOnlyList<DimensionSpec> building, CancellationToken ct)
     {
         var names = building.Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
-        var dimensions = (await scope.Ledger.Dimensions.ListAsync(scope.Partition, _flow.LedgerId, ct).ConfigureAwait(false))
+        var dimensions = (await scope.Dimensions.ListAsync(scope.Partition, _flow.LedgerId, ct).ConfigureAwait(false))
             .Where(d => names.Contains(d.Name) && d.LastFullRunId is not null)
             .ToDictionary(d => d.LastFullRunId!.Value, d => d.Name);
         if (dimensions.Count == 0)
@@ -304,7 +304,7 @@ public sealed partial class DimensionRunner
             return new Dictionary<string, DimensionBuildCost>(StringComparer.Ordinal);
         }
 
-        return (await scope.Ledger.Dimensions.GetRunsAsync(dimensions.Keys, ct).ConfigureAwait(false))
+        return (await scope.Dimensions.GetRunsAsync(dimensions.Keys, ct).ConfigureAwait(false))
             .Where(b => b.Status == DimensionRunStatus.Completed && b.CompletedUtc is not null && b.Read.Records is > 0)
             .ToDictionary(b => dimensions[b.DimensionRunId], b => new DimensionBuildCost((b.CompletedUtc!.Value - b.StartedUtc).TotalSeconds, b.Read.Records!.Value), StringComparer.Ordinal);
     }

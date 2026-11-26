@@ -1,4 +1,5 @@
-﻿using System.Data.Common;
+﻿using System.Data;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -617,11 +618,20 @@ public static class NotificationStore
         return catalog.NotificationDigests.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct);
     }
 
+    /// <summary>Adds a parameter to a raw batch. An instant goes as <c>datetime2</c>, the type of the columns it is
+    /// compared with and written to: left to the provider, a <see cref="DateTime"/> goes as the legacy
+    /// <c>datetime</c>, rounded to 1/300 s, so two ticks inside one step would read as the same instant and the
+    /// second would scan nothing.</summary>
     private static void AddParameter(DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
         parameter.Value = value;
+        if (value is DateTime)
+        {
+            parameter.DbType = DbType.DateTime2;
+        }
+
         command.Parameters.Add(parameter);
     }
 }

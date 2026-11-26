@@ -214,7 +214,7 @@ public static partial class DeliveryDimensionEndpoints
     /// where the estate keeps its data.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionFlowCheckDto>, ProblemHttpResult>> CheckFlowAsync(
-        DeliveryDimensionFlowCheckRequest? body, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger,
+        DeliveryDimensionFlowCheckRequest? body, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerDocuments ledger,
         IRepositoryFolders folders, IPartitionRegistry registry, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body?.Yaml))

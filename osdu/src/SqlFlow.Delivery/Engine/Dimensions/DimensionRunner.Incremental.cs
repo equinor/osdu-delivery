@@ -87,7 +87,7 @@ public sealed partial class DimensionRunner
     /// otherwise, from the lag before up to when its completed builds have read, or over the window the run names, to the
     /// build's start less the lag.
     /// </summary>
-    private async Task<LoadPlan> PlanLoadAsync(ILedger ledger, DimensionSpec dimension, string? query, DimensionLoadRequest request, DateTime started, CancellationToken ct)
+    private async Task<LoadPlan> PlanLoadAsync(DimensionStore dimensions, DimensionSpec dimension, string? query, DimensionLoadRequest request, DateTime started, CancellationToken ct)
     {
         var incremental = _flow.Incremental;
         var lag = TimeSpan.FromMinutes(incremental?.LagMinutes ?? DimensionIncremental.DefaultLagMinutes);
@@ -108,7 +108,7 @@ public sealed partial class DimensionRunner
             return Full("the flow's incremental block says fullLoad: true");
         }
 
-        var existing = await ledger.Dimensions.FindAsync(_flow.LedgerId, dimension.Name, ct).ConfigureAwait(false);
+        var existing = await dimensions.FindAsync(_flow.LedgerId, dimension.Name, ct).ConfigureAwait(false);
         if (existing?.LastRunId is null)
         {
             return Full("it has not been loaded in this partition yet");
@@ -119,7 +119,7 @@ public sealed partial class DimensionRunner
             return Full("no full load of it has kept the records its keys were read through yet");
         }
 
-        var fullRuns = await ledger.Dimensions.GetRunsAsync([fullRunId], ct).ConfigureAwait(false);
+        var fullRuns = await dimensions.GetRunsAsync([fullRunId], ct).ConfigureAwait(false);
         if (fullRuns.Count == 0)
         {
             return Full("its last full load is no longer in the ledger");
@@ -152,7 +152,7 @@ public sealed partial class DimensionRunner
         var from = request.From;
         if (from is null)
         {
-            if (await ledger.Dimensions.ReadUpToAsync(existing.DimensionId, ct).ConfigureAwait(false) is not { } upTo)
+            if (await dimensions.ReadUpToAsync(existing.DimensionId, ct).ConfigureAwait(false) is not { } upTo)
             {
                 return Full("no completed load of it records up to when it read");
             }
@@ -211,7 +211,7 @@ public sealed partial class DimensionRunner
     /// looking up.
     /// </summary>
     private async Task<IncrementalOutcome> LoadIncrementallyAsync(
-        ILedger ledger, OsduSearch search, TemplateCache templates, DimensionSpec dimension, string? query, ResolvedField resolved, LoadPlan load,
+        DimensionStore dimensions, OsduSearch search, TemplateCache templates, DimensionSpec dimension, string? query, ResolvedField resolved, LoadPlan load,
         DimensionRunState run, ReadProgress progress, CancellationToken ct)
     {
         var existing = load.Existing ?? throw new InvalidOperationException("An incremental load is planned with the dimension it reads on from.");
@@ -254,7 +254,7 @@ public sealed partial class DimensionRunner
         {
             var empty = load.Stamp(
                 new DimensionReadCounts { Templates = templatesJson, Notes = [$"Loaded incrementally: the window {shown} is empty, so nothing was read."] }, 0, 0);
-            return await NothingToWriteAsync(ledger, dimension, run, empty with { RecordKey = incremental.RecordKey }, field.AggregateBy, ct).ConfigureAwait(false);
+            return await NothingToWriteAsync(dimensions, dimension, run, empty with { RecordKey = incremental.RecordKey }, field.AggregateBy, ct).ConfigureAwait(false);
         }
 
         // The dimension's own records that changed in the window, each by the time it last changed: counted first, so a
@@ -281,7 +281,7 @@ public sealed partial class DimensionRunner
             ? new RecordRead([], [], 0, 0, 0, 0)
             : await new DimensionRecordReader(search, _log, concurrency).ReadAllAsync(dimension, changedQuery, field, keyColumns, ct).ConfigureAwait(false);
         var holding = records.Held.Select(h => h.Original).Distinct(StringComparer.Ordinal).ToList();
-        var held = await ledger.Dimensions.RecordKeysAsync(existing.DimensionId, records.Records, ct).ConfigureAwait(false);
+        var held = await dimensions.RecordKeysAsync(existing.DimensionId, records.Records, ct).ConfigureAwait(false);
         progress.Read = load.Stamp(new DimensionReadCounts { Records = records.Read, ScanPages = records.Pages, CountQueries = lookups, Templates = templatesJson }, records.Read)
             with { RecordKey = incremental.RecordKey };
 
@@ -292,7 +292,7 @@ public sealed partial class DimensionRunner
         if (dimension.Label.Count > 0 || dimension.Attributes.Any(a => !a.IsCollected))
         {
             var referenceWindow = RecordChanges.Within(RecordChanges.ModifyTime, load.From, load.To);
-            foreach (var type in await ledger.Dimensions.KeyRecordTypesAsync(existing.DimensionId, ct).ConfigureAwait(false))
+            foreach (var type in await dimensions.KeyRecordTypesAsync(existing.DimensionId, ct).ConfigureAwait(false))
             {
                 var changedOfType = new OsduSearchQuery { Kind = dimension.LookupKind(type), Query = referenceWindow, ReturnedFields = ["id"] };
                 var total = await search.CountAsync(changedOfType, ct).ConfigureAwait(false);
@@ -321,7 +321,7 @@ public sealed partial class DimensionRunner
                     }
                 }
 
-                through.UnionWith(await ledger.Dimensions.KeysReadThroughAsync(existing.DimensionId, ids, ct).ConfigureAwait(false));
+                through.UnionWith(await dimensions.KeysReadThroughAsync(existing.DimensionId, ids, ct).ConfigureAwait(false));
             }
         }
 
@@ -367,7 +367,7 @@ public sealed partial class DimensionRunner
                 Templates = templatesJson,
                 Notes = loadNotes,
             }, records.Read, 0) with { RecordKey = incremental.RecordKey };
-            return await NothingToWriteAsync(ledger, dimension, run, nothing, field.AggregateBy, ct).ConfigureAwait(false);
+            return await NothingToWriteAsync(dimensions, dimension, run, nothing, field.AggregateBy, ct).ConfigureAwait(false);
         }
 
         // Every key to read again, counted over the dimension's whole query: a query's worth of keys at a time, each group's
@@ -375,8 +375,8 @@ public sealed partial class DimensionRunner
         // staged as they are counted, in the order the count found them, and are a scope of their own.
         var filterable = touched.Where(k => DimensionFilters.Filterable(field, k)).Order(StringComparer.Ordinal).ToList();
         var unfilterable = touched.Where(k => !DimensionFilters.Filterable(field, k)).Order(StringComparer.Ordinal).ToList();
-        var known = (await ledger.Dimensions.OriginalsAsync(existing.DimensionId, unfilterable, ct).ConfigureAwait(false)).ToDictionary(k => k.Original, StringComparer.Ordinal);
-        await using var stage = await ledger.Dimensions.StageAsync(_flow.LedgerId, run.DimensionId, run.DimensionRunId, ct).ConfigureAwait(false);
+        var known = (await dimensions.OriginalsAsync(existing.DimensionId, unfilterable, ct).ConfigureAwait(false)).ToDictionary(k => k.Original, StringComparer.Ordinal);
+        await using var stage = await dimensions.StageAsync(_flow.LedgerId, run.DimensionId, run.DimensionRunId, ct).ConfigureAwait(false);
         try
         {
             var counted = new HashSet<string>(StringComparer.Ordinal);
@@ -452,7 +452,7 @@ public sealed partial class DimensionRunner
             await stage.AddRecordsAsync(records.Records, records.Held, ct).ConfigureAwait(false);
             var counts = Counts(merged, templatesJson, countQueries + memberCounts, notes, read.Labels, read.Collected);
             progress.Read = load.Stamp(counts with { ScanPages = counts.ScanPages + read.ElementPages }, records.Read, touched.Count) with { RecordKey = incremental.RecordKey };
-            var result = await ledger.Dimensions.WriteAsync(
+            var result = await dimensions.WriteAsync(
                 stage, Staged(dimension, fieldState, progress.Read, read.Collected, partial: true, keepsRecords: true), ct).ConfigureAwait(false);
             _log.LogInformation(
                 "dimension {Dimension}: loaded incrementally, {Read} key(s) read again and {Gone} removed; {Values} value(s) from {Keys} key(s); {Added} arrived, {Moved} moved, {Restored} came back",
@@ -468,10 +468,10 @@ public sealed partial class DimensionRunner
 
     /// <summary>Closes an incremental load that found nothing to write as completed, the dimension as it was.</summary>
     private async Task<IncrementalOutcome> NothingToWriteAsync(
-        ILedger ledger, DimensionSpec dimension, DimensionRunState run, DimensionReadCounts read, string? aggregateBy, CancellationToken ct)
+        DimensionStore dimensions, DimensionSpec dimension, DimensionRunState run, DimensionReadCounts read, string? aggregateBy, CancellationToken ct)
     {
-        await ledger.Dimensions.CompleteRunAsync(run.DimensionRunId, read, Now, ct).ConfigureAwait(false);
-        var runs = await ledger.Dimensions.GetRunsAsync([run.DimensionRunId], ct).ConfigureAwait(false);
+        await dimensions.CompleteRunAsync(run.DimensionRunId, read, Now, ct).ConfigureAwait(false);
+        var runs = await dimensions.GetRunsAsync([run.DimensionRunId], ct).ConfigureAwait(false);
         var closed = (runs.Count > 0 ? runs[0] : null)
             ?? throw new DeliveryException(string.Create(CultureInfo.InvariantCulture, $"Dimension build {run.DimensionRunId} is not in the ledger after it completed."));
         _log.LogInformation("dimension {Dimension}: loaded incrementally, nothing to write: {Note}", dimension.Name, read.Notes.Count > 0 ? read.Notes[0] : string.Empty);

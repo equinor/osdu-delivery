@@ -23,6 +23,7 @@ related:
   - delivery-table-cache-version
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Settings.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs
   - osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs

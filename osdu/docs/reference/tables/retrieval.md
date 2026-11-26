@@ -19,6 +19,7 @@ related:
   - delivery-wiki-0008-retrieval-lands-raw-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Retrievals.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Activities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerActivities.cs

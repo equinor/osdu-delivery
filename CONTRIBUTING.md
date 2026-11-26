@@ -86,8 +86,10 @@ The full tier's database is one database on a local SQL Server, `OsduDeliveryTes
 (created when missing), or the one the `SQLFLOW_TEST_DB` environment variable names, from the environment or from
 `.sqlflow/env`; on macOS and Linux it has to be named. A server that does not answer fails the suites. The tests that
 use it run one at a time, so the suites never create a database per test or per run, and the end-to-end suite keeps
-its estate in `OsduDeliveryE2E` (`SQLFLOW_E2E_CATALOG_DB` names another). Never point either at a database holding
-real data: the suites migrate and seed the database they are given.
+its estate in `OsduDeliveryE2E` (`SQLFLOW_E2E_CATALOG_DB` names another). A run of that suite on its own brings the
+estate forward from the run before; the full tier drops `OsduDeliveryE2E` first, and refuses while anything is
+connected to it, so its run starts fresh as CI's does. Never point either at a database holding real data: the suites
+migrate and seed the database they are given.
 
 ## Repository layout
 

@@ -117,7 +117,7 @@ public static partial class DeliveryEndpoints
     }
 
     private static async Task<Results<Ok<DeliveryActivityDto>, ProblemHttpResult>> GetActivityAsync(
-        long activityId, CatalogDbContext db, OsduDbContext osdu, ILedger ledger, CancellationToken ct)
+        long activityId, CatalogDbContext db, OsduDbContext osdu, ILedgerActivities ledger, CancellationToken ct)
     {
         var activity = await ledger.GetActivityAsync(activityId, ct).ConfigureAwait(false);
         if (activity is null)

@@ -36,10 +36,10 @@ public static partial class DeliveryInventoryEndpoints
     /// queued or running. The run checks it all again on the node, and every id again before it is brought back.
     /// </summary>
     private static async Task<Results<Accepted<DeliveryInventoryRestoreAccepted>, ProblemHttpResult>> RestoreAsync(
-        string partition, int inventoryId, DeliveryInventoryRestoreRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        string partition, int inventoryId, DeliveryInventoryRestoreRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, InventoryStore inventories,
         IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
@@ -73,7 +73,7 @@ public static partial class DeliveryInventoryEndpoints
 
         if (request.Removal is { } removalId)
         {
-            var removal = await ledger.Inventories.GetRemovalAsync(inventory.Partition, removalId, ct).ConfigureAwait(false);
+            var removal = await inventories.GetRemovalAsync(inventory.Partition, removalId, ct).ConfigureAwait(false);
             if (removal is null || removal.InventoryId != inventory.InventoryId)
             {
                 return Problem(StatusCodes.Status404NotFound, "Not found", $"Inventory '{inventory.Name}' holds no removal {removalId}.");
@@ -99,7 +99,7 @@ public static partial class DeliveryInventoryEndpoints
         }
         else if (ids.Count == 0)
         {
-            var holds = (await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(InventoryFindings.Gone);
+            var holds = (await inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(InventoryFindings.Gone);
             if (holds != expected)
             {
                 return Problem(StatusCodes.Status409Conflict, "Count changed",
@@ -108,7 +108,7 @@ public static partial class DeliveryInventoryEndpoints
         }
         else
         {
-            var held = await ledger.Inventories.RecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false);
+            var held = await inventories.RecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false);
             var gone = held.Where(r => r.Finding == InventoryFindings.Gone).Select(r => r.TargetId).ToHashSet(StringComparer.Ordinal);
             var not = ids.Where(i => !gone.Contains(i)).ToList();
             if (not.Count > 0)

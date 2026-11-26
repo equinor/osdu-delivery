@@ -22,6 +22,7 @@ related:
   - delivery-concept-availability-and-retention
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Activities.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Activities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Activities.cs

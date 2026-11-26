@@ -134,7 +134,7 @@ public sealed partial class FlowRuntime
     /// found in the partition the ledger is kept in, once the flow's identity is checked to be able to lift it again; null for a
     /// lift, which gives each record back the ACL it had.
     /// </summary>
-    private async Task<AccessRestrictionState?> RestrictionToSetAsync(ILedger ledger, IDeliveryProtocol protocol, RemovalChoice scope, string? restriction, CancellationToken ct)
+    private async Task<AccessRestrictionState?> RestrictionToSetAsync(ILedgerRestrictions ledger, IDeliveryProtocol protocol, RemovalChoice scope, string? restriction, CancellationToken ct)
     {
         if (scope != RemovalChoice.Restrict)
         {

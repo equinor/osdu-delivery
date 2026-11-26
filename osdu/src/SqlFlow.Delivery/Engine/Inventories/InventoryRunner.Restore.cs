@@ -64,7 +64,7 @@ public sealed partial class InventoryRunner
                 $"Inventory '{spec.Name}' has not been reconciled in '{partition}', so it finds nothing gone to restore yet; build it first. Nothing was restored.");
         }
 
-        await HoldsWhatWasShownAsync(ledger, state, request, partition, ct).ConfigureAwait(false);
+        await HoldsWhatWasShownAsync(ledger.Inventories, state, request, partition, ct).ConfigureAwait(false);
         var owners = OwnersOf(state.OwnersJson);
         var parameters = JsonSerializer.Serialize(
             new
@@ -76,7 +76,7 @@ public sealed partial class InventoryRunner
             },
             Json);
         return await TrackedAsync(
-            ledger,
+            ledger, ledger.Inventories,
             DeliveryOperations.Restore,
             InventoryRemovals.RestoreActivityKind,
             spec,
@@ -92,7 +92,7 @@ public sealed partial class InventoryRunner
                     spec.Name, partition, restoreId, request.Expected,
                     request.Removal is { } removal ? string.Create(CultureInfo.InvariantCulture, $" that removal {removal} removed") : string.Empty,
                     _flow.Source.Endpoint, actor);
-                return RestoreRoundsAsync(ledger, state, request, owners, restoreId, runId, actor, ct);
+                return RestoreRoundsAsync(ledger.Inventories, state, request, owners, restoreId, runId, actor, ct);
             },
             ct).ConfigureAwait(false);
     }
@@ -102,11 +102,11 @@ public sealed partial class InventoryRunner
     /// the inventory removed, as many as they were told, the removal ended; every id they picked, an id the inventory holds; or
     /// every gone id, as many as they were told.
     /// </summary>
-    private async Task HoldsWhatWasShownAsync(ILedger ledger, InventoryState state, InventoryRestoreRequest request, string partition, CancellationToken ct)
+    private async Task HoldsWhatWasShownAsync(InventoryStore inventories, InventoryState state, InventoryRestoreRequest request, string partition, CancellationToken ct)
     {
         if (request.Removal is { } removalId)
         {
-            var removal = await ledger.Inventories.GetRemovalAsync(partition, removalId, ct).ConfigureAwait(false);
+            var removal = await inventories.GetRemovalAsync(partition, removalId, ct).ConfigureAwait(false);
             if (removal is null || removal.InventoryId != state.InventoryId)
             {
                 throw new DeliveryException($"Inventory '{state.Name}' holds no removal {removalId}. Nothing was restored.");
@@ -135,7 +135,7 @@ public sealed partial class InventoryRunner
 
         if (request.NamesIds)
         {
-            var held = await ledger.Inventories.RecordsOfAsync(partition, state.InventoryId, request.Ids, ct).ConfigureAwait(false);
+            var held = await inventories.RecordsOfAsync(partition, state.InventoryId, request.Ids, ct).ConfigureAwait(false);
             var unknown = request.Ids.Except(held.Select(r => r.TargetId), StringComparer.Ordinal).ToList();
             if (unknown.Count > 0)
             {
@@ -147,7 +147,7 @@ public sealed partial class InventoryRunner
             return;
         }
 
-        var holds = (await ledger.Inventories.CountsAsync(_flow.LedgerId, state.InventoryId, ct).ConfigureAwait(false)).Of(InventoryFindings.Gone);
+        var holds = (await inventories.CountsAsync(_flow.LedgerId, state.InventoryId, ct).ConfigureAwait(false)).Of(InventoryFindings.Gone);
         if (holds != request.Expected)
         {
             throw new DeliveryException(string.Create(
@@ -158,7 +158,7 @@ public sealed partial class InventoryRunner
 
     /// <summary>Reads, checks, restores and records the restore's ids a round at a time, until none is left.</summary>
     private async Task<InventoryRemovalTally> RestoreRoundsAsync(
-        ILedger ledger, InventoryState state, InventoryRestoreRequest request, IReadOnlyList<string> owners, long restoreId, Guid runId, string actor, CancellationToken ct)
+        InventoryStore inventories, InventoryState state, InventoryRestoreRequest request, IReadOnlyList<string> owners, long restoreId, Guid runId, string actor, CancellationToken ct)
     {
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
@@ -169,7 +169,7 @@ public sealed partial class InventoryRunner
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var round = await ledger.Inventories.RestoreCandidatesAsync(
+            var round = await inventories.RestoreCandidatesAsync(
                 _flow.LedgerId, state.InventoryId, request.NamesIds ? request.Ids : null, request.Removal, owners, after, InventoryRemovals.RestoreChunk, ct).ConfigureAwait(false);
             if (round.Count == 0)
             {
@@ -178,7 +178,7 @@ public sealed partial class InventoryRunner
 
             after = round[^1].Order;
             var (items, refusal) = await RestoreRoundAsync(client, round, request, ct).ConfigureAwait(false);
-            await ledger.Inventories.RecordRestoreAsync(_flow.LedgerId, state.InventoryId, restoreId, items, owners, restoredDetail, Now, ct).ConfigureAwait(false);
+            await inventories.RecordRestoreAsync(_flow.LedgerId, state.InventoryId, restoreId, items, owners, restoredDetail, Now, ct).ConfigureAwait(false);
             tally = tally.Add(items);
             if (refusal is not null)
             {

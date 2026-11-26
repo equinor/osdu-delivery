@@ -69,9 +69,9 @@ public static partial class DeliveryInventoryEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryInventorySelectionDto>, Accepted<DeliveryInventorySelectionDto>, ProblemHttpResult>> SelectAsync(
         string partition, int inventoryId, DeliveryInventorySelectionRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents,
-        ILedger ledger, IRunDispatcher dispatcher, TimeProvider clock, IRepositoryFolders folders, ClaimsPrincipal user, CancellationToken ct)
+        InventoryStore inventories, IRunDispatcher dispatcher, TimeProvider clock, IRepositoryFolders folders, ClaimsPrincipal user, CancellationToken ct)
     {
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
@@ -127,18 +127,18 @@ public static partial class DeliveryInventoryEndpoints
         var conditionsJson = JsonSerializer.Serialize(conditions.Select(c => Canonical(c!)).ToList(), Json);
         var key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(conditionsJson)));
         if (request!.Refresh != true
-            && await ledger.Inventories.FindSelectionAsync(inventory.Partition, inventory.InventoryId, key, inventory.LastBuildRunId, ct).ConfigureAwait(false) is { } made)
+            && await inventories.FindSelectionAsync(inventory.Partition, inventory.InventoryId, key, inventory.LastBuildRunId, ct).ConfigureAwait(false) is { } made)
         {
-            var settled = await SettleAsync(db, ledger, inventory.Partition, made, clock, ct).ConfigureAwait(false);
+            var settled = await SettleAsync(db, inventories, inventory.Partition, made, clock, ct).ConfigureAwait(false);
             if (settled.Status != InventorySelections.Failed)
             {
-                return TypedResults.Ok(await ToDtoAsync(ledger, inventory, settled, ct).ConfigureAwait(false));
+                return TypedResults.Ok(await ToDtoAsync(inventories, inventory, settled, ct).ConfigureAwait(false));
             }
         }
 
         var now = clock.GetUtcNow().UtcDateTime;
-        await ledger.Inventories.SweepSelectionsAsync(inventory.Partition, now - InventorySelections.KeptFor, ct).ConfigureAwait(false);
-        var selectionId = await ledger.Inventories.CreateSelectionAsync(
+        await inventories.SweepSelectionsAsync(inventory.Partition, now - InventorySelections.KeptFor, ct).ConfigureAwait(false);
+        var selectionId = await inventories.CreateSelectionAsync(
             inventory.Partition,
             new InventorySelectionStart(inventory.InventoryId, RequestActor.Label(user), conditionsJson, key, search.ToJson(), inventory.LastBuildRunId, now),
             ct).ConfigureAwait(false);
@@ -168,17 +168,17 @@ public static partial class DeliveryInventoryEndpoints
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // A selection whose run never came is closed, so the page says why rather than wait on it.
-            await ledger.Inventories.FailSelectionAsync(
+            await inventories.FailSelectionAsync(
                 inventory.Partition, selectionId, $"its run could not be queued: {DeliveryEndpoints.Redacted(ex)}", clock.GetUtcNow().UtcDateTime, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
-        await ledger.Inventories.SetSelectionRunAsync(inventory.Partition, selectionId, runId, ct).ConfigureAwait(false);
-        var created = await ledger.Inventories.GetSelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)
+        await inventories.SetSelectionRunAsync(inventory.Partition, selectionId, runId, ct).ConfigureAwait(false);
+        var created = await inventories.GetSelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)
             ?? throw new DeliveryException($"Selection {selectionId} of inventory '{inventory.Name}' was opened and is not in partition '{inventory.Partition}'.");
         return TypedResults.Accepted(
             $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/selections/{selectionId}",
-            await ToDtoAsync(ledger, inventory, created, ct).ConfigureAwait(false));
+            await ToDtoAsync(inventories, inventory, created, ct).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -186,29 +186,29 @@ public static partial class DeliveryInventoryEndpoints
     /// each now. A selection whose run ended before its match did is closed as failed here, saying how its run ended.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventorySelectionDto>, ProblemHttpResult>> GetSelectionAsync(
-        string partition, int inventoryId, long selectionId, CatalogDbContext db, ILedger ledger, TimeProvider clock, CancellationToken ct)
+        string partition, int inventoryId, long selectionId, CatalogDbContext db, InventoryStore inventories, TimeProvider clock, CancellationToken ct)
     {
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
         }
 
-        var (selection, missing) = await SelectionAsync(ledger, inventory, selectionId, ct).ConfigureAwait(false);
+        var (selection, missing) = await SelectionAsync(inventories, inventory, selectionId, ct).ConfigureAwait(false);
         if (selection is null)
         {
             return missing!;
         }
 
-        var settled = await SettleAsync(db, ledger, inventory.Partition, selection, clock, ct).ConfigureAwait(false);
-        return TypedResults.Json(await ToDtoAsync(ledger, inventory, settled, ct).ConfigureAwait(false), Json);
+        var settled = await SettleAsync(db, inventories, inventory.Partition, selection, clock, ct).ConfigureAwait(false);
+        return TypedResults.Json(await ToDtoAsync(inventories, inventory, settled, ct).ConfigureAwait(false), Json);
     }
 
     /// <summary>The selection a route names, when it is one of the inventory's; else the problem to answer with.</summary>
     private static async Task<(InventorySelectionState? Selection, ProblemHttpResult? Problem)> SelectionAsync(
-        ILedger ledger, InventoryState inventory, long selectionId, CancellationToken ct)
+        InventoryStore inventories, InventoryState inventory, long selectionId, CancellationToken ct)
     {
-        var selection = selectionId < 1 ? null : await ledger.Inventories.GetSelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false);
+        var selection = selectionId < 1 ? null : await inventories.GetSelectionAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false);
         return selection is null || selection.InventoryId != inventory.InventoryId
             ? (null, Problem(StatusCodes.Status404NotFound, "Not found", $"No selection {selectionId} of inventory '{inventory.Name}' in partition '{inventory.Partition}'."))
             : (selection, null);
@@ -220,7 +220,7 @@ public static partial class DeliveryInventoryEndpoints
     /// A match that ends between the reads keeps how it ended, since only a selection still under way is closed.
     /// </summary>
     private static async Task<InventorySelectionState> SettleAsync(
-        CatalogDbContext db, ILedger ledger, string partition, InventorySelectionState selection, TimeProvider clock, CancellationToken ct)
+        CatalogDbContext db, InventoryStore inventories, string partition, InventorySelectionState selection, TimeProvider clock, CancellationToken ct)
     {
         if (!InventorySelections.IsUnderWay(selection.Status))
         {
@@ -254,24 +254,24 @@ public static partial class DeliveryInventoryEndpoints
             return selection;
         }
 
-        await ledger.Inventories.FailSelectionAsync(partition, selection.InventorySelectionId, why, now, ct).ConfigureAwait(false);
-        return await ledger.Inventories.GetSelectionAsync(partition, selection.InventorySelectionId, ct).ConfigureAwait(false) ?? selection;
+        await inventories.FailSelectionAsync(partition, selection.InventorySelectionId, why, now, ct).ConfigureAwait(false);
+        return await inventories.GetSelectionAsync(partition, selection.InventorySelectionId, ct).ConfigureAwait(false) ?? selection;
     }
 
     /// <summary>A selection as the API answers with it: its counts by finding read from its ids now, once its match completed.</summary>
-    private static async Task<DeliveryInventorySelectionDto> ToDtoAsync(ILedger ledger, InventoryState inventory, InventorySelectionState s, CancellationToken ct)
+    private static async Task<DeliveryInventorySelectionDto> ToDtoAsync(InventoryStore inventories, InventoryState inventory, InventorySelectionState s, CancellationToken ct)
     {
         IReadOnlyList<DeliveryInventoryCountDto>? counts = null;
         if (s.Status == InventorySelections.Completed)
         {
-            counts = Counts((await ledger.Inventories.SelectionCountsAsync(inventory.Partition, s.InventorySelectionId, ct).ConfigureAwait(false)).ByFinding);
+            counts = Counts((await inventories.SelectionCountsAsync(inventory.Partition, s.InventorySelectionId, ct).ConfigureAwait(false)).ByFinding);
         }
 
         return new DeliveryInventorySelectionDto(
             s.InventorySelectionId, s.InventoryId, inventory.Partition, s.Status, Stale(inventory, s), ConditionsOf(s.ConditionsJson), s.Query, s.Direction,
             ListOf(s.NotesJson), ListOf(s.ColumnsJson), s.Candidates, s.ToCheck, s.Checked, s.Matched, s.Outside, s.Changed, s.Requests, counts, s.RunId, s.Actor,
             Utc(s.CreatedUtc), Utc(s.StartedUtc), Utc(s.CompletedUtc), s.Error, s.DuplicateCheckId,
-            await DuplicateKeyOfAsync(ledger, inventory.Partition, s, ct).ConfigureAwait(false));
+            await DuplicateKeyOfAsync(inventories, inventory.Partition, s, ct).ConfigureAwait(false));
     }
 
     /// <summary>A selection as a removal names it.</summary>
@@ -282,7 +282,7 @@ public static partial class DeliveryInventoryEndpoints
     /// The key a selection's duplicate check grouped its copies by when the selection was made of its picks: the selection's own,
     /// since the check's key may change since; the check's for a selection made before selections kept it.
     /// </summary>
-    private static async Task<IReadOnlyList<DeliveryDuplicateKeyPropertyDto>?> DuplicateKeyOfAsync(ILedger ledger, string partition, InventorySelectionState s, CancellationToken ct)
+    private static async Task<IReadOnlyList<DeliveryDuplicateKeyPropertyDto>?> DuplicateKeyOfAsync(InventoryStore inventories, string partition, InventorySelectionState s, CancellationToken ct)
     {
         if (s.DuplicateCheckId is not { } checkId)
         {
@@ -294,7 +294,7 @@ public static partial class DeliveryInventoryEndpoints
             return KeyOf(kept);
         }
 
-        return await ledger.Inventories.GetDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false) is { } check ? KeyOf(check.KeyJson) : null;
+        return await inventories.GetDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false) is { } check ? KeyOf(check.KeyJson) : null;
     }
 
     /// <summary>Whether the inventory was built again since a completed selection was matched: its ids then say less than a new match would.</summary>

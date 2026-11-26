@@ -19,6 +19,7 @@ related:
   - delivery-table-activity-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs

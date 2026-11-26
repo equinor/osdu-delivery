@@ -87,7 +87,7 @@ public sealed partial class CacheSetSweepService : BackgroundService
     public async Task<CacheSetSweep> SweepAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
+        var ledger = scope.ServiceProvider.GetRequiredService<ILedgerCacheSets>();
         return await ledger.SweepCacheSetsAsync(_clock.GetUtcNow().UtcDateTime - CacheSetKeeping.UnusedFor, ct).ConfigureAwait(false);
     }
 

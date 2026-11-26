@@ -101,7 +101,7 @@ public static partial class DeliveryExplorerEndpoints
 
     /// <summary>The commonest keys of a drafted dimension's path, with the records holding each, which the builder's example steps through.</summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> DimensionKeysAsync(
-        DeliveryDimensionKeysRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, ILedger ledger, DeliveryConfigStore config,
+        DeliveryDimensionKeysRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, ILedgerDocuments ledger, DeliveryConfigStore config,
         DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         CancellationToken ct)
     {
@@ -136,7 +136,7 @@ public static partial class DeliveryExplorerEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionComposeDto>, ProblemHttpResult>> ComposeDimensionAsync(
         DeliveryDimensionComposeRequest? body, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents,
-        IPartitionRegistry partitions, ILedger ledger, DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers,
+        IPartitionRegistry partitions, ILedgerDocuments ledger, DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers,
         HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         if (body?.Draft is not { } draft)
@@ -182,7 +182,7 @@ public static partial class DeliveryExplorerEndpoints
     /// refused, with the first thing to put right, while a build would refuse it.
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> PreviewDimensionAsync(
-        DeliveryDimensionPreviewRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger,
+        DeliveryDimensionPreviewRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedgerDocuments ledger,
         DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         CancellationToken ct)
     {
@@ -224,7 +224,7 @@ public static partial class DeliveryExplorerEndpoints
     /// synced repositories hold, and what is wrong with it, the loader's refusal or the blueprint's findings.
     /// </summary>
     private static async Task<(string Item, string Document, DimensionSpec? Spec, DimensionBlueprint? Blueprint, List<DimensionDraftIssue> Issues)> LoadDraftAsync(
-        DimensionDraft draft, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders folders, CancellationToken ct)
+        DimensionDraft draft, DeliveryDocumentLoader documents, ILedgerDocuments ledger, IRepositoryFolders folders, CancellationToken ct)
     {
         var item = DimensionBuilder.ToYaml(draft);
         var document = DimensionBuilder.Document(item);

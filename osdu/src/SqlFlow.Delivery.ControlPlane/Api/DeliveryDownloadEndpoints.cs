@@ -99,7 +99,7 @@ public static class DeliveryDownloadEndpoints
     /// read): every download it declares, each with what the partition keeps of it, and those it keeps that the flow no longer declares.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryDownloadFlowDto>, ProblemHttpResult>> GetFlowAsync(
-        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, DownloadStore downloads,
         IPartitionRegistry registry, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
@@ -145,11 +145,11 @@ public static class DeliveryDownloadEndpoints
                 Json);
         }
 
-        var held = await ledger.Downloads.ListAsync(bound.LedgerId, ct).ConfigureAwait(false);
+        var held = await downloads.ListAsync(bound.LedgerId, ct).ConfigureAwait(false);
         var summaries = new List<DeliveryDownloadDto>(held.Count);
         foreach (var download in held)
         {
-            summaries.Add(await SummaryAsync(ledger, download, ct).ConfigureAwait(false));
+            summaries.Add(await SummaryAsync(downloads, download, ct).ConfigureAwait(false));
         }
 
         return TypedResults.Json(
@@ -161,26 +161,26 @@ public static class DeliveryDownloadEndpoints
 
     /// <summary>A download's latest runs, the newest first.</summary>
     private static async Task<Results<JsonHttpResult<IReadOnlyList<DeliveryDownloadRunDto>>, ProblemHttpResult>> ListRunsAsync(
-        string partition, int downloadId, int? limit, ILedger ledger, CancellationToken ct)
+        string partition, int downloadId, int? limit, DownloadStore downloads, CancellationToken ct)
     {
         if (limit is < 1 or > MaxRuns)
         {
             return Problem(StatusCodes.Status400BadRequest, "Invalid limit", $"limit is how many runs the history lists: 1 to {MaxRuns}.");
         }
 
-        var (download, problem) = await DownloadAsync(ledger, partition, downloadId, ct).ConfigureAwait(false);
+        var (download, problem) = await DownloadAsync(downloads, partition, downloadId, ct).ConfigureAwait(false);
         if (download is null)
         {
             return problem!;
         }
 
-        var runs = await ledger.Downloads.ListRunsAsync(download.Partition, downloadId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
+        var runs = await downloads.ListRunsAsync(download.Partition, downloadId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
         return TypedResults.Json<IReadOnlyList<DeliveryDownloadRunDto>>(runs.Select(ToDto).ToList(), Json);
     }
 
     /// <summary>A page of a download's records, of one state or all, found by id or file name when the request searches.</summary>
     private static async Task<Results<JsonHttpResult<DeliveryDownloadRecordPageDto>, ProblemHttpResult>> ListRecordsAsync(
-        string partition, int downloadId, string? state, string? q, long? after, int? limit, ILedger ledger, CancellationToken ct)
+        string partition, int downloadId, string? state, string? q, long? after, int? limit, DownloadStore downloads, CancellationToken ct)
     {
         var asked = string.IsNullOrWhiteSpace(state) ? null : state.Trim().ToLowerInvariant();
         if (asked is not null && !DownloadRecordStates.IsKnown(asked))
@@ -204,7 +204,7 @@ public static class DeliveryDownloadEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Invalid limit", $"limit is how many records a page holds: 1 to {MaxPage}.");
         }
 
-        var (download, problem) = await DownloadAsync(ledger, partition, downloadId, ct).ConfigureAwait(false);
+        var (download, problem) = await DownloadAsync(downloads, partition, downloadId, ct).ConfigureAwait(false);
         if (download is null)
         {
             return problem!;
@@ -212,7 +212,7 @@ public static class DeliveryDownloadEndpoints
 
         // One more than the page is read, so the answer knows whether another page follows without a read that finds none.
         var take = limit ?? DefaultPage;
-        var rows = await ledger.Downloads.ListRecordsAsync(download.Partition, downloadId, asked, q, after, take + 1, ct).ConfigureAwait(false);
+        var rows = await downloads.ListRecordsAsync(download.Partition, downloadId, asked, q, after, take + 1, ct).ConfigureAwait(false);
         var shown = rows.Count > take ? rows.Take(take).ToList() : rows;
         return TypedResults.Json(
             new DeliveryDownloadRecordPageDto(shown.Select(ToDto).ToList(), rows.Count > take ? shown[^1].DownloadRecordId : null),
@@ -241,7 +241,7 @@ public static class DeliveryDownloadEndpoints
     /// a flow whose partition is its header's is read in the partition its ledger keeps, and is shown in no other.
     /// </summary>
     private static async Task<(DownloadFlowDefinition? Flow, string? Partition, string? Why)> SettleAsync(
-        DownloadFlowDefinition flow, string? partition, ILedger ledger, RegisteredPartitions registered, CancellationToken ct)
+        DownloadFlowDefinition flow, string? partition, ILedgerRegistry ledger, RegisteredPartitions registered, CancellationToken ct)
     {
         if (!flow.Partitioned)
         {
@@ -262,10 +262,10 @@ public static class DeliveryDownloadEndpoints
         }
     }
 
-    private static async Task<DeliveryDownloadDto> SummaryAsync(ILedger ledger, DownloadState download, CancellationToken ct)
+    private static async Task<DeliveryDownloadDto> SummaryAsync(DownloadStore downloads, DownloadState download, CancellationToken ct)
     {
-        var counts = await ledger.Downloads.CountsAsync(download.Partition, download.DownloadId, ct).ConfigureAwait(false);
-        var latest = await ledger.Downloads.ListRunsAsync(download.Partition, download.DownloadId, 1, ct).ConfigureAwait(false);
+        var counts = await downloads.CountsAsync(download.Partition, download.DownloadId, ct).ConfigureAwait(false);
+        var latest = await downloads.ListRunsAsync(download.Partition, download.DownloadId, 1, ct).ConfigureAwait(false);
         var last = latest.Count > 0 ? latest[0] : null;
         return new DeliveryDownloadDto(
             download.DownloadId, download.Partition, download.Name, download.Kind, download.Query, download.ReadMode, download.Location, download.CreatedUtc,
@@ -274,14 +274,14 @@ public static class DeliveryDownloadEndpoints
     }
 
     /// <summary>The download a request names, or the problem that answers it: a partition that is none, or a download it does not keep.</summary>
-    private static async Task<(DownloadState? Download, ProblemHttpResult? Problem)> DownloadAsync(ILedger ledger, string partition, int downloadId, CancellationToken ct)
+    private static async Task<(DownloadState? Download, ProblemHttpResult? Problem)> DownloadAsync(DownloadStore downloads, string partition, int downloadId, CancellationToken ct)
     {
         if (PartitionProblem(partition) is { } bad)
         {
             return (null, bad);
         }
 
-        var download = await ledger.Downloads.GetAsync(partition.Trim(), downloadId, ct).ConfigureAwait(false);
+        var download = await downloads.GetAsync(partition.Trim(), downloadId, ct).ConfigureAwait(false);
         return download is null
             ? (null, Problem(StatusCodes.Status404NotFound, "Not found", $"Partition '{partition}' keeps no download {downloadId}."))
             : (download, null);

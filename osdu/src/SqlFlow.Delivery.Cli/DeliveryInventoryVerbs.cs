@@ -52,7 +52,7 @@ internal static class DeliveryInventoryVerbs
                 "Inventories live in the module's database. Run 'sqlflow inventory' with --db <conn-ref>, or set the catalog variable.");
         if (verb == "list")
         {
-            return await ListAsync(context, ledger, ct).ConfigureAwait(false);
+            return await ListAsync(context, ledger.Inventories, ct).ConfigureAwait(false);
         }
 
         if (context.Arguments.Positional(2) is not { } partitionText)
@@ -64,7 +64,7 @@ internal static class DeliveryInventoryVerbs
         if (verb == "lookup")
         {
             return context.Arguments.Positional(3) is { } id && !string.IsNullOrWhiteSpace(id)
-                ? await LookupAsync(context, ledger, partition, id.Trim(), ct).ConfigureAwait(false)
+                ? await LookupAsync(context, ledger, ledger.Inventories, partition, id.Trim(), ct).ConfigureAwait(false)
                 : context.UsageError("name the OSDU id to look up: sqlflow inventory lookup <partition> <osdu-id>.");
         }
 
@@ -72,7 +72,7 @@ internal static class DeliveryInventoryVerbs
         {
             return context.Arguments.Positional(3) is { } removalText
                 && long.TryParse(removalText, NumberStyles.None, CultureInfo.InvariantCulture, out var removalId) && removalId > 0
-                ? await RemovalAsync(context, ledger, partition, removalId, ct).ConfigureAwait(false)
+                ? await RemovalAsync(context, ledger.Inventories, partition, removalId, ct).ConfigureAwait(false)
                 : context.UsageError("name the removal by its number, as 'sqlflow inventory removals' shows it: sqlflow inventory removal <partition> <removal>.");
         }
 
@@ -90,23 +90,23 @@ internal static class DeliveryInventoryVerbs
             ?? throw new FlowValidationException($"No inventory {inventoryId} in partition '{partition}'; 'sqlflow inventory list --partition {partition}' shows its inventories.");
         return verb switch
         {
-            "show" => await ShowAsync(context, ledger, inventory, ct).ConfigureAwait(false),
-            "records" => await RecordsAsync(context, ledger, inventory, ct).ConfigureAwait(false),
-            "runs" => await RunsAsync(context, ledger, inventory, ct).ConfigureAwait(false),
-            "removals" => await RemovalsAsync(context, ledger, inventory, ct).ConfigureAwait(false),
-            _ => await ExportAsync(context, ledger, inventory, ct).ConfigureAwait(false),
+            "show" => await ShowAsync(context, ledger.Inventories, inventory, ct).ConfigureAwait(false),
+            "records" => await RecordsAsync(context, ledger, ledger.Inventories, inventory, ct).ConfigureAwait(false),
+            "runs" => await RunsAsync(context, ledger.Inventories, inventory, ct).ConfigureAwait(false),
+            "removals" => await RemovalsAsync(context, ledger.Inventories, inventory, ct).ConfigureAwait(false),
+            _ => await ExportAsync(context, ledger, ledger.Inventories, inventory, ct).ConfigureAwait(false),
         };
     }
 
     /// <summary>The inventories of the partition --partition names (of every partition without it), with what their last reconcile raised.</summary>
-    private static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, CancellationToken ct)
+    private static async Task<int> ListAsync(CliVerbContext context, InventoryStore store, CancellationToken ct)
     {
         var partition = context.Arguments.GetOption("--partition") is { } named ? Partition(named) : null;
-        var inventories = await ledger.Inventories.ListAsync(partition, ct).ConfigureAwait(false);
+        var inventories = await store.ListAsync(partition, ct).ConfigureAwait(false);
         var listed = new List<(InventoryState Inventory, InventoryRecentRuns Runs, IReadOnlyDictionary<string, long>? Findings)>(inventories.Count);
         foreach (var inventory in inventories)
         {
-            var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false);
+            var runs = await InventoryReport.RecentRunsAsync(store, inventory, ct).ConfigureAwait(false);
             listed.Add((inventory, runs, InventoryReport.Findings(runs.LastReconcile?.FindingsJson)));
         }
 
@@ -151,10 +151,10 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>One inventory: what it reads, its last build and reconcile, the owners it used, and its ids by finding as its rows hold them now.</summary>
-    private static async Task<int> ShowAsync(CliVerbContext context, ILedger ledger, InventoryState inventory, CancellationToken ct)
+    private static async Task<int> ShowAsync(CliVerbContext context, InventoryStore inventories, InventoryState inventory, CancellationToken ct)
     {
-        var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false);
-        var counts = await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
+        var runs = await InventoryReport.RecentRunsAsync(inventories, inventory, ct).ConfigureAwait(false);
+        var counts = await inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
         var owners = InventoryReport.Owners(inventory.OwnersJson, inventory.OwnersSource);
         if (context.Json)
         {
@@ -200,7 +200,7 @@ internal static class DeliveryInventoryVerbs
     /// A page of the inventory's ids, of the finding --finding names or every one, in the order the inventory took them in, after
     /// the id --after names; the line under the page names the --after of the next.
     /// </summary>
-    private static async Task<int> RecordsAsync(CliVerbContext context, ILedger ledger, InventoryState inventory, CancellationToken ct)
+    private static async Task<int> RecordsAsync(CliVerbContext context, ILedgerRegistry ledger, InventoryStore inventories, InventoryState inventory, CancellationToken ct)
     {
         string? finding = null;
         if (context.Arguments.GetOption("--finding") is { } named)
@@ -223,7 +223,7 @@ internal static class DeliveryInventoryVerbs
         var limit = Count(context.Arguments.GetOption("--limit"), DefaultRecords, MaxRecords, "--limit");
 
         // One more than the page is read, so the line under it knows whether another page follows.
-        var read = await ledger.Inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, finding, after, limit + 1, ct).ConfigureAwait(false);
+        var read = await inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, finding, after, limit + 1, ct).ConfigureAwait(false);
         var page = read.Take(limit).ToList();
         long? next = read.Count > limit ? page[^1].InventoryRecordId : null;
         var names = await LedgerNamesAsync(ledger, page, ct).ConfigureAwait(false);
@@ -262,18 +262,18 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>What every inventory of the partition holds of one OSDU id: the inventories listing it or expecting it, with its finding in each.</summary>
-    private static async Task<int> LookupAsync(CliVerbContext context, ILedger ledger, string partition, string id, CancellationToken ct)
+    private static async Task<int> LookupAsync(CliVerbContext context, ILedgerRegistry ledger, InventoryStore store, string partition, string id, CancellationToken ct)
     {
-        var records = await ledger.Inventories.LookupRecordsAsync(partition, id, ct).ConfigureAwait(false);
+        var records = await store.LookupRecordsAsync(partition, id, ct).ConfigureAwait(false);
         var names = await LedgerNamesAsync(ledger, records, ct).ConfigureAwait(false);
         var inventories = new Dictionary<int, InventoryState?>();
         foreach (var inventoryId in records.Select(r => r.InventoryId).Distinct())
         {
-            inventories[inventoryId] = await ledger.Inventories.GetAsync(partition, inventoryId, ct).ConfigureAwait(false);
+            inventories[inventoryId] = await store.GetAsync(partition, inventoryId, ct).ConfigureAwait(false);
         }
 
         var hits = records.Where(r => inventories.GetValueOrDefault(r.InventoryId) is not null).ToList();
-        var removed = await ledger.Inventories.LookupRemovalItemsAsync(partition, id, ct).ConfigureAwait(false);
+        var removed = await store.LookupRemovalItemsAsync(partition, id, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -317,10 +317,10 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>The inventory's builds and reconciles, the newest first: what each read, changed and raised.</summary>
-    private static async Task<int> RunsAsync(CliVerbContext context, ILedger ledger, InventoryState inventory, CancellationToken ct)
+    private static async Task<int> RunsAsync(CliVerbContext context, InventoryStore inventories, InventoryState inventory, CancellationToken ct)
     {
         var limit = Count(context.Arguments.GetOption("--limit"), DefaultRuns, MaxRuns, "--limit");
-        var runs = await ledger.Inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, limit, ct).ConfigureAwait(false);
+        var runs = await inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, limit, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -352,10 +352,10 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>The removals an operator asked of the inventory, newest first: what each removed, how much, what it came to, who asked.</summary>
-    private static async Task<int> RemovalsAsync(CliVerbContext context, ILedger ledger, InventoryState inventory, CancellationToken ct)
+    private static async Task<int> RemovalsAsync(CliVerbContext context, InventoryStore inventories, InventoryState inventory, CancellationToken ct)
     {
         var limit = Count(context.Arguments.GetOption("--limit"), DefaultRuns, MaxRuns, "--limit");
-        var removals = await ledger.Inventories.ListRemovalsAsync(inventory.Partition, inventory.InventoryId, limit, ct).ConfigureAwait(false);
+        var removals = await inventories.ListRemovalsAsync(inventory.Partition, inventory.InventoryId, limit, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -388,9 +388,9 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>A page of what one removal did to each id, of the outcome --outcome names (every one without it).</summary>
-    private static async Task<int> RemovalAsync(CliVerbContext context, ILedger ledger, string partition, long removalId, CancellationToken ct)
+    private static async Task<int> RemovalAsync(CliVerbContext context, InventoryStore inventories, string partition, long removalId, CancellationToken ct)
     {
-        var removal = await ledger.Inventories.GetRemovalAsync(partition, removalId, ct).ConfigureAwait(false)
+        var removal = await inventories.GetRemovalAsync(partition, removalId, ct).ConfigureAwait(false)
             ?? throw new FlowValidationException($"No inventory removal {removalId} in partition '{partition}'; 'sqlflow inventory removals <partition> <id>' lists an inventory's removals.");
         string? outcome = null;
         if (context.Arguments.GetOption("--outcome") is { } named)
@@ -411,7 +411,7 @@ internal static class DeliveryInventoryVerbs
         }
 
         var limit = Count(context.Arguments.GetOption("--limit"), DefaultRecords, MaxRecords, "--limit");
-        var read = await ledger.Inventories.ListRemovalItemsAsync(partition, removalId, outcome, after, limit + 1, ct).ConfigureAwait(false);
+        var read = await inventories.ListRemovalItemsAsync(partition, removalId, outcome, after, limit + 1, ct).ConfigureAwait(false);
         var page = read.Take(limit).ToList();
         long? next = read.Count > limit ? page[^1].InventoryRemovalItemId : null;
         if (context.Json)
@@ -451,7 +451,7 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>The inventory's ids of the finding --finding names (every id without it) as CSV, to --out or the console.</summary>
-    private static async Task<int> ExportAsync(CliVerbContext context, ILedger ledger, InventoryState inventory, CancellationToken ct)
+    private static async Task<int> ExportAsync(CliVerbContext context, ILedgerRegistry ledger, InventoryStore inventories, InventoryState inventory, CancellationToken ct)
     {
         string? finding = null;
         if (context.Arguments.GetOption("--finding") is { } named)
@@ -465,7 +465,7 @@ internal static class DeliveryInventoryVerbs
 
         if (context.Arguments.GetOption("--out") is not { } outPath)
         {
-            await InventoryExport.WriteAsync(ledger, inventory, finding, context.Out, ct).ConfigureAwait(false);
+            await InventoryExport.WriteAsync(ledger, inventories, inventory, finding, context.Out, ct).ConfigureAwait(false);
             await context.Out.FlushAsync(ct).ConfigureAwait(false);
             return 0;
         }
@@ -484,7 +484,7 @@ internal static class DeliveryInventoryVerbs
             var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
             await using (file.ConfigureAwait(false))
             {
-                rows = await InventoryExport.WriteAsync(ledger, inventory, finding, file, ct).ConfigureAwait(false);
+                rows = await InventoryExport.WriteAsync(ledger, inventories, inventory, finding, file, ct).ConfigureAwait(false);
             }
 
             File.Move(partial, full, overwrite: true);
@@ -509,7 +509,7 @@ internal static class DeliveryInventoryVerbs
     }
 
     /// <summary>The names of the ledgers the records name, read once each.</summary>
-    private static async Task<Dictionary<Guid, string>> LedgerNamesAsync(ILedger ledger, IReadOnlyList<InventoryRecordState> records, CancellationToken ct)
+    private static async Task<Dictionary<Guid, string>> LedgerNamesAsync(ILedgerRegistry ledger, IReadOnlyList<InventoryRecordState> records, CancellationToken ct)
     {
         var names = new Dictionary<Guid, string>();
         foreach (var flowId in records.Select(r => r.LedgerFlowId).OfType<Guid>().Distinct())

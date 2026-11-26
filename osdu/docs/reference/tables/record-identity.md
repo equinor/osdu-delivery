@@ -18,6 +18,7 @@ related:
   - delivery-flow-mapping
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs
   - osdu/src/SqlFlow.Delivery/Ledger/RecordIdentity.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs

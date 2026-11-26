@@ -63,7 +63,7 @@ public static class LedgerRegistration
     /// entry is returned (<see cref="ILedgerRegistry.CompleteLedgerMovesAsync"/>), so whatever registered the ledger
     /// reads it whole.
     /// </remarks>
-    public static async Task<LedgerEntry> RegisterAsync(ILedger ledger, FlowDefinition flow, ISecretResolver secrets, bool keptWhenUnresolved, CancellationToken ct = default)
+    public static async Task<LedgerEntry> RegisterAsync(ILedgerRegistry ledger, FlowDefinition flow, ISecretResolver secrets, bool keptWhenUnresolved, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(flow);

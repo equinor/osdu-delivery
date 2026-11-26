@@ -60,7 +60,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
     private readonly DeliveryDocumentLoader _documents;
     private readonly ISecretResolver? _secrets;
-    private readonly Func<ILedger?>? _ledger;
+    private readonly Func<ILedgerRegistry?>? _ledger;
 
     /// <summary>
     /// The sync over <paramref name="documents"/>, writing the module's rows on the catalog's connection, inside the sync's
@@ -68,7 +68,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     /// <paramref name="ledger"/> answers the ledger the sync makes the moves it asked with once it committed; without one,
     /// or when it answers none, the moves are left asked, for the control plane's pass and the runs of the flows.
     /// </summary>
-    public DeliveryCatalogSync(DeliveryDocumentLoader documents, ISecretResolver? secrets = null, Func<ILedger?>? ledger = null)
+    public DeliveryCatalogSync(DeliveryDocumentLoader documents, ISecretResolver? secrets = null, Func<ILedgerRegistry?>? ledger = null)
     {
         ArgumentNullException.ThrowIfNull(documents);
         _documents = documents;

@@ -19,6 +19,7 @@ related:
   - delivery-table-mapping
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliverySearchTermCatalog.cs
   - osdu/src/SqlFlow.Delivery/SearchTerms/SearchTermDirectory.cs

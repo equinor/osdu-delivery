@@ -14,7 +14,7 @@ internal sealed class LeaseJournal
     /// <summary>The most entries one write carries, so the rows it adds stay well under a lock on the whole table.</summary>
     public const int MaxEntriesPerWrite = 500;
 
-    private readonly ILedger _ledger;
+    private readonly ILedgerLeases _ledger;
     private readonly Guid _flowId;
     private readonly string _token;
     private readonly IDeliveryListener _listener;
@@ -24,7 +24,7 @@ internal sealed class LeaseJournal
     private bool _writing;
     private long _unchanged;
 
-    public LeaseJournal(ILedger ledger, Guid flowId, string token, IDeliveryListener listener)
+    public LeaseJournal(ILedgerLeases ledger, Guid flowId, string token, IDeliveryListener listener)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentException.ThrowIfNullOrWhiteSpace(token);

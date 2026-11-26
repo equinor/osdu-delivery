@@ -48,6 +48,17 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
   - osdu/gui/src/features/delivery/MappingBuilderPage.tsx
   - osdu/gui/src/features/delivery/MappingEntryEditor.tsx
+  - osdu/gui/src/features/delivery/entry/EntryForm.tsx
+  - osdu/gui/src/features/delivery/entry/EntryHeading.tsx
+  - osdu/gui/src/features/delivery/entry/EntryParts.tsx
+  - osdu/gui/src/features/delivery/entry/EntryReadSections.tsx
+  - osdu/gui/src/features/delivery/entry/EntryFindSections.tsx
+  - osdu/gui/src/features/delivery/entry/StaticValueSection.tsx
+  - osdu/gui/src/features/delivery/entry/EntrySettings.tsx
+  - osdu/gui/src/features/delivery/entry/entryFormModel.ts
+  - osdu/gui/src/features/delivery/entry/useEntryParts.ts
+  - osdu/gui/src/features/delivery/entry/useFindAll.ts
+  - osdu/gui/src/features/delivery/entry/useStaticValue.ts
   - osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs
 ---
 

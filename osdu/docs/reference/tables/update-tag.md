@@ -19,6 +19,7 @@ related:
   - delivery-flow-cache
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.CacheDefinitions.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.CacheSets.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerCacheSets.cs

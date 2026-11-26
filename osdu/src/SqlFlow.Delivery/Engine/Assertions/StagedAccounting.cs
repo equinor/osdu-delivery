@@ -150,7 +150,7 @@ internal sealed class StagedAccountingEvaluator(int index, DeliveredAssertion as
         /// <summary>The reasons the ledger holds rows back for, by status and problem: the first message of each, and how many rows share it.</summary>
         public Dictionary<(RecordStatus, long?), (string Text, long Count)> Reasons { get; } = [];
 
-        public async Task AddAsync(ILedger ledger, IReadOnlyList<IngestionKey> keys, HashSet<string> found, CancellationToken ct)
+        public async Task AddAsync(ILedgerRecords ledger, IReadOnlyList<IngestionKey> keys, HashSet<string> found, CancellationToken ct)
         {
             if (keys.Count == 0)
             {

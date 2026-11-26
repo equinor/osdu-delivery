@@ -107,19 +107,19 @@ public static class DeliveryDimensionViewEndpoints
     }
 
     /// <summary>Every view: those the active dimension flows declare, and those builds wrote that no flow declares any more.</summary>
-    private static async Task<Ok<IReadOnlyList<DeliveryDimensionViewDto>>> ListAsync(CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+    private static async Task<Ok<IReadOnlyList<DeliveryDimensionViewDto>>> ListAsync(CatalogDbContext db, DeliveryDocumentLoader documents, DimensionStore dimensions, CancellationToken ct)
     {
         var pipelines = await db.Pipelines.AsNoTracking()
             .Where(p => p.Kind == DimensionFlowDefinition.FlowTypeName && p.Active)
             .OrderBy(p => p.Name)
             .Take(MaxFlows)
             .ToListAsync(ct).ConfigureAwait(false);
-        return TypedResults.Ok(await MergeAsync(pipelines, null, documents, ledger, ct).ConfigureAwait(false));
+        return TypedResults.Ok(await MergeAsync(pipelines, null, documents, dimensions, ct).ConfigureAwait(false));
     }
 
     /// <summary>The views of one dimension flow: those it declares, and those a build of it wrote that it no longer declares.</summary>
     private static async Task<Results<Ok<IReadOnlyList<DeliveryDimensionViewDto>>, ProblemHttpResult>> ListFlowAsync(
-        Guid pipelineId, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        Guid pipelineId, CatalogDbContext db, DeliveryDocumentLoader documents, DimensionStore dimensions, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null)
@@ -128,15 +128,15 @@ public static class DeliveryDimensionViewEndpoints
         }
 
         return string.Equals(pipeline.Kind, DimensionFlowDefinition.FlowTypeName, StringComparison.OrdinalIgnoreCase)
-            ? TypedResults.Ok(await MergeAsync([pipeline], pipeline.Name, documents, ledger, ct).ConfigureAwait(false))
+            ? TypedResults.Ok(await MergeAsync([pipeline], pipeline.Name, documents, dimensions, ct).ConfigureAwait(false))
             : Problem(StatusCodes.Status409Conflict, "Not a dimension flow", $"Pipeline '{pipeline.Name}' is a '{pipeline.Kind}' flow, not a dimension flow.");
     }
 
     /// <summary>One view, with its newest checks, its SQL as written and as declared, its YAML, and what the templates say of its joins.</summary>
     private static async Task<Results<Ok<DeliveryDimensionViewDetailDto>, ProblemHttpResult>> GetAsync(
-        string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders repositories, CancellationToken ct)
+        string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerDocuments ledger, DimensionStore dimensions, IRepositoryFolders repositories, CancellationToken ct)
     {
-        var detail = await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false);
+        var detail = await dimensions.GetViewAsync(name, ct).ConfigureAwait(false);
         var flowName = detail?.View.FlowName;
         var (pipeline, declared, _) = flowName is null
             ? await FindDeclaringAsync(db, documents, name, ct).ConfigureAwait(false)
@@ -168,7 +168,7 @@ public static class DeliveryDimensionViewEndpoints
     /// what a person keeps or changes in the flow's YAML; nothing is written.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionViewSuggestionDto>, ProblemHttpResult>> SuggestAsync(
-        Guid pipelineId, string? from, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders repositories, CancellationToken ct)
+        Guid pipelineId, string? from, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerDocuments ledger, IRepositoryFolders repositories, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null)
@@ -215,9 +215,9 @@ public static class DeliveryDimensionViewEndpoints
     /// whose flow cannot be read now.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionViewRemovedDto>, ProblemHttpResult>> RemoveAsync(
-        string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
+        string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerActivities ledger, DimensionStore dimensions, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
     {
-        if (await ledger.Dimensions.GetViewAsync(name, ct).ConfigureAwait(false) is not { } detail)
+        if (await dimensions.GetViewAsync(name, ct).ConfigureAwait(false) is not { } detail)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"No build wrote a view named '{name}'.");
         }
@@ -238,7 +238,7 @@ public static class DeliveryDimensionViewEndpoints
 
         try
         {
-            var removed = await DimensionViewRemoval.RemoveAsync(ledger, view, RequestActor.Label(user), clock, ct).ConfigureAwait(false);
+            var removed = await DimensionViewRemoval.RemoveAsync(ledger, dimensions, view, RequestActor.Label(user), clock, ct).ConfigureAwait(false);
             return TypedResults.Ok(new DeliveryDimensionViewRemovedDto(
                 removed.Name, removed.ViewName, removed.FlowName, removed.Dropped, removed.Checks, removed.Describe(), view.TableTarget.Place));
         }
@@ -253,9 +253,9 @@ public static class DeliveryDimensionViewEndpoints
     /// that none of them declares: of <paramref name="flow"/> alone when it names one, of every flow otherwise.
     /// </summary>
     private static async Task<IReadOnlyList<DeliveryDimensionViewDto>> MergeAsync(
-        IReadOnlyList<CatalogPipeline> pipelines, string? flow, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        IReadOnlyList<CatalogPipeline> pipelines, string? flow, DeliveryDocumentLoader documents, DimensionStore dimensions, CancellationToken ct)
     {
-        var recorded = await ledger.Dimensions.ListViewsAsync(flow, ct).ConfigureAwait(false);
+        var recorded = await dimensions.ListViewsAsync(flow, ct).ConfigureAwait(false);
         var views = new List<DeliveryDimensionViewDto>();
         var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pipeline in pipelines)
@@ -280,7 +280,7 @@ public static class DeliveryDimensionViewEndpoints
 
                 var state = recorded.FirstOrDefault(r => string.Equals(r.Name, declared.Name, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(r.FlowName, pipeline.Name, StringComparison.OrdinalIgnoreCase));
-                var detail = state is null ? null : await ledger.Dimensions.GetViewAsync(state.Name, ct).ConfigureAwait(false);
+                var detail = state is null ? null : await dimensions.GetViewAsync(state.Name, ct).ConfigureAwait(false);
                 views.Add(ToDto(declared, pipeline, detail));
             }
         }
@@ -288,7 +288,7 @@ public static class DeliveryDimensionViewEndpoints
         foreach (var state in recorded.Where(r => !named.Contains(r.Name)))
         {
             views.Add(ToDto(null, pipelines.FirstOrDefault(p => string.Equals(p.Name, state.FlowName, StringComparison.OrdinalIgnoreCase)),
-                await ledger.Dimensions.GetViewAsync(state.Name, ct).ConfigureAwait(false)));
+                await dimensions.GetViewAsync(state.Name, ct).ConfigureAwait(false)));
         }
 
         return views;

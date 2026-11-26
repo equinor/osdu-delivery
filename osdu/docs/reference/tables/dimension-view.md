@@ -18,6 +18,7 @@ related:
   - delivery-table-dimension
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs

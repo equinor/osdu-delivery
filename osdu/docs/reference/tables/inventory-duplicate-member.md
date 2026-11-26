@@ -18,6 +18,7 @@ related:
   - delivery-table-inventory-record
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Duplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs

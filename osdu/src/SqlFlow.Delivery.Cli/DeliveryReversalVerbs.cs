@@ -82,7 +82,7 @@ internal static class DeliveryReversalVerbs
     /// The interface's reversals, newest first; or the reversal of <c>--run</c> or <c>--submission</c> with its counts, and with
     /// <c>--outcome</c> the records it settled that way.
     /// </summary>
-    public static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, FlowDefinition flow, string label, CancellationToken ct)
+    public static async Task<int> ListAsync(CliVerbContext context, ILedgerReversals ledger, FlowDefinition flow, string label, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (SourceOf(context) is not { } source)

@@ -242,16 +242,16 @@ public sealed class DimensionRunTests : IDisposable
 
         // The search across both: logs of a Mexican wellbore named A/1-A; across one, every log of Mexico.
         var picked = await DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(countries, [], ["Mexico"]), new DimensionPick(wellbores, [], ["A/1-A"])], null, null, CancellationToken.None);
+            ledger.Dimensions, [new DimensionPick(countries, [], ["Mexico"]), new DimensionPick(wellbores, [], ["A/1-A"])], null, null, CancellationToken.None);
         Assert.Equal(WellLog.Replace("1.4.0", "*", StringComparison.Ordinal), picked.Kind);
         Assert.Equal(["dev:work-product-component--WellLog:1", "dev:work-product-component--WellLog:2"], _platform.Find(WellLog, picked.Query));
         Assert.Equal(3, picked.Clauses);
-        var all = await DimensionSearch.ComposeAsync(ledger, [new DimensionPick(countries, [], ["Mexico"])], null, null, CancellationToken.None);
+        var all = await DimensionSearch.ComposeAsync(ledger.Dimensions, [new DimensionPick(countries, [], ["Mexico"])], null, null, CancellationToken.None);
         Assert.Equal(3, _platform.Find(WellLog, all.Query).Count);
 
         // Narrowed by a query of its own, the search still finds only what every part allows.
         var within = await DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(countries, [], ["Mexico"])], null, "id:\"dev:work-product-component--WellLog:3\"", CancellationToken.None);
+            ledger.Dimensions, [new DimensionPick(countries, [], ["Mexico"])], null, "id:\"dev:work-product-component--WellLog:3\"", CancellationToken.None);
         Assert.Equal(["dev:work-product-component--WellLog:3"], _platform.Find(WellLog, within.Query));
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
     }
@@ -348,13 +348,13 @@ public sealed class DimensionRunTests : IDisposable
 
         // A search picked by an attribute finds the logs of every wellbore holding it.
         var inMexico = await DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("country", ["Mexico"])])], null, null, CancellationToken.None);
+            ledger.Dimensions, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("country", ["Mexico"])])], null, null, CancellationToken.None);
         Assert.Equal(
             ["dev:work-product-component--WellLog:1", "dev:work-product-component--WellLog:2", "dev:work-product-component--WellLog:3"],
             _platform.Find(WellLog, inMexico.Query));
         Assert.Equal(["Wellbore A/1-A", "Wellbore A/1-B"], Assert.Single(inMexico.Parts).Values.Select(v => v.Value).Order(StringComparer.Ordinal));
         var unknown = await Assert.ThrowsAsync<DeliveryException>(() => DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("Basin", ["X"])])], null, null, CancellationToken.None));
+            ledger.Dimensions, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("Basin", ["X"])])], null, null, CancellationToken.None));
         Assert.Contains("reads no attribute 'Basin'; it reads Country, Field, Region", unknown.Message, StringComparison.Ordinal);
 
         // A second build reads the attributes again: a country renamed is rewritten, a field no longer named is dropped.
@@ -543,7 +543,7 @@ public sealed class DimensionRunTests : IDisposable
         // The export is the dimension's own table written out: each row under its number, with the key's number, in the
         // partition, and the key's filter at the end of the fixed columns.
         var table = new StringWriter();
-        var rows = await DimensionExport.WriteAsync(ledger, wellbores, DimensionExportSet.Table, DimensionExportFormat.Csv, table, CancellationToken.None);
+        var rows = await DimensionExport.WriteAsync(ledger.Dimensions, wellbores, DimensionExportSet.Table, DimensionExportFormat.Csv, table, CancellationToken.None);
         var lines = table.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal("id,partition,key_id,WellboreID,FacilityName,Country,Field,Source,records,filter,InsertedDate_DW,UpdatedDate_DW", lines[0]);
         Assert.Equal(7, rows);
@@ -563,7 +563,7 @@ public sealed class DimensionRunTests : IDisposable
             ],
             lines.Skip(1));
         var jsonl = new StringWriter();
-        await DimensionExport.WriteAsync(ledger, wellbores, DimensionExportSet.Table, DimensionExportFormat.JsonLines, jsonl, CancellationToken.None);
+        await DimensionExport.WriteAsync(ledger.Dimensions, wellbores, DimensionExportSet.Table, DimensionExportFormat.JsonLines, jsonl, CancellationToken.None);
         var firstRow = JsonNode.Parse(jsonl.ToString().Split("\n", StringSplitOptions.RemoveEmptyEntries)[0])!.AsObject();
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "Country", "Field", "Source", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW"], firstRow.Select(p => p.Key));
         Assert.Equal((built, built), (firstRow["InsertedDate_DW"]!.GetValue<string>(), firstRow["UpdatedDate_DW"]!.GetValue<string>()));
@@ -575,7 +575,7 @@ public sealed class DimensionRunTests : IDisposable
         // it; Not specified finds the logs holding none; and a source picked with a country, the country's logs holding it.
         async Task<IReadOnlyList<string>> FindAsync(params DimensionAttributeMatch[] picks)
         {
-            var set = await DimensionSearch.ComposeAsync(ledger, [new DimensionPick(wellbores, [], [], picks)], null, null, CancellationToken.None);
+            var set = await DimensionSearch.ComposeAsync(ledger.Dimensions, [new DimensionPick(wellbores, [], [], picks)], null, null, CancellationToken.None);
             return _platform.Find(WellLog, set.Query).Select(id => id[(id.LastIndexOf(':') + 1)..]).ToList();
         }
 
@@ -584,7 +584,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(["3", "5", "6", "7"], await FindAsync(Pick("Source", "PETREL", "Not specified")));
         Assert.Equal(["1", "2", "4"], await FindAsync(Pick("Country", "Mexico"), Pick("Source", "WELLDB")));
         var some = await DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(wellbores, [], [], [Pick("Source", "WELLDB", "NOPE")])], null, null, CancellationToken.None);
+            ledger.Dimensions, [new DimensionPick(wellbores, [], [], [Pick("Source", "WELLDB", "NOPE")])], null, null, CancellationToken.None);
         Assert.Equal(["Wellbore.Source: NOPE"], some.Missing);
         var none = await Assert.ThrowsAsync<DeliveryException>(() => FindAsync(Pick("Source", "NOPE")));
         Assert.Contains("No value picked of attribute Source of dimension Wellbore is one it collects", none.Message, StringComparison.Ordinal);
@@ -759,7 +759,7 @@ public sealed class DimensionRunTests : IDisposable
 
         // The table's page reads the fields as it reads attributes.
         var curves = (await ledger.Dimensions.FindAsync(flow.LedgerId, "TestCurve"))!;
-        var page = await DimensionTable.ReadAsync(ledger, curves, new DimensionTableQuery(), CancellationToken.None);
+        var page = await DimensionTable.ReadAsync(ledger.Dimensions, curves, new DimensionTableQuery(), CancellationToken.None);
         Assert.Equal(["Mnemonic", "CurveUnitID", "TopDepth"], page.Attributes);
         Assert.Equal(4L, page.Total);
 
@@ -842,38 +842,38 @@ public sealed class DimensionRunTests : IDisposable
             await SqlAsync($"SELECT * FROM [osdu].[{Table}] ORDER BY [id];"));
 
         // A page of it, as the page and the CLI read it: searched, narrowed by an attribute, ordered by any column, counted.
-        var page = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(Limit: 2), CancellationToken.None);
+        var page = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(Limit: 2), CancellationToken.None);
         Assert.Equal(("osdu." + Table, 3L, true), (page.Table, page.Total, page.More));
         Assert.Equal(["Country"], page.Attributes);
         Assert.Equal([(1L, "CA C"), (2L, "MX A")], page.Rows.Select(r => (r.Id, r.Value)));
-        var next = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(Offset: 2, Limit: 2), CancellationToken.None);
+        var next = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(Offset: 2, Limit: 2), CancellationToken.None);
         Assert.Equal((null, false, "MX B"), (next.Total, next.More, Assert.Single(next.Rows).Value));
-        var byRecords = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "Records", Descending: true), CancellationToken.None);
+        var byRecords = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "Records", Descending: true), CancellationToken.None);
         Assert.Equal([("MX A", 3L), ("CA C", 1L), ("MX B", 1L)], byRecords.Rows.Select(r => (r.Value, r.Records)));
         Assert.False(byRecords.More);
         var mexico = await DimensionTable.ReadAsync(
-            ledger, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("country", ["Mexico"])], OrderBy: "country"), CancellationToken.None);
+            ledger.Dimensions, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("country", ["Mexico"])], OrderBy: "country"), CancellationToken.None);
         Assert.Equal(2L, mexico.Total);
         Assert.Equal(["MX A", "MX B"], mexico.Rows.Select(r => r.Value));
         Assert.Equal(("dev:master-data--Wellbore:A:", keys["A"].ValueId, keys["A"].Filter), (mexico.Rows[0].Key, mexico.Rows[0].KeyId, mexico.Rows[0].Filter));
         Assert.Equal(["Mexico"], mexico.Rows[0].Attributes);
         Assert.Empty((await DimensionTable.ReadAsync(
-            ledger, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Country", ["mexico"])]), CancellationToken.None)).Rows);
-        var searched = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(Search: "cana"), CancellationToken.None);
+            ledger.Dimensions, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Country", ["mexico"])]), CancellationToken.None)).Rows);
+        var searched = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(Search: "cana"), CancellationToken.None);
         Assert.Equal("CA C", Assert.Single(searched.Rows).Value);
-        Assert.Equal(1L, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(Search: "wellbore:b"), CancellationToken.None)).Total);
-        Assert.Empty((await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(Search: "%"), CancellationToken.None)).Rows);
-        var noColumn = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "Basin"), CancellationToken.None));
+        Assert.Equal(1L, (await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(Search: "wellbore:b"), CancellationToken.None)).Total);
+        Assert.Empty((await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(Search: "%"), CancellationToken.None)).Rows);
+        var noColumn = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "Basin"), CancellationToken.None));
         Assert.Contains("has no column 'Basin' to order by; it has FacilityName, WellboreID, records, id, InsertedDate_DW, UpdatedDate_DW, Country", noColumn.Message, StringComparison.Ordinal);
         var noAttribute = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(
-            ledger, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Basin", ["X"])]), CancellationToken.None));
+            ledger.Dimensions, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Basin", ["X"])]), CancellationToken.None));
         Assert.Contains("has no attribute column 'Basin'; it has Country", noAttribute.Message, StringComparison.Ordinal);
 
         // A build that finds the same thing writes no row of the table: each keeps its number, and nothing was touched.
         var before = await SqlAsync($"SELECT [id], %%physloc%% FROM [osdu].[{Table}] ORDER BY [id];");
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         Assert.Equal(before, await SqlAsync($"SELECT [id], %%physloc%% FROM [osdu].[{Table}] ORDER BY [id];"));
-        Assert.False(await DimensionTable.EnsureAsync(ledger, wellbores, CancellationToken.None));
+        Assert.False(await DimensionTable.EnsureAsync(ledger.Dimensions, wellbores, CancellationToken.None));
 
         // The flow declares more: the table gains a column for each new attribute on the next build, with no migration.
         // The attribute it collects makes a row for each value a key holds, so the rows are written again.
@@ -888,7 +888,7 @@ public sealed class DimensionRunTests : IDisposable
             await SqlAsync($"SELECT [FacilityName], [Country], [UUID], [Source], [records] FROM [osdu].[{Table}] WHERE [partition] = N'dev' ORDER BY [FacilityName], [Source];"));
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         var welldb = await DimensionTable.ReadAsync(
-            ledger, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Source", ["WELLDB"])], OrderBy: "records", Descending: true), CancellationToken.None);
+            ledger.Dimensions, wellbores, new DimensionTableQuery(Attributes: [new DimensionAttributeMatch("Source", ["WELLDB"])], OrderBy: "records", Descending: true), CancellationToken.None);
         Assert.Equal(["Country", "UUID", "Source"], welldb.Attributes);
         Assert.Equal([("MX A", 2L), ("MX B", 1L)], welldb.Rows.Select(r => (r.Value, r.Records)));
 
@@ -912,7 +912,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country", "UUID", "Source", "Notes"], await ColumnsAsync(Table));
         Assert.Equal(["CA C|(null)|PETREL|mine", "MX A|(null)|WELLDB|mine", "MX B|(null)|WELLDB|mine"], await SqlAsync($"SELECT [FacilityName], [UUID], [Source], [Notes] FROM [osdu].[{Table}] ORDER BY [FacilityName];"));
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
-        Assert.Equal(["Country", "Source"], (await DimensionTable.ShapeAsync(ledger, wellbores, CancellationToken.None)).Attributes);
+        Assert.Equal(["Country", "Source"], (await DimensionTable.ShapeAsync(ledger.Dimensions, wellbores, CancellationToken.None)).Attributes);
 
         // A table the dimension wrote under an earlier name is left behind by no build: the next one writes the table
         // under its name and drops the other.
@@ -931,13 +931,13 @@ public sealed class DimensionRunTests : IDisposable
         // A table dropped by hand is made again, with its rows, by whoever next reads it; so is the table of a dimension
         // built before dimensions had one, which names none.
         await SqlAsync($"DROP TABLE [osdu].[{Table}];");
-        Assert.Equal(3, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
+        Assert.Equal(3, (await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "InsertedDate_DW", "UpdatedDate_DW", "Country", "Source"], await ColumnsAsync(Table));
         await SqlAsync($"DROP TABLE [osdu].[{Table}]; UPDATE [osdu].[Dimension] SET [TableName] = NULL;");
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Null(wellbores.TableName);
         var exported = new StringWriter();
-        Assert.Equal(3, await DimensionExport.WriteAsync(ledger, wellbores, DimensionExportSet.Table, DimensionExportFormat.Csv, exported, CancellationToken.None));
+        Assert.Equal(3, await DimensionExport.WriteAsync(ledger.Dimensions, wellbores, DimensionExportSet.Table, DimensionExportFormat.Csv, exported, CancellationToken.None));
         Assert.Equal(Table, (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!.TableName);
 
         // A key no build finds any more is no row of it.
@@ -947,7 +947,7 @@ public sealed class DimensionRunTests : IDisposable
 
         // Removing the dimension drops its table with it.
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
-        var removed = await DimensionRemoval.RemoveAsync(ledger, wellbores, "admin@example.test", _clock, CancellationToken.None);
+        var removed = await DimensionRemoval.RemoveAsync(ledger, ledger.Dimensions, wellbores, "admin@example.test", _clock, CancellationToken.None);
         Assert.Equal(Table, removed.TableDropped);
         Assert.Contains("dropped the table osdu." + Table, removed.Describe(), StringComparison.Ordinal);
         Assert.Empty(await ColumnsAsync(Table));
@@ -1063,7 +1063,7 @@ public sealed class DimensionRunTests : IDisposable
 
         // The page a reader reads carries the same times.
         var wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
-        var page = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "UpdatedDate_DW", Descending: true), CancellationToken.None);
+        var page = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "UpdatedDate_DW", Descending: true), CancellationToken.None);
         Assert.Equal(
             [("MX B2", new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc), new DateTime(2026, 9, 7, 13, 0, 0, DateTimeKind.Utc)),
              ("MX C", new DateTime(2026, 9, 7, 13, 0, 0, DateTimeKind.Utc), new DateTime(2026, 9, 7, 13, 0, 0, DateTimeKind.Utc)),
@@ -1074,10 +1074,10 @@ public sealed class DimensionRunTests : IDisposable
         // A table made before rows kept their times reads without them, until its next build gives it the two columns,
         // not null, every row it holds taking that build's time, and no default left behind.
         await SqlAsync($"ALTER TABLE [osdu].[{Table}] DROP COLUMN [InsertedDate_DW], [UpdatedDate_DW];");
-        page = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None);
+        page = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(), CancellationToken.None);
         Assert.Equal(3, page.Rows.Count);
         Assert.All(page.Rows, r => Assert.Equal((null, null), (r.InsertedUtc, r.UpdatedUtc)));
-        var refused = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "UpdatedDate_DW"), CancellationToken.None));
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "UpdatedDate_DW"), CancellationToken.None));
         Assert.Contains("has no column 'UpdatedDate_DW' to order by", refused.Message, StringComparison.Ordinal);
 
         _clock.Advance(TimeSpan.FromHours(1));
@@ -1139,7 +1139,7 @@ public sealed class DimensionRunTests : IDisposable
             UPDATE [osdu].[Dimension] SET [KeyColumn] = N'key', [ValueColumn] = N'value';
             """);
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
-        var before = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None);
+        var before = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(), CancellationToken.None);
         Assert.Equal(("key", "value", 2L), (before.KeyColumn, before.ValueColumn, before.Total));
 
         // Its next build renames the two where they are: every row keeps its number, and the index over the value follows.
@@ -1168,17 +1168,17 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal(("WellboreId", "Wellbore"), (wellbores.KeyColumn, wellbores.ValueColumn));
 
         // A page says what the two columns are named, and is ordered by a column's name or by the words value and key.
-        var byName = await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "wellbore", Descending: true), CancellationToken.None);
+        var byName = await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "wellbore", Descending: true), CancellationToken.None);
         Assert.Equal(("WellboreId", "Wellbore"), (byName.KeyColumn, byName.ValueColumn));
         Assert.Equal(["MX B", "MX A"], byName.Rows.Select(r => r.Value));
-        Assert.Equal(["MX A", "MX B"], (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "value"), CancellationToken.None)).Rows.Select(r => r.Value));
+        Assert.Equal(["MX A", "MX B"], (await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "value"), CancellationToken.None)).Rows.Select(r => r.Value));
         Assert.Equal(
             ["dev:master-data--Wellbore:B:", "dev:master-data--Wellbore:A:"],
-            (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "key", Descending: true), CancellationToken.None)).Rows.Select(r => r.Key));
-        Assert.Equal("MX B", Assert.Single((await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(Search: "wellbore:b"), CancellationToken.None)).Rows).Value);
-        var shape = await DimensionTable.ShapeAsync(ledger, wellbores, CancellationToken.None);
+            (await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "key", Descending: true), CancellationToken.None)).Rows.Select(r => r.Key));
+        Assert.Equal("MX B", Assert.Single((await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(Search: "wellbore:b"), CancellationToken.None)).Rows).Value);
+        var shape = await DimensionTable.ShapeAsync(ledger.Dimensions, wellbores, CancellationToken.None);
         Assert.Equal(("WellboreId", "Wellbore"), (shape.KeyColumn, shape.ValueColumn));
-        var noColumn = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(OrderBy: "FacilityName"), CancellationToken.None));
+        var noColumn = await Assert.ThrowsAsync<DeliveryException>(() => DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(OrderBy: "FacilityName"), CancellationToken.None));
         Assert.Contains("has no column 'FacilityName' to order by; it has Wellbore, WellboreId, records, id, InsertedDate_DW, UpdatedDate_DW", noColumn.Message, StringComparison.Ordinal);
 
         // Each takes the other's name: neither name is free while the other column holds it, so both pass through another.
@@ -1202,13 +1202,13 @@ public sealed class DimensionRunTests : IDisposable
         // A reader that finds the table gone makes it again under the names it had: only a build reads the document.
         await SqlAsync($"DROP TABLE [osdu].[{Table}];");
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
-        Assert.Equal(2, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
+        Assert.Equal(2, (await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
         Assert.Equal(Columns("Wellbore", "WellboreId"), await ColumnsAsync(Table));
 
         // And a dimension that never had a table takes the names it reads by.
         await SqlAsync($"DROP TABLE [osdu].[{Table}]; UPDATE [osdu].[Dimension] SET [TableName] = NULL, [KeyColumn] = NULL, [ValueColumn] = NULL;");
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
-        Assert.Equal(2, (await DimensionTable.ReadAsync(ledger, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
+        Assert.Equal(2, (await DimensionTable.ReadAsync(ledger.Dimensions, wellbores, new DimensionTableQuery(), CancellationToken.None)).Total);
         Assert.Equal(Columns("WellboreID", "FacilityName"), await ColumnsAsync(Table));
         wellbores = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal((Table, "WellboreID", "FacilityName"), (wellbores.TableName, wellbores.KeyColumn, wellbores.ValueColumn));
@@ -1242,7 +1242,7 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Equal((DimensionRunStatus.Failed, (string?)null), ((await ledger.Dimensions.ListRunsAsync(failed.DimensionId, 1)).Single().Status, failed.TableName));
 
         // The first flow's table is untouched, and the refused dimension goes without taking it.
-        var removed = await DimensionRemoval.RemoveAsync(ledger, failed, "admin@example.test", _clock, CancellationToken.None);
+        var removed = await DimensionRemoval.RemoveAsync(ledger, ledger.Dimensions, failed, "admin@example.test", _clock, CancellationToken.None);
         Assert.Null(removed.TableDropped);
         Assert.Equal(["dev|WELLDB|WELLDB|1"], await SqlAsync("SELECT [partition], [SourceKey], [Source], [records] FROM [osdu].[dim_Source];"));
         Assert.Equal("dim_Source", (await ledger.Dimensions.FindAsync(flow.LedgerId, "Source"))!.TableName);
@@ -1349,10 +1349,10 @@ public sealed class DimensionRunTests : IDisposable
 
         // A source picks its log; Not specified would have to exclude every one of 1,100 sources, which no search holds.
         var one = await DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("Source", ["S0001"])])], null, null, CancellationToken.None);
+            ledger.Dimensions, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("Source", ["S0001"])])], null, null, CancellationToken.None);
         Assert.Equal(["dev:work-product-component--WellLog:1"], _platform.Find(WellLog, one.Query));
         var none = await Assert.ThrowsAsync<DeliveryException>(() => DimensionSearch.ComposeAsync(
-            ledger, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("Source", ["Not specified"])])], null, null, CancellationToken.None));
+            ledger.Dimensions, [new DimensionPick(wellbores, [], [], [new DimensionAttributeMatch("Source", ["Not specified"])])], null, null, CancellationToken.None));
         Assert.Contains("more than the 1000 one search can exclude", none.Message, StringComparison.Ordinal);
         OsduContracts.AssertConform(_platform.Calls, null, OsduContracts.Search);
     }
@@ -1640,7 +1640,7 @@ public sealed class DimensionRunTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        var captured = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, wellbores, "user:admin", _clock, CancellationToken.None));
+        var captured = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, ledger.Dimensions, wellbores, "user:admin", _clock, CancellationToken.None));
         Assert.Contains("captured by type Wellbores of cache flow wells-cache in partition dev", captured.Message, StringComparison.Ordinal);
         Assert.Equal(before, await RowsAsync(wellbores.DimensionId));
         await using (var db = _db.CreateDbContext())
@@ -1650,7 +1650,7 @@ public sealed class DimensionRunTests : IDisposable
         }
 
         // Removed: every row of it, and nothing of the other dimension.
-        var removed = await DimensionRemoval.RemoveAsync(ledger, wellbores, "user:admin", _clock, CancellationToken.None);
+        var removed = await DimensionRemoval.RemoveAsync(ledger, ledger.Dimensions, wellbores, "user:admin", _clock, CancellationToken.None);
         Assert.Equal(
             (wellbores.DimensionId, "Wellbore", before[1], before[2], before[0], before[5], before[3], before[4]),
             (removed.DimensionId, removed.Name, removed.Values, removed.Keys, removed.Builds, removed.Changes, removed.Attributes, removed.Texts));
@@ -1662,7 +1662,7 @@ public sealed class DimensionRunTests : IDisposable
         var activity = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = flow.LedgerId, Kind = DimensionRemoval.ActivityKind }));
         Assert.Equal(("user:admin", "completed"), (activity.Actor, activity.Outcome));
         Assert.StartsWith("Removed dimension Wellbore of wells-dimensions in dev: 3 value(s), 3 key(s)", activity.Summary, StringComparison.Ordinal);
-        var twice = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, wellbores, "user:admin", _clock, CancellationToken.None));
+        var twice = await Assert.ThrowsAsync<DeliveryException>(() => DimensionRemoval.RemoveAsync(ledger, ledger.Dimensions, wellbores, "user:admin", _clock, CancellationToken.None));
         Assert.Contains("no longer in the ledger", twice.Message, StringComparison.Ordinal);
         Assert.Contains(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = flow.LedgerId, Kind = DimensionRemoval.ActivityKind }), a => a.Outcome == "failed");
     }

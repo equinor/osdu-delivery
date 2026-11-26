@@ -22,6 +22,7 @@ related:
   - delivery-table-cache-member
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.CacheDefinitions.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs

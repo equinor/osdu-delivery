@@ -134,11 +134,11 @@ public sealed partial class InventoryRunner
             {
                 if (direction == InventorySelections.ByConditions)
                 {
-                    await MatchByConditionsAsync(ledger, search, spec.Kind, scope, returned, columns, state.InventoryId, selectionId, counter, ct).ConfigureAwait(false);
+                    await MatchByConditionsAsync(ledger.Inventories, search, spec.Kind, scope, returned, columns, state.InventoryId, selectionId, counter, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await MatchByIdsAsync(ledger, search, spec.Kind, query, returned, columns, state.InventoryId, selectionId, perSearch, counter, notes, ct).ConfigureAwait(false);
+                    await MatchByIdsAsync(ledger.Inventories, search, spec.Kind, query, returned, columns, state.InventoryId, selectionId, perSearch, counter, notes, ct).ConfigureAwait(false);
                 }
             }
 
@@ -184,7 +184,7 @@ public sealed partial class InventoryRunner
 
     /// <summary>Every record the conditions find in the inventory's kind, a page at a time, each page joined with the inventory's ids as it is read.</summary>
     private async Task MatchByConditionsAsync(
-        ILedger ledger, OsduSearch search, string kind, string? scope, IReadOnlyList<string> returned, IReadOnlyList<string> columns, int inventoryId, long selectionId,
+        InventoryStore inventories, OsduSearch search, string kind, string? scope, IReadOnlyList<string> returned, IReadOnlyList<string> columns, int inventoryId, long selectionId,
         SearchRequestCounter counter, CancellationToken ct)
     {
         var reported = _context.Time.GetUtcNow();
@@ -200,7 +200,7 @@ public sealed partial class InventoryRunner
                 }
             }
 
-            await ledger.Inventories.AddSelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, page.Hits.Count, counter.Take(), ct).ConfigureAwait(false);
+            await inventories.AddSelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, page.Hits.Count, counter.Take(), ct).ConfigureAwait(false);
             read += page.Hits.Count;
             reported = Progress(selectionId, read, reported);
         }
@@ -212,7 +212,7 @@ public sealed partial class InventoryRunner
     /// search is left out of it, and a note counts them.
     /// </summary>
     private async Task MatchByIdsAsync(
-        ILedger ledger, OsduSearch search, string kind, string? query, IReadOnlyList<string> returned, IReadOnlyList<string> columns, int inventoryId, long selectionId,
+        InventoryStore inventories, OsduSearch search, string kind, string? query, IReadOnlyList<string> returned, IReadOnlyList<string> columns, int inventoryId, long selectionId,
         int perSearch, SearchRequestCounter counter, List<string> notes, CancellationToken ct)
     {
         var idField = OsduField.Keyword("id");
@@ -223,7 +223,7 @@ public sealed partial class InventoryRunner
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var chunk = await ledger.Inventories.ServedAsync(_flow.LedgerId, inventoryId, after, perSearch, ct).ConfigureAwait(false);
+            var chunk = await inventories.ServedAsync(_flow.LedgerId, inventoryId, after, perSearch, ct).ConfigureAwait(false);
             if (chunk.Count == 0)
             {
                 break;
@@ -259,7 +259,7 @@ public sealed partial class InventoryRunner
                 }
             }
 
-            await ledger.Inventories.AddSelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, chunk.Count, counter.Take(), ct).ConfigureAwait(false);
+            await inventories.AddSelectionItemsAsync(_flow.LedgerId, inventoryId, selectionId, hits, chunk.Count, counter.Take(), ct).ConfigureAwait(false);
             read += chunk.Count;
             reported = Progress(selectionId, read, reported);
             if (chunk.Count < perSearch)

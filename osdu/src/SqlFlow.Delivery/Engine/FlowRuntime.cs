@@ -386,7 +386,7 @@ public sealed partial class FlowRuntime : IDisposable
     /// directory holds, so a release or a redelivery of records a run delivered is not stopped by a reference only the
     /// nodes resolve; whatever then calls the target resolves the header itself.
     /// </summary>
-    private async Task RegisterLedgerAsync(ILedger ledger, CancellationToken ct)
+    private async Task RegisterLedgerAsync(ILedgerRegistry ledger, CancellationToken ct)
     {
         if (_ledgerRegistered)
         {
@@ -403,7 +403,7 @@ public sealed partial class FlowRuntime : IDisposable
     /// the engine, so an action never keeps reading as running once its run is over; a ledger that cannot be written
     /// here is logged and never replaces the failure the caller is about to see.
     /// </summary>
-    private async Task SettleAsync(ILedger ledger, long activityId, string outcome, string summary)
+    private async Task SettleAsync(ILedgerActivities ledger, long activityId, string outcome, string summary)
     {
         try
         {
@@ -416,7 +416,7 @@ public sealed partial class FlowRuntime : IDisposable
     }
 
     /// <summary>Closes an activity; the submission it worked on is on the row itself, where every view of it links it.</summary>
-    private async Task CompleteActivityAsync(ILedger ledger, long activityId, string outcome, string summary, Guid? submissionId, bool idle)
+    private async Task CompleteActivityAsync(ILedgerActivities ledger, long activityId, string outcome, string summary, Guid? submissionId, bool idle)
     {
         var log = ActivityLog?.Invoke();
         await ledger.CompleteActivityAsync(activityId, outcome, summary, log, _context.Time.GetUtcNow().UtcDateTime, submissionId, idle, CancellationToken.None).ConfigureAwait(false);

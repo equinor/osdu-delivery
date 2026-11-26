@@ -191,12 +191,12 @@ public sealed class RecordSearchContributor : ISearchContributor
     /// <summary>The category's key: the member the combined search carries it under, and its route segment.</summary>
     public const string CategoryKey = "records";
 
-    private readonly ILedger _ledger;
+    private readonly ILedgerQueries _ledger;
     private readonly CatalogDbContext _catalog;
     private readonly OsduDbContext _osdu;
     private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _http;
 
-    public RecordSearchContributor(ILedger ledger, CatalogDbContext catalog, OsduDbContext osdu, Microsoft.AspNetCore.Http.IHttpContextAccessor http)
+    public RecordSearchContributor(ILedgerQueries ledger, CatalogDbContext catalog, OsduDbContext osdu, Microsoft.AspNetCore.Http.IHttpContextAccessor http)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(catalog);

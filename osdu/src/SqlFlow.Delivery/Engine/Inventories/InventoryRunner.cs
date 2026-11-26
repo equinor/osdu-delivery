@@ -194,7 +194,7 @@ public sealed partial class InventoryRunner
         var summaries = new List<InventorySummary>(selected.Count);
         foreach (var inventory in selected)
         {
-            summaries.Add(await RunOneAsync(ledger, client, operation, inventory, partition, runId, actor, ct).ConfigureAwait(false));
+            summaries.Add(await RunOneAsync(ledger.Inventories, client, operation, inventory, partition, runId, actor, ct).ConfigureAwait(false));
         }
 
         var outcome = new InventoryOutcome(
@@ -203,13 +203,13 @@ public sealed partial class InventoryRunner
         return outcome.Failed > 0 ? throw new InventoryRunsFailedException(outcome) : outcome;
     }
 
-    private async Task<InventorySummary> RunOneAsync(ILedger ledger, OsduHttpClient client, string operation, InventorySpec inventory, string partition, Guid runId, string actor, CancellationToken ct)
+    private async Task<InventorySummary> RunOneAsync(InventoryStore inventories, OsduHttpClient client, string operation, InventorySpec inventory, string partition, Guid runId, string actor, CancellationToken ct)
     {
         var flowId = _flow.LedgerId;
-        var state = await ledger.Inventories.RegisterAsync(
+        var state = await inventories.RegisterAsync(
             flowId, _flow.Name, inventory.Name, inventory.Kind, inventory.Query, ReadName(_flow.Source.Read), inventory.Versions == InventoryVersions.All ? "all" : "latest", ct).ConfigureAwait(false);
         var started = Now;
-        var runRow = await ledger.Inventories.StartRunAsync(flowId, state.InventoryId, operation, runId, actor, ReadName(_flow.Source.Read), started, ct).ConfigureAwait(false);
+        var runRow = await inventories.StartRunAsync(flowId, state.InventoryId, operation, runId, actor, ReadName(_flow.Source.Read), started, ct).ConfigureAwait(false);
         var stats = new InventoryReadStats();
         var merge = new InventoryMerge(0, 0, 0, 0, 0);
         long versionsRead = 0;
@@ -217,10 +217,10 @@ public sealed partial class InventoryRunner
         {
             if (operation == InventoryRunStatus.Build)
             {
-                merge = await ReadAndMergeAsync(ledger, client, inventory, state, runRow, partition, stats, ct).ConfigureAwait(false);
+                merge = await ReadAndMergeAsync(inventories, client, inventory, state, runRow, partition, stats, ct).ConfigureAwait(false);
                 if (inventory.Versions == InventoryVersions.All)
                 {
-                    versionsRead = await ReadVersionsAsync(ledger, client, state, stats, ct).ConfigureAwait(false);
+                    versionsRead = await ReadVersionsAsync(inventories, client, state, stats, ct).ConfigureAwait(false);
                 }
             }
             else if (state.LastBuildRunId is null)
@@ -228,10 +228,10 @@ public sealed partial class InventoryRunner
                 throw new DeliveryException($"Inventory '{inventory.Name}' has never been built in '{partition}', so there is nothing to reconcile yet; build it first.");
             }
 
-            var (owners, ownersSource, missingChecked) = await ReconcileAsync(ledger, client, inventory, state, partition, stats, ct).ConfigureAwait(false);
-            var counts = await ledger.Inventories.CountsAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
+            var (owners, ownersSource, missingChecked) = await ReconcileAsync(inventories, client, inventory, state, partition, stats, ct).ConfigureAwait(false);
+            var counts = await inventories.CountsAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
             var ownersJson = JsonSerializer.Serialize(new { source = ownersSource, owners }, Json);
-            await ledger.Inventories.CompleteRunAsync(
+            await inventories.CompleteRunAsync(
                 flowId, runRow,
                 new InventoryRunState
                 {
@@ -264,7 +264,7 @@ public sealed partial class InventoryRunner
         {
             var error = HeaderRedaction.RedactMessage(ex.Message);
             _log.LogError(ex is DeliveryException or HttpRequestException ? null : ex, "inventory '{Inventory}' failed: {Error}", inventory.Name, error);
-            await ledger.Inventories.CompleteRunAsync(
+            await inventories.CompleteRunAsync(
                 flowId, runRow,
                 new InventoryRunState
                 {
@@ -293,7 +293,7 @@ public sealed partial class InventoryRunner
 
     /// <summary>Reads the inventory whole into its stage, a chunk at a time, then merges it; a read that fails part way merges nothing.</summary>
     private async Task<InventoryMerge> ReadAndMergeAsync(
-        ILedger ledger, OsduHttpClient client, InventorySpec inventory, InventoryState state, long runRow, string partition, InventoryReadStats stats, CancellationToken ct)
+        InventoryStore inventories, OsduHttpClient client, InventorySpec inventory, InventoryState state, long runRow, string partition, InventoryReadStats stats, CancellationToken ct)
     {
         // An inventory keeps each record's name with its id, so a storage read reads records rather than their headers alone.
         IInventoryReader reader = _flow.Source.Read == InventoryRead.Storage
@@ -307,28 +307,28 @@ public sealed partial class InventoryRunner
             listed += page.Count;
             if (buffer.Count >= StageChunk)
             {
-                await ledger.Inventories.AppendScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
+                await inventories.AppendScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
                 buffer.Clear();
             }
         }
 
         if (buffer.Count > 0)
         {
-            await ledger.Inventories.AppendScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
+            await inventories.AppendScanAsync(_flow.LedgerId, runRow, buffer, ct).ConfigureAwait(false);
         }
 
         _log.LogInformation("inventory '{Inventory}': {Listed} id(s) read in {Pages} page(s), {Requests} request(s); merging", inventory.Name, listed, stats.Pages, stats.Requests);
-        return await ledger.Inventories.MergeAsync(_flow.LedgerId, state.InventoryId, runRow, Now, ct).ConfigureAwait(false);
+        return await inventories.MergeAsync(_flow.LedgerId, state.InventoryId, runRow, Now, ct).ConfigureAwait(false);
     }
 
     /// <summary>Reads the versions of every record that is new or whose latest version moved since they were read, until none is left.</summary>
-    private async Task<long> ReadVersionsAsync(ILedger ledger, OsduHttpClient client, InventoryState state, InventoryReadStats stats, CancellationToken ct)
+    private async Task<long> ReadVersionsAsync(InventoryStore inventories, OsduHttpClient client, InventoryState state, InventoryReadStats stats, CancellationToken ct)
     {
         var versions = new StorageVersions(client, _flow.Source);
         long read = 0;
         while (true)
         {
-            var due = await ledger.Inventories.VersionsDueAsync(_flow.LedgerId, state.InventoryId, VersionsChunk, ct).ConfigureAwait(false);
+            var due = await inventories.VersionsDueAsync(_flow.LedgerId, state.InventoryId, VersionsChunk, ct).ConfigureAwait(false);
             if (due.Count == 0)
             {
                 return read;
@@ -344,7 +344,7 @@ public sealed partial class InventoryRunner
                     var listed = await versions.ReadAsync(due[i].TargetId, stats, token).ConfigureAwait(false);
                     reads[i] = new InventoryVersionsRead(due[i].InventoryRecordId, due[i].Version, listed ?? []);
                 }).ConfigureAwait(false);
-            await ledger.Inventories.WriteVersionsAsync(_flow.LedgerId, reads, ct).ConfigureAwait(false);
+            await inventories.WriteVersionsAsync(_flow.LedgerId, reads, ct).ConfigureAwait(false);
             read += reads.Length;
         }
     }
@@ -355,14 +355,14 @@ public sealed partial class InventoryRunner
     /// within the flow's bound.
     /// </summary>
     private async Task<(IReadOnlyList<InventoryOwner> Owners, string OwnersSource, long Checked)> ReconcileAsync(
-        ILedger ledger, OsduHttpClient client, InventorySpec inventory, InventoryState state, string partition, InventoryReadStats stats, CancellationToken ct)
+        InventoryStore inventories, OsduHttpClient client, InventorySpec inventory, InventoryState state, string partition, InventoryReadStats stats, CancellationToken ct)
     {
         var flowId = _flow.LedgerId;
         IReadOnlyList<InventoryOwner> owners;
         string ownersSource;
         if (_flow.Owners.Count > 0)
         {
-            var created = await ledger.Inventories.OwnersAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
+            var created = await inventories.OwnersAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
             owners = _flow.Owners
                 .Select(o => new InventoryOwner(o, created.FirstOrDefault(c => string.Equals(c.Identity, o, StringComparison.OrdinalIgnoreCase))?.Records ?? 0))
                 .ToList();
@@ -370,17 +370,17 @@ public sealed partial class InventoryRunner
         }
         else
         {
-            var created = await ledger.Inventories.OwnersAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
+            var created = await inventories.OwnersAsync(flowId, state.InventoryId, ct).ConfigureAwait(false);
             var claimed = created.Sum(c => c.Records);
             var floor = Math.Max(1, (long)Math.Ceiling(claimed * InferredOwnerShare));
             owners = created.Where(c => c.Records >= floor).ToList();
             ownersSource = owners.Count > 0 ? "inferred" : "none";
         }
 
-        await ledger.Inventories.ReconcileAsync(flowId, state.InventoryId, owners.Select(o => o.Identity).ToList(), Now, ct).ConfigureAwait(false);
+        await inventories.ReconcileAsync(flowId, state.InventoryId, owners.Select(o => o.Identity).ToList(), Now, ct).ConfigureAwait(false);
 
         var prefix = inventory.CoversEntityType ? $"{partition}:{inventory.EntityType}:" : null;
-        var candidates = await ledger.Inventories.CandidatesAsync(flowId, state.InventoryId, prefix, _flow.MaxMissingChecks, ct).ConfigureAwait(false);
+        var candidates = await inventories.CandidatesAsync(flowId, state.InventoryId, prefix, _flow.MaxMissingChecks, ct).ConfigureAwait(false);
         var checks = new List<InventoryCheck>(candidates.Count);
         if (candidates.Count > 0)
         {
@@ -405,7 +405,7 @@ public sealed partial class InventoryRunner
             }
         }
 
-        await ledger.Inventories.RecordChecksAsync(flowId, state.InventoryId, checks, Now, ct).ConfigureAwait(false);
+        await inventories.RecordChecksAsync(flowId, state.InventoryId, checks, Now, ct).ConfigureAwait(false);
         return (owners, ownersSource, checks.Count);
     }
 

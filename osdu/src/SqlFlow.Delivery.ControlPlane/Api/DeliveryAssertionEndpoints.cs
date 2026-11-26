@@ -157,7 +157,7 @@ public static class DeliveryAssertionEndpoints
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> SourceSqlAsync(
         long assertionRunId, DeliveryAssertionSourceSqlRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+        AssertionStore assertions, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
     {
         if (request?.Test?.Trim() is not { Length: > 0 } test || request.Assertion is not { } index)
         {
@@ -180,13 +180,13 @@ public static class DeliveryAssertionEndpoints
             return DeliveryEndpoints.Invalid($"A query returns a number of rows, or 0 for all of them; {request.MaxRows.Value.ToString(CultureInfo.InvariantCulture)} is neither.");
         }
 
-        var run = await ledger.Assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        var run = await assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
         if (run is null)
         {
             return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
-        var kept = (await ledger.Assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false))
+        var kept = (await assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false))
             .FirstOrDefault(r => string.Equals(r.TestName, test, StringComparison.OrdinalIgnoreCase));
         var check = TestResults.Deserialize(kept?.Detail)?.Assertions.FirstOrDefault(a => a.Index == index);
         if (check is null)
@@ -291,7 +291,7 @@ public static class DeliveryAssertionEndpoints
     /// dashboard opens an assertion on, and what its download carries of the assertions that need a look.
     /// </summary>
     private static async Task<Results<Ok<IReadOnlyList<DeliveryAssertionResultDto>>, ProblemHttpResult>> GetResultsAsync(
-        string? ids, ILedger ledger, CancellationToken ct)
+        string? ids, AssertionStore assertions, CancellationToken ct)
     {
         var named = new List<long>();
         foreach (var part in (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -310,7 +310,7 @@ public static class DeliveryAssertionEndpoints
                 detail: $"ids names {named.Count} results; name between 1 and {MaxResults}, comma-separated.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid result ids");
         }
 
-        var results = await ledger.Assertions.GetResultsAsync(named, ct).ConfigureAwait(false);
+        var results = await assertions.GetResultsAsync(named, ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryAssertionResultDto>>(results
             .Select(r => (State: r, Result: TestResults.Deserialize(r.Detail)))
             .Where(r => r.Result is not null)
@@ -323,7 +323,7 @@ public static class DeliveryAssertionEndpoints
     /// server. Its dashboard, the page to present, downloads from the GUI.
     /// </summary>
     private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> GetSetReportAsync(
-        string set, string? partition, string? format, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        string set, string? partition, string? format, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, AssertionStore assertions,
         IPartitionRegistry registry, TimeProvider time, CancellationToken ct)
     {
         if (AssertionReport.FormatOf(format) is not { } chosen || chosen == ReportFormat.Html)
@@ -340,7 +340,7 @@ public static class DeliveryAssertionEndpoints
             return problem!;
         }
 
-        var report = await ReadSetAsync(set, named, members, ledger, time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+        var report = await ReadSetAsync(set, named, members, ledger, assertions, time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
         var (mediaType, _) = AssertionReport.Describe(chosen);
         return TypedResults.File(Encoding.UTF8.GetBytes(report.Render(chosen)), mediaType, report.FileName(chosen));
     }
@@ -362,7 +362,7 @@ public static class DeliveryAssertionEndpoints
 
     /// <summary>The flows of a set in the partition, parsed and bound; null with the problem to answer with when the name is no set's.</summary>
     private static async Task<(List<ParsedFlow>? Members, ProblemHttpResult? Problem)> SetMembersAsync(
-        string set, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry, CancellationToken ct)
+        string set, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, IPartitionRegistry registry, CancellationToken ct)
     {
         if (!SelectableNames.IsName(set))
         {
@@ -385,7 +385,7 @@ public static class DeliveryAssertionEndpoints
     /// are judged in, each other with its problem.
     /// </summary>
     private static async Task<AssertionSetReport> ReadSetAsync(
-        string set, string? partition, IReadOnlyList<ParsedFlow> members, ILedger ledger, DateTime generatedUtc, CancellationToken ct)
+        string set, string? partition, IReadOnlyList<ParsedFlow> members, ILedgerRegistry ledger, AssertionStore assertions, DateTime generatedUtc, CancellationToken ct)
     {
         var bound = new List<AssertionSetMember>(members.Count);
         foreach (var member in members)
@@ -396,11 +396,11 @@ public static class DeliveryAssertionEndpoints
         }
 
         var named = members.Select(SetOf).FirstOrDefault(s => s is not null) ?? set;
-        return await AssertionSetReport.ReadAsync(named, partition, bound, ledger.Assertions, generatedUtc, ct).ConfigureAwait(false);
+        return await AssertionSetReport.ReadAsync(named, partition, bound, assertions, generatedUtc, ct).ConfigureAwait(false);
     }
 
     /// <summary>The partition a bound flow's tests are judged in: the one it is bound to, else the one its ledger is kept under.</summary>
-    private static async Task<string?> TestPartitionAsync(AssertionFlowDefinition bound, ILedger ledger, CancellationToken ct)
+    private static async Task<string?> TestPartitionAsync(AssertionFlowDefinition bound, ILedgerRegistry ledger, CancellationToken ct)
         => bound.Partition ?? (await ledger.GetLedgerAsync(bound.LedgerId, ct).ConfigureAwait(false))?.Partition;
 
     /// <summary>One assertion flow's board.</summary>
@@ -421,7 +421,7 @@ public static class DeliveryAssertionEndpoints
     }
 
     private static async Task<Results<Ok<IReadOnlyList<DeliveryAssertionRunDto>>, ProblemHttpResult>> ListRunsAsync(
-        Guid pipelineId, string? partition, int? max, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, string? partition, int? max, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, AssertionStore assertions,
         IPartitionRegistry registry, CancellationToken ct)
     {
         var (bound, problem) = await BindAsync(db, documents, ledger, registry, pipelineId, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
@@ -430,12 +430,12 @@ public static class DeliveryAssertionEndpoints
             return problem!;
         }
 
-        var runs = await ledger.Assertions.ListRunsAsync(bound.LedgerId, Math.Clamp(max ?? 50, 1, 500), ct).ConfigureAwait(false);
+        var runs = await assertions.ListRunsAsync(bound.LedgerId, Math.Clamp(max ?? 50, 1, 500), ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryAssertionRunDto>>(runs.Select(ToDto).ToList());
     }
 
     private static async Task<Results<Ok<DeliveryAssertionMatrixDto>, ProblemHttpResult>> GetMatrixAsync(
-        Guid pipelineId, string? partition, int? runs, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, string? partition, int? runs, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, AssertionStore assertions,
         IPartitionRegistry registry, CancellationToken ct)
     {
         var (bound, problem) = await BindAsync(db, documents, ledger, registry, pipelineId, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
@@ -445,8 +445,8 @@ public static class DeliveryAssertionEndpoints
         }
 
         var take = Math.Clamp(runs ?? 30, 1, 200);
-        var recent = await ledger.Assertions.ListRunsAsync(bound.LedgerId, take, ct).ConfigureAwait(false);
-        var results = await ledger.Assertions.HistoryAsync(bound.LedgerId, null, take, withDetail: false, ct).ConfigureAwait(false);
+        var recent = await assertions.ListRunsAsync(bound.LedgerId, take, ct).ConfigureAwait(false);
+        var results = await assertions.HistoryAsync(bound.LedgerId, null, take, withDetail: false, ct).ConfigureAwait(false);
         var byTest = results.GroupBy(r => r.TestName, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         var rows = bound.Tests
             .Select(t => t.Name)
@@ -463,7 +463,7 @@ public static class DeliveryAssertionEndpoints
 
     private static async Task<Results<Ok<DeliveryAssertionTestHistoryDto>, ProblemHttpResult>> GetTestHistoryAsync(
         Guid pipelineId, string test, string? partition, int? runs, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents,
-        ILedger ledger, IPartitionRegistry registry, CancellationToken ct)
+        ILedgerRegistry ledger, AssertionStore assertions, IPartitionRegistry registry, CancellationToken ct)
     {
         var (bound, problem) = await BindAsync(db, documents, ledger, registry, pipelineId, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
         if (bound is null)
@@ -476,22 +476,22 @@ public static class DeliveryAssertionEndpoints
             return TypedResults.Problem(detail: $"'{test}' is not a test name: {SelectableNames.Rule}.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid test name");
         }
 
-        var results = await ledger.Assertions.HistoryAsync(bound.LedgerId, test, Math.Clamp(runs ?? 30, 1, 200), withDetail: true, ct).ConfigureAwait(false);
+        var results = await assertions.HistoryAsync(bound.LedgerId, test, Math.Clamp(runs ?? 30, 1, 200), withDetail: true, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryAssertionTestHistoryDto(
             bound.Test(test)?.Name ?? test,
             results.Select(r => TestResults.Deserialize(r.Detail)).Where(r => r is not null).Cast<TestResult>().ToList()));
     }
 
     private static async Task<Results<Ok<DeliveryAssertionRunDetailDto>, ProblemHttpResult>> GetRunAsync(
-        long assertionRunId, CatalogDbContext db, ILedger ledger, CancellationToken ct)
+        long assertionRunId, CatalogDbContext db, AssertionStore assertions, CancellationToken ct)
     {
-        var run = await ledger.Assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        var run = await assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
         if (run is null)
         {
             return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
-        var results = await ledger.Assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false);
+        var results = await assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false);
         var pipelineId = await db.Pipelines.AsNoTracking()
             .Where(p => p.Kind == AssertionFlowDefinition.FlowTypeName && p.Name == run.FlowName)
             .OrderByDescending(p => p.Active)
@@ -501,20 +501,20 @@ public static class DeliveryAssertionEndpoints
     }
 
     private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> GetReportAsync(
-        long assertionRunId, string? format, ILedger ledger, TimeProvider time, CancellationToken ct)
+        long assertionRunId, string? format, AssertionStore assertions, TimeProvider time, CancellationToken ct)
     {
         if (AssertionReport.FormatOf(format) is not { } chosen)
         {
             return TypedResults.Problem(detail: $"format '{format}' is not one of json, md, html, junit.", statusCode: StatusCodes.Status400BadRequest, title: "Unknown report format");
         }
 
-        var run = await ledger.Assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        var run = await assertions.GetRunAsync(assertionRunId, ct).ConfigureAwait(false);
         if (run is null)
         {
             return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
         }
 
-        var results = await ledger.Assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false);
+        var results = await assertions.ListResultsAsync(assertionRunId, ct).ConfigureAwait(false);
         var report = new AssertionReport(run, Parsed(results), time.GetUtcNow().UtcDateTime);
         var (mediaType, _) = AssertionReport.Describe(chosen);
         return TypedResults.File(Encoding.UTF8.GetBytes(report.Render(chosen)), mediaType, report.FileName(chosen));
@@ -545,7 +545,7 @@ public static class DeliveryAssertionEndpoints
     /// with the problem to answer with.
     /// </summary>
     private static async Task<(AssertionFlowDefinition? Flow, ProblemHttpResult? Problem)> BindAsync(
-        CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry, Guid pipelineId, string? partition, CancellationToken ct)
+        CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, IPartitionRegistry registry, Guid pipelineId, string? partition, CancellationToken ct)
     {
         var (pipeline, problem) = await PipelineAsync(db, pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null)
@@ -576,7 +576,7 @@ public static class DeliveryAssertionEndpoints
     /// is when that partition is the one its ledger is kept under (or none is asked for). Null with the reason otherwise.
     /// </summary>
     private static async Task<(AssertionFlowDefinition? Flow, string? Why)> SettleAsync(
-        AssertionFlowDefinition flow, string? partition, ILedger ledger, IPartitionRegistry registry, CancellationToken ct)
+        AssertionFlowDefinition flow, string? partition, ILedgerRegistry ledger, IPartitionRegistry registry, CancellationToken ct)
     {
         if (!flow.Partitioned)
         {
@@ -629,7 +629,7 @@ public static class DeliveryAssertionEndpoints
     private sealed record ParsedFlow(CatalogPipeline Pipeline, AssertionFlowDefinition? Flow, AssertionFlowDefinition? Bound, string? Problem);
 
     private static async Task<List<ParsedFlow>> ParseAsync(
-        IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry,
+        IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedgerRegistry ledger, IPartitionRegistry registry,
         CancellationToken ct)
     {
         var parsed = new List<ParsedFlow>(pipelines.Count);

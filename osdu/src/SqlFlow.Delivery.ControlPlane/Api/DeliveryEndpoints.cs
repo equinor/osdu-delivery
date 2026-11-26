@@ -218,7 +218,7 @@ public static partial class DeliveryEndpoints
     /// (<see cref="BindKeptAsync"/>), so that partition's records, submissions and audit trail stay readable.
     /// </summary>
     internal static async Task<(FlowContext? Flow, ProblemHttpResult? Problem)> ResolveKeptAsync(
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, Guid pipelineId, string? interfaceName, string? partition,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedgerRegistry ledger, Guid pipelineId, string? interfaceName, string? partition,
         CancellationToken ct)
     {
         var (unbound, problem) = await ResolveSourceAsync(db, documents, pipelineId, ct).ConfigureAwait(false);
@@ -240,7 +240,7 @@ public static partial class DeliveryEndpoints
     /// settles its partition from the registry, and asks for the partition to be registered again.
     /// </summary>
     internal static async Task<(SourceContext Bound, ProblemHttpResult? Problem)> BindKeptAsync(
-        ILedger ledger, SourceContext unbound, string? partition, RegisteredPartitions registry, CancellationToken ct)
+        ILedgerRegistry ledger, SourceContext unbound, string? partition, RegisteredPartitions registry, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         if (Bind(unbound, partition, registry, out var bound) is not { } problem)
@@ -260,7 +260,7 @@ public static partial class DeliveryEndpoints
     /// The partition <paramref name="partition"/> names, as the ledger's directory spells it, when it is no longer registered
     /// and the directory keeps a ledger of one of <paramref name="source"/>'s interfaces in it; null otherwise.
     /// </summary>
-    private static async Task<string?> KeptPartitionAsync(ILedger ledger, SourceDefinition source, string? partition, RegisteredPartitions registry, CancellationToken ct)
+    private static async Task<string?> KeptPartitionAsync(ILedgerRegistry ledger, SourceDefinition source, string? partition, RegisteredPartitions registry, CancellationToken ct)
     {
         var name = partition?.Trim();
         if (!source.FollowsRegistry || string.IsNullOrEmpty(name) || !CacheScope.IsPartitionId(name) || registry.Find(name) is not null)
@@ -403,7 +403,7 @@ public static partial class DeliveryEndpoints
     /// on that flow's record only, never on another flow's record of the same source row.
     /// </summary>
     private static async Task<(FlowContext? Flow, RecordState? Record, ProblemHttpResult? Problem)> ResolveForRecordAsync(
-        CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger, Guid flowId, Guid key, CancellationToken ct)
+        CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerRecords ledger, Guid flowId, Guid key, CancellationToken ct)
     {
         var record = await ledger.GetRecordAsync(flowId, new DeliveryKey(key), ct).ConfigureAwait(false);
         if (record is null)

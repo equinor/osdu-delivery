@@ -230,7 +230,10 @@ public class EtpSessionTests : IDisposable
         await session.CloseAsync("done");
         await session.DisposeAsync();
 
-        await WaitFor(() => server.Received.Any(f => f.Body is CloseSession), "the server to see the close");
+        await WaitFor(
+            () => server.Received.Any(f => f.Body is CloseSession),
+            "the server to see the close",
+            () => "the server had received " + string.Join(", ", server.Received.Select(f => f.Body?.GetType().Name ?? "an unknown message")));
         Assert.Equal("done", server.Received.OfType<EtpFrame>().Select(f => f.Body).OfType<CloseSession>().Single().Reason);
     }
 
@@ -266,15 +269,19 @@ public class EtpSessionTests : IDisposable
         ActiveStatus = ActiveStatusKind.Active,
     };
 
-    /// <summary>Waits for something the other side does, so a test never races the socket.</summary>
-    private static async Task WaitFor(Func<bool> done, string what)
+    /// <summary>
+    /// Waits for something the other side does, so a test never races the socket. The cap is generous because the unit
+    /// tier runs every test assembly at once, and a machine that busy has stalled a loopback round trip past 10 s: a late
+    /// answer only makes the test slower, and a failure says what had arrived by then.
+    /// </summary>
+    private static async Task WaitFor(Func<bool> done, string what, Func<string>? seen = null)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
         while (!done())
         {
             if (DateTime.UtcNow > deadline)
             {
-                Assert.Fail($"Timed out waiting for {what}.");
+                Assert.Fail($"Timed out after 30 s waiting for {what}{(seen is null ? "." : $"; {seen()}.")}");
             }
 
             await Task.Delay(20);

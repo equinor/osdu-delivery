@@ -20,6 +20,7 @@ related:
   - delivery-table-attempt
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedgerLeases.cs

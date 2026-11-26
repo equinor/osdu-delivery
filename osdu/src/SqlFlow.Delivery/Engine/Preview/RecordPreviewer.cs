@@ -442,7 +442,7 @@ public sealed class RecordPreviewer
     /// The record delivered to <paramref name="id"/>, when a ledger of the previewed flow's partition holds one: an id is
     /// referred to within its partition.
     /// </summary>
-    private static async Task<PreviewHolder?> HolderAsync(ILedger? ledger, Guid flowId, string id, CancellationToken ct)
+    private static async Task<PreviewHolder?> HolderAsync(ILedgerRecords? ledger, Guid flowId, string id, CancellationToken ct)
     {
         if (ledger is null)
         {

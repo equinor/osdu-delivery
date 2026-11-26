@@ -19,6 +19,7 @@ related:
   - delivery-table-inventory-selection
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs

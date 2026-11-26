@@ -2803,6 +2803,11 @@
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "osdu/gui/src/features/delivery/overview/MappingOverview.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewCanvas.ts",
+        "osdu/gui/src/features/delivery/overview/canvasScene.ts",
+        "osdu/gui/src/features/delivery/overview/canvasLook.ts",
+        "osdu/gui/src/features/delivery/overview/canvasCards.ts",
+        "osdu/gui/src/features/delivery/overview/canvasRows.ts",
+        "osdu/gui/src/features/delivery/overview/canvasLines.ts",
         "osdu/gui/src/features/delivery/overview/OverviewExplain.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewInspector.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewLineage.tsx",
@@ -8928,6 +8933,17 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
         "osdu/gui/src/features/delivery/MappingBuilderPage.tsx",
         "osdu/gui/src/features/delivery/MappingEntryEditor.tsx",
+        "osdu/gui/src/features/delivery/entry/EntryForm.tsx",
+        "osdu/gui/src/features/delivery/entry/EntryHeading.tsx",
+        "osdu/gui/src/features/delivery/entry/EntryParts.tsx",
+        "osdu/gui/src/features/delivery/entry/EntryReadSections.tsx",
+        "osdu/gui/src/features/delivery/entry/EntryFindSections.tsx",
+        "osdu/gui/src/features/delivery/entry/StaticValueSection.tsx",
+        "osdu/gui/src/features/delivery/entry/EntrySettings.tsx",
+        "osdu/gui/src/features/delivery/entry/entryFormModel.ts",
+        "osdu/gui/src/features/delivery/entry/useEntryParts.ts",
+        "osdu/gui/src/features/delivery/entry/useFindAll.ts",
+        "osdu/gui/src/features/delivery/entry/useStaticValue.ts",
         "osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs"
       ]
     },
@@ -8954,6 +8970,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Settings.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/AccessRestrictionRegistry.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/AccessRestrictions.cs",
@@ -8989,6 +9006,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Activities.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Activities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Activities.cs",
@@ -9021,6 +9039,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Activities.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Activities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
@@ -9058,6 +9077,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Artifacts.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/Artifacts.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Artifacts.cs",
@@ -9090,6 +9110,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Assertions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Assertions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs",
@@ -9121,6 +9142,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Assertions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Assertions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/AssertionStore.cs",
@@ -9156,6 +9178,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/LedgerRows.cs",
@@ -9196,6 +9219,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.CacheDefinitions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
@@ -9228,6 +9252,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/CacheVersions.cs"
@@ -9257,6 +9282,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs"
@@ -9288,6 +9314,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.CacheSets.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.CacheSets.cs",
@@ -9320,6 +9347,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.CacheSets.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.CacheSets.cs",
@@ -9355,6 +9383,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.CacheSets.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.CacheSets.cs",
@@ -9390,6 +9419,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/CacheVersions.cs",
@@ -9421,6 +9451,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.ComputeUsage.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.ComputeUsage.cs",
         "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs",
         "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageMeter.cs",
@@ -9449,6 +9480,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.ComputeUsage.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.ComputeUsage.cs",
         "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs"
       ]
@@ -9478,6 +9510,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Settings.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Configuration.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryConfigStore.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs",
@@ -9515,6 +9548,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Write.cs",
@@ -9549,6 +9583,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9578,6 +9613,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9609,6 +9645,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9638,6 +9675,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9668,6 +9706,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs"
@@ -9697,6 +9736,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9728,6 +9768,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9758,6 +9799,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9791,6 +9833,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionStates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionStore.cs",
@@ -9823,6 +9866,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.DimensionValues.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.Merge.cs",
@@ -9853,6 +9897,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs"
@@ -9880,6 +9925,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs"
       ]
@@ -9907,6 +9953,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Downloads.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Downloads.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs"
       ]
@@ -9936,6 +9983,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Downloads.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Downloads.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs",
@@ -9964,6 +10012,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Downloads.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Downloads.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs"
@@ -9991,6 +10040,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Downloads.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Downloads.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DownloadStore.cs"
@@ -10021,6 +10071,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs",
@@ -10056,6 +10107,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs"
@@ -10086,6 +10138,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.InventoryDuplicates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs",
@@ -10119,6 +10172,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.InventoryDuplicates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Duplicates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
@@ -10149,6 +10203,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.InventoryDuplicates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Duplicates.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
@@ -10184,6 +10239,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs",
@@ -10218,6 +10274,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs",
@@ -10250,6 +10307,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs"
@@ -10281,6 +10339,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs"
@@ -10310,6 +10369,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.cs"
@@ -10341,6 +10401,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Selection.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs",
@@ -10371,6 +10432,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventoryStore.Selection.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs",
@@ -10400,6 +10462,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Inventories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Inventories.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs"
@@ -10431,6 +10494,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedgerLeases.cs",
@@ -10464,6 +10528,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Directory.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
@@ -10495,6 +10560,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
@@ -10526,6 +10592,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Directory.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs"
@@ -10555,6 +10622,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Mappings.cs",
@@ -10591,6 +10659,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Settings.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Partitions.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs",
@@ -10625,6 +10694,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Activities.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Purges.cs",
@@ -10664,6 +10734,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/LedgerRows.cs",
@@ -10707,6 +10778,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedgerLeases.cs",
@@ -10740,6 +10812,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Records.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/RecordIdentity.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
@@ -10772,6 +10845,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
@@ -10803,6 +10877,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
@@ -10836,6 +10911,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
@@ -10867,6 +10943,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.ComputeUsage.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/ComputeUsage/ComputeUsageStore.cs"
@@ -10896,6 +10973,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/SyncedTemplates.cs",
@@ -10932,6 +11010,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Retrievals.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Activities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedgerActivities.cs",
@@ -10965,6 +11044,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs",
@@ -10997,6 +11077,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Removals.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Removals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs",
@@ -11027,6 +11108,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Ordering/SchemaLineageStore.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs"
@@ -11054,6 +11136,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Ordering/SchemaLineageStore.cs",
         "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs"
@@ -11082,6 +11165,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.CacheDefinitions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Configuration.cs",
         "osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs",
         "osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs"
@@ -11112,6 +11196,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliverySearchTermCatalog.cs",
         "osdu/src/SqlFlow.Delivery/SearchTerms/SearchTermDirectory.cs",
@@ -11140,6 +11225,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs",
         "osdu/src/SqlFlow.Delivery/SearchTerms/SearchTermDirectory.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliverySearchTermCatalog.cs"
@@ -11169,6 +11255,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedgerRecords.cs",
@@ -11202,6 +11289,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
@@ -11234,6 +11322,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.CacheDefinitions.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.CacheSets.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedgerCacheSets.cs",
@@ -11269,6 +11358,7 @@
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Ledger.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Submissions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedgerSubmissions.cs",

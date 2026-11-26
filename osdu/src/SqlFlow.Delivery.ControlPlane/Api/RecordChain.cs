@@ -100,7 +100,7 @@ internal static class RecordChain
     /// </param>
     /// <param name="ct">Cancellation.</param>
     public static async Task<DeliveryRecordChainDto> OfAsync(
-        CatalogDbContext catalog, ILedger ledger, RecordState record, string? sourceTable, CancellationToken ct)
+        CatalogDbContext catalog, ILedgerQueries ledger, RecordState record, string? sourceTable, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(ledger);

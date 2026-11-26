@@ -113,7 +113,7 @@ public sealed class RenderResolver
     }
 
     /// <summary>The lookup a resolver finds access restrictions with in <paramref name="ledger"/>'s registry, or null without a ledger.</summary>
-    public static AccessRestrictionLookup? RestrictionsOf(Ledger.ILedger? ledger)
+    public static AccessRestrictionLookup? RestrictionsOf(Ledger.ILedgerRestrictions? ledger)
         => ledger is null ? null : ledger.FindAccessRestrictionAsync;
 
     /// <summary>

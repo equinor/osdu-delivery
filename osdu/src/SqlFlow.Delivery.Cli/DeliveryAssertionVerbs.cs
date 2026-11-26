@@ -40,18 +40,18 @@ internal static class DeliveryAssertionVerbs
         var flow = await CliPartitions.AssertionAsync(context, engine.Documents.LoadAssertion(flowPath), ct).ConfigureAwait(false);
         return verb switch
         {
-            "list" => await ListAsync(context, ledger, flow, ct).ConfigureAwait(false),
-            "status" => await StatusAsync(context, ledger, flow, ct).ConfigureAwait(false),
-            "report" => await ReportAsync(context, ledger, engine.Time, flow, ct).ConfigureAwait(false),
+            "list" => await ListAsync(context, ledger.Assertions, flow, ct).ConfigureAwait(false),
+            "status" => await StatusAsync(context, ledger.Assertions, flow, ct).ConfigureAwait(false),
+            "report" => await ReportAsync(context, ledger.Assertions, engine.Time, flow, ct).ConfigureAwait(false),
             _ => context.UsageError("say what to show: list, status or report."),
         };
     }
 
     /// <summary>The flow's runs in its partition, newest first, with how their tests came out.</summary>
-    private static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, AssertionFlowDefinition flow, CancellationToken ct)
+    private static async Task<int> ListAsync(CliVerbContext context, AssertionStore assertions, AssertionFlowDefinition flow, CancellationToken ct)
     {
         var max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max");
-        var runs = await ledger.Assertions.ListRunsAsync(flow.LedgerId, max, ct).ConfigureAwait(false);
+        var runs = await assertions.ListRunsAsync(flow.LedgerId, max, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -86,9 +86,9 @@ internal static class DeliveryAssertionVerbs
     /// Where each test of the flow stands now, as the board and a set's report say it (<see cref="AssertionSetReport.TestOf"/>):
     /// disabled, by its latest result of the test as it is now, or not run.
     /// </summary>
-    private static async Task<int> StatusAsync(CliVerbContext context, ILedger ledger, AssertionFlowDefinition flow, CancellationToken ct)
+    private static async Task<int> StatusAsync(CliVerbContext context, AssertionStore assertions, AssertionFlowDefinition flow, CancellationToken ct)
     {
-        var latest = (await ledger.Assertions.LatestResultsAsync([flow.LedgerId], ct: ct).ConfigureAwait(false))
+        var latest = (await assertions.LatestResultsAsync([flow.LedgerId], ct: ct).ConfigureAwait(false))
             .ToDictionary(r => r.TestName, StringComparer.OrdinalIgnoreCase);
         var tests = flow.Tests
             .Select(t => (Test: t, Result: latest.TryGetValue(t.Name, out var hit) ? hit : null))
@@ -148,7 +148,7 @@ internal static class DeliveryAssertionVerbs
     }
 
     /// <summary>A run's full report (the latest run, or the one --run names) in the format --format names, to --out or the console.</summary>
-    private static async Task<int> ReportAsync(CliVerbContext context, ILedger ledger, TimeProvider time, AssertionFlowDefinition flow, CancellationToken ct)
+    private static async Task<int> ReportAsync(CliVerbContext context, AssertionStore assertions, TimeProvider time, AssertionFlowDefinition flow, CancellationToken ct)
     {
         var format = AssertionReport.FormatOf(context.Arguments.GetOption("--format"))
             ?? throw new FlowValidationException($"--format '{context.Arguments.GetOption("--format")}' is not one of json, md, html, junit.");
@@ -160,7 +160,7 @@ internal static class DeliveryAssertionVerbs
                 return context.UsageError($"--run '{asked}' is not a report number.");
             }
 
-            run = await ledger.Assertions.GetRunAsync(id, ct).ConfigureAwait(false)
+            run = await assertions.GetRunAsync(id, ct).ConfigureAwait(false)
                 ?? throw new FlowValidationException($"No assertion run {id}.");
             if (run.FlowId != flow.LedgerId)
             {
@@ -169,11 +169,11 @@ internal static class DeliveryAssertionVerbs
         }
         else
         {
-            var runs = await ledger.Assertions.ListRunsAsync(flow.LedgerId, 1, ct).ConfigureAwait(false);
+            var runs = await assertions.ListRunsAsync(flow.LedgerId, 1, ct).ConfigureAwait(false);
             run = runs.Count > 0 ? runs[0] : throw new FlowValidationException($"{flow.LedgerName} has no run to report yet. Run its tests with: sqlflow run <flow.yaml>");
         }
 
-        var results = (await ledger.Assertions.ListResultsAsync(run.AssertionRunId, ct).ConfigureAwait(false))
+        var results = (await assertions.ListResultsAsync(run.AssertionRunId, ct).ConfigureAwait(false))
             .Select(r => TestResults.Deserialize(r.Detail))
             .Where(r => r is not null)
             .Cast<TestResult>()

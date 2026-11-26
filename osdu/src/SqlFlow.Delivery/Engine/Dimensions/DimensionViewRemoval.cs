@@ -21,9 +21,10 @@ public static class DimensionViewRemoval
     /// or its file declares it now), on behalf of <paramref name="actor"/>.
     /// </summary>
     /// <exception cref="DeliveryException">The view is no longer recorded, its flow's ledger is gone, or a build held its lock past the timeout.</exception>
-    public static async Task<DimensionViewRemoved> RemoveAsync(ILedger ledger, DimensionViewState view, string actor, TimeProvider clock, CancellationToken ct)
+    public static async Task<DimensionViewRemoved> RemoveAsync(ILedgerActivities ledger, DimensionStore dimensions, DimensionViewState view, string actor, TimeProvider clock, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentNullException.ThrowIfNull(view);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         ArgumentNullException.ThrowIfNull(clock);
@@ -41,7 +42,7 @@ public static class DimensionViewRemoval
             ct).ConfigureAwait(false);
         try
         {
-            var removed = await ledger.Dimensions.RemoveViewAsync(view.Name, ct).ConfigureAwait(false)
+            var removed = await dimensions.RemoveViewAsync(view.Name, ct).ConfigureAwait(false)
                 ?? throw new DeliveryException($"View {view.Name} of {view.FlowName} is no longer recorded: another removal, or its flow's build, took it first.");
             await ledger.CompleteActivityAsync(activity.ActivityId, "completed", removed.Describe(), null, clock.GetUtcNow().UtcDateTime, ct: CancellationToken.None).ConfigureAwait(false);
             return removed;

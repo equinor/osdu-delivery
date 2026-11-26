@@ -59,6 +59,11 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
   - osdu/gui/src/features/delivery/overview/OverviewCanvas.ts
+  - osdu/gui/src/features/delivery/overview/canvasScene.ts
+  - osdu/gui/src/features/delivery/overview/canvasLook.ts
+  - osdu/gui/src/features/delivery/overview/canvasCards.ts
+  - osdu/gui/src/features/delivery/overview/canvasRows.ts
+  - osdu/gui/src/features/delivery/overview/canvasLines.ts
   - osdu/gui/src/features/delivery/overview/OverviewExplain.tsx
   - osdu/gui/src/features/delivery/overview/OverviewInspector.tsx
   - osdu/gui/src/features/delivery/overview/OverviewLineage.tsx

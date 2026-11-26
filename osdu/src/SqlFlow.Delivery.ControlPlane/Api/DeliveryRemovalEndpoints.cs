@@ -126,7 +126,7 @@ public static class DeliveryRemovalEndpoints
     /// listed with its problem.
     /// </summary>
     private static async Task<JsonHttpResult<IReadOnlyList<DeliveryRemovalFlowDto>>> ListFlowsAsync(
-        string? partition, HttpRequest request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        string? partition, HttpRequest request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerRemovals ledger, CancellationToken ct)
     {
         var pipelines = await db.Pipelines.AsNoTracking()
             .Where(p => p.Kind == RemovalFlowDefinition.FlowTypeName && p.Active)
@@ -153,7 +153,7 @@ public static class DeliveryRemovalEndpoints
     /// with the flow as declared and the problem, so its page says what is wrong rather than failing.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryRemovalFlowDto>, ProblemHttpResult>> GetFlowAsync(
-        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerRemovals ledger,
         CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
@@ -167,7 +167,7 @@ public static class DeliveryRemovalEndpoints
 
     /// <summary>A removal flow as its page shows it in <paramref name="partition"/>, or as declared with the problem when it cannot be read there.</summary>
     private static async Task<DeliveryRemovalFlowDto> DescribeAsync(
-        CatalogPipeline pipeline, string? partition, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        CatalogPipeline pipeline, string? partition, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerRemovals ledger, CancellationToken ct)
     {
         RemovalFlowDefinition flow;
         try
@@ -212,7 +212,7 @@ public static class DeliveryRemovalEndpoints
     /// </summary>
     private static async Task<Results<JsonHttpResult<IReadOnlyList<DeliveryRemovalRunDto>>, ProblemHttpResult>> ListRunsAsync(
         Guid pipelineId, string? partition, string? entry, int? limit, HttpRequest request, CatalogDbContext db, OsduDbContext osdu,
-        DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        DeliveryDocumentLoader documents, ILedgerRemovals ledger, CancellationToken ct)
     {
         var (pipeline, flow, problem) = await FlowAsync(db, documents, pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null || flow is null)
@@ -235,7 +235,7 @@ public static class DeliveryRemovalEndpoints
         return TypedResults.Json((IReadOnlyList<DeliveryRemovalRunDto>)runs.Select(ToDto).ToList(), Json);
     }
 
-    private static async Task<Results<JsonHttpResult<DeliveryRemovalRunDto>, ProblemHttpResult>> GetRunAsync(string partition, long removalRunId, ILedger ledger, CancellationToken ct)
+    private static async Task<Results<JsonHttpResult<DeliveryRemovalRunDto>, ProblemHttpResult>> GetRunAsync(string partition, long removalRunId, ILedgerRemovals ledger, CancellationToken ct)
     {
         if (PartitionProblem(partition) is { } bad)
         {
@@ -253,7 +253,7 @@ public static class DeliveryRemovalEndpoints
     /// run found when the query names them, with how many there are in each state.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryRemovedKeysPageDto>, ProblemHttpResult>> ListKeysAsync(
-        Guid ledgerFlowId, string? state, long? run, Guid? after, int? limit, ILedger ledger, CancellationToken ct)
+        Guid ledgerFlowId, string? state, long? run, Guid? after, int? limit, ILedgerRemovals ledger, CancellationToken ct)
     {
         if (state is not null && !SourceRemovals.IsState(state))
         {
@@ -267,7 +267,7 @@ public static class DeliveryRemovalEndpoints
         return TypedResults.Json(new DeliveryRemovedKeysPageDto(page, keys.Count > size ? page[^1].DeliveryKey : null, counts), Json);
     }
 
-    private static async Task<JsonHttpResult<IReadOnlyList<DeliveryRemovalRunDto>>> ListLedgerRunsAsync(Guid ledgerFlowId, int? limit, ILedger ledger, CancellationToken ct)
+    private static async Task<JsonHttpResult<IReadOnlyList<DeliveryRemovalRunDto>>> ListLedgerRunsAsync(Guid ledgerFlowId, int? limit, ILedgerRemovals ledger, CancellationToken ct)
     {
         var runs = await ledger.ListRemovalRunsOfLedgerAsync(ledgerFlowId, Page(limit, 50), ct).ConfigureAwait(false);
         return TypedResults.Json((IReadOnlyList<DeliveryRemovalRunDto>)runs.Select(ToDto).ToList(), Json);
@@ -282,7 +282,7 @@ public static class DeliveryRemovalEndpoints
     /// checks the count again on the node before it approves anything.
     /// </summary>
     private static async Task<Results<Accepted<DeliveryRemovalApprovalAccepted>, ProblemHttpResult>> ApproveAsync(
-        Guid pipelineId, DeliveryRemovalApprovalRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, DeliveryRemovalApprovalRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedgerRemovals ledger,
         IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Entry))

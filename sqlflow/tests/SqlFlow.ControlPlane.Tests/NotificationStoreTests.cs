@@ -51,6 +51,49 @@ public sealed class NotificationStoreTests
     }
 
     [SkippableFact]
+    public async Task Detect_TwoTicksAMillisecondApart_AreTwoInstants_SoARunBetweenThemIsEvented()
+    {
+        var cs = CatalogTestDb.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await using var db = CatalogDatabase.Create(cs);
+
+        // Two ticks inside one step of SQL Server's datetime grid (1/300 s): a tick's instant sent as datetime would
+        // round both to the step's start, so the second would find the mark not before its own instant and scan
+        // nothing, and the run written between them would never be evented. A whole 10 ms lies on the grid, and
+        // both ticks are in the past by the time they run, so the shared mark never moves ahead of the clock.
+        var now = DateTime.UtcNow;
+        var step = new DateTime(now.Ticks - (now.Ticks % (10 * TimeSpan.TicksPerMillisecond)), DateTimeKind.Utc)
+            .AddMilliseconds(10);
+        var first = step.AddTicks(2 * TimeSpan.TicksPerMillisecond / 10);
+        var second = step.AddMilliseconds(1);
+        while (DateTime.UtcNow <= second)
+        {
+            await Task.Delay(1);
+        }
+
+        var run = NewRun(RunStatuses.Failed, error: "the target table vanished");
+        run.WrittenUtc = step.AddTicks(TimeSpan.TicksPerMillisecond / 2);
+        run.EndUtc = run.WrittenUtc;
+
+        try
+        {
+            await NotificationStore.DetectAsync(db, first, Overlap);
+            db.Runs.Add(run);
+            await db.SaveChangesAsync();
+
+            var tick = await NotificationStore.DetectAsync(db, second, Overlap);
+
+            Assert.True(tick.Scanned, "The second tick found the mark not before its own instant and scanned nothing.");
+            Assert.Equal(NotificationEventKinds.RunFailed, Assert.Single(await EventsFor(db, run.RunId)).Kind);
+            Assert.Equal(second, (await NotificationStore.GetWatermarkAsync(db))?.RunsWatermarkUtc);
+        }
+        finally
+        {
+            await CleanupAsync(db, run.RunId);
+        }
+    }
+
+    [SkippableFact]
     public async Task Detect_MapsCancelledAndSkipped_ToTheirKinds()
     {
         var cs = CatalogTestDb.Require();

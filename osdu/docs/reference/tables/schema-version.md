@@ -17,6 +17,7 @@ related:
   - delivery-concept-ledger
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.CacheDefinitions.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Configuration.cs
   - osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs
   - osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs

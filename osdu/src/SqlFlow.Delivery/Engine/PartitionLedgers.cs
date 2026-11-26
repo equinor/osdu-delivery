@@ -31,7 +31,7 @@ public sealed class PartitionLedgers
     /// <paramref name="served"/> are the partitions the source serves: those it names, or every registered one.
     /// </summary>
     /// <exception cref="DeliveryException">A guard does not hold; the message names the records and what to change.</exception>
-    public async Task CheckAsync(ILedger ledger, SourceDefinition bound, IReadOnlyList<string> served, CancellationToken ct)
+    public async Task CheckAsync(ILedgerQueries ledger, SourceDefinition bound, IReadOnlyList<string> served, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(bound);
@@ -56,7 +56,7 @@ public sealed class PartitionLedgers
         }
     }
 
-    private async Task CheckUnkeptAsync(ILedger ledger, FlowDefinition flow, Guid own, IReadOnlyList<string> declared, CancellationToken ct)
+    private async Task CheckUnkeptAsync(ILedgerQueries ledger, FlowDefinition flow, Guid own, IReadOnlyList<string> declared, CancellationToken ct)
     {
         var key = $"unkept|{own:N}|{string.Join(",", declared.Select(d => d.ToLowerInvariant()))}";
         if (_passed.ContainsKey(key))
@@ -82,7 +82,7 @@ public sealed class PartitionLedgers
         _passed.TryAdd(key, true);
     }
 
-    private async Task CheckKeptAsync(ILedger ledger, FlowDefinition flow, Guid own, string keeping, CancellationToken ct)
+    private async Task CheckKeptAsync(ILedgerQueries ledger, FlowDefinition flow, Guid own, string keeping, CancellationToken ct)
     {
         var key = $"kept|{own:N}|{keeping.ToLowerInvariant()}";
         if (_passed.ContainsKey(key))

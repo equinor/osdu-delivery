@@ -118,7 +118,7 @@ public sealed partial class ScheduledTargetProbeService : BackgroundService
     {
         await using var scope = _services.CreateAsyncScope();
         var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
+        var ledger = scope.ServiceProvider.GetRequiredService<ILedgerActivities>();
         var documents = scope.ServiceProvider.GetRequiredService<DeliveryDocumentLoader>();
         var partitions = scope.ServiceProvider.GetRequiredService<IPartitionRegistry>();
 
@@ -267,7 +267,7 @@ public sealed partial class ScheduledTargetProbeService : BackgroundService
     /// Closes the probes of every ledger left open past <see cref="TargetProbes.UnfinishedAfter"/>, scheduled or asked for
     /// (<see cref="TargetProbes.CloseUnfinishedAsync"/>), including those of flows no pass covers any more.
     /// </summary>
-    private Task CloseUnfinishedAsync(ILedger ledger, CancellationToken ct)
+    private Task CloseUnfinishedAsync(ILedgerActivities ledger, CancellationToken ct)
         => TargetProbes.CloseUnfinishedAsync(
             ledger, null, _clock, _services.GetRequiredService<ILoggerFactory>().CreateLogger(TargetProbes.LogCategory), ct);
 

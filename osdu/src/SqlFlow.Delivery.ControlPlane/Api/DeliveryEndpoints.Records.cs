@@ -208,7 +208,7 @@ public static partial class DeliveryEndpoints
     /// </summary>
     private static async Task<Results<Ok<PagedResult<DeliveryRecordHitDto>>, ProblemHttpResult>> LookupRecordsAsync(
         string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, bool? restricted, bool? incomplete, string? missing, bool? accessRestricted, [FromQuery] string? partition, int? page, int? pageSize,
-        CatalogDbContext db, OsduDbContext osdu, ILedger ledger, HttpRequest request, CancellationToken ct)
+        CatalogDbContext db, OsduDbContext osdu, ILedgerQueries ledger, HttpRequest request, CancellationToken ct)
     {
         // The partition the page reads: the one the request names, else the workbench's.
         partition = WorkbenchPartition.Named(partition, request);
@@ -444,7 +444,7 @@ public static partial class DeliveryEndpoints
     /// The access OSDU holds <paramref name="record"/> restricted until complete under, with the restriction's registered name
     /// and groups and what the record goes without; null for a record OSDU holds with its own access.
     /// </summary>
-    private static async Task<DeliveryRecordIncompleteDto?> IncompleteOfAsync(ILedger ledger, RecordState record, CancellationToken ct)
+    private static async Task<DeliveryRecordIncompleteDto?> IncompleteOfAsync(ILedgerRestrictions ledger, RecordState record, CancellationToken ct)
     {
         if (record.IncompleteRestrictionId is not { } id)
         {
@@ -458,7 +458,7 @@ public static partial class DeliveryEndpoints
     }
 
     /// <summary>The access restriction <paramref name="record"/> carries, with its registered groups and the ACL it had before; null for a record not restricted.</summary>
-    private static async Task<DeliveryRecordRestrictionDto?> RestrictionOfAsync(ILedger ledger, RecordState record, CancellationToken ct)
+    private static async Task<DeliveryRecordRestrictionDto?> RestrictionOfAsync(ILedgerRestrictions ledger, RecordState record, CancellationToken ct)
     {
         if (record.RestrictionId is not { } id)
         {

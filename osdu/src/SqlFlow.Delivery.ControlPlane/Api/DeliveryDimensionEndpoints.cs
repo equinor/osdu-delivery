@@ -316,9 +316,9 @@ public static partial class DeliveryDimensionEndpoints
     /// now (whether it still declares the dimension cannot be told), or that a cache flow captures.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionRemovedDto>, ProblemHttpResult>> RemoveAsync(
-        int dimensionId, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
+        int dimensionId, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerActivities ledger, DimensionStore dimensions, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
     {
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
         {
             return NoDimension(dimensionId);
         }
@@ -338,7 +338,7 @@ public static partial class DeliveryDimensionEndpoints
 
         try
         {
-            var removed = await DimensionRemoval.RemoveAsync(ledger, dimension, RequestActor.Label(user), clock, ct).ConfigureAwait(false);
+            var removed = await DimensionRemoval.RemoveAsync(ledger, dimensions, dimension, RequestActor.Label(user), clock, ct).ConfigureAwait(false);
             return TypedResults.Ok(new DeliveryDimensionRemovedDto(
                 removed.DimensionId, removed.Name, removed.FlowName, removed.Partition, removed.Values, removed.Keys, removed.Builds, removed.Changes,
                 removed.Attributes, removed.Texts, removed.Describe()));
@@ -351,7 +351,7 @@ public static partial class DeliveryDimensionEndpoints
 
     /// <summary>Every active dimension flow of the catalog, each in the partition the request reads.</summary>
     private static async Task<Ok<DeliveryDimensionBoardDto>> GetBoardAsync(
-        string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry,
+        string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, DimensionStore dimensions, IPartitionRegistry registry,
         CancellationToken ct)
     {
         var pipelines = await db.Pipelines.AsNoTracking()
@@ -360,13 +360,13 @@ public static partial class DeliveryDimensionEndpoints
             .Take(MaxFlows)
             .ToListAsync(ct).ConfigureAwait(false);
         var named = WorkbenchPartition.Named(partition, request);
-        var flows = await BoardAsync(pipelines, named, documents, ledger, registry, ct).ConfigureAwait(false);
+        var flows = await BoardAsync(pipelines, named, documents, ledger, dimensions, registry, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryDimensionBoardDto(named, Totals(flows), flows));
     }
 
     /// <summary>One dimension flow's board.</summary>
     private static async Task<Results<Ok<DeliveryDimensionBoardDto>, ProblemHttpResult>> GetFlowBoardAsync(
-        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, DimensionStore dimensions,
         IPartitionRegistry registry, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
@@ -381,21 +381,21 @@ public static partial class DeliveryDimensionEndpoints
         }
 
         var named = WorkbenchPartition.Named(partition, request);
-        var flows = await BoardAsync([pipeline], named, documents, ledger, registry, ct).ConfigureAwait(false);
+        var flows = await BoardAsync([pipeline], named, documents, ledger, dimensions, registry, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryDimensionBoardDto(flows[0].Partition ?? named, Totals(flows), flows));
     }
 
     private static async Task<Results<Ok<DeliveryDimensionDetailDto>, ProblemHttpResult>> GetDimensionAsync(
-        int dimensionId, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        int dimensionId, CatalogDbContext db, DeliveryDocumentLoader documents, DimensionStore dimensions, CancellationToken ct)
     {
-        var dimension = await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
+        var dimension = await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
         if (dimension is null)
         {
             return NoDimension(dimensionId);
         }
 
         var (pipeline, flow, spec, _) = await DeclarationAsync(db, documents, dimension, ct).ConfigureAwait(false);
-        var builds = await BuildsAsync(ledger, [dimension], ct).ConfigureAwait(false);
+        var builds = await BuildsAsync(dimensions, [dimension], ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryDimensionDetailDto(
             pipeline?.Id, pipeline?.RepoId, dimension.FlowName, dimension.FlowId, dimension.Partition, flow is null ? [] : Parameters(flow),
             ToDto(spec, dimension.Partition, dimension, builds, DimensionTableTarget.Of(flow?.Target))));
@@ -409,7 +409,7 @@ public static partial class DeliveryDimensionEndpoints
     /// dimension built before dimensions had a table has its table made here.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionTableDto>, ProblemHttpResult>> ReadTableAsync(
-        int dimensionId, string? search, string[]? attr, string? order, string? dir, int? offset, int? limit, ILedger ledger, CancellationToken ct)
+        int dimensionId, string? search, string[]? attr, string? order, string? dir, int? offset, int? limit, DimensionStore dimensions, CancellationToken ct)
     {
         if (SearchProblem(search) is { } badSearch)
         {
@@ -438,7 +438,7 @@ public static partial class DeliveryDimensionEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Invalid offset", "offset is the number of rows before the page, zero or more.");
         }
 
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
         {
             return NoDimension(dimensionId);
         }
@@ -454,7 +454,7 @@ public static partial class DeliveryDimensionEndpoints
         try
         {
             var page = await DimensionTable.ReadAsync(
-                ledger, dimension, new DimensionTableQuery(search, matches, order, descending, offset ?? 0, PageSize(limit)), ct).ConfigureAwait(false);
+                dimensions, dimension, new DimensionTableQuery(search, matches, order, descending, offset ?? 0, PageSize(limit)), ct).ConfigureAwait(false);
             return TypedResults.Ok(new DeliveryDimensionTableDto(
                 page.Table,
                 page.KeyColumn,
@@ -471,7 +471,7 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     private static async Task<Results<Ok<DeliveryDimensionValuePageDto>, ProblemHttpResult>> ListValuesAsync(
-        int dimensionId, string? search, string? order, bool? removed, string? after, int? limit, string[]? attr, ILedger ledger, CancellationToken ct)
+        int dimensionId, string? search, string? order, bool? removed, string? after, int? limit, string[]? attr, DimensionStore dimensions, CancellationToken ct)
     {
         if (SearchProblem(search) is { } badSearch)
         {
@@ -501,7 +501,7 @@ public static partial class DeliveryDimensionEndpoints
             }
         }
 
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
         {
             return NoDimension(dimensionId);
         }
@@ -513,8 +513,8 @@ public static partial class DeliveryDimensionEndpoints
         }
 
         var take = PageSize(limit);
-        var members = await ledger.Dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(search, removed ?? false, cursor, take, sorted, matches), ct).ConfigureAwait(false);
-        var top = (await ledger.Dimensions.TopMemberOriginalsAsync(dimensionId, members.Select(m => m.MemberId).ToList(), TopKeys, ct).ConfigureAwait(false))
+        var members = await dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(search, removed ?? false, cursor, take, sorted, matches), ct).ConfigureAwait(false);
+        var top = (await dimensions.TopMemberOriginalsAsync(dimensionId, members.Select(m => m.MemberId).ToList(), TopKeys, ct).ConfigureAwait(false))
             .GroupBy(v => v.MemberId ?? 0)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<DeliveryDimensionKeyBriefDto>)g
                 .OrderByDescending(v => v.Count).ThenBy(v => v.ValueId)
@@ -524,18 +524,18 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     private static async Task<Results<Ok<DeliveryDimensionValueDetailDto>, ProblemHttpResult>> GetValueAsync(
-        int dimensionId, long valueId, ILedger ledger, CancellationToken ct)
+        int dimensionId, long valueId, DimensionStore dimensions, CancellationToken ct)
     {
-        var dimension = await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
+        var dimension = await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
         if (dimension is null)
         {
             return NoDimension(dimensionId);
         }
 
-        var named = await ledger.Dimensions.GetMembersAsync(dimensionId, [valueId], [], ct).ConfigureAwait(false);
+        var named = await dimensions.GetMembersAsync(dimensionId, [valueId], [], ct).ConfigureAwait(false);
         var member = named.Count > 0 ? named[0] : null;
         if (member is not null
-            && (await ledger.Dimensions.MemberAttributesAsync(dimensionId, [valueId], DimensionStore.MemberAttributeValues, ct).ConfigureAwait(false)) is [var held, ..])
+            && (await dimensions.MemberAttributesAsync(dimensionId, [valueId], DimensionStore.MemberAttributeValues, ct).ConfigureAwait(false)) is [var held, ..])
         {
             member = member with { Attributes = held.Attributes };
         }
@@ -544,9 +544,9 @@ public static partial class DeliveryDimensionEndpoints
             return Problem(StatusCodes.Status404NotFound, "Not found", $"Dimension {dimension.Name} has no value {valueId}.");
         }
 
-        var keys = await ledger.Dimensions.ListValuesAsync(
+        var keys = await dimensions.ListValuesAsync(
             dimensionId, new DimensionValueQuery(null, valueId, false, false, null, ValueKeys + 1, DimensionValueOrder.Count), ct).ConfigureAwait(false);
-        var history = await ledger.Dimensions.ListChangesAsync(dimensionId, new DimensionChangeQuery(null, null, valueId, null, null, ValueHistory), ct).ConfigureAwait(false);
+        var history = await dimensions.ListChangesAsync(dimensionId, new DimensionChangeQuery(null, null, valueId, null, null, ValueHistory), ct).ConfigureAwait(false);
         DeliveryDimensionFilterDto? filter = null;
         string? filterProblem = null;
         if (member.RemovedRunId is not null)
@@ -557,7 +557,7 @@ public static partial class DeliveryDimensionEndpoints
         {
             try
             {
-                filter = ToDto(await DimensionFilters.ForMembersAsync(ledger, dimension, [valueId], [], ct).ConfigureAwait(false));
+                filter = ToDto(await DimensionFilters.ForMembersAsync(dimensions, dimension, [valueId], [], ct).ConfigureAwait(false));
             }
             catch (Exception ex) when (ex is DeliveryException or OsduQueryException)
             {
@@ -571,7 +571,7 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     private static async Task<Results<Ok<DeliveryDimensionKeyPageDto>, ProblemHttpResult>> ListKeysAsync(
-        int dimensionId, string? search, long? value, bool? leftOut, bool? removed, string? order, string? after, int? limit, string[]? attr, ILedger ledger,
+        int dimensionId, string? search, long? value, bool? leftOut, bool? removed, string? order, string? after, int? limit, string[]? attr, DimensionStore dimensions,
         CancellationToken ct)
     {
         if (SearchProblem(search) is { } badSearch)
@@ -607,7 +607,7 @@ public static partial class DeliveryDimensionEndpoints
             }
         }
 
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
         {
             return NoDimension(dimensionId);
         }
@@ -619,7 +619,7 @@ public static partial class DeliveryDimensionEndpoints
         }
 
         var take = PageSize(limit);
-        var keys = await ledger.Dimensions.ListValuesAsync(
+        var keys = await dimensions.ListValuesAsync(
             dimensionId, new DimensionValueQuery(search, value, leftOut ?? false, removed ?? false, cursor, take, sorted, matches), ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryDimensionKeyPageDto(keys.Select(ToDto).ToList(), keys.Count == take ? KeyCursor(keys[^1]) : null));
     }
@@ -631,7 +631,7 @@ public static partial class DeliveryDimensionEndpoints
     /// itself does not narrow its own list.
     /// </summary>
     private static async Task<Results<Ok<IReadOnlyList<DeliveryDimensionAttributeValueDto>>, ProblemHttpResult>> ListAttributeValuesAsync(
-        int dimensionId, string name, string? search, int? limit, string[]? attr, long[]? value, ILedger ledger, CancellationToken ct)
+        int dimensionId, string name, string? search, int? limit, string[]? attr, long[]? value, DimensionStore dimensions, CancellationToken ct)
     {
         if (SearchProblem(search) is { } badSearch)
         {
@@ -643,7 +643,7 @@ public static partial class DeliveryDimensionEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Too many values", $"An attribute's values are narrowed by at most {DimensionFilters.MaxMembersPerFilter} values.");
         }
 
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is not { } dimension)
         {
             return NoDimension(dimensionId);
         }
@@ -661,25 +661,25 @@ public static partial class DeliveryDimensionEndpoints
             return badAttribute;
         }
 
-        var values = await ledger.Dimensions.ListAttributeValuesAsync(
+        var values = await dimensions.ListAttributeValuesAsync(
             dimensionId, new DimensionAttributeValueQuery(attribute.Name, search, PageSize(limit), matches, value), ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryDimensionAttributeValueDto>>(values.Select(v => new DeliveryDimensionAttributeValueDto(v.Value, v.Keys, v.Records)).ToList());
     }
 
     private static async Task<Results<Ok<IReadOnlyList<DeliveryDimensionBuildDto>>, ProblemHttpResult>> ListBuildsAsync(
-        int dimensionId, int? max, ILedger ledger, CancellationToken ct)
+        int dimensionId, int? max, DimensionStore dimensions, CancellationToken ct)
     {
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is null)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is null)
         {
             return NoDimension(dimensionId);
         }
 
-        var runs = await ledger.Dimensions.ListRunsAsync(dimensionId, Math.Clamp(max ?? DefaultBuilds, 1, 500), ct).ConfigureAwait(false);
+        var runs = await dimensions.ListRunsAsync(dimensionId, Math.Clamp(max ?? DefaultBuilds, 1, 500), ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryDimensionBuildDto>>(runs.Select(ToDto).ToList());
     }
 
     private static async Task<Results<Ok<DeliveryDimensionChangePageDto>, ProblemHttpResult>> ListChangesAsync(
-        int dimensionId, long? build, long? key, long? value, string? change, long? before, int? limit, ILedger ledger, CancellationToken ct)
+        int dimensionId, long? build, long? key, long? value, string? change, long? before, int? limit, DimensionStore dimensions, CancellationToken ct)
     {
         var kind = string.IsNullOrWhiteSpace(change) ? null : change.Trim().ToLowerInvariant();
         if (kind is not null && !ChangeKinds.Contains(kind, StringComparer.Ordinal))
@@ -687,20 +687,20 @@ public static partial class DeliveryDimensionEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Unknown change", $"change '{change}' is not one of {string.Join(", ", ChangeKinds)}.");
         }
 
-        if (await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is null)
+        if (await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false) is null)
         {
             return NoDimension(dimensionId);
         }
 
         var take = PageSize(limit);
-        var changes = await ledger.Dimensions.ListChangesAsync(dimensionId, new DimensionChangeQuery(build, key, value, kind, before, take), ct).ConfigureAwait(false);
+        var changes = await dimensions.ListChangesAsync(dimensionId, new DimensionChangeQuery(build, key, value, kind, before, take), ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryDimensionChangePageDto(changes.Select(ToDto).ToList(), changes.Count == take ? changes[^1].ChangeId : null));
     }
 
     private static async Task<Results<Ok<DeliveryDimensionFilterDto>, ProblemHttpResult>> FilterAsync(
-        int dimensionId, DeliveryDimensionFilterRequest? body, ILedger ledger, CancellationToken ct)
+        int dimensionId, DeliveryDimensionFilterRequest? body, DimensionStore dimensions, CancellationToken ct)
     {
-        var dimension = await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
+        var dimension = await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
         if (dimension is null)
         {
             return NoDimension(dimensionId);
@@ -715,7 +715,7 @@ public static partial class DeliveryDimensionEndpoints
 
         try
         {
-            return TypedResults.Ok(ToDto(await DimensionFilters.ForMembersAsync(ledger, dimension, ids, values, ct).ConfigureAwait(false)));
+            return TypedResults.Ok(ToDto(await DimensionFilters.ForMembersAsync(dimensions, dimension, ids, values, ct).ConfigureAwait(false)));
         }
         catch (Exception ex) when (ex is DeliveryException or OsduQueryException)
         {
@@ -728,7 +728,7 @@ public static partial class DeliveryDimensionEndpoints
     /// across dimensions, within each dimension's own query, in the kind every dimension reads (or the one the request names).
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionSearchDto>, ProblemHttpResult>> SearchAsync(
-        DeliveryDimensionSearchRequest? body, ILedger ledger, CancellationToken ct)
+        DeliveryDimensionSearchRequest? body, DimensionStore dimensions, CancellationToken ct)
     {
         var requested = body?.Picks ?? [];
         if (requested.Count == 0)
@@ -749,7 +749,7 @@ public static partial class DeliveryDimensionEndpoints
         var picks = new List<DimensionPick>(requested.Count);
         foreach (var pick in requested)
         {
-            var dimension = await ledger.Dimensions.GetAsync(pick.DimensionId, ct).ConfigureAwait(false);
+            var dimension = await dimensions.GetAsync(pick.DimensionId, ct).ConfigureAwait(false);
             if (dimension is null)
             {
                 return NoDimension(pick.DimensionId);
@@ -774,7 +774,7 @@ public static partial class DeliveryDimensionEndpoints
 
         try
         {
-            var set = await DimensionSearch.ComposeAsync(ledger, picks, body?.Kind, body?.Within, ct).ConfigureAwait(false);
+            var set = await DimensionSearch.ComposeAsync(dimensions, picks, body?.Kind, body?.Within, ct).ConfigureAwait(false);
             var request = new JsonObject { ["kind"] = set.Kind, ["query"] = set.Query, ["limit"] = 1000 }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
             return TypedResults.Ok(new DeliveryDimensionSearchDto(
                 set.Kind, set.Query, request,
@@ -792,7 +792,7 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportAsync(
-        int dimensionId, string? set, string? format, ILedger ledger, CancellationToken ct)
+        int dimensionId, string? set, string? format, DimensionStore dimensions, CancellationToken ct)
     {
         if (DimensionExport.SetOf(set) is not { } chosenSet)
         {
@@ -804,7 +804,7 @@ public static partial class DeliveryDimensionEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Unknown format", $"format '{format}' is not one of csv, jsonl.");
         }
 
-        var dimension = await ledger.Dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
+        var dimension = await dimensions.GetAsync(dimensionId, ct).ConfigureAwait(false);
         if (dimension is null)
         {
             return NoDimension(dimensionId);
@@ -813,18 +813,18 @@ public static partial class DeliveryDimensionEndpoints
         // The export is written as it is read, a ledger page at a time, so a dimension of millions of keys is never held whole;
         // the request's own cancellation stops it when the caller goes away.
         return TypedResults.Stream(
-            stream => DimensionExport.WriteAsync(ledger, dimension, chosenSet, chosenFormat, stream, ct),
+            stream => DimensionExport.WriteAsync(dimensions, dimension, chosenSet, chosenFormat, stream, ct),
             DimensionExport.MediaType(chosenFormat),
             DimensionExport.FileName(dimension, chosenSet, chosenFormat));
     }
 
-    private static async Task<Ok<IReadOnlyList<DeliveryDimensionRunBuildDto>>> ListRunBuildsAsync(Guid runId, ILedger ledger, CancellationToken ct)
+    private static async Task<Ok<IReadOnlyList<DeliveryDimensionRunBuildDto>>> ListRunBuildsAsync(Guid runId, DimensionStore dimensions, CancellationToken ct)
     {
-        var runs = await ledger.Dimensions.RunsOfAsync(runId, ct).ConfigureAwait(false);
+        var runs = await dimensions.RunsOfAsync(runId, ct).ConfigureAwait(false);
         var names = new Dictionary<int, string>();
         foreach (var id in runs.Select(r => r.DimensionId).Distinct())
         {
-            names[id] = (await ledger.Dimensions.GetAsync(id, ct).ConfigureAwait(false))?.Name ?? id.ToString(CultureInfo.InvariantCulture);
+            names[id] = (await dimensions.GetAsync(id, ct).ConfigureAwait(false))?.Name ?? id.ToString(CultureInfo.InvariantCulture);
         }
 
         return TypedResults.Ok<IReadOnlyList<DeliveryDimensionRunBuildDto>>(runs.Select(r => new DeliveryDimensionRunBuildDto(names[r.DimensionId], ToDto(r))).ToList());
@@ -835,7 +835,7 @@ public static partial class DeliveryDimensionEndpoints
     /// ledger keeps that it no longer declares, each with the build that wrote what it holds and its newest build.
     /// </summary>
     private static async Task<IReadOnlyList<DeliveryDimensionFlowDto>> BoardAsync(
-        IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry,
+        IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedgerRegistry ledger, DimensionStore dimensions, IPartitionRegistry registry,
         CancellationToken ct)
     {
         var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
@@ -862,11 +862,11 @@ public static partial class DeliveryDimensionEndpoints
         {
             if (!held.ContainsKey(bound.LedgerId))
             {
-                held[bound.LedgerId] = await ledger.Dimensions.ListAsync(null, bound.LedgerId, ct).ConfigureAwait(false);
+                held[bound.LedgerId] = await dimensions.ListAsync(null, bound.LedgerId, ct).ConfigureAwait(false);
             }
         }
 
-        var builds = await BuildsAsync(ledger, held.Values.SelectMany(d => d).ToList(), ct).ConfigureAwait(false);
+        var builds = await BuildsAsync(dimensions, held.Values.SelectMany(d => d).ToList(), ct).ConfigureAwait(false);
         var flows = new List<DeliveryDimensionFlowDto>(settled.Count);
         foreach (var (pipeline, flow, bound, kept, problem) in settled)
         {
@@ -892,7 +892,7 @@ public static partial class DeliveryDimensionEndpoints
     /// not built yet, or none is asked for). Null with the reason otherwise.
     /// </summary>
     private static async Task<(DimensionFlowDefinition? Flow, string? Partition, string? Why)> SettleAsync(
-        DimensionFlowDefinition flow, string? partition, ILedger ledger, RegisteredPartitions registered, CancellationToken ct)
+        DimensionFlowDefinition flow, string? partition, ILedgerRegistry ledger, RegisteredPartitions registered, CancellationToken ct)
     {
         if (!flow.Partitioned)
         {
@@ -966,18 +966,18 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     /// <summary>The newest build of each dimension, and every build that wrote what a dimension holds, read together.</summary>
-    private static async Task<BuildIndex> BuildsAsync(ILedger ledger, IReadOnlyList<DimensionState> dimensions, CancellationToken ct)
+    private static async Task<BuildIndex> BuildsAsync(DimensionStore store, IReadOnlyList<DimensionState> dimensions, CancellationToken ct)
     {
         if (dimensions.Count == 0)
         {
             return new BuildIndex(new Dictionary<int, DimensionRunState>(), new Dictionary<long, DimensionRunState>());
         }
 
-        var latest = (await ledger.Dimensions.LatestRunsAsync(dimensions.Select(d => d.DimensionId).ToList(), ct).ConfigureAwait(false))
+        var latest = (await store.LatestRunsAsync(dimensions.Select(d => d.DimensionId).ToList(), ct).ConfigureAwait(false))
             .ToDictionary(r => r.DimensionId);
         var byId = latest.Values.ToDictionary(r => r.DimensionRunId);
         var wanted = dimensions.Select(d => d.LastRunId).OfType<long>().Where(id => !byId.ContainsKey(id)).ToList();
-        foreach (var run in await ledger.Dimensions.GetRunsAsync(wanted, ct).ConfigureAwait(false))
+        foreach (var run in await store.GetRunsAsync(wanted, ct).ConfigureAwait(false))
         {
             byId[run.DimensionRunId] = run;
         }

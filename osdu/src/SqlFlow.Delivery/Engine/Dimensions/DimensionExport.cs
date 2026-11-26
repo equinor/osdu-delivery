@@ -113,13 +113,13 @@ public static class DimensionExport
     /// arrival), and returns how many rows it wrote. The stream is left open.
     /// </summary>
     public static async Task<long> WriteAsync(
-        ILedger ledger, DimensionState dimension, DimensionExportSet set, DimensionExportFormat format, Stream output, CancellationToken ct)
+        DimensionStore dimensions, DimensionState dimension, DimensionExportSet set, DimensionExportFormat format, Stream output, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(output);
         var writer = new StreamWriter(output, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), bufferSize: 64 * 1024, leaveOpen: true);
         await using (writer.ConfigureAwait(false))
         {
-            var rows = await WriteAsync(ledger, dimension, set, format, writer, ct).ConfigureAwait(false);
+            var rows = await WriteAsync(dimensions, dimension, set, format, writer, ct).ConfigureAwait(false);
             await writer.FlushAsync(ct).ConfigureAwait(false);
             return rows;
         }
@@ -131,9 +131,9 @@ public static class DimensionExport
     /// own line ending is: CRLF for CSV (RFC 4180), LF for JSON Lines.
     /// </summary>
     public static async Task<long> WriteAsync(
-        ILedger ledger, DimensionState dimension, DimensionExportSet set, DimensionExportFormat format, TextWriter output, CancellationToken ct)
+        DimensionStore dimensions, DimensionState dimension, DimensionExportSet set, DimensionExportFormat format, TextWriter output, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(dimensions);
         ArgumentNullException.ThrowIfNull(dimension);
         ArgumentNullException.ThrowIfNull(output);
         var ending = format == DimensionExportFormat.Csv ? CsvLineEnd : JsonLineEnd;
@@ -141,9 +141,9 @@ public static class DimensionExport
         var attributes = declared.Select(a => a.Name).ToList();
         return set switch
         {
-            DimensionExportSet.Values => await ValuesAsync(ledger, dimension.DimensionId, attributes, format, output, ending, ct).ConfigureAwait(false),
-            DimensionExportSet.Keys => await KeysAsync(ledger, dimension.DimensionId, declared, format, output, ending, ct).ConfigureAwait(false),
-            _ => await TableAsync(ledger, dimension, format, output, ending, ct).ConfigureAwait(false),
+            DimensionExportSet.Values => await ValuesAsync(dimensions, dimension.DimensionId, attributes, format, output, ending, ct).ConfigureAwait(false),
+            DimensionExportSet.Keys => await KeysAsync(dimensions, dimension.DimensionId, declared, format, output, ending, ct).ConfigureAwait(false),
+            _ => await TableAsync(dimensions, dimension, format, output, ending, ct).ConfigureAwait(false),
         };
     }
 
@@ -152,7 +152,7 @@ public static class DimensionExport
         => Csv([.. columns, .. attributes.Select(a => "attribute_" + a)]);
 
     private static async Task<long> ValuesAsync(
-        ILedger ledger, int dimensionId, IReadOnlyList<string> attributes, DimensionExportFormat format, TextWriter writer, string ending, CancellationToken ct)
+        DimensionStore dimensions, int dimensionId, IReadOnlyList<string> attributes, DimensionExportFormat format, TextWriter writer, string ending, CancellationToken ct)
     {
         if (format == DimensionExportFormat.Csv)
         {
@@ -164,10 +164,10 @@ public static class DimensionExport
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.Dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(null, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
+            var page = await dimensions.ListMembersAsync(dimensionId, new DimensionMemberQuery(null, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
             var held = attributes.Count == 0
                 ? new Dictionary<long, IReadOnlyList<DimensionMemberAttributeValue>>()
-                : (await ledger.Dimensions.MemberAttributesAsync(dimensionId, page.Select(m => m.MemberId).ToList(), MaxAttributeValues, ct).ConfigureAwait(false))
+                : (await dimensions.MemberAttributesAsync(dimensionId, page.Select(m => m.MemberId).ToList(), MaxAttributeValues, ct).ConfigureAwait(false))
                     .ToDictionary(m => m.MemberId, m => m.Attributes);
             foreach (var member in page)
             {
@@ -219,7 +219,7 @@ public static class DimensionExport
     }
 
     private static async Task<long> KeysAsync(
-        ILedger ledger, int dimensionId, IReadOnlyList<DimensionAttributeSpec> declared, DimensionExportFormat format, TextWriter writer, string ending,
+        DimensionStore dimensions, int dimensionId, IReadOnlyList<DimensionAttributeSpec> declared, DimensionExportFormat format, TextWriter writer, string ending,
         CancellationToken ct)
     {
         var attributes = declared.Select(a => a.Name).ToList();
@@ -233,7 +233,7 @@ public static class DimensionExport
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var page = await ledger.Dimensions.ListValuesAsync(
+            var page = await dimensions.ListValuesAsync(
                 dimensionId, new DimensionValueQuery(null, null, false, false, after, DimensionStore.MaxPage), ct).ConfigureAwait(false);
             foreach (var value in page)
             {
@@ -295,9 +295,9 @@ public static class DimensionExport
 
     /// <summary>The dimension's table, row by row as the database holds it, so the file and the table are the same rows.</summary>
     private static async Task<long> TableAsync(
-        ILedger ledger, DimensionState dimension, DimensionExportFormat format, TextWriter writer, string ending, CancellationToken ct)
+        DimensionStore dimensions, DimensionState dimension, DimensionExportFormat format, TextWriter writer, string ending, CancellationToken ct)
     {
-        var shape = await DimensionTable.ShapeAsync(ledger, dimension, ct).ConfigureAwait(false);
+        var shape = await DimensionTable.ShapeAsync(dimensions, dimension, ct).ConfigureAwait(false);
         var names = shape.Attributes;
         var partition = dimension.Partition ?? string.Empty;
         if (format == DimensionExportFormat.Csv)
@@ -306,7 +306,7 @@ public static class DimensionExport
         }
 
         long rows = 0;
-        await foreach (var row in DimensionTable.StreamAsync(ledger, dimension, ct).ConfigureAwait(false))
+        await foreach (var row in DimensionTable.StreamAsync(dimensions, dimension, ct).ConfigureAwait(false))
         {
             var line = format == DimensionExportFormat.Csv
                 ? Csv([Number(row.Id), partition, Number(row.KeyId), row.Key, row.Value, .. row.Attributes, Number(row.Records), row.Filter, Instant(row.InsertedUtc), Instant(row.UpdatedUtc)])

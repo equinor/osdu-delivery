@@ -16,6 +16,7 @@ related:
   - delivery-table-search-term
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Repositories.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Repositories.cs
   - osdu/src/SqlFlow.Delivery/SearchTerms/SearchTermDirectory.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliverySearchTermCatalog.cs

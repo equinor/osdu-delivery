@@ -501,7 +501,7 @@ public sealed class RemovalRunner
     /// compares anything: a key that cannot be read would make its record look removed, or hide a removal.
     /// </summary>
     private async Task<(long Rows, long Keys)> StageAsync(
-        ILedger ledger, FlowDefinition delivery, long run, RemovalKeySource source, byte side, IReadOnlyList<ResolvedKeyColumn> columns, string system, CancellationToken ct)
+        ILedgerRemovals ledger, FlowDefinition delivery, long run, RemovalKeySource source, byte side, IReadOnlyList<ResolvedKeyColumn> columns, string system, CancellationToken ct)
     {
         var removedSide = side == SourceRemovals.RemovedSide;
         var conversion = new RemovalKeyConversion
@@ -532,7 +532,7 @@ public sealed class RemovalRunner
     }
 
     private static async Task<long> FlushAsync(
-        ILedger ledger, FlowDefinition delivery, long run, RemovalKeySource source, byte side, IReadOnlyList<ResolvedKeyColumn> columns, RemovalKeyConversion conversion,
+        ILedgerRemovals ledger, FlowDefinition delivery, long run, RemovalKeySource source, byte side, IReadOnlyList<ResolvedKeyColumn> columns, RemovalKeyConversion conversion,
         string system, IReadOnlyList<RawRemovalKey> batch, CancellationToken ct)
     {
         var converted = await ledger.ConvertRemovalKeysAsync(conversion, batch, ct).ConfigureAwait(false);
@@ -607,7 +607,7 @@ public sealed class RemovalRunner
     /// reads as removed keys and keeps in step. Returns the keys staged and how many of them are marked.
     /// </summary>
     private static async Task<(long Keys, long Marked)> StageIngestionAsync(
-        ILedger ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, string system, CancellationToken ct)
+        ILedgerRemovals ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, string system, CancellationToken ct)
     {
         long keys = 0;
         long marked = 0;
@@ -656,7 +656,7 @@ public sealed class RemovalRunner
     /// Returns how many rows were marked and unmarked.
     /// </summary>
     private static async Task<(long Marked, long Unmarked)> MarkAsync(
-        ILedger ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, DateTime? sourceRead, CancellationToken ct)
+        ILedgerRemovals ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, DateTime? sourceRead, CancellationToken ct)
     {
         long marked = 0;
         long unmarked = 0;
@@ -684,7 +684,7 @@ public sealed class RemovalRunner
         return (marked, unmarked);
     }
 
-    private async Task CloseAsync(ILedger ledger, FlowDefinition delivery, long run, RemovalTally tally, string status, string? why, long? activity, CancellationToken ct)
+    private async Task CloseAsync(ILedgerRemovals ledger, FlowDefinition delivery, long run, RemovalTally tally, string status, string? why, long? activity, CancellationToken ct)
     {
         try
         {

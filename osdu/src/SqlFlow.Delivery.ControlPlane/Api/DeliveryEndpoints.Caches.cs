@@ -607,7 +607,7 @@ public static partial class DeliveryEndpoints
     /// partition's cache.
     /// </summary>
     private static async Task<Ok<PagedResult<DeliveryUpdateTagDto>>> ListUpdateTagsAsync(
-        string? status, string? scope, int? page, int? pageSize, CatalogDbContext db, OsduDbContext osdu, ILedger ledger, CancellationToken ct)
+        string? status, string? scope, int? page, int? pageSize, CatalogDbContext db, OsduDbContext osdu, ILedgerCacheSets ledger, CancellationToken ct)
     {
         var (p, size) = PageRequest.Normalize(page, pageSize);
         var tags = await ledger.ListTagsAsync(status, size, (p - 1) * size, scope, ct).ConfigureAwait(false);
@@ -622,7 +622,7 @@ public static partial class DeliveryEndpoints
     /// refresh that brings it. <c>type</c> narrows to one cached type; <c>empty</c> adds the paths read that held nothing.
     /// </summary>
     private static async Task<Results<Ok<PagedResult<DeliveryCacheGapDto>>, ProblemHttpResult>> ListCacheGapsAsync(
-        string? scope, string? type, bool? empty, int? page, int? pageSize, ILedger ledger, CancellationToken ct)
+        string? scope, string? type, bool? empty, int? page, int? pageSize, ILedgerCacheSets ledger, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(scope))
         {
@@ -638,7 +638,7 @@ public static partial class DeliveryEndpoints
 
     /// <summary>Approves or rejects tags. Approving releases the records so the next run carries the new document.</summary>
     private static async Task<Results<Ok<DeliveryTagDecisionResult>, ProblemHttpResult>> DecideUpdateTagsAsync(
-        DeliveryTagDecisionRequest request, ILedger ledger, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryTagDecisionRequest request, ILedgerCacheSets ledger, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
     {
         if (request is null || request.TagIds.Count == 0)
         {

@@ -120,7 +120,7 @@ internal static class PreviewKeys
     }
 
     /// <summary>The record of the flow delivered to exactly <paramref name="targetId"/>, when the ledger holds one.</summary>
-    private static async Task<RecordState?> ByTargetIdAsync(FlowDefinition flow, ILedger ledger, string targetId, CancellationToken ct)
+    private static async Task<RecordState?> ByTargetIdAsync(FlowDefinition flow, ILedgerQueries ledger, string targetId, CancellationToken ct)
     {
         try
         {

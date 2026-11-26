@@ -23,7 +23,7 @@ public sealed record ReversalAvailability(bool Reversible, bool Resumes, string?
     /// reverse run of the source the platform has queued or is running, which the caller knows and the ledger does not; the
     /// reverse run asking about its own source passes none.
     /// </summary>
-    public static async Task<ReversalAvailability> ReadAsync(ILedger ledger, Guid flowId, ReversalSource source, Guid? activeRun, CancellationToken ct)
+    public static async Task<ReversalAvailability> ReadAsync(ILedgerReversals ledger, Guid flowId, ReversalSource source, Guid? activeRun, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(source);

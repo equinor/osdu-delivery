@@ -77,7 +77,7 @@ internal static class DeliveryRecordVerbs
     }
 
     /// <summary>The interface's records, newest first, with what each is waiting on or was refused for.</summary>
-    private static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, Guid flowId, string label, CancellationToken ct)
+    private static async Task<int> ListAsync(CliVerbContext context, ILedgerQueries ledger, Guid flowId, string label, CancellationToken ct)
     {
         var query = Filter(context) with { Max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max") };
         var records = await ledger.ListAsync(flowId, query, ct).ConfigureAwait(false);
@@ -316,7 +316,7 @@ internal static class DeliveryRecordVerbs
     /// failed, when they last changed, the pattern its records' errors share, and an example record with its own error.
     /// With <c>--issue</c>, that one issue, the files its records came from and samples spread across it.
     /// </summary>
-    private static async Task<int> IssuesAsync(CliVerbContext context, ILedger ledger, Guid flowId, string label, CancellationToken ct)
+    private static async Task<int> IssuesAsync(CliVerbContext context, ILedgerQueries ledger, Guid flowId, string label, CancellationToken ct)
     {
         if (Issue(context.Arguments.GetOption("--issue")) is { } named)
         {

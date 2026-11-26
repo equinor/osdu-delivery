@@ -189,14 +189,14 @@ public sealed class AssertionRunner
                 var result = Skipped(test, test.RunsIn(partition)
                     ? AssertionActivity.Disabled(test)!
                     : $"The test runs in {PartitionNames.Listed(test.Partitions)}, not in '{partition}'.");
-                await RecordAsync(ledger, run, entry.FlowId, result, ct).ConfigureAwait(false);
+                await RecordAsync(ledger.Assertions, run, entry.FlowId, result, ct).ConfigureAwait(false);
                 results.Add(result);
             }
 
             foreach (var test in flagged)
             {
                 var result = NeedsNewProofValues(test, now);
-                await RecordAsync(ledger, run, entry.FlowId, result, ct).ConfigureAwait(false);
+                await RecordAsync(ledger.Assertions, run, entry.FlowId, result, ct).ConfigureAwait(false);
                 results.Add(result);
             }
 
@@ -210,12 +210,12 @@ public sealed class AssertionRunner
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await CloseAsync(ledger, run.AssertionRunId, AssertionRunStatus.Cancelled, Counts(results, selected.Count), "the run was cancelled").ConfigureAwait(false);
+            await CloseAsync(ledger.Assertions, run.AssertionRunId, AssertionRunStatus.Cancelled, Counts(results, selected.Count), "the run was cancelled").ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
         {
-            await CloseAsync(ledger, run.AssertionRunId, AssertionRunStatus.Errored, Counts(results, selected.Count), SecretHygiene.RedactedMessage(ex)).ConfigureAwait(false);
+            await CloseAsync(ledger.Assertions, run.AssertionRunId, AssertionRunStatus.Errored, Counts(results, selected.Count), SecretHygiene.RedactedMessage(ex)).ConfigureAwait(false);
             throw;
         }
 
@@ -233,8 +233,8 @@ public sealed class AssertionRunner
 
         // A report its tests did not pass says why on its row: how many failed (on the severity that fails a test) or errored,
         // and which, beside the rest. It records every test it selected, which is what tells it from a run that stopped.
-        await CloseAsync(ledger, run.AssertionRunId, status, counts, status == AssertionRunStatus.Passed ? null : outcome.Tally()).ConfigureAwait(false);
-        await PruneAsync(ledger, entry.FlowId, partition).ConfigureAwait(false);
+        await CloseAsync(ledger.Assertions, run.AssertionRunId, status, counts, status == AssertionRunStatus.Passed ? null : outcome.Tally()).ConfigureAwait(false);
+        await PruneAsync(ledger.Assertions, entry.FlowId, partition).ConfigureAwait(false);
         return outcome;
     }
 
@@ -243,14 +243,14 @@ public sealed class AssertionRunner
     /// result of a test as the document states it now; every other run of the flow in the partition goes. A cleanup that
     /// fails is logged and leaves the runs to the next run's; the report this run kept is complete either way.
     /// </summary>
-    private async Task PruneAsync(ILedger ledger, Guid flowId, string partition)
+    private async Task PruneAsync(AssertionStore assertions, Guid flowId, string partition)
     {
         var current = _flow.Tests
             .Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null)
             .ToDictionary(t => t.Name, t => t.DefinitionHash, StringComparer.OrdinalIgnoreCase);
         try
         {
-            var removed = await ledger.Assertions.PruneReplacedRunsAsync(flowId, current, CancellationToken.None).ConfigureAwait(false);
+            var removed = await assertions.PruneReplacedRunsAsync(flowId, current, CancellationToken.None).ConfigureAwait(false);
             if (removed > 0)
             {
                 _log.LogInformation(
@@ -299,7 +299,7 @@ public sealed class AssertionRunner
                 if (fits[test.Name].Problems.Count == 0 && settling.Why(test) is { } unsettled)
                 {
                     var skippedNow = Skipped(test, unsettled);
-                    await RecordAsync(ledger, run, flowId, skippedNow, token).ConfigureAwait(false);
+                    await RecordAsync(ledger.Assertions, run, flowId, skippedNow, token).ConfigureAwait(false);
                     Log(skippedNow);
                     lock (gate)
                     {
@@ -341,7 +341,7 @@ public sealed class AssertionRunner
                     Logger = _log,
                 };
                 var result = await TestEvaluator.EvaluateAsync(scope, fits[test.Name], _context.Time, token).ConfigureAwait(false);
-                await RecordAsync(ledger, run, flowId, result, token).ConfigureAwait(false);
+                await RecordAsync(ledger.Assertions, run, flowId, result, token).ConfigureAwait(false);
                 Log(result);
                 lock (gate)
                 {
@@ -458,9 +458,9 @@ public sealed class AssertionRunner
     private Dictionary<string, string> Values(string partition)
         => new(_values, StringComparer.Ordinal) { [PartitionNames.RunValue] = partition };
 
-    private static async Task RecordAsync(ILedger ledger, AssertionRunState run, Guid flowId, TestResult result, CancellationToken ct)
+    private static async Task RecordAsync(AssertionStore assertions, AssertionRunState run, Guid flowId, TestResult result, CancellationToken ct)
     {
-        await ledger.Assertions.RecordResultAsync(
+        await assertions.RecordResultAsync(
             new AssertionResultState
             {
                 AssertionRunId = run.AssertionRunId,
@@ -484,11 +484,11 @@ public sealed class AssertionRunner
             ct).ConfigureAwait(false);
     }
 
-    private async Task CloseAsync(ILedger ledger, long assertionRunId, string status, AssertionCounts counts, string? error)
+    private async Task CloseAsync(AssertionStore assertions, long assertionRunId, string status, AssertionCounts counts, string? error)
     {
         try
         {
-            await ledger.Assertions.CompleteRunAsync(assertionRunId, status, counts, error, Now, CancellationToken.None).ConfigureAwait(false);
+            await assertions.CompleteRunAsync(assertionRunId, status, counts, error, Now, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is SqlFlowException or InvalidOperationException || ex.GetType().Name.Contains("DbUpdate", StringComparison.Ordinal))
         {

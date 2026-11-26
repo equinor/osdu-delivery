@@ -132,7 +132,7 @@ public static partial class DeliveryEndpoints
     /// The partition the ledgers of <paramref name="flows"/> are kept under, for flows whose partition is their data-partition-id
     /// header, as the ledger's directory holds it; null for flows bound to a partition, and while none of them has run.
     /// </summary>
-    private static async Task<string?> HeaderPartitionAsync(ILedger ledger, IEnumerable<FlowDefinition> flows, CancellationToken ct)
+    private static async Task<string?> HeaderPartitionAsync(ILedgerRegistry ledger, IEnumerable<FlowDefinition> flows, CancellationToken ct)
     {
         foreach (var flow in flows)
         {

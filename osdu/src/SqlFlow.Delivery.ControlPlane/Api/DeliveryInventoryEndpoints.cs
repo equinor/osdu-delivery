@@ -264,7 +264,7 @@ public static partial class DeliveryInventoryEndpoints
         string partition, int inventoryId, DeliveryInventoryRepairRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents,
         EngineContext engine, DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
     {
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(ledger.Inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
@@ -487,10 +487,10 @@ public static partial class DeliveryInventoryEndpoints
     /// every id again before it goes.
     /// </summary>
     private static async Task<Results<Accepted<DeliveryInventoryRemovalAccepted>, ProblemHttpResult>> RemoveAsync(
-        string partition, int inventoryId, DeliveryInventoryRemovalRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        string partition, int inventoryId, DeliveryInventoryRemovalRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, InventoryStore inventories,
         IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
@@ -543,7 +543,7 @@ public static partial class DeliveryInventoryEndpoints
 
         if (request.Selection is { } selectionId)
         {
-            var (selection, missing) = await SelectionAsync(ledger, inventory, selectionId, ct).ConfigureAwait(false);
+            var (selection, missing) = await SelectionAsync(inventories, inventory, selectionId, ct).ConfigureAwait(false);
             if (selection is null)
             {
                 return missing!;
@@ -562,7 +562,7 @@ public static partial class DeliveryInventoryEndpoints
                     : $"Inventory '{inventory.Name}' was built again since selection {selectionId} was matched: match its conditions again, and remove what the new match holds. Nothing was queued.");
             }
 
-            var selected = (await ledger.Inventories.SelectionCountsAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)).Of(finding);
+            var selected = (await inventories.SelectionCountsAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)).Of(finding);
             if (selected != expected)
             {
                 return Problem(StatusCodes.Status409Conflict, "Count changed",
@@ -571,7 +571,7 @@ public static partial class DeliveryInventoryEndpoints
         }
         else if (ids.Count == 0)
         {
-            var holds = (await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(finding);
+            var holds = (await inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false)).Of(finding);
             if (holds != expected)
             {
                 return Problem(StatusCodes.Status409Conflict, "Count changed",
@@ -583,7 +583,7 @@ public static partial class DeliveryInventoryEndpoints
             // A gone id is one OSDU no longer serves, so it is picked as gone whether the inventory ever listed it or not; any
             // other is picked only while OSDU serves it.
             var gone = finding == InventoryFindings.Gone;
-            var held = await ledger.Inventories.RecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false);
+            var held = await inventories.RecordsOfAsync(inventory.Partition, inventory.InventoryId, ids, ct).ConfigureAwait(false);
             var removable = held.Where(r => r.Finding == finding && (gone || r.GoneUtc is null)).Select(r => r.TargetId).ToHashSet(StringComparer.Ordinal);
             var not = ids.Where(i => !removable.Contains(i)).ToList();
             if (not.Count > 0)
@@ -670,34 +670,34 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>An inventory's removals and restores, the newest first.</summary>
     private static async Task<Results<JsonHttpResult<IReadOnlyList<DeliveryInventoryRemovalDto>>, ProblemHttpResult>> ListRemovalsAsync(
-        string partition, int inventoryId, int? limit, ILedger ledger, CancellationToken ct)
+        string partition, int inventoryId, int? limit, InventoryStore inventories, CancellationToken ct)
     {
         if (limit is < 1 or > MaxRuns)
         {
             return Problem(StatusCodes.Status400BadRequest, "Invalid limit", $"limit is how many removals to list: 1 to {MaxRuns}.");
         }
 
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
         }
 
-        var removals = await ledger.Inventories.ListRemovalsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
-        var selections = await SelectionsOfAsync(ledger, inventory.Partition, removals, ct).ConfigureAwait(false);
+        var removals = await inventories.ListRemovalsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
+        var selections = await SelectionsOfAsync(inventories, inventory.Partition, removals, ct).ConfigureAwait(false);
         return TypedResults.Json<IReadOnlyList<DeliveryInventoryRemovalDto>>(removals.Select(r => ToDto(r, selections)).ToList(), Json);
     }
 
     /// <summary>The selections the removals took their ids from, by number, each read once.</summary>
     private static async Task<Dictionary<long, DeliveryInventorySelectionSummaryDto>> SelectionsOfAsync(
-        ILedger ledger, string partition, IReadOnlyList<InventoryRemovalState> removals, CancellationToken ct)
+        InventoryStore inventories, string partition, IReadOnlyList<InventoryRemovalState> removals, CancellationToken ct)
     {
         var selections = new Dictionary<long, DeliveryInventorySelectionSummaryDto>();
         foreach (var selectionId in removals.Select(r => r.SelectionId).OfType<long>().Distinct())
         {
-            if (await ledger.Inventories.GetSelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { } selection)
+            if (await inventories.GetSelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { } selection)
             {
-                selections[selectionId] = Summary(selection, await DuplicateKeyOfAsync(ledger, partition, selection, ct).ConfigureAwait(false));
+                selections[selectionId] = Summary(selection, await DuplicateKeyOfAsync(inventories, partition, selection, ct).ConfigureAwait(false));
             }
         }
 
@@ -706,26 +706,26 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>One removal by its partition and number.</summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryRemovalDto>, ProblemHttpResult>> GetRemovalAsync(
-        string partition, long removalId, ILedger ledger, CancellationToken ct)
+        string partition, long removalId, InventoryStore inventories, CancellationToken ct)
     {
         if (PartitionProblem(partition) is { } bad)
         {
             return bad;
         }
 
-        var removal = await ledger.Inventories.GetRemovalAsync(partition.Trim(), removalId, ct).ConfigureAwait(false);
+        var removal = await inventories.GetRemovalAsync(partition.Trim(), removalId, ct).ConfigureAwait(false);
         if (removal is null)
         {
             return Problem(StatusCodes.Status404NotFound, "Not found", $"No inventory removal {removalId} in partition '{partition.Trim()}'.");
         }
 
-        var selections = await SelectionsOfAsync(ledger, partition.Trim(), [removal], ct).ConfigureAwait(false);
+        var selections = await SelectionsOfAsync(inventories, partition.Trim(), [removal], ct).ConfigureAwait(false);
         return TypedResults.Json(ToDto(removal, selections), Json);
     }
 
     /// <summary>A page of what a removal did to its ids, of one outcome (<c>outcome</c>) or every one, after the id <c>after</c> names.</summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryRemovalItemPageDto>, ProblemHttpResult>> ListRemovalItemsAsync(
-        string partition, long removalId, string? outcome, long? after, int? limit, ILedger ledger, CancellationToken ct)
+        string partition, long removalId, string? outcome, long? after, int? limit, InventoryStore inventories, CancellationToken ct)
     {
         if (PartitionProblem(partition) is { } bad)
         {
@@ -749,7 +749,7 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         var take = limit ?? DefaultPage;
-        var read = await ledger.Inventories.ListRemovalItemsAsync(partition.Trim(), removalId, chosen, after, take + 1, ct).ConfigureAwait(false);
+        var read = await inventories.ListRemovalItemsAsync(partition.Trim(), removalId, chosen, after, take + 1, ct).ConfigureAwait(false);
         var page = read.Count > take ? read.Take(take).ToList() : read;
         return TypedResults.Json(
             new DeliveryInventoryRemovalItemPageDto(page.Select(ToDto).ToList(), read.Count > take ? page[^1].InventoryRemovalItemId : null),
@@ -758,7 +758,7 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>The inventories of the partition the request reads (its own, else the workbench's), or of every partition.</summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryListDto>, ProblemHttpResult>> ListAsync(
-        string? partition, HttpRequest request, ILedger ledger, CancellationToken ct)
+        string? partition, HttpRequest request, InventoryStore store, CancellationToken ct)
     {
         var named = WorkbenchPartition.Named(partition, request);
         if (named is not null && PartitionProblem(named) is { } bad)
@@ -766,11 +766,11 @@ public static partial class DeliveryInventoryEndpoints
             return bad;
         }
 
-        var inventories = await ledger.Inventories.ListAsync(named, ct).ConfigureAwait(false);
+        var inventories = await store.ListAsync(named, ct).ConfigureAwait(false);
         var listed = new List<DeliveryInventoryDto>(inventories.Count);
         foreach (var inventory in inventories)
         {
-            listed.Add(await SummaryAsync(ledger, inventory, ct).ConfigureAwait(false));
+            listed.Add(await SummaryAsync(store, inventory, ct).ConfigureAwait(false));
         }
 
         return TypedResults.Json(new DeliveryInventoryListDto(named, listed), Json);
@@ -778,16 +778,16 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>One inventory with its counts by finding read from its rows, its owners, its last runs and the flow declaring it.</summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryDetailDto>, ProblemHttpResult>> GetAsync(
-        string partition, int inventoryId, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        string partition, int inventoryId, CatalogDbContext db, DeliveryDocumentLoader documents, InventoryStore inventories, CancellationToken ct)
     {
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
         }
 
-        var runs = await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false);
-        var counts = await ledger.Inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
+        var runs = await InventoryReport.RecentRunsAsync(inventories, inventory, ct).ConfigureAwait(false);
+        var counts = await inventories.CountsAsync(inventory.Partition, inventory.InventoryId, ct).ConfigureAwait(false);
         var (pipeline, flow, declared) = await DeclaringFlowAsync(db, documents, inventory, ct).ConfigureAwait(false);
         var spec = declared == true ? flow?.Inventory(inventory.Name) : null;
         var owners = InventoryReport.Owners(inventory.OwnersJson, inventory.OwnersSource);
@@ -810,7 +810,7 @@ public static partial class DeliveryInventoryEndpoints
     /// each with the version and values its match read.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryRecordPageDto>, ProblemHttpResult>> ListRecordsAsync(
-        string partition, int inventoryId, string? finding, long? after, int? limit, long? selection, ILedger ledger, CancellationToken ct)
+        string partition, int inventoryId, string? finding, long? after, int? limit, long? selection, ILedgerRegistry ledger, InventoryStore inventories, CancellationToken ct)
     {
         if (FindingProblem(finding) is { } badFinding)
         {
@@ -827,7 +827,7 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Invalid limit", $"limit is how many ids a page holds: 1 to {MaxPage}.");
         }
 
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
@@ -837,13 +837,13 @@ public static partial class DeliveryInventoryEndpoints
         var take = limit ?? DefaultPage;
         if (selection is { } selectionId)
         {
-            var (chosen, missing) = await SelectionAsync(ledger, inventory, selectionId, ct).ConfigureAwait(false);
+            var (chosen, missing) = await SelectionAsync(inventories, inventory, selectionId, ct).ConfigureAwait(false);
             if (chosen is null)
             {
                 return missing!;
             }
 
-            var selected = await ledger.Inventories.ListSelectionRecordsAsync(inventory.Partition, selectionId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
+            var selected = await inventories.ListSelectionRecordsAsync(inventory.Partition, selectionId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
             var shown = selected.Count > take ? selected.Take(take).ToList() : selected;
             var ledgerNames = await LedgerNamesAsync(ledger, shown.Select(s => s.Record).ToList(), ct).ConfigureAwait(false);
             return TypedResults.Json(
@@ -853,7 +853,7 @@ public static partial class DeliveryInventoryEndpoints
                 Json);
         }
 
-        var read = await ledger.Inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
+        var read = await inventories.ListRecordsAsync(inventory.Partition, inventory.InventoryId, Finding(finding), after, take + 1, ct).ConfigureAwait(false);
         var page = read.Count > take ? read.Take(take).ToList() : read;
         var names = await LedgerNamesAsync(ledger, page, ct).ConfigureAwait(false);
         return TypedResults.Json(
@@ -863,20 +863,20 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>An inventory's builds and reconciles, the newest first.</summary>
     private static async Task<Results<JsonHttpResult<IReadOnlyList<DeliveryInventoryRunDto>>, ProblemHttpResult>> ListRunsAsync(
-        string partition, int inventoryId, int? limit, ILedger ledger, CancellationToken ct)
+        string partition, int inventoryId, int? limit, InventoryStore inventories, CancellationToken ct)
     {
         if (limit is < 1 or > MaxRuns)
         {
             return Problem(StatusCodes.Status400BadRequest, "Invalid limit", $"limit is how many runs to list: 1 to {MaxRuns}.");
         }
 
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
         }
 
-        var runs = await ledger.Inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
+        var runs = await inventories.ListRunsAsync(inventory.Partition, inventory.InventoryId, limit ?? DefaultRuns, ct).ConfigureAwait(false);
         return TypedResults.Json<IReadOnlyList<DeliveryInventoryRunDto>>(runs.Select(r => ToDto(r, withFindings: true)).ToList(), Json);
     }
 
@@ -885,7 +885,7 @@ public static partial class DeliveryInventoryEndpoints
     /// expecting it from a ledger, with the id's finding there.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryLookupDto>, ProblemHttpResult>> LookupAsync(
-        string? id, string? partition, HttpRequest request, ILedger ledger, CancellationToken ct)
+        string? id, string? partition, HttpRequest request, ILedgerRegistry ledger, InventoryStore store, CancellationToken ct)
     {
         var named = WorkbenchPartition.Named(partition, request);
         if (named is null)
@@ -909,7 +909,7 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Id too long", $"An OSDU id is at most {MaxIdLength} characters.");
         }
 
-        var records = await ledger.Inventories.LookupRecordsAsync(named, wanted, ct).ConfigureAwait(false);
+        var records = await store.LookupRecordsAsync(named, wanted, ct).ConfigureAwait(false);
         var names = await LedgerNamesAsync(ledger, records, ct).ConfigureAwait(false);
         var inventories = new Dictionary<int, InventoryState?>();
         var hits = new List<DeliveryInventoryHitDto>(records.Count);
@@ -917,7 +917,7 @@ public static partial class DeliveryInventoryEndpoints
         {
             if (!inventories.TryGetValue(record.InventoryId, out var inventory))
             {
-                inventory = await ledger.Inventories.GetAsync(named, record.InventoryId, ct).ConfigureAwait(false);
+                inventory = await store.GetAsync(named, record.InventoryId, ct).ConfigureAwait(false);
                 inventories[record.InventoryId] = inventory;
             }
 
@@ -927,7 +927,7 @@ public static partial class DeliveryInventoryEndpoints
             }
         }
 
-        var removed = await ledger.Inventories.LookupRemovalItemsAsync(named, wanted, ct).ConfigureAwait(false);
+        var removed = await store.LookupRemovalItemsAsync(named, wanted, ct).ConfigureAwait(false);
         return TypedResults.Json(new DeliveryInventoryLookupDto(named, wanted, hits, removed.Select(ToDto).ToList()), Json);
     }
 
@@ -936,14 +936,14 @@ public static partial class DeliveryInventoryEndpoints
     /// <c>selection</c>, the ids that selection holds, each with the version and values its match read.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportAsync(
-        string partition, int inventoryId, string? finding, long? selection, ILedger ledger, CancellationToken ct)
+        string partition, int inventoryId, string? finding, long? selection, ILedgerRegistry ledger, InventoryStore inventories, CancellationToken ct)
     {
         if (FindingProblem(finding) is { } badFinding)
         {
             return badFinding;
         }
 
-        var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
+        var (inventory, problem) = await InventoryAsync(inventories, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
         {
             return problem!;
@@ -954,7 +954,7 @@ public static partial class DeliveryInventoryEndpoints
         var chosen = Finding(finding);
         if (selection is { } selectionId)
         {
-            var (picked, missing) = await SelectionAsync(ledger, inventory, selectionId, ct).ConfigureAwait(false);
+            var (picked, missing) = await SelectionAsync(inventories, inventory, selectionId, ct).ConfigureAwait(false);
             if (picked is null)
             {
                 return missing!;
@@ -962,13 +962,13 @@ public static partial class DeliveryInventoryEndpoints
 
             var columns = ListOf(picked.ColumnsJson);
             return TypedResults.Stream(
-                stream => InventoryExport.WriteSelectionAsync(ledger, inventory, selectionId, columns, chosen, stream, ct),
+                stream => InventoryExport.WriteSelectionAsync(ledger, inventories, inventory, selectionId, columns, chosen, stream, ct),
                 InventoryExport.MediaType,
                 InventoryExport.FileName(inventory, selectionId, chosen));
         }
 
         return TypedResults.Stream(
-            stream => InventoryExport.WriteAsync(ledger, inventory, chosen, stream, ct),
+            stream => InventoryExport.WriteAsync(ledger, inventories, inventory, chosen, stream, ct),
             InventoryExport.MediaType,
             InventoryExport.FileName(inventory, chosen));
     }
@@ -978,7 +978,7 @@ public static partial class DeliveryInventoryEndpoints
     /// read): every inventory it declares, each with what the partition keeps of it, and those it keeps that the flow no longer declares.
     /// </summary>
     private static async Task<Results<JsonHttpResult<DeliveryInventoryFlowDto>, ProblemHttpResult>> GetFlowAsync(
-        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedgerRegistry ledger, InventoryStore inventories,
         IPartitionRegistry registry, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
@@ -1024,11 +1024,11 @@ public static partial class DeliveryInventoryEndpoints
                 Json);
         }
 
-        var held = (await ledger.Inventories.ListAsync(kept, ct).ConfigureAwait(false)).Where(i => i.FlowId == bound.LedgerId).ToList();
+        var held = (await inventories.ListAsync(kept, ct).ConfigureAwait(false)).Where(i => i.FlowId == bound.LedgerId).ToList();
         var summaries = new Dictionary<int, DeliveryInventoryDto>();
         foreach (var inventory in held)
         {
-            summaries[inventory.InventoryId] = await SummaryAsync(ledger, inventory, ct).ConfigureAwait(false);
+            summaries[inventory.InventoryId] = await SummaryAsync(inventories, inventory, ct).ConfigureAwait(false);
         }
 
         var entries = Declared(bound, held.Select(i => (State: i, Summary: summaries[i.InventoryId])).ToList());
@@ -1063,7 +1063,7 @@ public static partial class DeliveryInventoryEndpoints
     /// not built yet, or none is asked for). Null with the reason otherwise.
     /// </summary>
     private static async Task<(InventoryFlowDefinition? Flow, string? Partition, string? Why)> SettleAsync(
-        InventoryFlowDefinition flow, string? partition, ILedger ledger, RegisteredPartitions registered, CancellationToken ct)
+        InventoryFlowDefinition flow, string? partition, ILedgerRegistry ledger, RegisteredPartitions registered, CancellationToken ct)
     {
         if (!flow.Partitioned)
         {
@@ -1119,25 +1119,25 @@ public static partial class DeliveryInventoryEndpoints
     }
 
     /// <summary>The inventory a route names in its partition, or the problem to answer with.</summary>
-    private static async Task<(InventoryState? Inventory, ProblemHttpResult? Problem)> InventoryAsync(ILedger ledger, string partition, int inventoryId, CancellationToken ct)
+    private static async Task<(InventoryState? Inventory, ProblemHttpResult? Problem)> InventoryAsync(InventoryStore inventories, string partition, int inventoryId, CancellationToken ct)
     {
         if (PartitionProblem(partition) is { } bad)
         {
             return (null, bad);
         }
 
-        var inventory = await ledger.Inventories.GetAsync(partition.Trim(), inventoryId, ct).ConfigureAwait(false);
+        var inventory = await inventories.GetAsync(partition.Trim(), inventoryId, ct).ConfigureAwait(false);
         return inventory is null
             ? (null, Problem(StatusCodes.Status404NotFound, "Not found", $"No inventory {inventoryId} in partition '{partition.Trim()}'."))
             : (inventory, null);
     }
 
     /// <summary>An inventory as listings show it, with its newest run and the counts its last reconcile wrote.</summary>
-    private static async Task<DeliveryInventoryDto> SummaryAsync(ILedger ledger, InventoryState inventory, CancellationToken ct)
-        => ToDto(inventory, await InventoryReport.RecentRunsAsync(ledger.Inventories, inventory, ct).ConfigureAwait(false));
+    private static async Task<DeliveryInventoryDto> SummaryAsync(InventoryStore inventories, InventoryState inventory, CancellationToken ct)
+        => ToDto(inventory, await InventoryReport.RecentRunsAsync(inventories, inventory, ct).ConfigureAwait(false));
 
     /// <summary>The names of the ledgers the records name, read once each.</summary>
-    private static async Task<Dictionary<Guid, string>> LedgerNamesAsync(ILedger ledger, IReadOnlyList<InventoryRecordState> records, CancellationToken ct)
+    private static async Task<Dictionary<Guid, string>> LedgerNamesAsync(ILedgerRegistry ledger, IReadOnlyList<InventoryRecordState> records, CancellationToken ct)
     {
         var names = new Dictionary<Guid, string>();
         foreach (var flowId in records.Select(r => r.LedgerFlowId).OfType<Guid>().Distinct())

@@ -19,6 +19,7 @@ related:
   - delivery-table-cache-definition
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
+  - osdu/src/SqlFlow.Delivery.Data/DeliveryModel.Caches.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.Caches.cs
   - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs
   - osdu/src/SqlFlow.Delivery/Catalog/CacheVersions.cs

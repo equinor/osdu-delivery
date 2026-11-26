@@ -28,8 +28,10 @@ const osduPort = Number(process.env.SQLFLOW_E2E_OSDU_PORT ?? 5301);
 
 // The suite's one database: SQLFlow's catalog, the module's osdu schema and the chain's source and ingestion tables.
 // Every local run uses this same database and brings it forward: the host migrates it, and the seed waits for this
-// run's fixture commit and replaces what an earlier run left. Never point a run at a new name to get a fresh estate:
-// every such name stays on the server. If an estate ever cannot be brought forward, drop OsduDeliveryE2E and run again.
+// run's fixture commit and replaces what an earlier run left. The full tier (tools/test.sh --full) drops it first when
+// nothing is connected to it, so that run starts fresh, as CI's does. Never point a run at a new name to get a fresh
+// estate: every such name stays on the server. If an estate ever cannot be brought forward, drop OsduDeliveryE2E and
+// run again.
 // SQLFLOW_E2E_CATALOG_DB names the database on another server, a SQL login included (CI runs the suite that way).
 const catalogDb = process.env.SQLFLOW_E2E_CATALOG_DB
   ?? "Server=localhost;Database=OsduDeliveryE2E;Trusted_Connection=True;TrustServerCertificate=True";

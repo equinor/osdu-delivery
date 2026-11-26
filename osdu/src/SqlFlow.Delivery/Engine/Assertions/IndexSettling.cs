@@ -26,7 +26,7 @@ public sealed class IndexSettling
     /// Reads, for each settle window <paramref name="tests"/> give the index (a window of 0 asks for nothing), what the delivery
     /// ledgers of <paramref name="partition"/> changed in OSDU within it before <paramref name="nowUtc"/>.
     /// </summary>
-    public static async Task<IndexSettling> ReadAsync(ILedger ledger, string partition, IEnumerable<AssertionTest> tests, DateTime nowUtc, CancellationToken ct)
+    public static async Task<IndexSettling> ReadAsync(ILedgerRemovals ledger, string partition, IEnumerable<AssertionTest> tests, DateTime nowUtc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentException.ThrowIfNullOrWhiteSpace(partition);

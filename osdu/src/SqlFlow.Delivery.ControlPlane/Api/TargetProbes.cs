@@ -184,7 +184,7 @@ internal static partial class TargetProbes
     /// audit trail's outcome is what an operator acts on, so a target that would not answer reads failed there (a probe
     /// stopped before it answered, cancelled); the metric's outcome tag keeps the cases apart.
     /// </summary>
-    public static async Task SettleAsync(ILedger ledger, OpenProbe probe, string actor, string outcome, string summary, TimeProvider clock, ILogger log)
+    public static async Task SettleAsync(ILedgerActivities ledger, OpenProbe probe, string actor, string outcome, string summary, TimeProvider clock, ILogger log)
     {
         ArgumentNullException.ThrowIfNull(probe);
         ArgumentNullException.ThrowIfNull(log);
@@ -213,7 +213,7 @@ internal static partial class TargetProbes
     /// more. A younger one may still be running, here or on another replica, and is left to finish. Returns how many it
     /// closed.
     /// </summary>
-    public static async Task<int> CloseUnfinishedAsync(ILedger ledger, Guid? flowId, TimeProvider clock, ILogger log, CancellationToken ct)
+    public static async Task<int> CloseUnfinishedAsync(ILedgerActivities ledger, Guid? flowId, TimeProvider clock, ILogger log, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(clock);
@@ -269,7 +269,7 @@ internal static partial class TargetProbes
     /// Closes a probe's activity whatever stopped the caller: the write is the probe's last, so it is not cancelled with the
     /// request. An activity that went in the meantime (a prune, a restored database) is reported, not thrown.
     /// </summary>
-    private static async Task CloseAsync(ILedger ledger, OpenProbe probe, string recorded, string summary, TimeProvider clock, ILogger log)
+    private static async Task CloseAsync(ILedgerActivities ledger, OpenProbe probe, string recorded, string summary, TimeProvider clock, ILogger log)
     {
         try
         {

@@ -96,7 +96,7 @@ public sealed partial class InventoryDuplicateSweepService : BackgroundService
         await using var scope = _services.CreateAsyncScope();
         var osdu = scope.ServiceProvider.GetRequiredService<OsduDbContext>();
         var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        var ledger = scope.ServiceProvider.GetRequiredService<ILedger>();
+        var inventories = scope.ServiceProvider.GetRequiredService<InventoryStore>();
         var partitions = await (from c in osdu.DeliveryInventoryDuplicateChecks.AsNoTracking()
                                 join p in osdu.DeliveryLedgerPartitions.AsNoTracking() on c.PartitionId equals p.PartitionId
                                 select new { p.PartitionId, p.Name })
@@ -114,19 +114,19 @@ public sealed partial class InventoryDuplicateSweepService : BackgroundService
                 .ToListAsync(ct).ConfigureAwait(false);
             foreach (var checkId in underWay)
             {
-                if (await ledger.Inventories.GetDuplicateCheckAsync(partition.Name, checkId, ct).ConfigureAwait(false) is not { } check)
+                if (await inventories.GetDuplicateCheckAsync(partition.Name, checkId, ct).ConfigureAwait(false) is not { } check)
                 {
                     continue;
                 }
 
-                var after = await DeliveryInventoryEndpoints.SettleCheckAsync(catalog, ledger, partition.Name, check, _clock, ct).ConfigureAwait(false);
+                var after = await DeliveryInventoryEndpoints.SettleCheckAsync(catalog, inventories, partition.Name, check, _clock, ct).ConfigureAwait(false);
                 if (!InventoryDuplicates.IsUnderWay(after.Status))
                 {
                     settled++;
                 }
             }
 
-            var swept = await ledger.Inventories.SweepDuplicateChecksAsync(partition.Name, _clock.GetUtcNow().UtcDateTime - InventoryDuplicates.KeptFor, ct)
+            var swept = await inventories.SweepDuplicateChecksAsync(partition.Name, _clock.GetUtcNow().UtcDateTime - InventoryDuplicates.KeptFor, ct)
                 .ConfigureAwait(false);
             deleted += swept.Deleted;
             expired += swept.Expired;

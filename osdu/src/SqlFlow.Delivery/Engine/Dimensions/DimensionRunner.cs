@@ -314,7 +314,7 @@ public sealed partial class DimensionRunner
 
         // Where the flow keeps its tables and views (osdu/docs/reference/flow/dimension-target.md), settled before anything is
         // built: a target this host cannot reach stops the build here, and one naming the module's database is the module's.
-        _tableTarget = await ResolveTargetAsync(ledger, ct).ConfigureAwait(false);
+        _tableTarget = await ResolveTargetAsync(ledger.Dimensions, ct).ConfigureAwait(false);
 
         var skipped = selected.Where(d => !d.BuildsIn(partition)).ToList();
         var building = selected.Where(d => d.BuildsIn(partition)).ToList();
@@ -334,7 +334,7 @@ public sealed partial class DimensionRunner
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
         var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging, RequestsAtOnce);
         using var templates = new TemplateCache(_context.DocumentTemplates, _flow.SourcePath);
-        var scope = new BuildScope(ledger, search, templates, partition, load, runId, actor);
+        var scope = new BuildScope(ledger.Dimensions, search, templates, partition, load, runId, actor);
         var summaries = (spread.IsPart ? null : await SpreadAsync(scope, building, spread, http, ct).ConfigureAwait(false))
             ?? await BuildHereAsync(scope, building, ct).ConfigureAwait(false);
 
@@ -350,7 +350,7 @@ public sealed partial class DimensionRunner
 
         // The flow's views are written after its dimensions, whichever the run built and even when one failed (its table
         // holds its last build), and those it no longer declares are dropped. A part leaves them to the run that split the build.
-        var views = spread.IsPart ? DimensionViewsWritten.None : await WriteViewsAsync(ledger, partition, runId, actor, ct).ConfigureAwait(false);
+        var views = spread.IsPart ? DimensionViewsWritten.None : await WriteViewsAsync(ledger.Dimensions, partition, runId, actor, ct).ConfigureAwait(false);
         var outcome = new DimensionBuildOutcome(
             DeliveryOperations.Build, _flow.Name, partition,
             ordered.Count(s => s.Status == DimensionRunStatus.Completed), ordered.Count(s => s.Status == DimensionRunStatus.Failed), skipped.Count, ordered)
@@ -375,7 +375,7 @@ public sealed partial class DimensionRunner
             async (dimension, token) =>
             {
                 var summary = await BuildOneAsync(
-                    scope.Ledger, scope.Search, scope.Templates, dimension, scope.Partition, scope.Load, scope.RunId, scope.Actor, token).ConfigureAwait(false);
+                    scope.Dimensions, scope.Search, scope.Templates, dimension, scope.Partition, scope.Load, scope.RunId, scope.Actor, token).ConfigureAwait(false);
                 lock (gate)
                 {
                     summaries.Add(summary);
@@ -388,9 +388,9 @@ public sealed partial class DimensionRunner
     /// Writes and checks the flow's views in the run's partition (osdu/docs/reference/flow/dimension-views.md) and
     /// drops those it no longer declares, logging each.
     /// </summary>
-    private async Task<DimensionViewsWritten> WriteViewsAsync(ILedger ledger, string partition, Guid runId, string actor, CancellationToken ct)
+    private async Task<DimensionViewsWritten> WriteViewsAsync(DimensionStore dimensions, string partition, Guid runId, string actor, CancellationToken ct)
     {
-        var written = await ledger.Dimensions.WriteViewsAsync(
+        var written = await dimensions.WriteViewsAsync(
             new DimensionViewWrite
             {
                 Flow = _flow.Name,
@@ -434,7 +434,7 @@ public sealed partial class DimensionRunner
     /// it names no target or names that database, else the target it names, once this host has opened it.
     /// </summary>
     /// <exception cref="DeliveryException">The target cannot be reached from this host; the message names its reference, never what it resolves to.</exception>
-    private async Task<DimensionTableTarget> ResolveTargetAsync(ILedger ledger, CancellationToken ct)
+    private async Task<DimensionTableTarget> ResolveTargetAsync(DimensionStore dimensions, CancellationToken ct)
     {
         if (_flow.Target is null)
         {
@@ -443,7 +443,7 @@ public sealed partial class DimensionRunner
 
         try
         {
-            return await ledger.Dimensions.ResolveTargetAsync(_flow.Name, _flow.Target, _context.Secrets, ct).ConfigureAwait(false);
+            return await dimensions.ResolveTargetAsync(_flow.Name, _flow.Target, _context.Secrets, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is (SqlFlowException and not DeliveryException) or Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
         {
@@ -453,11 +453,11 @@ public sealed partial class DimensionRunner
     }
 
     /// <summary>Where the flow keeps its tables and views, or why this host cannot reach them: what a plan says beforehand.</summary>
-    private async Task<(DimensionTableTarget? Target, string? Problem)> TryResolveTargetAsync(ILedger ledger, CancellationToken ct)
+    private async Task<(DimensionTableTarget? Target, string? Problem)> TryResolveTargetAsync(DimensionStore dimensions, CancellationToken ct)
     {
         try
         {
-            return (await ResolveTargetAsync(ledger, ct).ConfigureAwait(false), null);
+            return (await ResolveTargetAsync(dimensions, ct).ConfigureAwait(false), null);
         }
         catch (DeliveryException ex)
         {
@@ -511,7 +511,7 @@ public sealed partial class DimensionRunner
             {
                 if (_context.Ledger is { } ledger)
                 {
-                    loading = await PlanLoadAsync(ledger, dimension, query, load, Now, ct).ConfigureAwait(false);
+                    loading = await PlanLoadAsync(ledger.Dimensions, dimension, query, load, Now, ct).ConfigureAwait(false);
                     if (loading.Mode == DimensionRunModes.Incremental)
                     {
                         changedRecords = await RecordsReadAsync(search, dimension, query, loading, ct).ConfigureAwait(false);
@@ -586,7 +586,7 @@ public sealed partial class DimensionRunner
         }
         else
         {
-            var (kept, problem) = await TryResolveTargetAsync(ledger, ct).ConfigureAwait(false);
+            var (kept, problem) = await TryResolveTargetAsync(ledger.Dimensions, ct).ConfigureAwait(false);
             target = problem;
             probes = kept is null ? [] : await ledger.Dimensions.ProbeViewsAsync(_flow.Name, _flow.Views, kept, _context.Secrets, ct).ConfigureAwait(false);
         }
@@ -606,13 +606,13 @@ public sealed partial class DimensionRunner
     }
 
     private async Task<DimensionBuildSummary> BuildOneAsync(
-        ILedger ledger, OsduSearch search, TemplateCache templates, DimensionSpec dimension, string partition, DimensionLoadRequest request, Guid runId,
+        DimensionStore dimensions, OsduSearch search, TemplateCache templates, DimensionSpec dimension, string partition, DimensionLoadRequest request, Guid runId,
         string actor, CancellationToken ct)
     {
         var query = Query(dimension, partition);
         var started = Now;
-        var load = await PlanLoadAsync(ledger, dimension, query, request, started, ct).ConfigureAwait(false);
-        var (_, run) = await ledger.Dimensions.StartRunAsync(
+        var load = await PlanLoadAsync(dimensions, dimension, query, request, started, ct).ConfigureAwait(false);
+        var (_, run) = await dimensions.StartRunAsync(
             new DimensionDeclaration
             {
                 FlowId = _flow.LedgerId,
@@ -635,7 +635,7 @@ public sealed partial class DimensionRunner
             var resolved = await ResolveFieldAsync(search, templates, dimension, query, ct).ConfigureAwait(false);
             if (load.Mode == DimensionRunModes.Incremental)
             {
-                var incremental = await LoadIncrementallyAsync(ledger, search, templates, dimension, query, resolved, load, run, progress, ct).ConfigureAwait(false);
+                var incremental = await LoadIncrementallyAsync(dimensions, search, templates, dimension, query, resolved, load, run, progress, ct).ConfigureAwait(false);
                 if (incremental.Summary is { } loaded)
                 {
                     return loaded;
@@ -651,18 +651,18 @@ public sealed partial class DimensionRunner
                 _log.LogInformation("dimension {Dimension}: loading in full, since {Why}", dimension.Name, why);
             }
 
-            return await LoadInFullAsync(ledger, search, templates, dimension, query, resolved, load, run, progress, ct).ConfigureAwait(false);
+            return await LoadInFullAsync(dimensions, search, templates, dimension, query, resolved, load, run, progress, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await CloseAsync(ledger, run.DimensionRunId, DimensionRunStatus.Cancelled, progress.Read, "the run was cancelled").ConfigureAwait(false);
+            await CloseAsync(dimensions, run.DimensionRunId, DimensionRunStatus.Cancelled, progress.Read, "the run was cancelled").ConfigureAwait(false);
             throw;
         }
         catch (Exception ex) when (Expected(ex, ct))
         {
             var error = SecretHygiene.RedactedMessage(ex);
             _log.LogError(RunFailure.IsExpected(ex) ? null : ex, "dimension {Dimension} failed: {Error}", dimension.Name, error);
-            await CloseAsync(ledger, run.DimensionRunId, DimensionRunStatus.Failed, progress.Read, error).ConfigureAwait(false);
+            await CloseAsync(dimensions, run.DimensionRunId, DimensionRunStatus.Failed, progress.Read, error).ConfigureAwait(false);
             var read = progress.Read;
             return new DimensionBuildSummary(dimension.Name, DimensionRunStatus.Failed, run.DimensionRunId, 0, 0, 0, 0, 0, DimensionBuildChanges.None,
                 read.Aggregations + read.ScanPages, null, error, read.Notes.Take(DimensionBuildOutcome.MaxNotes).ToList())
@@ -682,7 +682,7 @@ public sealed partial class DimensionRunner
     /// staging, so what the read did not find is removed.
     /// </summary>
     private async Task<DimensionBuildSummary> LoadInFullAsync(
-        ILedger ledger, OsduSearch search, TemplateCache templates, DimensionSpec dimension, string? query, ResolvedField resolved, LoadPlan load,
+        DimensionStore dimensions, OsduSearch search, TemplateCache templates, DimensionSpec dimension, string? query, ResolvedField resolved, LoadPlan load,
         DimensionRunState run, ReadProgress progress, CancellationToken ct)
     {
         var templatesJson = resolved.Kinds.Count == 0 ? null : JsonSerializer.Serialize(resolved.Kinds, StepJson);
@@ -697,7 +697,7 @@ public sealed partial class DimensionRunner
             {
                 RecordKey = incremental?.RecordKey,
             };
-            var empty = await ledger.Dimensions.WriteAsync(Nothing(run, dimension, progress.Read, keepsRecords: incremental is not null), ct).ConfigureAwait(false);
+            var empty = await dimensions.WriteAsync(Nothing(run, dimension, progress.Read, keepsRecords: incremental is not null), ct).ConfigureAwait(false);
             _log.LogWarning("dimension {Dimension}: {Note}", dimension.Name, resolved.Note);
             return Summary(dimension, empty, progress.Read, null);
         }
@@ -705,7 +705,7 @@ public sealed partial class DimensionRunner
         var keyColumns = incremental is null ? null : (await SettleRecordColumnsAsync(search, templates, dimension, query, resolved, incremental, ct).ConfigureAwait(false)).Keys;
         var concurrency = Math.Max(1, _flow.Parallelism.RecordsAtOnce);
         _log.LogInformation("dimension {Dimension}: reading {Kind} {Path} as {Field}", dimension.Name, dimension.Kind, dimension.Path, field.AggregateBy);
-        await using var stage = await ledger.Dimensions.StageAsync(_flow.LedgerId, run.DimensionId, run.DimensionRunId, ct).ConfigureAwait(false);
+        await using var stage = await dimensions.StageAsync(_flow.LedgerId, run.DimensionId, run.DimensionRunId, ct).ConfigureAwait(false);
         try
         {
             var keys = new StagedKeys(stage);
@@ -735,7 +735,7 @@ public sealed partial class DimensionRunner
 
             var counted = Counts(values, templatesJson, countQueries, notes, read.Labels, read.Collected);
             progress.Read = load.Stamp(counted with { ScanPages = counted.ScanPages + read.ElementPages + (records?.Pages ?? 0) }) with { RecordKey = incremental?.RecordKey };
-            var written = await ledger.Dimensions.WriteAsync(
+            var written = await dimensions.WriteAsync(
                 stage, Staged(dimension, FieldState(field, resolved.Repeats), progress.Read, read.Collected, partial: false, keepsRecords: incremental is not null), ct).ConfigureAwait(false);
             _log.LogInformation(
                 "dimension {Dimension}: loaded in full, {Values} value(s) from {Keys} key(s), {LeftOut} of none; {Added} arrived, {Removed} left, {Moved} moved, {Restored} came back",
@@ -1473,11 +1473,11 @@ public sealed partial class DimensionRunner
         Notes = notes.Count > 0 ? notes : read.Notes,
     };
 
-    private async Task CloseAsync(ILedger ledger, long dimensionRunId, string status, DimensionReadCounts read, string error)
+    private async Task CloseAsync(DimensionStore dimensions, long dimensionRunId, string status, DimensionReadCounts read, string error)
     {
         try
         {
-            await ledger.Dimensions.CloseRunAsync(dimensionRunId, status, read, error, Now, CancellationToken.None).ConfigureAwait(false);
+            await dimensions.CloseRunAsync(dimensionRunId, status, read, error, Now, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is SqlFlowException or InvalidOperationException || ex.GetType().Name.Contains("DbUpdate", StringComparison.Ordinal))
         {

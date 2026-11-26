@@ -48,7 +48,7 @@ public static class DeliveryRunLookup
     internal const string NoId = "Give a run id or a correlation id: osdu-delivery-<repository>-<operation>-<run id>.";
 
     internal static async Task<Results<Ok<DeliveryRunLookupDto>, ProblemHttpResult>> LookupAsync(
-        string? id, CatalogDbContext catalog, ILedger ledger, IEnumerable<IRunOutcomeDescriber> describers, ILoggerFactory loggers, CancellationToken ct)
+        string? id, CatalogDbContext catalog, ILedgerSubmissions ledger, IEnumerable<IRunOutcomeDescriber> describers, ILoggerFactory loggers, CancellationToken ct)
     {
         var found = await FindAsync(id, catalog, ledger, describers, loggers.CreateLogger(typeof(DeliveryRunLookup)), ct).ConfigureAwait(false);
         return found is null
@@ -58,7 +58,7 @@ public static class DeliveryRunLookup
 
     /// <summary>What <paramref name="text"/> leads to; null when it holds no id.</summary>
     public static async Task<DeliveryRunLookupDto?> FindAsync(
-        string? text, CatalogDbContext catalog, ILedger ledger, IEnumerable<IRunOutcomeDescriber> describers, ILogger log, CancellationToken ct)
+        string? text, CatalogDbContext catalog, ILedgerSubmissions ledger, IEnumerable<IRunOutcomeDescriber> describers, ILogger log, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(ledger);

@@ -226,7 +226,8 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         var flow = Flow(retired: false);
         var retired = (await ledger.Dimensions.FindAsync(flow.LedgerId, "Retired"))!;
         var building = RunnerAsync(ledger, flow).BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
-        var removing = DimensionRemoval.RemoveAsync(_db.Ledger(_clock), retired, "tests", _clock, CancellationToken.None);
+        var remover = _db.Ledger(_clock);
+        var removing = DimensionRemoval.RemoveAsync(remover, remover.Dimensions, retired, "tests", _clock, CancellationToken.None);
         var second = await building;
         await removing;
 
