@@ -51,7 +51,7 @@ const RUN_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const statusColumn: Column<RunSummary> = {
   id: "status",
   header: "Status",
-  render: (row) => <RunStatusBadge status={row.status} />,
+  render: (row) => <RunStatusBadge status={row.status} warningCount={row.warningCount} />,
 };
 const flowColumn: Column<RunSummary> = {
   id: "flow",

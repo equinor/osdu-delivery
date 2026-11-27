@@ -41,7 +41,9 @@ namespace SqlFlow.ControlPlane.Api;
 /// member of a group shares the one its group read carries. <see cref="ResultCounts"/> holds the counts the run's result
 /// reports (<see cref="RunResultCounts"/>) when the list is asked for them (<c>resultCounts=true</c>), so a flow kind
 /// whose runs count something other than rows shows its own figures on a list of its runs; null otherwise, and for a run
-/// that recorded no result.</summary>
+/// that recorded no result. <see cref="WarningCount"/> is how many warnings the run raised
+/// (<see cref="CatalogRun.WarningCount"/>): a run that succeeded with warnings keeps <see cref="Status"/>
+/// <c>succeeded</c>, and a list shows it apart by this count.</summary>
 public sealed record RunSummaryDto(
     Guid RunId, Guid PipelineId, Guid? RepoId, string FlowName, string FlowKind, string Batch, int Wave,
     string Status, bool Success,
@@ -54,7 +56,7 @@ public sealed record RunSummaryDto(
     Guid? FanOutRoot = null, int? FanOutSlot = null, int? FanOutCount = null,
     DateTime? StartUtc = null, DateTime? EndUtc = null,
     Guid? TriggerScheduleId = null, Guid? TriggerRunId = null, RunStartedByDto? StartedBy = null,
-    IReadOnlyDictionary<string, long>? ResultCounts = null);
+    IReadOnlyDictionary<string, long>? ResultCounts = null, int WarningCount = 0);
 
 /// <summary>One run with its full header for the detail view: the summary plus the lifecycle fields (status, when it
 /// was enqueued, the node that claimed it), the schema version, the start/end window, the host, the error, and the
@@ -66,7 +68,8 @@ public sealed record RunSummaryDto(
 /// <see cref="Values"/> and <see cref="Payload"/> are the kind arguments a flow of a registered kind ran with, and
 /// <see cref="RequestedBy"/> who asked for the run. <see cref="StartedBy"/> says what started it, and for a run a
 /// chained fire started, <see cref="Causes"/> is the chain of parent fires behind it, from the fire it followed back to
-/// the first link (<see cref="RunStartedBy.ReadCausesAsync"/>); empty for every other run.</summary>
+/// the first link (<see cref="RunStartedBy.ReadCausesAsync"/>); empty for every other run. <see cref="WarningCount"/> is how
+/// many warnings the run raised, as on <see cref="RunSummaryDto"/>.</summary>
 public sealed record RunDetailDto(
     Guid RunId, Guid PipelineId, Guid? RepoId, string FlowName, string FlowKind, string Batch, int Wave,
     string Status, bool Success,
@@ -82,7 +85,7 @@ public sealed record RunDetailDto(
     string? Operation = null, string? RequestedBy = null, [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values = null,
     JsonElement? Payload = null, Guid? FanOutRoot = null, int? FanOutSlot = null, int? FanOutCount = null,
     string? ResultJson = null, Guid? TriggerRunId = null, RunStartedByDto? StartedBy = null,
-    IReadOnlyList<RunCauseDto>? Causes = null);
+    IReadOnlyList<RunCauseDto>? Causes = null, int WarningCount = 0);
 
 /// <summary>One file a run processed (file flows): a drill-down row under a run.</summary>
 public sealed record RunFileDto(
@@ -161,8 +164,8 @@ public sealed record RunGroupDto(
 
 /// <summary>
 /// The read API over the shadow catalog's run history: the run headers and their drill-down detail (the files a run
-/// processed, the assertions it evaluated, the SQL it executed, its surrogate-key outcomes, and its health-check
-/// metrics), all projected from the on-disk <c>run.json</c> artifacts the sync mapped into the catalog. Every query
+/// processed, the assertions it evaluated, the SQL it executed, its surrogate-key outcomes, its health-check
+/// metrics, and what it did about each change to an existing column's type), all projected from the on-disk <c>run.json</c> artifacts the sync mapped into the catalog. Every query
 /// is read-only (<see cref="EntityFrameworkQueryableExtensions.AsNoTracking"/>) and DTO-projected so the raw EF
 /// entities never leave the host; list endpoints are bounded by page size.
 /// </summary>
@@ -196,6 +199,9 @@ public static class RunEndpoints
         pipelines.MapGet("/{pipelineId:guid}/runs/durations", GetPipelineRunDurationsAsync).WithName("GetPipelineRunDurations");
         runs.MapGet("/{runId:guid}/surrogate-keys", GetRunSurrogateKeysAsync).WithName("GetRunSurrogateKeys");
         runs.MapGet("/{runId:guid}/health-metrics", GetRunHealthMetricsAsync).WithName("GetRunHealthMetrics");
+        // What the run did about each change to an existing column's type it considered: applied, pending an opt-in,
+        // refused by its data check, left to be made by hand, or an earlier run's rewrite finished or rolled back.
+        runs.MapGet("/{runId:guid}/type-changes", GetRunTypeChangesAsync).WithName("GetRunTypeChanges");
 
         return group;
     }
@@ -472,7 +478,7 @@ public static class RunEndpoints
                 x.Run.TriggerSource, x.Run.FullLoad, x.Run.BackfillFrom, x.Run.BackfillTo,
                 x.Run.IncrementalMode, x.Run.IncrementalFilter, x.Run.IncrementalWatermark,
                 x.Run.Operation, x.Run.RequestedBy, x.Run.FanOutRoot, x.Run.FanOutSlot, x.Run.FanOutCount,
-                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null, null))
+                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null, null, x.Run.WarningCount))
             : source.Select(x => new RunSummaryDto(
                 x.Run.RunId, x.Run.PipelineId, x.Run.RepoId, x.Run.FlowName, x.Run.FlowKind, x.Batch, x.Wave,
                 x.Run.Status, x.Run.Success,
@@ -484,7 +490,7 @@ public static class RunEndpoints
                 x.Run.TriggerSource, x.Run.FullLoad, x.Run.BackfillFrom, x.Run.BackfillTo,
                 x.Run.IncrementalMode, x.Run.IncrementalFilter, x.Run.IncrementalWatermark,
                 x.Run.Operation, x.Run.RequestedBy, x.Run.FanOutRoot, x.Run.FanOutSlot, x.Run.FanOutCount,
-                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null, null));
+                x.Run.StartUtc, x.Run.EndUtc, x.Run.TriggerScheduleId, x.Run.TriggerRunId, null, null, x.Run.WarningCount));
 
     /// <summary>A group's member summaries in execution order: the shape both the group view's member list and
     /// the group stream serve. This is the one list that shows the last action, so it resolves it.</summary>
@@ -518,7 +524,8 @@ public static class RunEndpoints
                     run.DataSetConvention,
                     null, null, null, run.GroupId,
                     run.TriggerSource, run.TriggerScheduleId, run.Operation, run.RequestedBy, null, null,
-                    run.FanOutRoot, run.FanOutSlot, run.FanOutCount, run.ResultJson, run.TriggerRunId, null, null) })
+                    run.FanOutRoot, run.FanOutSlot, run.FanOutCount, run.ResultJson, run.TriggerRunId, null, null,
+                    run.WarningCount) })
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (row is null)
         {
@@ -1148,6 +1155,21 @@ public static class RunEndpoints
                 x.Anomalies, x.LevelShifts, x.ModelTrained, x.ModelTrainer, x.Error))
             .ToListAsync(ct).ConfigureAwait(false);
         return TypedResults.Ok(new PagedResult<RunHealthCheckMetricDto>(items, p, size, total));
+    }
+
+    private static async Task<Results<Ok<PagedResult<ColumnTypeChangeDto>>, ProblemHttpResult>> GetRunTypeChangesAsync(
+        Guid runId, CatalogDbContext db, int? page, int? pageSize, CancellationToken ct)
+    {
+        if (!await RunExistsAsync(db, runId, ct).ConfigureAwait(false))
+        {
+            return NotFound("run", runId);
+        }
+
+        var (p, size) = PageRequest.Normalize(page, pageSize);
+        var ordered = db.ColumnTypeChanges.AsNoTracking().Where(x => x.RunId == runId).OrderBy(x => x.Id);
+        var total = await ordered.LongCountAsync(ct).ConfigureAwait(false);
+        var rows = await ordered.Skip((p - 1) * size).Take(size).ToListAsync(ct).ConfigureAwait(false);
+        return TypedResults.Ok(new PagedResult<ColumnTypeChangeDto>(rows.Select(ColumnTypeChangeDto.From).ToList(), p, size, total));
     }
 
     /// <summary>Normalizes a run-window bound to the UTC wall-clock value the WrittenUtc column stores: a local

@@ -80,6 +80,9 @@ public sealed class CatalogDbContext : DbContext
 
     public DbSet<CatalogSchemaChange> SchemaChanges => Set<CatalogSchemaChange>();
 
+    /// <summary>Every change to an existing column's type a run reported: each column's type history.</summary>
+    public DbSet<CatalogColumnTypeChange> ColumnTypeChanges => Set<CatalogColumnTypeChange>();
+
     public DbSet<CatalogObjectColumn> ObjectColumns => Set<CatalogObjectColumn>();
 
     public DbSet<CatalogColumnPolicy> ColumnPolicies => Set<CatalogColumnPolicy>();
@@ -654,6 +657,30 @@ public sealed class CatalogDbContext : DbContext
             entity.HasIndex(c => c.RunId);
             // "Everything that ever happened to this object", the history panel behind one table or view.
             entity.HasIndex(c => new { c.RepoId, c.Database, c.Schema, c.Name });
+        });
+
+        modelBuilder.Entity<CatalogColumnTypeChange>(entity =>
+        {
+            entity.ToTable("ColumnTypeChange");
+            // The identity is the clustered key, so rows land in insertion order at the end of the table.
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.ObjectKey).HasMaxLength(900).IsRequired();
+            entity.Property(c => c.TableName).HasMaxLength(CatalogProjection.TypeChangeTableLength).IsRequired();
+            entity.Property(c => c.Layer).HasMaxLength(16).IsRequired();
+            entity.Property(c => c.ColumnName).HasMaxLength(CatalogProjection.TypeChangeColumnLength).IsRequired();
+            entity.Property(c => c.FromType).HasMaxLength(CatalogProjection.TypeChangeTypeLength).IsRequired();
+            entity.Property(c => c.ToType).HasMaxLength(CatalogProjection.TypeChangeTypeLength).IsRequired();
+            entity.Property(c => c.Tier).HasMaxLength(32).IsRequired();
+            entity.Property(c => c.Status).HasMaxLength(16).IsRequired();
+            entity.Property(c => c.RequiresOptIn).HasMaxLength(128);
+            entity.Property(c => c.RequestedBy).HasMaxLength(256);
+            // Message, the sample and the manual steps are nvarchar(max): an explanation and the steps to follow have no
+            // useful length bound, and a cut JSON document is not JSON.
+            entity.Property(c => c.Message).IsRequired();
+            // A column's type history, newest first: the seek behind the column history read, in its order.
+            entity.HasIndex(c => new { c.ObjectKey, c.ColumnName, c.OccurredUtc }).IsDescending(false, false, true);
+            // A run's reports, and the delete-by-run that keeps a re-projected run's rows from doubling.
+            entity.HasIndex(c => c.RunId);
         });
 
         modelBuilder.Entity<CatalogObjectColumn>(entity =>

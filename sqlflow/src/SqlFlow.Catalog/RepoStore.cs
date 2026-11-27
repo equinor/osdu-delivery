@@ -52,6 +52,9 @@ public static class RepoStore
             await catalog.RunEvents.Where(x => runIds.Contains(x.RunId)).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             await catalog.RunSurrogateKeys.Where(x => runIds.Contains(x.RunId)).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             await catalog.RunHealthCheckMetrics.Where(x => runIds.Contains(x.RunId)).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            // The column type history carries its RepoId too, but only its RunId is indexed: removed by the run subquery,
+            // so the delete seeks its rows rather than reading the whole table under this transaction's range locks.
+            await catalog.ColumnTypeChanges.Where(x => runIds.Contains(x.RunId)).ExecuteDeleteAsync(ct).ConfigureAwait(false);
             // The schema-change feed is stamped with its own RepoId (unlike the older run children), so it is
             // removed by that directly and does not depend on the run subquery still resolving.
             await catalog.SchemaChanges.Where(x => x.RepoId == repoId).ExecuteDeleteAsync(ct).ConfigureAwait(false);

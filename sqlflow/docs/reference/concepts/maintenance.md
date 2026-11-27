@@ -178,7 +178,7 @@ limit.
 | Flow versions | `FlowVersion` | Keep | One row per distinct flow document, never removed |
 | Repositories and flows | `Repo`, `RepoSource`, `Pipeline`, `PipelineColumn`, `FlowDependency` | Keep | Rewritten by each sync; deleted with the repository |
 | Objects and lineage | `Object`, `ObjectColumn`, `ObjectRelationship`, `LineageEdge`, `LineageColumnMapping` | Keep | Rewritten by each sync, which forgets objects nothing knows |
-| Schema changes | `SchemaChange` | Keep, grows | Deleted with its repository |
+| Schema changes | `SchemaChange`, `ColumnTypeChange` | Keep, grows | Deleted with its repository |
 | Schedules | `Schedule`, `ScheduleMember`, `ScheduleParent` | Keep | Rewritten by each sync |
 | Subscribers | `Subscriber` and its eight report and model tables | Keep | Rewritten by each sync |
 | Sync and discovery traces | `ActivityEvent` | Safe to remove | The last five attempts per subject; a discovery's lines after 2 days; a trigger request's one trace stays with the request |

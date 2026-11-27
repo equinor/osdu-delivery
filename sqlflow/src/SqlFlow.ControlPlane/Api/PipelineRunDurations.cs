@@ -10,8 +10,10 @@ namespace SqlFlow.ControlPlane.Api;
 /// <param name="EndUtc">When it ended; null for the run still executing.</param>
 /// <param name="DurationSeconds">How long it took; null for the run still executing, whose elapsed time is the time
 /// since <paramref name="StartUtc"/>.</param>
+/// <param name="WarningCount">How many warnings it raised (<see cref="CatalogRun.WarningCount"/>), so a run that succeeded
+/// with warnings reads apart from a clean one; zero for the run still executing, whose count is known when it ends.</param>
 public sealed record PipelineRunTimingDto(
-    Guid RunId, string Status, DateTime? StartUtc, DateTime? EndUtc, double? DurationSeconds);
+    Guid RunId, string Status, DateTime? StartUtc, DateTime? EndUtc, double? DurationSeconds, int WarningCount = 0);
 
 /// <summary>
 /// How long a pipeline's runs take: the typical figures over its newest succeeded runs, the newest run that ran to an
@@ -61,13 +63,13 @@ public static class PipelineRunDurations
         var last = await runs
             .Where(r => r.StartUtc != null && r.EndUtc != null)
             .OrderByDescending(r => r.WrittenUtc).ThenByDescending(r => r.RunId)
-            .Select(r => new PipelineRunTimingDto(r.RunId, r.Status, r.StartUtc, r.EndUtc, r.DurationSeconds))
+            .Select(r => new PipelineRunTimingDto(r.RunId, r.Status, r.StartUtc, r.EndUtc, r.DurationSeconds, r.WarningCount))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
 
         var running = await runs
             .Where(r => r.Status == RunStatuses.Running)
             .OrderBy(r => r.StartUtc)
-            .Select(r => new PipelineRunTimingDto(r.RunId, r.Status, r.StartUtc, null, null))
+            .Select(r => new PipelineRunTimingDto(r.RunId, r.Status, r.StartUtc, null, null, 0))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
 
         return Profile(recent, last, running);

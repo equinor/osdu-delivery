@@ -390,6 +390,14 @@ public class CatalogRun
 
     public string? Error { get; set; }
 
+    /// <summary>How many warnings the run raised: the events of its artifact's <c>events</c> array at level
+    /// <c>warning</c> (see RunEventLevels in SqlFlow.Core), counted when the run is recorded from its artifact. A run
+    /// that succeeded with warnings keeps <see cref="Status"/> <c>succeeded</c>, which every reader compares against; the
+    /// count is what tells it apart: it finished, and something in it needs an operator (a change to a column's type
+    /// left pending an opt-in, refused, or left to be made by hand). Zero for a run without warnings, a run still
+    /// executing, and a run recorded before the count was kept.</summary>
+    public int WarningCount { get; set; }
+
     /// <summary>The host that produced the run, when the artifact records it (null until run.json carries it).</summary>
     public string? Host { get; set; }
 
@@ -1438,6 +1446,87 @@ public static class SchemaChangeKinds
     public const string Added = "Added";
     public const string Changed = "Changed";
     public const string Deleted = "Deleted";
+}
+
+/// <summary>
+/// One change to the type of a column that already exists, as one run reported it (TypeChangeReport in SqlFlow.Core,
+/// read from run.json's <c>result.typeChanges</c>): where the column is, from which type to which, the change's tier
+/// and outcome, and what the run found. Read by object and column, newest first, it is the column's type history;
+/// read by run, it is what the run did about each change. A run that considered no change writes no rows. Written by
+/// the same one-run-one-insert path as every other run detail, replaced whole when a run is projected again, and kept
+/// like <see cref="CatalogSchemaChange"/>: removed only with its repository, since a history that forgets is not one.
+/// </summary>
+public class CatalogColumnTypeChange
+{
+    public long Id { get; set; }
+
+    public Guid RepoId { get; set; }
+
+    /// <summary>The run that reported the change.</summary>
+    public Guid RunId { get; set; }
+
+    /// <summary>The run's pipeline (a soft link, like every pipeline id on a run detail).</summary>
+    public Guid PipelineId { get; set; }
+
+    /// <summary>The changed object's catalog key (server reference, database, schema and name, as
+    /// <see cref="CatalogObject.Key"/> and <see cref="CatalogObjectColumn.ObjectKey"/> hold it): the object the run's
+    /// pipeline writes under that name, or the key composed from the pipeline's target server when lineage names none.</summary>
+    public string ObjectKey { get; set; } = string.Empty;
+
+    /// <summary>The table or view as the run named it (<c>[database].[schema].[name]</c> for a target,
+    /// <c>[schema].[name]</c> for a typed view).</summary>
+    public string TableName { get; set; } = string.Empty;
+
+    /// <summary>The flow layer the change is in: <c>target</c> (an ingestion flow's target) or <c>view</c> (a file
+    /// flow's typed view).</summary>
+    public string Layer { get; set; } = string.Empty;
+
+    public string ColumnName { get; set; } = string.Empty;
+
+    /// <summary>The column's type before the change, rendered with its length or precision.</summary>
+    public string FromType { get; set; } = string.Empty;
+
+    /// <summary>The type the change is to.</summary>
+    public string ToType { get; set; } = string.Empty;
+
+    /// <summary><c>Widening</c>, <c>CheckedConversion</c> or <c>Manual</c> (TypeChangeTier in SqlFlow.Core).</summary>
+    public string Tier { get; set; } = string.Empty;
+
+    /// <summary>What became of the change (TypeChangeStatus in SqlFlow.Core): <c>Applied</c>, <c>Pending</c>,
+    /// <c>Refused</c>, <c>Manual</c>, <c>KeptWider</c>, <c>Planned</c>, <c>Resumed</c> or <c>RolledBack</c>.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>True when the change rewrites every row rather than being recorded in metadata only.</summary>
+    public bool RewritesTable { get; set; }
+
+    /// <summary>True for a key, hash, identity or primary-key column.</summary>
+    public bool IsKey { get; set; }
+
+    /// <summary>The flow setting the change needs (<c>schema.convertTypes</c>, say), or null when it needs none.</summary>
+    public string? RequiresOptIn { get; set; }
+
+    /// <summary>The rows the table held when the change was considered; null when they were not counted.</summary>
+    public long? Rows { get; set; }
+
+    /// <summary>For a refusal, how many stored values do not convert without loss.</summary>
+    public long? FailingValues { get; set; }
+
+    /// <summary>For a refusal, a sample of the values that do not convert, as a JSON array of
+    /// <c>{"value": ..., "rows": ...}</c>; null when there is none.</summary>
+    public string? SampleJson { get; set; }
+
+    /// <summary>The full explanation: why, what the engine did, and what to do next (redacted).</summary>
+    public string Message { get; set; } = string.Empty;
+
+    /// <summary>The steps to make the change by hand, as a JSON array of strings; null when there are none.</summary>
+    public string? ManualStepsJson { get; set; }
+
+    /// <summary>When the run reported the change: its end, or when it was recorded for a run that names no end.</summary>
+    public DateTime OccurredUtc { get; set; }
+
+    /// <summary>Who asked for the run (<see cref="CatalogRun.RequestedBy"/>); null for a run recorded from its artifact
+    /// alone.</summary>
+    public string? RequestedBy { get; set; }
 }
 
 /// <summary>One data-quality assertion a run evaluated: the drill-down detail under a <see cref="CatalogRun"/>.</summary>

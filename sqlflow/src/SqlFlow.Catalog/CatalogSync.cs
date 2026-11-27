@@ -54,6 +54,9 @@ public sealed record CatalogSyncResult
 
     /// <summary>Schema differences recorded from source-control runs in this pass.</summary>
     public int SchemaChangesAdded { get; init; }
+
+    /// <summary>Changes to existing columns' types recorded from the runs of this pass.</summary>
+    public int TypeChangesAdded { get; init; }
     public bool LineageConnected { get; init; }
 
     /// <summary>The documents the registered sync extensions reconciled beside the flows, tallied across every
@@ -69,7 +72,12 @@ public sealed record CatalogSyncResult
 /// <summary>The per-pass tally of run artifacts and the drill-down detail rows projected from them.</summary>
 internal readonly record struct RunSyncTally(
     int Added, int Skipped, int Failed, int Files, int Assertions, int Statements, int Events, int SurrogateKeys, int Metrics,
-    int SchemaChanges);
+    int SchemaChanges, int TypeChanges);
+
+/// <summary>The drill-down detail rows projected from one run, by table.</summary>
+internal readonly record struct RunDetailTally(
+    int Files, int Assertions, int Statements, int Events, int SurrogateKeys, int Metrics, int SchemaChanges,
+    int TypeChanges);
 
 /// <summary>What a per-run write-back did to the flow's pipeline row.</summary>
 public enum PipelineChange
@@ -94,6 +102,9 @@ public sealed record RecordRunResult
 
     /// <summary>Schema differences recorded from source-control runs in this pass.</summary>
     public int SchemaChangesAdded { get; init; }
+
+    /// <summary>Changes to existing columns' types the run reported.</summary>
+    public int TypeChangesAdded { get; init; }
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
@@ -372,7 +383,7 @@ public sealed class CatalogSync
 
                 await UpsertRepoAsync(context, repoId, repoName, repoRemoteUrl, root, nowUtc, ct).ConfigureAwait(false);
                 var pipelineTally = await ApplyPipelinesAsync(context, repoId, nowUtc, pipelines, presentIds, stageable, excludedFlowPaths, brokenPaths, ct).ConfigureAwait(false);
-                var runTally = await ApplyRunsAsync(context, repoId, runs, runsSkipped, runsFailed, nowUtc, ct).ConfigureAwait(false);
+                var runTally = await ApplyRunsAsync(context, repoId, runs, runsSkipped, runsFailed, report, nowUtc, ct).ConfigureAwait(false);
 
                 (int Objects, int Superseded, int Columns, int Edges, int FlowDeps, int Waves, bool Connected, int PreservedDerived) lineage;
                 if (report is not null)
@@ -442,6 +453,7 @@ public sealed class CatalogSync
                     RunSurrogateKeysAdded = runTally.SurrogateKeys,
                     RunHealthCheckMetricsAdded = runTally.Metrics,
                     SchemaChangesAdded = runTally.SchemaChanges,
+                    TypeChangesAdded = runTally.TypeChanges,
                     ObjectsUpserted = lineage.Objects,
                     ObjectsSuperseded = lineage.Superseded,
                     ObjectColumns = lineage.Columns,
@@ -1077,9 +1089,13 @@ public sealed class CatalogSync
     }
 
     /// <summary>Inserts the phase-one runs and their drill-down detail, and applies the newest detected
-    /// transform-view projection per pipeline. Runs inside the sync's transaction.</summary>
+    /// transform-view projection per pipeline. Runs inside the sync's transaction. <paramref name="report"/> is the
+    /// lineage this pass computed (null when it computed none): what it says each pipeline writes keys the runs' type
+    /// changes beside the catalog's stored lineage, so a run synced with its pipeline's first lineage is keyed as the
+    /// object it changed.</summary>
     private static async Task<RunSyncTally> ApplyRunsAsync(
-        CatalogDbContext context, Guid repoId, IReadOnlyList<PreparedRun> runs, int skippedInScan, int failedInScan, DateTime nowUtc, CancellationToken ct)
+        CatalogDbContext context, Guid repoId, IReadOnlyList<PreparedRun> runs, int skippedInScan, int failedInScan,
+        LineageReport? report, DateTime nowUtc, CancellationToken ct)
     {
         var skipped = skippedInScan;
         var added = 0;
@@ -1090,6 +1106,8 @@ public sealed class CatalogSync
         var surrogateKeys = 0;
         var metrics = 0;
         var schemaChanges = 0;
+        var typeChanges = 0;
+        var writtenByPipeline = WrittenByPipeline(report, repoId);
 
         // The pre-transaction scan already dropped every run the catalog knew then; re-verify the survivors
         // INSIDE the transaction (in bounded chunks) so a run another node recorded in the meantime is skipped,
@@ -1115,8 +1133,10 @@ public sealed class CatalogSync
             // A run is immutable, so its drill-down detail is inserted exactly once, with the run itself.
             context.Runs.Add(prepared.Run);
             added++;
-            var detail = AddRunDetail(
-                context, prepared.Document.RootElement, prepared.Run.RunId, repoId, pipelineId: prepared.Run.PipelineId);
+            var detail = await AddRunDetailAsync(
+                    context, prepared.Document.RootElement, prepared.Run,
+                    written: writtenByPipeline.GetValueOrDefault(prepared.Run.PipelineId), ct: ct)
+                .ConfigureAwait(false);
 
             // A registration run's objects: this sync's own lineage pass owns the repo's edges, so only the objects
             // and their dictionary are recorded here.
@@ -1131,6 +1151,7 @@ public sealed class CatalogSync
             surrogateKeys += detail.SurrogateKeys;
             metrics += detail.Metrics;
             schemaChanges += detail.SchemaChanges;
+            typeChanges += detail.TypeChanges;
 
             var detected = CatalogProjection.PipelineColumnsDetected(prepared.Document.RootElement, repoId, prepared.Run.PipelineId);
             if (detected.Count > 0
@@ -1161,16 +1182,18 @@ public sealed class CatalogSync
         }
 
         return new RunSyncTally(
-            added, skipped, failedInScan, files, assertions, statements, events, surrogateKeys, metrics, schemaChanges);
+            added, skipped, failedInScan, files, assertions, statements, events, surrogateKeys, metrics, schemaChanges,
+            typeChanges);
     }
 
     /// <summary>Adds the immutable drill-down detail of one run (files, assertions, generated SQL, canonical
-    /// events, surrogate keys, health-check metrics) projected from its run.json root. Shared by the full estate
-    /// sync and the per-run write-back, so the detail projection is wired in exactly one place.</summary>
+    /// events, surrogate keys, health-check metrics, schema differences, and the changes to existing columns' types)
+    /// projected from its run.json root. Shared by the full estate sync, the per-run write-back and the run queue's
+    /// completion, so the detail projection is wired in exactly one place.</summary>
     /// <param name="context">The catalog context the detail rows are added to.</param>
     /// <param name="root">The run.json root element the detail is projected from.</param>
-    /// <param name="runId">The run the detail belongs to.</param>
-    /// <param name="repoId">The repo the run belongs to.</param>
+    /// <param name="run">The run the detail belongs to, with its outcome already projected: its id, repo and pipeline
+    /// key every row, and its end and who asked for it date and attribute its type changes.</param>
     /// <param name="existingMaxEventOrdinal">The highest event ordinal already present as a live-streamed row (the
     /// node writes canonical events into the catalog as the run executes). Events at or below it are skipped so
     /// only the missing tail is appended, leaving the live rows - and the stable ids the trace stream already
@@ -1178,12 +1201,19 @@ public sealed class CatalogSync
     /// timeline is inserted.</param>
     /// <param name="existingMaxStatementOrdinal">The same for the generated-SQL stream: the highest statement
     /// ordinal already present as a live-streamed row, so only the missing tail is appended.</param>
-    /// <param name="pipelineId">The run's pipeline, stamped onto the schema-change rows a source-control run
-    /// projects so a difference traces back to the snapshot document that found it.</param>
-    internal static (int Files, int Assertions, int Statements, int Events, int SurrogateKeys, int Metrics, int SchemaChanges) AddRunDetail(
-        CatalogDbContext context, JsonElement root, Guid runId, Guid repoId,
-        int existingMaxEventOrdinal = 0, int existingMaxStatementOrdinal = 0, Guid? pipelineId = null)
+    /// <param name="written">What the lineage a full sync computed in this pass says the run's pipeline writes or creates,
+    /// read beside the catalog's stored lineage to key the run's type changes; null on the paths that compute no lineage.</param>
+    /// <param name="ct">Cancels the reads and writes the type changes need.</param>
+    internal static async Task<RunDetailTally> AddRunDetailAsync(
+        CatalogDbContext context, JsonElement root, CatalogRun run,
+        int existingMaxEventOrdinal = 0, int existingMaxStatementOrdinal = 0,
+        IReadOnlyList<CatalogProjection.WrittenObject>? written = null, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(run);
+        var runId = run.RunId;
+        var repoId = run.RepoId ?? Guid.Empty;
+        var pipelineId = run.PipelineId;
         var files = 0;
         var assertions = 0;
         var statements = 0;
@@ -1247,7 +1277,140 @@ public sealed class CatalogSync
             schemaChanges++;
         }
 
-        return (files, assertions, statements, events, surrogateKeys, metrics, schemaChanges);
+        var typeChanges = await AddTypeChangesAsync(context, root, run, repoId, written ?? [], ct).ConfigureAwait(false);
+        return new RunDetailTally(files, assertions, statements, events, surrogateKeys, metrics, schemaChanges, typeChanges);
+    }
+
+    /// <summary>
+    /// Records the changes to existing columns' types a run reported (<see cref="CatalogProjection.TypeChanges"/>), one
+    /// row each, and makes the catalog's column dictionary follow the ones the run made. Each reported table is keyed as
+    /// the catalog keys the object (<see cref="CatalogProjection.TypeChangeObjectKey"/>), from the objects the run's
+    /// pipeline writes or creates and the pipeline's target server. Rows a projection of the same run already wrote are
+    /// replaced, so projecting a run twice never doubles its history. A change applied to a target column (made by this
+    /// run, or a rewrite an earlier run started and this one finished) sets that column's type in
+    /// <see cref="CatalogObjectColumn"/>, unless the catalog records a later change of the same column made by another
+    /// run, so a run recorded late never moves a column back. Returns how many rows were written.
+    /// </summary>
+    private static async Task<int> AddTypeChangesAsync(
+        CatalogDbContext context, JsonElement root, CatalogRun run, Guid repoId,
+        IReadOnlyList<CatalogProjection.WrittenObject> computed, CancellationToken ct)
+    {
+        var tables = CatalogProjection.TypeChangeTables(root);
+        if (tables.Count == 0)
+        {
+            return 0;
+        }
+
+        // What the catalog knows of the run's pipeline: the server its statements run against, and the objects it writes
+        // or creates, as the stored lineage holds them and as this pass's lineage computed them (where the two key one
+        // object apart, the database-qualified key an earlier sync settled it under is the one taken). A pipeline this
+        // pass added is found in the change tracker; one recorded earlier is read.
+        var pipelineId = run.PipelineId;
+        var targetServer = (await context.Pipelines.FindAsync([pipelineId], ct).ConfigureAwait(false))?.TargetServer;
+        var writes = nameof(LineageRelation.Writes);
+        var creates = nameof(LineageRelation.Creates);
+        var written = (await (
+                    from edge in context.LineageEdges.AsNoTracking()
+                    where edge.PipelineId == pipelineId && (edge.Relation == writes || edge.Relation == creates)
+                    join item in context.Objects.AsNoTracking() on edge.ObjectKey equals item.Key
+                    select new { item.Key, item.Database, item.Schema, item.Name })
+                .Distinct()
+                .ToListAsync(ct).ConfigureAwait(false))
+            .Select(o => new CatalogProjection.WrittenObject(o.Key, o.Database, o.Schema, o.Name))
+            .Concat(computed)
+            .ToList();
+        var keys = tables.ToDictionary(
+            table => table,
+            table => CatalogProjection.TypeChangeObjectKey(table, targetServer, written),
+            StringComparer.Ordinal);
+
+        var occurredUtc = run.EndUtc ?? run.WrittenUtc;
+        var rows = CatalogProjection.TypeChanges(
+            root, run.RunId, repoId, pipelineId, occurredUtc, run.RequestedBy, table => keys[table]);
+
+        var runId = run.RunId;
+        await context.ColumnTypeChanges.Where(c => c.RunId == runId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+        foreach (var row in rows)
+        {
+            context.ColumnTypeChanges.Add(row);
+        }
+
+        var applied = rows
+            .Where(r => r.Layer == Core.Model.TypeChangeReport.TargetLayer
+                        && (r.Status == nameof(Core.Model.TypeChangeStatus.Applied) || r.Status == nameof(Core.Model.TypeChangeStatus.Resumed)))
+            .ToList();
+        foreach (var change in applied)
+        {
+            if (await LaterChangeRecordedAsync(context, change, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            var objectKey = change.ObjectKey;
+            var column = change.ColumnName;
+            var toType = change.ToType;
+            await context.ObjectColumns
+                .Where(c => c.ObjectKey == objectKey && c.Name == column)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.DataType, toType), ct)
+                .ConfigureAwait(false);
+        }
+
+        return rows.Count;
+    }
+
+    /// <summary>What a lineage report says each pipeline of <paramref name="repoId"/> writes or creates, with each
+    /// object's identity, by pipeline; empty without a report.</summary>
+    private static Dictionary<Guid, IReadOnlyList<CatalogProjection.WrittenObject>> WrittenByPipeline(
+        LineageReport? report, Guid repoId)
+    {
+        if (report is null)
+        {
+            return [];
+        }
+
+        var objects = report.Objects
+            .GroupBy(o => o.Key, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        return report.Edges
+            .Where(e => e.Relation is LineageRelation.Writes or LineageRelation.Creates && e.Flow is not null)
+            .Select(e => (PipelineId: CatalogIdentity.Pipeline(repoId, e.Flow!), Node: objects.GetValueOrDefault(e.ObjectKey)))
+            .Where(x => x.Node is not null)
+            .GroupBy(x => x.PipelineId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<CatalogProjection.WrittenObject>)g
+                    .Select(x => new CatalogProjection.WrittenObject(x.Node!.Key, x.Node.Database, x.Node.Schema, x.Node.Name))
+                    .Distinct()
+                    .ToList());
+    }
+
+    /// <summary>Whether the catalog records a change of the same column made by another run after
+    /// <paramref name="change"/>: one already stored, or one this pass added and has not saved yet.</summary>
+    private static async Task<bool> LaterChangeRecordedAsync(
+        CatalogDbContext context, CatalogColumnTypeChange change, CancellationToken ct)
+    {
+        static bool Made(string status)
+            => status == nameof(Core.Model.TypeChangeStatus.Applied) || status == nameof(Core.Model.TypeChangeStatus.Resumed);
+
+        if (context.ColumnTypeChanges.Local.Any(c => c.RunId != change.RunId && c.OccurredUtc > change.OccurredUtc
+                && Made(c.Status) && c.Layer == Core.Model.TypeChangeReport.TargetLayer
+                && string.Equals(c.ObjectKey, change.ObjectKey, StringComparison.Ordinal)
+                && string.Equals(c.ColumnName, change.ColumnName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var applied = nameof(Core.Model.TypeChangeStatus.Applied);
+        var resumed = nameof(Core.Model.TypeChangeStatus.Resumed);
+        var target = Core.Model.TypeChangeReport.TargetLayer;
+        var objectKey = change.ObjectKey;
+        var column = change.ColumnName;
+        var runId = change.RunId;
+        var occurredUtc = change.OccurredUtc;
+        return await context.ColumnTypeChanges.AsNoTracking()
+            .AnyAsync(c => c.ObjectKey == objectKey && c.ColumnName == column && c.OccurredUtc > occurredUtc
+                           && c.RunId != runId && c.Layer == target && (c.Status == applied || c.Status == resumed), ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>The serializer shape of a schema registration run's <c>result</c> (camelCase, enums as names).</summary>
@@ -1414,7 +1577,7 @@ public sealed class CatalogSync
             var pipelineChange = await UpsertSinglePipelineAsync(context, root, fullFlowPath, repoId, nowUtc, warnings, ct).ConfigureAwait(false);
 
             var runRecorded = false;
-            var detail = (Files: 0, Assertions: 0, Statements: 0, Events: 0, SurrogateKeys: 0, Metrics: 0, SchemaChanges: 0);
+            var detail = default(RunDetailTally);
 
             // A corrupt, oversized, or unreadable run.json is reported as a warning and the run is simply not
             // recorded; the pipeline upsert above still commits (consistent with how the full sync treats a bad
@@ -1439,8 +1602,7 @@ public sealed class CatalogSync
                         run.ResultJson = RecordsResult(run.FlowKind) ? CatalogProjection.RunResultJson(document.RootElement) : null;
                         context.Runs.Add(run);
                         runRecorded = true;
-                        detail = AddRunDetail(
-                            context, document.RootElement, run.RunId, repoId, pipelineId: run.PipelineId);
+                        detail = await AddRunDetailAsync(context, document.RootElement, run, ct: ct).ConfigureAwait(false);
                         await ApplySchemaRegistrationAsync(
                                 context, document.RootElement, repoId, run.PipelineId, replaceEdges: true, nowUtc, ct)
                             .ConfigureAwait(false);
@@ -1485,6 +1647,7 @@ public sealed class CatalogSync
                 RunSurrogateKeysAdded = detail.SurrogateKeys,
                 RunHealthCheckMetricsAdded = detail.Metrics,
                 SchemaChangesAdded = detail.SchemaChanges,
+                TypeChangesAdded = detail.TypeChanges,
                 Warnings = warnings,
             };
         }, ct).ConfigureAwait(false);
@@ -1823,12 +1986,13 @@ public sealed class CatalogSync
                 await ExecuteByKeysAsync(
                         refreshedKeys, chunk => context.ObjectColumns.Where(c => chunk.Contains(c.ObjectKey)).ExecuteDeleteAsync(ct))
                     .ConfigureAwait(false);
+                var refreshed = new List<CatalogObjectColumn>();
                 foreach (var node in nodesToRefresh)
                 {
                     var tier = (node.ColumnsTier ?? Core.Lineage.LineageTier.Observed).ToString();
                     foreach (var column in node.Columns)
                     {
-                        context.ObjectColumns.Add(new CatalogObjectColumn
+                        refreshed.Add(new CatalogObjectColumn
                         {
                             ObjectKey = node.Key,
                             Ordinal = column.Ordinal,
@@ -1837,9 +2001,12 @@ public sealed class CatalogSync
                             Nullable = column.Nullable,
                             Tier = tier,
                         });
-                        columns++;
                     }
                 }
+
+                await ReplayAppliedTypeChangesAsync(context, refreshed, ct).ConfigureAwait(false);
+                context.ObjectColumns.AddRange(refreshed);
+                columns += refreshed.Count;
             }
         }
 
@@ -2768,12 +2935,12 @@ public sealed class CatalogSync
                 refreshKeys, chunk => context.ObjectColumns.Where(c => chunk.Contains(c.ObjectKey)).ExecuteDeleteAsync(ct))
             .ConfigureAwait(false);
 
-        var written = 0;
+        var written = new List<CatalogObjectColumn>();
         foreach (var objectKey in refreshKeys)
         {
             foreach (var column in columnsByKey[objectKey])
             {
-                context.ObjectColumns.Add(new CatalogObjectColumn
+                written.Add(new CatalogObjectColumn
                 {
                     ObjectKey = objectKey,
                     Ordinal = column.Ordinal,
@@ -2782,12 +2949,86 @@ public sealed class CatalogSync
                     Nullable = column.Nullable,
                     Tier = nameof(Core.Lineage.LineageTier.Observed),
                 });
-                written++;
             }
         }
 
-        return written;
+        await ReplayAppliedTypeChangesAsync(context, written, ct).ConfigureAwait(false);
+        context.ObjectColumns.AddRange(written);
+        return written.Count;
     }
+
+    /// <summary>One type change a run made to a target column, as the column dictionary replays it.</summary>
+    private sealed record AppliedTypeChange(string ObjectKey, string Column, string FromType, string ToType, DateTime OccurredUtc, long Id);
+
+    /// <summary>
+    /// Brings a column dictionary read from what a run once executed (a CREATE TABLE in its trace, or what a flow
+    /// declares) up to the type changes runs have made since (<see cref="CatalogColumnTypeChange"/>): each change made to a
+    /// target column, oldest first, turns a column whose type is still the one the change was from into the one it was to,
+    /// so a re-read never moves a column back to the type it was created with. A column read live (Derived) is the
+    /// database's own type and is left as read; a column whose type no change starts from (the table was created again
+    /// since, say) keeps the type it was read with. The changes are the catalog's and this pass's own, not yet saved.
+    /// </summary>
+    private static async Task ReplayAppliedTypeChangesAsync(
+        CatalogDbContext context, IReadOnlyList<CatalogObjectColumn> rows, CancellationToken ct)
+    {
+        var derived = nameof(Core.Lineage.LineageTier.Derived);
+        var keys = rows
+            .Where(r => r.Tier != derived && r.DataType is not null)
+            .Select(r => r.ObjectKey)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (keys.Count == 0)
+        {
+            return;
+        }
+
+        var target = Core.Model.TypeChangeReport.TargetLayer;
+        var applied = nameof(Core.Model.TypeChangeStatus.Applied);
+        var resumed = nameof(Core.Model.TypeChangeStatus.Resumed);
+        var stored = await SelectByKeysAsync(
+                keys,
+                chunk => context.ColumnTypeChanges.AsNoTracking()
+                    .Where(c => chunk.Contains(c.ObjectKey) && c.Layer == target && (c.Status == applied || c.Status == resumed))
+                    .Select(c => new AppliedTypeChange(c.ObjectKey, c.ColumnName, c.FromType, c.ToType, c.OccurredUtc, c.Id))
+                    .ToListAsync(ct))
+            .ConfigureAwait(false);
+        var keySet = keys.ToHashSet(StringComparer.Ordinal);
+        var pending = context.ColumnTypeChanges.Local
+            .Where(c => keySet.Contains(c.ObjectKey) && c.Layer == target && (c.Status == applied || c.Status == resumed))
+            .Select(c => new AppliedTypeChange(c.ObjectKey, c.ColumnName, c.FromType, c.ToType, c.OccurredUtc, long.MaxValue));
+        if (stored.Count == 0 && !pending.Any())
+        {
+            return;
+        }
+
+        var byColumn = stored.Concat(pending)
+            .GroupBy(c => (c.ObjectKey, Column: c.Column.ToUpperInvariant()))
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.OccurredUtc).ThenBy(c => c.Id).ToList());
+        foreach (var row in rows)
+        {
+            if (row.Tier == derived || row.DataType is null
+                || !byColumn.TryGetValue((row.ObjectKey, row.Name.ToUpperInvariant()), out var changes))
+            {
+                continue;
+            }
+
+            foreach (var change in changes)
+            {
+                if (SameType(row.DataType, change.FromType))
+                {
+                    row.DataType = change.ToType;
+                }
+            }
+        }
+    }
+
+    /// <summary>Whether two renderings name the same type: case and spacing aside (<c>DECIMAL(18, 2)</c> is
+    /// <c>decimal(18,2)</c>).</summary>
+    private static bool SameType(string left, string right)
+        => string.Equals(
+            string.Concat(left.Where(c => !char.IsWhiteSpace(c))),
+            string.Concat(right.Where(c => !char.IsWhiteSpace(c))),
+            StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The authority ordering of a column/definition tier: Derived (live) beats Observed (parsed from
     /// a run) beats Declared. An unknown or blank tier ranks below all, so it never blocks a real refresh.</summary>

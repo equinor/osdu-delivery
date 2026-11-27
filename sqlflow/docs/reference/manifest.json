@@ -416,14 +416,17 @@
       "path": "cli/plan.md",
       "title": "sqlflow plan",
       "type": "cli-command",
-      "summary": "Preview the exact DDL a file flow would run. Reads the source schema, introspects the live target, diffs, and prints the plan without executing anything.",
+      "summary": "Preview what a run would do, changing nothing: the exact DDL of a file flow, or an ingestion flow's schema and type changes against its live source and target.",
       "keywords": [
         "plan",
         "dry run",
         "ddl preview",
         "schema diff",
         "schema delta",
-        "file flows"
+        "file flows",
+        "ingestion flows",
+        "type changes",
+        "convertTypes"
       ],
       "cliCommand": "plan",
       "related": [
@@ -431,6 +434,8 @@
         "cli-validate",
         "concept-schema-evolution",
         "flow-schema",
+        "flow-ing",
+        "flow-ing-schema-incremental",
         "concept-cli-conventions"
       ],
       "sourceRefs": [
@@ -441,6 +446,13 @@
         "src/SqlFlow.SqlServer/SqlServerDdlGenerator.cs",
         "src/SqlFlow.SqlServer/SqlServerTypeMapper.cs",
         "src/SqlFlow.Execution/DocumentLoader.cs",
+        "src/SqlFlow.Execution/DocumentExecutor.cs",
+        "src/SqlFlow.SqlServer/Ingestion/IngestionFlowRunner.cs",
+        "src/SqlFlow.SqlServer/Ingestion/IngestionPlan.cs",
+        "src/SqlFlow.SqlServer/Schema/SchemaSyncService.cs",
+        "src/SqlFlow.SqlServer/Schema/TypeChangeApplier.cs",
+        "src/SqlFlow.SqlServer/Schema/ColumnRetyper.cs",
+        "src/SqlFlow.Core/Model/TypeChangeReport.cs",
         "src/SqlFlow.Core/SqlFlowException.cs",
         "samples/quickstart/orders.flow.yaml"
       ]
@@ -760,6 +772,96 @@
         "tests/SqlFlow.ControlPlane.Tests/ColumnTraceApiTests.cs",
         "tools/sqlflow-mcp/src/server.rs",
         "gui/src/features/chat/columnLineage.ts"
+      ]
+    },
+    {
+      "id": "concept-column-type-changes",
+      "corpus": "reference",
+      "path": "concepts/column-type-changes.md",
+      "title": "Changing the type of a column that already exists",
+      "type": "concept",
+      "summary": "How a declared type change reaches a view and an ingestion target, in three tiers, with a data check, a safe rewrite keeping every row, and a report per run.",
+      "keywords": [
+        "type change",
+        "retype",
+        "convertTypes",
+        "allowTableRewrite",
+        "checked conversion",
+        "safe rewrite",
+        "shadow column",
+        "widening",
+        "narrowing",
+        "key column",
+        "typechange"
+      ],
+      "related": [
+        "concept-schema-evolution",
+        "flow-ing-schema-incremental",
+        "flow-transform",
+        "concept-type-inference",
+        "cli-plan"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.SqlServer/Schema/TypeChangeClassifier.cs",
+        "src/SqlFlow.SqlServer/Schema/TypeChanges.cs",
+        "src/SqlFlow.SqlServer/Schema/LosslessConversion.cs",
+        "src/SqlFlow.SqlServer/Schema/ColumnRetyper.cs",
+        "src/SqlFlow.SqlServer/Schema/TypeChangeApplier.cs",
+        "src/SqlFlow.SqlServer/Schema/StagingWriteGuard.cs",
+        "src/SqlFlow.SqlServer/Schema/TableDependencies.cs",
+        "src/SqlFlow.SqlServer/Schema/ChangeFootprintClassifier.cs",
+        "src/SqlFlow.Core/Model/TypeChangeReport.cs",
+        "src/SqlFlow.Core/Engine/FlowRunner.cs",
+        "src/SqlFlow.Core/Engine/TypeInferencer.cs",
+        "src/SqlFlow.SqlServer/Ingestion/IngestionFlowRunner.cs"
+      ]
+    },
+    {
+      "id": "concept-column-type-history",
+      "corpus": "reference",
+      "path": "concepts/column-type-history.md",
+      "title": "Column type history: what each run did about a column's type, and runs that succeed with warnings",
+      "type": "concept",
+      "summary": "Each change to an existing column's type a run reports, kept per column with its outcome, and the warnings a run raised, so one that succeeded with them shows.",
+      "keywords": [
+        "column type history",
+        "type change",
+        "type changes",
+        "ColumnTypeChange",
+        "CatalogColumnTypeChange",
+        "TypeChangeReport",
+        "warning count",
+        "WarningCount",
+        "succeeded with warnings",
+        "needs attention",
+        "schema.convertTypes",
+        "checked conversion",
+        "widening"
+      ],
+      "related": [
+        "concept-shadow-catalog",
+        "concept-schema-evolution",
+        "concept-control-plane",
+        "concept-maintenance"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Core/Model/TypeChangeReport.cs",
+        "src/SqlFlow.Catalog/CatalogEntities.cs",
+        "src/SqlFlow.Catalog/CatalogDbContext.cs",
+        "src/SqlFlow.Catalog/CatalogProjection.cs",
+        "src/SqlFlow.Catalog/CatalogSync.cs",
+        "src/SqlFlow.Catalog/RunQueueStore.cs",
+        "src/SqlFlow.Catalog/RepoStore.cs",
+        "src/SqlFlow.Catalog/Migrations/20261127122828_RunWarningCountAndColumnTypeHistory.cs",
+        "src/SqlFlow.ControlPlane/Api/Contracts.cs",
+        "src/SqlFlow.ControlPlane/Api/RunEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/PipelineRunDurations.cs",
+        "src/SqlFlow.Cli/Remote/RemoteVerbs.cs",
+        "gui/src/components/StatusBadge.tsx",
+        "gui/src/features/runs/TypeChanges.tsx",
+        "gui/src/features/runs/typeChangeOutcome.ts",
+        "gui/src/features/pipelines/PipelineDetailPage.tsx"
       ]
     },
     {
@@ -1853,6 +1955,7 @@
         "ddl"
       ],
       "related": [
+        "concept-column-type-changes",
         "flow-schema",
         "flow-ing-schema-incremental",
         "cli-plan",

@@ -1127,7 +1127,8 @@ internal static partial class RemoteVerbs
 
     private static void PrintRunDetail(RunDetailDto run)
     {
-        Console.WriteLine($"run {run.RunId}: {run.Status}");
+        // A run that succeeded with warnings is still succeeded; the count says something in it needs an operator.
+        Console.WriteLine($"run {run.RunId}: {run.Status}{(run.WarningCount > 0 ? $", {run.WarningCount} warning(s)" : string.Empty)}");
         if (run.StartedBy is { } startedBy)
         {
             Console.WriteLine($"  started by:  {startedBy.Summary}");

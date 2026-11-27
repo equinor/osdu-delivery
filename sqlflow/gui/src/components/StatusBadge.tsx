@@ -1,5 +1,6 @@
 ﻿import {
   Ban,
+  CircleAlert,
   CircleCheck,
   CircleMinus,
   CircleX,
@@ -16,6 +17,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { RunStatus } from "../api/types";
+import { succeededWithWarnings, warningsLabel } from "../features/runs/typeChangeOutcome";
 
 type Tone = "success" | "destructive" | "info" | "warning" | "muted";
 
@@ -93,8 +95,16 @@ function Pill({
   );
 }
 
-/** The tone and icon a run status renders with; the label doubles as the tooltip text and the accessible name. */
-function runStatusVisual(status: RunStatus | string): { tone: Tone; label: string; icon: LucideIcon; spin?: boolean } {
+/** The tone and icon a run status renders with; the label doubles as the tooltip text and the accessible name. A run that
+ * succeeded with warnings is still succeeded, so it keeps the word and takes the warning tone and an alert glyph: it
+ * finished, and something in it needs an operator. */
+function runStatusVisual(
+  status: RunStatus | string, warningCount?: number,
+): { tone: Tone; label: string; icon: LucideIcon; spin?: boolean } {
+  if (succeededWithWarnings(status, warningCount)) {
+    return { tone: "warning", label: `succeeded with ${warningsLabel(warningCount ?? 0)}`, icon: CircleAlert };
+  }
+
   switch (status) {
     case "queued":
       return { tone: "warning", label: "queued", icon: Clock3 };
@@ -157,10 +167,19 @@ export function IconBadge({
 
 /**
  * One mapping from run status to tone/affordance, used everywhere a run status renders. Renders through
- * {@link IconBadge}: only the tinted status icon, with the word on hover and for assistive tech.
+ * {@link IconBadge}: only the tinted status icon, with the word on hover and for assistive tech. Pass the run's
+ * `warningCount` where it is known, so a run that succeeded with warnings shows apart from a clean one.
  */
-export function RunStatusBadge({ status, testId = "status-badge" }: { status: RunStatus | string; testId?: string }) {
-  const { tone, label, icon: Icon, spin } = runStatusVisual(status);
+export function RunStatusBadge({
+  status,
+  warningCount,
+  testId = "status-badge",
+}: {
+  status: RunStatus | string;
+  warningCount?: number;
+  testId?: string;
+}) {
+  const { tone, label, icon: Icon, spin } = runStatusVisual(status, warningCount);
   return <IconBadge tone={tone} label={label} icon={Icon} spin={spin} testId={testId} />;
 }
 

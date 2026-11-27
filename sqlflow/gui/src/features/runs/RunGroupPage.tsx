@@ -31,7 +31,7 @@ import { useTabTitle } from "../../layout/workbench/TabsContext";
 import { useRunGroupStream } from "./useRunGroupStream";
 
 const memberColumns: Column<RunSummary>[] = [
-  { id: "status", header: "Status", render: (row) => <RunStatusBadge status={row.status} /> },
+  { id: "status", header: "Status", render: (row) => <RunStatusBadge status={row.status} warningCount={row.warningCount} /> },
   {
     id: "flow",
     header: "Flow",

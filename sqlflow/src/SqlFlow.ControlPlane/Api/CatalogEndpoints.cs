@@ -39,6 +39,7 @@ public static class CatalogEndpoints
         var schema = group.MapGroup("/schema-changes").WithTags("SchemaChanges");
         schema.MapGet("/", ListSchemaChangesAsync).WithName("ListSchemaChanges");
         schema.MapGet("/databases", ListSchemaChangeDatabasesAsync).WithName("ListSchemaChangeDatabases");
+        schema.MapGet("/columns", ListColumnTypeChangesAsync).WithName("ListColumnTypeChanges");
 
         return group;
     }
@@ -612,6 +613,36 @@ public static class CatalogEndpoints
                 g.Max(c => c.OccurredUtc)))
             .ToListAsync(ct).ConfigureAwait(false);
         return TypedResults.Ok((IReadOnlyList<SchemaChangeDatabaseDto>)rows);
+    }
+
+    /// <summary>
+    /// A column's type history, newest first: every change to its type a run reported, with what became of it, read by
+    /// the object's catalog key (the key its columns and lineage carry) and the column's name. Without a column it is the
+    /// history of every column of the object. Answers 400 when no object key is given.
+    /// </summary>
+    private static async Task<Results<Ok<PagedResult<ColumnTypeChangeDto>>, ProblemHttpResult>> ListColumnTypeChangesAsync(
+        CatalogDbContext db, string? objectKey, string? column, int? page, int? pageSize, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(objectKey))
+        {
+            return BadRequest("Invalid request", "objectKey is required: the catalog key of the object whose column type history is read.");
+        }
+
+        var (p, size) = PageRequest.Normalize(page, pageSize);
+        var key = objectKey.Trim();
+        var query = db.ColumnTypeChanges.AsNoTracking().Where(c => c.ObjectKey == key);
+        if (!string.IsNullOrWhiteSpace(column))
+        {
+            var name = column.Trim();
+            query = query.Where(c => c.ColumnName == name);
+        }
+
+        var total = await query.LongCountAsync(ct).ConfigureAwait(false);
+        var rows = await query
+            .OrderByDescending(c => c.OccurredUtc).ThenByDescending(c => c.Id)
+            .Skip((p - 1) * size).Take(size)
+            .ToListAsync(ct).ConfigureAwait(false);
+        return TypedResults.Ok(new PagedResult<ColumnTypeChangeDto>(rows.Select(ColumnTypeChangeDto.From).ToList(), p, size, total));
     }
 
     private static ProblemHttpResult NotFound(string resource, Guid id)

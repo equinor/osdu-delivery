@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace SqlFlow.SqlServer.Schema;
 
 /// <summary>The lock and data footprint of a single schema change at the SQL Server level.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ChangeFootprint>))]
 public enum ChangeFootprint
 {
     /// <summary>Recorded in metadata only; no data pages touched; the schema-modification lock is held for
@@ -12,7 +15,7 @@ public enum ChangeFootprint
     TableRewrite,
 }
 
-/// <summary>A widening change to an existing target column (ALTER COLUMN), preserving its nullability.</summary>
+/// <summary>A type change applied in place to an existing target column (ALTER COLUMN), preserving its nullability.</summary>
 public sealed record ColumnAlter
 {
     public required string Name { get; init; }
@@ -38,9 +41,6 @@ public enum DriftKind
     /// <summary>A column present in the target but absent from the source; retained, never dropped.</summary>
     ExtraTargetColumn,
 
-    /// <summary>An incompatible type change on an ordinary column; the target is left unchanged.</summary>
-    IncompatibleOrdinaryColumn,
-
     /// <summary>The desired column is NOT NULL but the target column is nullable; left nullable (never tightened).</summary>
     NullabilityNotTightened,
 }
@@ -54,9 +54,10 @@ public sealed record DriftFinding
 }
 
 /// <summary>
-/// The plan for evolving a target table to the desired schema: create it, add new columns, widen existing
-/// columns, and the critical mismatches (which block the load) and non-blocking drift. Produced by
-/// <see cref="SchemaEvolutionPlanner"/> and turned into DDL by the evolution DDL generator.
+/// The plan for evolving a target table to the desired schema: create it, add new columns, alter existing columns in
+/// place, the type changes classified into tiers (<see cref="TypeChanges"/>, carried by the safe rewrite or reported),
+/// the critical mismatches (which block the load) and non-blocking drift. Produced by
+/// <see cref="SchemaEvolutionPlanner"/>; the in-place part is turned into DDL by <see cref="EvolutionDdlGenerator"/>.
 /// </summary>
 public sealed record EvolutionPlan
 {
@@ -64,6 +65,10 @@ public sealed record EvolutionPlan
     public IReadOnlyList<SqlColumn> CreateColumns { get; init; } = [];
     public IReadOnlyList<SqlColumn> ColumnsToAdd { get; init; } = [];
     public IReadOnlyList<ColumnAlter> ColumnsToAlter { get; init; } = [];
+
+    /// <summary>Every column whose type differs from the source's, classified; the in-place ones are also in
+    /// <see cref="ColumnsToAlter"/>.</summary>
+    public IReadOnlyList<ColumnTypeChange> TypeChanges { get; init; } = [];
     public IReadOnlyList<CriticalMismatch> CriticalMismatches { get; init; } = [];
     public IReadOnlyList<DriftFinding> Drift { get; init; } = [];
 

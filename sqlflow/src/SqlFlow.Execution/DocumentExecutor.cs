@@ -335,17 +335,31 @@ public sealed class DocumentExecutor : IDocumentRunner
         };
     }
 
-    private async Task<DocumentExecutionResult> ExecuteIngestionAsync(IngestionFlowDocument doc, string flowFile, DocumentExecutionOptions options, CancellationToken ct)
+    /// <summary>
+    /// Plans a run of an ingestion document without changing anything (<see cref="IngestionFlowRunner.PlanAsync"/>). The
+    /// runner is the one its run builds, so the plan resolves the document's connections and secrets, and reads its source
+    /// and target, exactly as the run does.
+    /// </summary>
+    public Task<IngestionPlan> PlanIngestionAsync(IngestionFlowDocument document, CancellationToken ct = default)
     {
-        var flowName = doc.Document.Flow.SysAlias ?? doc.Document.Flow.Target.Table.Name;
-        var (runLogger, events, eventSink) = BuildEventPlumbing(options, flowName);
-        var runner = WithoutDatabaseIngestion.BuildRunner(
+        ArgumentNullException.ThrowIfNull(document);
+        return BuildIngestionRunner(document).PlanAsync(document.Document.Flow, ct);
+    }
+
+    private IngestionFlowRunner BuildIngestionRunner(IngestionFlowDocument doc)
+        => WithoutDatabaseIngestion.BuildRunner(
             doc.Document.Connections,
             doc.Document.AssertionDefinitions,
             _provider.GetRequiredService<ISecretResolver>(),
             SqlFlowSourceProviders.CreateRegistry(),
             doc.Document.Invokes,
             InvokeExecutorFactory.Create(_provider, doc.Document.Invokes, doc.Document.ServicePrincipals));
+
+    private async Task<DocumentExecutionResult> ExecuteIngestionAsync(IngestionFlowDocument doc, string flowFile, DocumentExecutionOptions options, CancellationToken ct)
+    {
+        var flowName = doc.Document.Flow.SysAlias ?? doc.Document.Flow.Target.Table.Name;
+        var (runLogger, events, eventSink) = BuildEventPlumbing(options, flowName);
+        var runner = BuildIngestionRunner(doc);
         var result = await runner.RunAsync(
             doc.Document.Flow,
             new IngestionRunOptions

@@ -49,7 +49,7 @@ public sealed class SqlTypeResolutionTests
     [Theory]
     [InlineData("int", "nvarchar(50)")]    // integer vs text
     [InlineData("datetime", "int")]        // datetime vs integer
-    [InlineData("date", "datetime2(7)")]   // differing date/time bases (conservative)
+    [InlineData("datetime", "datetime2(7)")] // datetime rounds to 1/300 s: not a widening
     [InlineData("timestamp", "varbinary(8)")] // rowversion cannot be altered
     public void CrossFamilyOrUnsafe_IsIncompatible(string existing, string desired)
     {

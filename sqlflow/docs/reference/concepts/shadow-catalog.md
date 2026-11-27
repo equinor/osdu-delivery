@@ -39,7 +39,7 @@ sourceRefs:
 
 The shadow catalog is a SQL Server read-model of the SQLFlow estate. Git/YAML flow documents plus the on-disk `run.json` history are the source of truth; the catalog database mirrors them in ONE direction (files to database, never back), so it can always be rebuilt from scratch by re-syncing. Several git repos sync into a single catalog for cross-repo queries; every pipeline and run row is attributed to its repo. The whole schema lives under the `catalog` schema and is owned by EF Core migrations (`CatalogDbContext`, `src/SqlFlow.Catalog/CatalogDbContext.cs`); it is the only place in the product that uses Entity Framework.
 
-Tables in the `catalog` schema: `Repo`, `Pipeline`, `Run`, `Object`, `LineageEdge`, `FlowDependency`, `RunFile`, `RunAssertion`, `RunStatement`, `RunEvent`, `RunSurrogateKey`, `RunHealthCheckMetric`, `ObjectColumn`, `ColumnPolicy`, `PipelineColumn`, `Schedule`, `Node`, `RepoSource`, `User`, `Role`.
+Tables in the `catalog` schema: `Repo`, `Pipeline`, `Run`, `Object`, `LineageEdge`, `FlowDependency`, `RunFile`, `RunAssertion`, `RunStatement`, `RunEvent`, `RunSurrogateKey`, `RunHealthCheckMetric`, `SchemaChange`, `ColumnTypeChange`, `ObjectColumn`, `ColumnPolicy`, `PipelineColumn`, `Schedule`, `Node`, `RepoSource`, `User`, `Role`.
 
 A full sync pass (`CatalogSync.SyncAsync`, `src/SqlFlow.Catalog/CatalogSync.cs`) runs in one serializable transaction wrapped in the context's execution strategy, so two concurrent syncs of the same repo serialize instead of racing, and a connection-resiliency retry re-collects the estate from disk safely.
 
@@ -58,11 +58,16 @@ Pipeline names are unique per `(RepoId, Name)`, not globally. Cross-table links 
 Source-control (`scm`) runs additionally project into `SchemaChange`: one row per database object they found
 added, changed, or dropped, carrying the database, the object category, schema and name, the change kind, the
 commit that holds the diff, and when the snapshot observed it. It is written by the same one-run-one-insert path
-as every other run detail (`CatalogSync.AddRunDetail`), so the CLI, the full sync, and the live run queue record
+as every other run detail (`CatalogSync.AddRunDetailAsync`), so the CLI, the full sync, and the live run queue record
 it identically. Non-scm runs project no rows, and a dry run is deliberately skipped.
 
 The rows are keyed by their own `RepoId` and outlive nothing else: they are not pruned with run history, because
 a change feed that forgets is not a history. They are removed only when their repo is deleted.
+
+Every run that reports a change to an existing column's type (`result.typeChanges`) projects into `ColumnTypeChange`
+the same way: one row per report, keyed by the object and column it changed, with its tier and outcome, kept until its
+repo is deleted. A change applied to a target column also sets the column's `ObjectColumn.DataType` at once. See
+[Column type history](column-type-history.md).
 
 ## Column access policy
 
@@ -131,7 +136,9 @@ Runs are insert-only, keyed by their own `RunId`, so re-syncing the same folders
 
 A run recorded from its artifact is born in a terminal `Status`: `succeeded` or `failed` from the artifact's `success` boolean. Queue-born runs (control plane) use the lifecycle `queued` -> `running` -> `succeeded` / `failed`, or `cancelled` while still queued (`RunStatuses` constants with an `IsTerminal` helper).
 
-Metric fields are best-effort from the kind-specific `result`: `StartUtc` / `EndUtc` from `result.startTimeUtc` / `endTimeUtc`, `DurationSeconds` from `result.durationSeconds` (seconds, fractions kept) or `result.totalMs / 1000`, `RowsLoaded` from `result.rowsLoaded ?? result.totalRows`, plus `RowsInserted` / `RowsUpdated` / `RowsDeleted`; `Host` comes from the root's `host` field.
+Metric fields are best-effort from the kind-specific `result`: `StartUtc` / `EndUtc` from `result.startTimeUtc` / `endTimeUtc`, `DurationSeconds` from `result.durationSeconds` (seconds, fractions kept) or `result.totalMs / 1000`, `RowsLoaded` from `result.rowsLoaded ?? result.totalRows`, plus `RowsInserted` / `RowsUpdated` / `RowsDeleted`; `Host` comes from the root's `host` field. `WarningCount` counts the
+root's `events` at level `warning`, so a run that succeeded with warnings keeps `Status` `succeeded` and is told apart by
+the count ([Column type history](column-type-history.md#a-runs-warnings)).
 
 A run of a flow kind a host registered keeps its whole `result` object, as compact JSON, in `ResultJson`, where its run page, its run lists (`GET /runs?resultCounts=true`) and a fan-out root read what it did. The rule is the same however the run reaches the catalog: a run the queue completed, the per-run write-back after `sqlflow run`, and `sqlflow db sync` each keep it when the sync's document loader knows the kind (`CatalogSync` built with the host's `YamlDocumentLoader`). A built-in kind's result is projected into the columns above and the drill-down tables instead, and a result over 32,000 characters stays in the artifact only.
 
@@ -150,7 +157,7 @@ The migration `RunDurationFromStartAndEnd` gave every finished run recorded befo
 
 ### Drill-down tables
 
-A run is immutable, so its detail rows are inserted exactly once, with the run itself (`CatalogSync.AddRunDetail`):
+A run is immutable, so its detail rows are inserted exactly once, with the run itself (`CatalogSync.AddRunDetailAsync`):
 
 | Table | Source in run.json | Notes |
 | --- | --- | --- |
@@ -160,6 +167,8 @@ A run is immutable, so its detail rows are inserted exactly once, with the run i
 | `RunEvent` | the top-level `events` array (`timestampUtc`, `level`, `step`, `message`, `rows`, `elapsedMs`) | 1-based ordinals in execution order; an entry missing a message or timestamp is skipped |
 | `RunSurrogateKey` | `result.surrogateKeys` | Keys generated, rows stamped, remote flag, error |
 | `RunHealthCheckMetric` | `result.metricResults` | Series/imputed/immature points, anomalies, level shifts, model provenance |
+| `SchemaChange` | a source-control run's `result.addedObjects` / `changedObjects` / `deletedObjects` | See [Schema history](#schema-history) |
+| `ColumnTypeChange` | `result.typeChanges` | One row per change to an existing column's type; replaced when a run is projected again ([Column type history](column-type-history.md)) |
 
 `CatalogRunStatement` is the V3 equivalent of the legacy `flw.SysLog.TraceLog`: every statement the engine generated for a run, queryable from the database instead of the file. `Step` is truncated to 128 characters; `Sql` is nvarchar(max).
 

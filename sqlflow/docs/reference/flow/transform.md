@@ -34,7 +34,7 @@ sourceRefs:
 
 # `transform` section: type inference and column transforms
 
-The `transform` block is the pre-ingestion transform layer: it turns the raw (string-typed) landing table into a typed projection by combining datatype inference (`inferTypes`) with explicitly authored per-column transforms (`columns`). The resolved projection is materialized as a transformation view named `v_<Table>` in the target's schema, refreshed as a post-process of every load with `CREATE OR ALTER VIEW`. Downstream chained flows read the view, not the raw table, which is how correctly typed data and dynamic schema evolution propagate down the chain. The exact same block shape and validation are shared by file flows and relational ingestion (`flowType: ing`) documents; both loaders map it through `YamlFlowLoader.MapInference` (src/SqlFlow.Yaml/YamlFlowLoader.cs, src/SqlFlow.Yaml/YamlIngestionFlowLoader.cs).
+The `transform` block is the pre-ingestion transform layer: it turns the raw (string-typed) landing table into a typed projection by combining datatype inference (`inferTypes`) with explicitly authored per-column transforms (`columns`). The resolved projection is materialized as a transformation view named `v_<Table>` in the target's schema, rebuilt with `CREATE OR ALTER VIEW` on every run: after the load, and also on a file flow run that finds no new file, so a column declared or a type changed reaches the view at once rather than when the next file lands (a table nothing has landed in yet has no view). Downstream chained flows read the view, not the raw table, which is how correctly typed data and dynamic schema evolution propagate down the chain. The exact same block shape and validation are shared by file flows and relational ingestion (`flowType: ing`) documents; both loaders map it through `YamlFlowLoader.MapInference` (src/SqlFlow.Yaml/YamlFlowLoader.cs, src/SqlFlow.Yaml/YamlIngestionFlowLoader.cs).
 
 Minimal working example (adapted from samples/lineage-demo/11-land-customers.flow.yaml):
 
@@ -80,6 +80,8 @@ Per entry under `transform.columns`:
 ## `transform.inferTypes`
 
 Default `false`. When `true`, the runner profiles the just-loaded table (after the load, so evolved columns are included) and picks a SQL type per raw column; the chosen types are, by construction, convertible by SQL Server because the profiler counts what `TRY_CONVERT` accepts. Inference fills only the columns that no `transform.columns` entry names; an authored transform always wins for its column (`ColumnTransformResolver` in src/SqlFlow.Core/Engine/ColumnTransformResolver.cs). Columns that are neither authored nor inferred pass through untyped.
+
+Inference types a column the first time the view sees it, and never re-types it afterwards: text stays text whatever its later values look like, and a typed column keeps its type, widening within its family when new values need it (an integer rank, a decimal's digits, a date becoming a date and time). When later values no longer fit its family at all, the column keeps its type converted fail-loud, so reading the view stops on the value. Only a declared `type` changes an existing column's type ([column type changes](../concepts/column-type-changes.md#inference-keeps-a-columns-type)).
 
 In a `flowType: ing` document, `inferTypes: true` requires an inference service wired into the runner. Without one the run fails with: `transform.inferTypes is on, but no inference service is wired into this runner. Register one (the engine host does by default), or declare the transforms explicitly under transform.columns.` (src/SqlFlow.SqlServer/Ingestion/IngestionFlowRunner.cs).
 
@@ -143,6 +145,8 @@ The output column name in the generated view. Null keeps `name`. This is a renam
 ### `type`
 
 The declared target SQL type (for example `varchar(50)`, `decimal(18,2)`). With no `expr` it drives a straight cast; with an `expr` it documents the expression's result type and is carried into the catalog projection.
+
+When a `type` with no `expr` changes the type a view column already has, the landed values are checked first: a value the cast would round, cut, drop part of, or read by the session's language refuses the declaration for that run, the column keeps its type, and the run reports the count and a sample at warning level (`view.typechange`) until the values are mapped with an `expr` (for example `NULLIF(@ColName, 'NA')`) or a type that holds them is declared. A downstream ingestion flow then takes the new type to its target ([column type changes](../concepts/column-type-changes.md)).
 
 ### `order`
 

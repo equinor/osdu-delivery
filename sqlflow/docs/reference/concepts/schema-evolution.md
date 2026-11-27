@@ -15,6 +15,7 @@ keywords:
   - monotonic widening
   - ddl
 related:
+  - concept-column-type-changes
   - flow-schema
   - flow-ing-schema-incremental
   - cli-plan
@@ -143,7 +144,8 @@ schema:
 | --- | --- |
 | `CreateTable` / `CreateColumns` | The target is missing; create it with the full column list. |
 | `ColumnsToAdd` | Desired columns absent from the target (case-insensitive match). |
-| `ColumnsToAlter` | Same-family type widenings (`ALTER COLUMN`), each classified with a `ChangeFootprint`. |
+| `ColumnsToAlter` | The type changes applied in place (`ALTER COLUMN`), each classified with a `ChangeFootprint`. |
+| `TypeChanges` | Every column whose type differs from the source's, classified into the three tiers of [column type changes](column-type-changes.md): the in-place ones (also in `ColumnsToAlter`), the ones the safe rewrite carries, and the refused ones. |
 | `CriticalMismatches` | Incompatible type changes on a key, hash-key, identity, or primary-key column. `IsBlocked` is true when any exist; the load must not proceed. |
 | `Drift` | Non-blocking findings, surfaced for visibility only. |
 
@@ -152,7 +154,7 @@ The plan is monotonic:
 - Same-family types merge to the wider of the two (`SqlTypeResolution.Resolve`); the target is never narrowed.
 - Target-only columns are never dropped; they become `DriftKind.ExtraTargetColumn` findings.
 - A nullable target column is never tightened to `NOT NULL`; a desired `NOT NULL` on a nullable target becomes `DriftKind.NullabilityNotTightened`.
-- A cross-family (incompatible) type change on an ordinary column is `DriftKind.IncompatibleOrdinaryColumn` and the target column is left unchanged; on a key, hash-key, identity, or primary-key column it is a `CriticalMismatch` that blocks the load.
+- A change to an existing column's type is a `ColumnTypeChange` in `TypeChanges`, in one of three tiers: a widening (in place, or by the safe rewrite with `schema.allowTableRewrite`), a checked conversion (with `schema.convertTypes`, after a data check), or a manual change the engine refuses with its steps. A cross-family change on a key, hash-key, identity, or primary-key column is also a `CriticalMismatch` that blocks the load. See [column type changes](column-type-changes.md).
 
 `EvolutionDdlGenerator.Generate(target, plan, allowTableRewrite)` (src/SqlFlow.SqlServer/Schema/EvolutionDdlGenerator.cs) turns the plan into a classified `DdlBatch`. A blocked plan throws before any DDL runs:
 
@@ -196,28 +198,15 @@ Column order is normalized: names starting with `PK` first, names ending with `P
 | Decimal | Max integer digits plus max scale, precision clamped to 38 (unspecified precision counts as 18). |
 | Approximate | `float` if either side is `float`, else `real`. |
 | Money | `money` if either side is `money`, else `smallmoney`. |
-| DateTime | Only the fractional-second scale of an identical base type is widened; a differing base (for example `date` vs `datetime2`) is `Incompatible` (conservative, no cross promotion). An unspecified `datetime2`/`time`/`datetimeoffset` scale counts as 7, so a bare `datetime2` already covers any incoming scale. |
+| DateTime | The fractional-second scale of an identical base type is widened, and `date` widens to `datetime2` (a date is a `datetime2` at midnight); any other differing base (`datetime`, `smalldatetime`, `time`, `datetimeoffset`) is `Incompatible`. An unspecified `datetime2`/`time`/`datetimeoffset` scale counts as 7, so a bare `datetime2` already covers any incoming scale. |
 | Binary | `timestamp`/`rowversion` cannot be widened at all (`Incompatible`); `image` or length -1 forces `varbinary(max)`; variable wins; otherwise the longer length. |
 | Bit, Guid, Other | No widening: any difference is `Incompatible`. |
 
 ## ALTER COLUMN footprint and the allowTableRewrite gate
 
-`ChangeFootprintClassifier.Classify(from, to)` (src/SqlFlow.SqlServer/Schema/ChangeFootprintClassifier.cs) classifies each widening ALTER as `MetadataOnly` or `TableRewrite` from the structured type pair. A rewrite forces a full in-place row rewrite under a schema-modification lock held for the whole operation, blocking every reader and writer on that table.
+`ChangeFootprintClassifier.Classify(from, to)` (src/SqlFlow.SqlServer/Schema/ChangeFootprintClassifier.cs) classifies each ALTER as `MetadataOnly` or `TableRewrite` from the structured type pair. The rule is SQL Server's, measured from the log an `ALTER COLUMN` writes over a populated table: only a variable-length column growing within its own base type (`varchar(n)` to `varchar(m)`, `nvarchar`, `varbinary`, neither of them `max`) is metadata-only. Every other change rewrites every row under a schema-modification lock held for the whole statement, including `varchar` to `nvarchar`, a `decimal` precision or scale change inside one storage-byte class, a `datetime2` scale change inside one byte class, `real` to `float` and `smallmoney` to `money`. The metadata-only growth is also the one change SQL Server allows on an indexed column.
 
-| Family | Rewrite when |
-| --- | --- |
-| Integer | Any rank increase (fixed storage width changes). |
-| Decimal | Crossing a 5/9/13/17-byte storage class: precision <= 9, <= 19, <= 28, > 28. Growth within one class is metadata-only. |
-| DateTime (`datetime2`/`time`/`datetimeoffset`) | Crossing a fractional-scale byte class: scale <= 2, <= 4, > 4. |
-| Text | `(n)` to `(max)` (moves in-row data to LOB storage), or widening fixed `char`/`nchar`. `varchar(n)` to `varchar(m)` is metadata-only. |
-| Binary | To `(max)`, or widening fixed `binary(n)`. |
-| everything else | Metadata-only. |
-
-`RewritePolicy.Decide(allowTableRewrite)` returns `Inline` when the flow opted in and `RequireOptIn` otherwise. A plan containing a `TableRewrite` alter is refused by `EvolutionDdlGenerator` with `SchemaRewriteNotPermittedException` unless the ingestion flow set `schema.allowTableRewrite: true` (`SchemaSyncPolicy.AllowTableRewrite`, default false; parsed from `IngestionSchemaYaml.AllowTableRewrite` in src/SqlFlow.Yaml/IngestionYaml.cs). Staging tables always evolve with `allowTableRewrite: false`. The refusal message:
-
-```text
-Schema evolution on '<target>' requires a table rewrite on column(s) <names> (for example int to bigint). This holds a table lock for the full rewrite and is refused by default. Set AllowTableRewrite to run it, ideally in a maintenance window.
-```
+A widening that rewrites the table runs only when the ingestion flow set `schema.allowTableRewrite: true` (`SchemaSyncPolicy.AllowTableRewrite`, default false), and then by the safe rewrite, which blocks readers only for a final swap (on a system-versioned table, which the safe rewrite cannot carry, by an in-place `ALTER COLUMN` that rewrites the table and its history together). Without the opt-in the change is reported pending on every run and the table is untouched; the load still runs, guarded so no staged value changes on its way into the column's current type. Staging tables always evolve with `allowTableRewrite: false`. See [column type changes](column-type-changes.md).
 
 ## DDL apply: app locks, lock timeouts, and transaction boundaries
 
@@ -240,14 +229,15 @@ Schema evolution on '<target>' requires a table rewrite on column(s) <names> (fo
 | File flow YAML | `schema.defaultColumnType` (default `varchar(255)`) | Type for untyped (string) columns on create. |
 | File flow YAML | `schema.overrides.<column>` (`type`, `nullable`) | Per-column type and nullability overrides. |
 | Ingestion flow YAML | `schema.sync` (default true) | Propagate new source columns to the target on each run. |
-| Ingestion flow YAML | `schema.allowTableRewrite` (default false) | Permit a table-rewrite ALTER to run inline. |
+| Ingestion flow YAML | `schema.allowTableRewrite` (default false) | Permit a widening that rewrites the table, by the safe rewrite. |
+| Ingestion flow YAML | `schema.convertTypes` (default false) | Permit a checked conversion of an existing column to the source's type, after a data check. |
 | Ingestion flow YAML | `schema.cleanColumnNames`, `schema.cleanColumnNameRegex`, `schema.replaceInvalidCharsWith` | Column-name cleanup applied while building the desired schema; renames staging columns as well as the target, regardless of `schema.sync`. |
 | Ingestion flow YAML | `schema.convertUnicodeToNonUnicode` | Convert Unicode source types to non-Unicode on the target. |
-| CLI | `sqlflow plan <file>` | Dry run for file flows: prints whether the target exists, the columns to add, and the generated DDL without executing it. Ingestion, export, and stored-procedure work is determined at run time against the live source, so `plan` rejects those documents. |
+| CLI | `sqlflow plan <file>` | Dry run that changes nothing. A file flow prints whether the target exists, the columns to add, and the generated DDL without executing it. An ingestion flow is planned against its live source and target: the columns schema sync would add and alter in place, what blocks the load, and every change to an existing column's type with what a run with the flow's settings would do about it ([sqlflow plan](../cli/plan.md#ingestion-flows)). Export and stored-procedure work is determined at run time against the live source, so `plan` rejects those documents. |
 
 ## Example: opting in to a table rewrite
 
-Adapted from samples/ingestion/orders-ingestion.flow.yaml. Suppose the source's `OrderID` grew from `int` to `bigint`. The planner classifies the `ALTER COLUMN` as a rewrite (integer rank increase), so the run fails with `SchemaRewriteNotPermittedException` until the flow opts in:
+Adapted from samples/ingestion/orders-ingestion.flow.yaml. Suppose the source's `Quantity` grew from `int` to `bigint`. The planner classifies the change as a widening that rewrites (integer rank increase), so each run reports it pending, and loads only while every staged value still fits `int`, until the flow opts in:
 
 ```yaml
 flowType: ing
@@ -270,7 +260,7 @@ load:
 
 schema:
   sync: true
-  allowTableRewrite: true   # permit the int -> bigint rewrite, ideally in a maintenance window
+  allowTableRewrite: true   # permit the int -> bigint rewrite (the safe rewrite blocks readers only for its swap)
 ```
 
 ```bash

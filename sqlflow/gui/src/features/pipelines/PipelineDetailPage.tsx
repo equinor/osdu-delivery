@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChartColumn, HeartPulse, ListChecks, Loader2, Network, Play } from "lucide-react";
+import { ChartColumn, CircleAlert, HeartPulse, ListChecks, Loader2, Network, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,8 @@ import { kindContribution } from "../../modules/registry";
 import { projectOf } from "../repos/project";
 import { withKindCounts } from "../runs/runCountColumns";
 import { TriggerRunDialog } from "../runs/TriggerRunDialog";
+import { PipelineTypeChangeAttention } from "../runs/TypeChanges";
+import { succeededWithWarnings, warningsLabel } from "../runs/typeChangeOutcome";
 import { hasCensus } from "../../lib/lsp/sqlflowLsp";
 import {
   DESCRIPTION_HIDDEN_FACTS, DESCRIPTION_HIDDEN_TABS, REPORT_HIDDEN_FACTS, REPORT_HIDDEN_TABS, orderPipelineTabs,
@@ -66,7 +68,7 @@ const numeric = (value: number | null | undefined) => (
 );
 
 const runColumns: Column<RunSummary>[] = [
-  { id: "status", header: "Status", render: (row) => <RunStatusBadge status={row.status} /> },
+  { id: "status", header: "Status", render: (row) => <RunStatusBadge status={row.status} warningCount={row.warningCount} /> },
   {
     id: "enqueued",
     header: "Enqueued",
@@ -347,6 +349,14 @@ function RunTimes({ pipelineId }: { pipelineId: string }) {
               />
               {current.status !== "succeeded" && current.status !== "running" && (
                 <span className="text-[11px] text-muted-foreground">{current.status}</span>
+              )}
+              {/* A run that succeeded with warnings is still succeeded: the count, in the warning tone with its glyph,
+                  says something in it needs an operator. */}
+              {succeededWithWarnings(current.status, current.warningCount) && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-warning" data-testid="pipeline-last-run-warnings">
+                  <CircleAlert className="size-3.5 shrink-0" />
+                  {warningsLabel(current.warningCount)}
+                </span>
               )}
             </span>
           )}
@@ -756,6 +766,10 @@ export default function PipelineDetailPage() {
         <DetailPair label="First seen"><RelativeTime value={detail.firstSeenUtc} absolute /></DetailPair>
         <DetailPair label="Last seen"><RelativeTime value={detail.lastSeenUtc} absolute /></DetailPair>
       </DetailHeaderCard>
+
+      {/* The column type changes the latest run left for an operator, above everything else on the page; nothing shows
+          while the latest run left none. */}
+      {!documentOnly && <PipelineTypeChangeAttention pipelineId={pipelineId} />}
 
       <Tabs value={activeTab} onValueChange={selectTab}>
         <TabsList data-testid="pipeline-tabs">

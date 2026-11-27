@@ -127,14 +127,16 @@ public sealed class SchemaDriftReportingIntegrationTests
 
             // The widening was applied, and it changed the type every consumer of [Name] reads, so it is a
             // warning rather than another line in a change count.
-            var retyped = Assert.Single(warnings, w => w.Step == "target.evolve");
-            Assert.Contains("re-typed", retyped.Message, StringComparison.Ordinal);
+            var retyped = Assert.Single(warnings, w => w.Step == "target.typechange" && w.Message.Contains("[Name]", StringComparison.Ordinal));
             Assert.Contains("[Name] varchar(50) -> varchar(100)", retyped.Message, StringComparison.Ordinal);
+            Assert.Contains("applied in place", retyped.Message, StringComparison.Ordinal);
 
-            // The type the engine deliberately did NOT change is reported too, instead of being decided in
-            // silence on every run forever.
-            var drift = Assert.Single(warnings, w => w.Step == "target.drift");
-            Assert.Contains("[Amount]", drift.Message, StringComparison.Ordinal);
+            // The type the engine deliberately did NOT change is reported too, instead of being decided in silence on
+            // every run forever: text to int would be a checked conversion, but this table has nothing that identifies
+            // a row (no identity, primary key or unique index), so the safe rewrite cannot carry it and it is manual.
+            var manual = Assert.Single(warnings, w => w.Step == "target.typechange" && w.Message.Contains("[Amount]", StringComparison.Ordinal));
+            Assert.Contains("tier 3", manual.Message, StringComparison.Ordinal);
+            Assert.Contains("no identity column, primary key or unique index", manual.Message, StringComparison.Ordinal);
 
             // A plain addition stays informational, and a target-only column is the benign case: neither is a
             // warning, or the warnings would be noise nobody reads.

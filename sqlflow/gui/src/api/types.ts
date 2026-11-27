@@ -232,6 +232,8 @@ export interface PipelineRunTiming {
   endUtc: string | null;
   /** Null for the run still executing: its elapsed time is the time since startUtc. */
   durationSeconds: number | null;
+  /** How many warnings it raised; zero for the run still executing. */
+  warningCount: number;
 }
 
 /** How long a pipeline's runs take. The typical figures read the newest succeeded runs only (a failed run's duration
@@ -360,6 +362,9 @@ export interface RunSummary {
    * them (`resultCounts: true`): what a flow kind that counts something other than rows shows on a list of its runs.
    * Null for a run that recorded no result; absent when the list was not asked. */
   resultCounts?: Record<string, number> | null;
+  /** How many warnings the run raised (its events at level warning). A run that succeeded with warnings keeps the status
+   * "succeeded"; this count is what shows it apart. Zero for a run without warnings, or one still executing. */
+  warningCount: number;
 }
 
 export interface RunDetail extends RunSummary {
@@ -458,6 +463,58 @@ export interface SchemaChange {
   changeType: "Added" | "Changed" | "Deleted";
   commitSha: string | null;
   occurredUtc: string;
+}
+
+/** The tier a change to an existing column's type falls into: a widening applied by itself, a conversion checked against
+ * every stored value (applied with `schema.convertTypes`), or one the engine refuses and leaves to be made by hand. */
+export type TypeChangeTier = "Widening" | "CheckedConversion" | "Manual";
+
+/** What became of a change to an existing column's type in one run. Pending, Refused, Manual and RolledBack need an
+ * operator (`needsAttention`), and end the run with a warning. */
+export type TypeChangeStatus =
+  | "Applied" | "Pending" | "Refused" | "Manual" | "KeptWider" | "Planned" | "Resumed" | "RolledBack";
+
+/** A stored value a refused change found that does not convert, with how many rows hold it. */
+export interface TypeChangeSample {
+  value: string;
+  rows: number;
+}
+
+/** One change to the type of an existing column, as a run reported it: the run's type changes, and a column's type
+ * history (newest first). */
+export interface ColumnTypeChange {
+  id: number;
+  runId: string;
+  pipelineId: string;
+  /** The catalog key of the object, as its columns and lineage are keyed. */
+  objectKey: string;
+  /** The table or view as the run named it. */
+  table: string;
+  /** "target" (an ingestion flow's target) or "view" (a file flow's typed view). */
+  layer: string;
+  column: string;
+  fromType: string;
+  toType: string;
+  tier: TypeChangeTier;
+  status: TypeChangeStatus;
+  /** True for an outcome an operator has to act on: pending an opt-in, refused, manual, rolled back. */
+  needsAttention: boolean;
+  /** True when the change rewrites every row rather than being recorded in metadata only. */
+  rewritesTable: boolean;
+  isKey: boolean;
+  /** The flow setting the change needs (schema.convertTypes, say); null when it needs none. */
+  requiresOptIn: string | null;
+  /** The rows the table held when the change was considered; null when not counted. */
+  rows: number | null;
+  /** For a refusal, how many stored values do not convert without loss. */
+  failingValues: number | null;
+  sample: TypeChangeSample[];
+  /** The full explanation: why, what the engine did, and what to do next. */
+  message: string;
+  manualSteps: string[];
+  /** When the run reported it (its end). */
+  occurredUtc: string;
+  requestedBy: string | null;
 }
 
 /** One commit in the snapshot repository, as an endpoint of a comparison. */

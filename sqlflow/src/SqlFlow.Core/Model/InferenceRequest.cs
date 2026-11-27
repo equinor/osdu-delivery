@@ -11,5 +11,10 @@ public sealed record InferenceRequest
     public required string Table { get; init; }
     public TypeInferencePolicy Policy { get; init; } = new();
 
+    /// <summary>The type each undeclared column already has in the typed view, by column name. Inference never moves a
+    /// column out of the type it has (text stays text, a typed column keeps its type and only widens within its family):
+    /// only a declared type changes an existing column's type. Empty on the view's first build.</summary>
+    public IReadOnlyDictionary<string, string> ExistingTypes { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     public string QualifiedName => $"[{Schema}].[{Table}]";
 }

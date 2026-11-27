@@ -124,6 +124,11 @@ public sealed record FlowResult
     /// </summary>
     public TransformViewResult? TransformView { get; init; }
 
+    /// <summary>Every change to the type of a column of the typed view this run considered (a declared type that
+    /// differs from the view's), and what became of it: applied, or refused because landed values do not convert to the
+    /// declared type without loss. Serialized into run.json, from where the catalog keeps the column's type history.</summary>
+    public IReadOnlyList<TypeChangeReport> TypeChanges { get; init; } = [];
+
     /// <summary>The incremental read scope this run computed and applied (the watermark-derived filter, or the
     /// full-read decision), null when the flow has no incremental spec. Surfaced so the run detail can show which
     /// filter ran against the file system without hunting through the log.</summary>
@@ -151,4 +156,8 @@ public sealed record TransformViewResult
 
     /// <summary>The resolved, ordered projection the view exposes (one entry per output column).</summary>
     public required IReadOnlyList<InferredColumn> Columns { get; init; }
+
+    /// <summary>The declared types this refresh changed a view column to, or refused because landed values do not
+    /// convert to them without loss (the column then keeps the type it had).</summary>
+    public IReadOnlyList<TypeChangeReport> TypeChanges { get; init; } = [];
 }

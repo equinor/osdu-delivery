@@ -78,6 +78,11 @@ public sealed class InferenceServiceTests
 
         public Task ExecuteDdlAsync(string connectionString, IReadOnlyList<string> statements, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public Task<IReadOnlyList<LossFinding>> FindLossyConversionsAsync(
+            string connectionString, string schema, string table, IReadOnlyList<LossCheck> checks, int sampleSize,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<LossFinding>>(checks.Select(c => new LossFinding(c.Column, 0, 0, [])).ToList());
     }
 
     private sealed class FakeProfiler : IColumnProfiler

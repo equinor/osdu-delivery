@@ -102,7 +102,8 @@ sqlflow runs list --started-by user                                   # only the
                                                                       # (schedule|chain|user|trigger|cli|unknown)
 sqlflow runs show <runId> [--files --statements --assertions --keys --metrics]
                                                                       # 'started by:', and for a chained run each
-                                                                      # fire behind it ('after:')
+                                                                      # fire behind it ('after:'); a run that raised
+                                                                      # warnings says how many after its status
 sqlflow runs trace <runId> [--follow]                                 # consolidated trace; --follow rides the live SSE
 sqlflow runs cancel <runId>                                           # API when a URL is configured; --db forces the
                                                                       # direct-catalog break-glass route

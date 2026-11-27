@@ -731,9 +731,9 @@ public static class RunQueueStore
                             .Select(e => (int?)e.Ordinal).MaxAsync(ct).ConfigureAwait(false) ?? 0;
                         var maxStatementOrdinal = await catalog.RunStatements.Where(s => s.RunId == runId)
                             .Select(s => (int?)s.Ordinal).MaxAsync(ct).ConfigureAwait(false) ?? 0;
-                        CatalogSync.AddRunDetail(
-                            catalog, document.RootElement, runId, repoId, maxEventOrdinal, maxStatementOrdinal,
-                            existing.PipelineId);
+                        await CatalogSync.AddRunDetailAsync(
+                                catalog, document.RootElement, existing, maxEventOrdinal, maxStatementOrdinal, ct: ct)
+                            .ConfigureAwait(false);
 
                         // A registration run refreshes its objects and Registers edges now. When the registered set
                         // changed, the repo's managed sync is queued so subscribers re-link to the new objects.
@@ -1435,6 +1435,7 @@ public static class RunQueueStore
         target.RowsUpdated = projected.RowsUpdated;
         target.RowsDeleted = projected.RowsDeleted;
         target.Error = projected.Error;
+        target.WarningCount = projected.WarningCount;
         target.Host = projected.Host ?? target.Host;
         target.IncrementalMode = projected.IncrementalMode;
         target.IncrementalFilter = projected.IncrementalFilter;

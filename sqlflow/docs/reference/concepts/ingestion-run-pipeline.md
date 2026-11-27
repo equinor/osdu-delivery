@@ -170,7 +170,7 @@ Every SQL statement the run generates is captured as a `SqlTraceEntry` (`Sequenc
 | `initLoad.enabled`, `initLoad.fromDate`, `initLoad.toDate`, `initLoad.batchBy`, `initLoad.batchSize`, `initLoad.keyColumn`, `initLoad.keyMaxValue` | The chunked backfill plan |
 | `load.keyColumns`, `load.batchUpsert`, `load.batchUpsertRowCount`, `load.threads`, `load.keepStagingTable`, `load.truncateStagingOnCompletion` | The apply and the staging lifecycle |
 | `load.truncateSourceWhenConsolidated` | The consolidation-gated truncate of the upstream `[pre]` landing table once the target's `MAX(watermark)` has caught up |
-| `schema.sync`, `schema.cleanColumnNames`, `schema.cleanColumnNameRegex`, `schema.replaceInvalidCharsWith`, `schema.convertUnicodeToNonUnicode`, `schema.allowTableRewrite` | Desired-schema construction and evolution |
+| `schema.sync`, `schema.cleanColumnNames`, `schema.cleanColumnNameRegex`, `schema.replaceInvalidCharsWith`, `schema.convertUnicodeToNonUnicode`, `schema.allowTableRewrite`, `schema.convertTypes` | Desired-schema construction and evolution |
 | `target.identityColumn`, `target.truncateBeforeLoad`, `target.desiredIndexes`, `target.columnStoreIndex` | Target shaping and create-run indexes |
 | `sqlflow run <file> --full --from <date> --to <date>` | Per-run window and chunk-plan overrides |
 

@@ -29,7 +29,7 @@ import type {
   FlowParameters,
   PipelineColumn, PipelineDetail, PipelineFile, PipelineFileStats, PipelineRunDurations, PipelineSummary, RegisterRepoSourceRequest, Repo, RepoAccess, RepoDeletionResult, RepoSource, RepoSourceRegistered, RepoFile, RepoSyncResult, RepoTree, Role,
   RunAssertion, RunDetail, RunFile, RunGroup, RunHealthCheckMetric, RunScope, RunScopePreview, RunStartedByKind, RunStatement,
-  RunTraceEntry, RunSummary, RunSurrogateKey, SchemaChange, SchemaChangeDatabase, SchemaObjectCompare,
+  RunTraceEntry, RunSummary, RunSurrogateKey, SchemaChange, SchemaChangeDatabase, SchemaObjectCompare, ColumnTypeChange,
   RunTriggerAccepted, RunTriggerRequest, Schedule, ScheduleCreated, ScheduleDefinition, SchedulePlan, ScheduleRunAccepted, SessionResponse, TokenResponse,
   SearchHit, SourceDiscoverRequest, SourceDiscoverResult, StorageCleanup, StorageCleanupPreview, StorageDays, StorageReport,
   StorageRetention, Subscriber, SubscriberDossier, SubscriberHit,
@@ -235,7 +235,17 @@ export const schemaChangeApi = {
    */
   compare: (id: number, query: { since?: string } = {}) =>
     get<SchemaObjectCompare>(`/api/v1/schema-changes/${id}/compare`, query as QueryParams),
+  /** A column's type history, newest first: every change to its type a run reported, by the object's catalog key and
+   * the column's name (every column of the object without one). */
+  columns: (query: ColumnTypeHistoryQuery) =>
+    get<PagedResult<ColumnTypeChange>>("/api/v1/schema-changes/columns", query as unknown as QueryParams),
 };
+
+export interface ColumnTypeHistoryQuery extends PageQuery {
+  /** The object's catalog key, as its columns and lineage are keyed. */
+  objectKey: string;
+  column?: string;
+}
 
 // ---- Runs ----------------------------------------------------------------------------------------------------------------
 
@@ -301,6 +311,9 @@ export const runApi = {
     get<PagedResult<RunSurrogateKey>>(`/api/v1/runs/${runId}/surrogate-keys`, query as QueryParams),
   healthMetrics: (runId: string, query: PageQuery = {}) =>
     get<PagedResult<RunHealthCheckMetric>>(`/api/v1/runs/${runId}/health-metrics`, query as QueryParams),
+  /** What the run did about each change to an existing column's type it considered, in the order it reported them. */
+  typeChanges: (runId: string, query: PageQuery = {}) =>
+    get<PagedResult<ColumnTypeChange>>(`/api/v1/runs/${runId}/type-changes`, query as QueryParams),
   trigger: (request: RunTriggerRequest) => post<RunTriggerAccepted>("/api/v1/runs", request),
   cancel: (runId: string) => post<RunTriggerAccepted>(`/api/v1/runs/${runId}/cancel`),
   previewScope: (query: RunScopePreviewQuery) =>

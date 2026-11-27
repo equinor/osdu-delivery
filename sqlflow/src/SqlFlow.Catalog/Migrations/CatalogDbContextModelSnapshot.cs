@@ -338,6 +338,106 @@ namespace SqlFlow.Catalog.Migrations
                     b.ToTable("ColumnPolicy", "catalog");
                 });
 
+            modelBuilder.Entity("SqlFlow.Catalog.CatalogColumnTypeChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ColumnName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<long?>("FailingValues")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FromType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("IsKey")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Layer")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ManualStepsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(900)
+                        .HasColumnType("nvarchar(900)");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("PipelineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RepoId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RequiresOptIn")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("RewritesTable")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("Rows")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SampleJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("TableName")
+                        .IsRequired()
+                        .HasMaxLength(776)
+                        .HasColumnType("nvarchar(776)");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ToType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("ObjectKey", "ColumnName", "OccurredUtc")
+                        .IsDescending(false, false, true);
+
+                    b.ToTable("ColumnTypeChange", "catalog");
+                });
+
             modelBuilder.Entity("SqlFlow.Catalog.CatalogComputeTask", b =>
                 {
                     b.Property<Guid>("TaskId")
@@ -1879,6 +1979,9 @@ namespace SqlFlow.Catalog.Migrations
 
                     b.Property<string>("ValuesJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarningCount")
+                        .HasColumnType("int");
 
                     b.Property<bool>("WholeNode")
                         .HasColumnType("bit");

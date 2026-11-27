@@ -41,22 +41,25 @@ public sealed class SchemaEvolutionEdgeCaseTests
     // ---- Type resolution: widening across sub-types within a family -----------------------------------
 
     [Fact]
-    public void VarcharToNvarchar_WidensToUnicode_MetadataOnly()
+    public void VarcharToNvarchar_WidensToUnicode_ByTheSafeRewrite()
     {
+        // SQL Server converts every row from varchar to nvarchar, so this widening rewrites the table.
         var plan = PlanOne("varchar(50)", "nvarchar(50)");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("nvarchar(50)", alter.ToType.Render());
-        Assert.Equal(ChangeFootprint.MetadataOnly, alter.Footprint);
-        Assert.False(plan.HasRewrite);
+        Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
+        Assert.Equal(TypeChangeMechanism.ShadowRewrite, alter.Mechanism);
+        Assert.Empty(plan.ColumnsToAlter);
     }
 
     [Fact]
     public void CharToVarchar_BecomesVariable_KeepsWiderLength()
     {
         var plan = PlanOne("char(10)", "varchar(5)");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("varchar(10)", alter.ToType.Render());
-        Assert.Equal(ChangeFootprint.MetadataOnly, alter.Footprint);
+        Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
+        Assert.Equal(TypeChangeTier.Widening, alter.Tier);
     }
 
     [Fact]
@@ -77,14 +80,15 @@ public sealed class SchemaEvolutionEdgeCaseTests
     }
 
     [Fact]
-    public void DecimalScaleWiden_RecomputesPrecisionWithinClass_MetadataOnly()
+    public void DecimalScaleWiden_RecomputesPrecision_AndRewritesEvenWithinItsStorageClass()
     {
         // existing decimal(10,2): 8 integer digits; incoming decimal(10,4): 6 integer digits, scale 4.
-        // merged integer digits = 8, scale = 4 => decimal(12,4), same storage class as decimal(10,2).
+        // merged integer digits = 8, scale = 4 => decimal(12,4), the same storage class as decimal(10,2), and still a
+        // rewrite: SQL Server touches every row for any decimal precision or scale change.
         var plan = PlanOne("decimal(10,2)", "decimal(10,4)");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("decimal(12, 4)", alter.ToType.Render());
-        Assert.Equal(ChangeFootprint.MetadataOnly, alter.Footprint);
+        Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
     }
 
     [Fact]
@@ -92,34 +96,34 @@ public sealed class SchemaEvolutionEdgeCaseTests
     {
         // existing decimal(9,2): class 0. incoming decimal(9,6): merged precision 7+6=13 => class 1.
         var plan = PlanOne("decimal(9,2)", "decimal(9,6)");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
-        Assert.True(plan.HasRewrite);
+        Assert.Equal(ColumnTypeChange.AllowTableRewrite, alter.RequiresOptIn);
     }
 
     [Fact]
-    public void RealToFloat_WidensApproximate_MetadataOnly()
+    public void RealToFloat_WidensApproximate_ByARewrite()
     {
         var plan = PlanOne("real", "float");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("float", alter.ToType.Render());
-        Assert.Equal(ChangeFootprint.MetadataOnly, alter.Footprint);
+        Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
     }
 
     [Fact]
-    public void SmallMoneyToMoney_WidensMoney_MetadataOnly()
+    public void SmallMoneyToMoney_WidensMoney_ByARewrite()
     {
         var plan = PlanOne("smallmoney", "money");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("money", alter.ToType.Render());
-        Assert.Equal(ChangeFootprint.MetadataOnly, alter.Footprint);
+        Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
     }
 
     [Fact]
     public void VarbinaryToMax_IsRewriteAlter()
     {
         var plan = PlanOne("varbinary(16)", "varbinary(max)");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("varbinary(max)", alter.ToType.Render());
         Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
     }
@@ -128,27 +132,32 @@ public sealed class SchemaEvolutionEdgeCaseTests
     public void DateTime2ScaleWiden_SameBase_WidensScale()
     {
         var plan = PlanOne("datetime2(3)", "datetime2(7)");
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal("datetime2(7)", alter.ToType.Render());
     }
 
     // ---- Type resolution: incompatible (cannot widen) edges -------------------------------------------
 
     [Fact]
-    public void TimestampColumn_CannotWiden_IsDriftOnOrdinaryColumn()
+    public void TimestampColumn_CannotWiden_IsAManualTypeChange()
     {
-        // timestamp/rowversion is a fixed system type: WidenBinary refuses, so it surfaces as drift (not a key).
+        // timestamp/rowversion is a fixed system type: WidenBinary refuses, so it is a tier 3 change (not a key).
         var plan = PlanOne("timestamp", "varbinary(8)");
         Assert.False(plan.HasChanges);
-        Assert.Contains(plan.Drift, d => d.Kind == DriftKind.IncompatibleOrdinaryColumn && d.Column == "C");
+        Assert.Contains(plan.TypeChanges, c => c.Column == "C" && c.Tier == TypeChangeTier.Manual);
     }
 
     [Fact]
-    public void DateVsDatetime2_DifferentBase_IsIncompatibleDrift()
+    public void DateToDatetime2_IsAWideningThatRewrites()
     {
         var plan = PlanOne("date", "datetime2(3)");
         Assert.False(plan.HasChanges);
-        Assert.Contains(plan.Drift, d => d.Kind == DriftKind.IncompatibleOrdinaryColumn && d.Column == "C");
+        var change = Assert.Single(plan.TypeChanges);
+        Assert.Equal(TypeChangeTier.Widening, change.Tier);
+        Assert.Equal(TypeChangeMechanism.ShadowRewrite, change.Mechanism);
+        Assert.Equal(ChangeFootprint.TableRewrite, change.Footprint);
+        Assert.Equal(ColumnTypeChange.AllowTableRewrite, change.RequiresOptIn);
+        Assert.Equal("datetime2(3)", change.ToType.Render());
     }
 
     [Theory]
@@ -156,11 +165,11 @@ public sealed class SchemaEvolutionEdgeCaseTests
     [InlineData("uniqueidentifier", "nvarchar(36)")]
     [InlineData("int", "nvarchar(20)")]
     [InlineData("datetime2(3)", "bigint")]
-    public void CrossFamilyChange_OnOrdinaryColumn_IsDrift_NotBlocked(string actual, string desired)
+    public void CrossFamilyChange_OnOrdinaryColumn_IsATypeChange_NotBlocked(string actual, string desired)
     {
         var plan = PlanOne(actual, desired);
         Assert.False(plan.IsBlocked);
-        Assert.Contains(plan.Drift, d => d.Kind == DriftKind.IncompatibleOrdinaryColumn);
+        Assert.Equal("C", Assert.Single(plan.TypeChanges).Column);
     }
 
     [Fact]
@@ -168,7 +177,7 @@ public sealed class SchemaEvolutionEdgeCaseTests
     {
         // sql_variant maps to the Other family, which has no widening: any change is incompatible.
         var plan = PlanOne("sql_variant", "xml");
-        Assert.Contains(plan.Drift, d => d.Kind == DriftKind.IncompatibleOrdinaryColumn && d.Column == "C");
+        Assert.Contains(plan.TypeChanges, c => c.Column == "C" && c.Tier == TypeChangeTier.Manual);
     }
 
     // ---- Planner: criticality (key / PK / identity / hash) on incompatible change ---------------------
@@ -207,13 +216,18 @@ public sealed class SchemaEvolutionEdgeCaseTests
     }
 
     [Fact]
-    public void CompatibleWidenOnKeyColumn_IsNotCritical_JustAlters()
+    public void CompatibleWidenOnKeyColumn_IsNotCritical_ButManual()
     {
         // A key column with a widenable (same-family) change is an ordinary alter, never a critical mismatch.
+        // int to bigint keeps every key's value, so nothing blocks the load; but the key's index would have to be
+        // rebuilt, so the engine leaves a key column's rewrite to an operator.
         var plan = PlanOne("int", "bigint", keys: EvoKeys("C"));
         Assert.False(plan.IsBlocked);
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
+        Assert.Equal(TypeChangeTier.Manual, alter.Tier);
+        Assert.True(alter.IsKey);
+        Assert.Empty(plan.ColumnsToAlter);
     }
 
     [Fact]
@@ -271,8 +285,8 @@ public sealed class SchemaEvolutionEdgeCaseTests
     {
         // Desired NOT NULL + wider type on a nullable target column: alter keeps nullable, and drift is noted.
         var plan = SchemaEvolutionPlanner.Plan(
-            [EvoCol("Amount", "bigint", nullable: false)],
-            [EvoCol("Amount", "int", nullable: true)],
+            [EvoCol("Amount", "varchar(20)", nullable: false)],
+            [EvoCol("Amount", "varchar(10)", nullable: true)],
             EvoNoKeys);
         var alter = Assert.Single(plan.ColumnsToAlter);
         Assert.True(alter.IsNullable);
@@ -309,9 +323,12 @@ public sealed class SchemaEvolutionEdgeCaseTests
             [EvoCol("Big", "bigint"), EvoCol("Txt", "nvarchar(200)")],
             [EvoCol("Big", "int"), EvoCol("Txt", "nvarchar(50)")],
             EvoNoKeys);
-        Assert.Equal(2, plan.ColumnsToAlter.Count);
-        var rewrite = Assert.Single(plan.RewriteColumns);
-        Assert.Equal("Big", rewrite.Name);
+        // Only the metadata growth is an in-place ALTER; the rewrite goes to the safe rewrite.
+        Assert.Equal("Txt", Assert.Single(plan.ColumnsToAlter).Name);
+        Assert.Empty(plan.RewriteColumns);
+        var rewrite = Assert.Single(plan.TypeChanges, c => c.Footprint == ChangeFootprint.TableRewrite);
+        Assert.Equal("Big", rewrite.Column);
+        Assert.Equal(TypeChangeMechanism.ShadowRewrite, rewrite.Mechanism);
     }
 
     // ---- ChangeFootprintClassifier: boundary classes --------------------------------------------------
@@ -331,22 +348,22 @@ public sealed class SchemaEvolutionEdgeCaseTests
     [Theory]
     [InlineData("decimal(20,2)", "decimal(28,2)")] // both class 2
     [InlineData("decimal(29,2)", "decimal(38,2)")] // both class 3
-    public void DecimalWithinHigherStorageClass_IsMetadataOnly(string from, string to)
-        => Assert.Equal(ChangeFootprint.MetadataOnly, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
+    public void DecimalWithinHigherStorageClass_IsRewrite(string from, string to)
+        => Assert.Equal(ChangeFootprint.TableRewrite, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
 
     [Theory]
-    [InlineData("nchar(10)", "nvarchar(10)")] // fixed -> variable is not a fixed-width grow
-    [InlineData("nvarchar(50)", "varchar(50)")] // unicode -> ascii, neither max nor fixed grow
-    public void TextNonFixedGrowth_IsMetadataOnly(string from, string to)
-        => Assert.Equal(ChangeFootprint.MetadataOnly, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
+    [InlineData("nchar(10)", "nvarchar(10)")] // fixed -> variable converts every row
+    [InlineData("nvarchar(50)", "varchar(50)")] // unicode -> ascii converts every row
+    public void TextBaseTypeChange_IsRewrite(string from, string to)
+        => Assert.Equal(ChangeFootprint.TableRewrite, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
 
     [Fact]
     public void TextVariableToMax_IsRewrite()
         => Assert.Equal(ChangeFootprint.TableRewrite, ChangeFootprintClassifier.Classify(SqlDataType.Parse("varchar(100)"), SqlDataType.Parse("varchar(max)")));
 
     [Fact]
-    public void BinaryFixedToVariable_IsMetadataOnly()
-        => Assert.Equal(ChangeFootprint.MetadataOnly, ChangeFootprintClassifier.Classify(SqlDataType.Parse("binary(8)"), SqlDataType.Parse("varbinary(16)")));
+    public void BinaryFixedToVariable_IsRewrite()
+        => Assert.Equal(ChangeFootprint.TableRewrite, ChangeFootprintClassifier.Classify(SqlDataType.Parse("binary(8)"), SqlDataType.Parse("varbinary(16)")));
 
     [Theory]
     [InlineData("datetime2(2)", "datetime2(3)")] // class 0 -> 1 (boundary)
@@ -355,11 +372,16 @@ public sealed class SchemaEvolutionEdgeCaseTests
         => Assert.Equal(ChangeFootprint.TableRewrite, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
 
     [Theory]
+    [InlineData("uniqueidentifier", "uniqueidentifier")]
+    [InlineData("varbinary(8)", "varbinary(9)")]
+    public void UnchangedTypeOrVariableGrowth_ClassifyAsMetadataOnly(string from, string to)
+        => Assert.Equal(ChangeFootprint.MetadataOnly, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
+
+    [Theory]
     [InlineData("real", "float")]
     [InlineData("smallmoney", "money")]
-    [InlineData("uniqueidentifier", "uniqueidentifier")]
-    public void NonRewritingFamilies_ClassifyAsMetadataOnly(string from, string to)
-        => Assert.Equal(ChangeFootprint.MetadataOnly, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
+    public void ApproximateAndMoneyWidening_Rewrite(string from, string to)
+        => Assert.Equal(ChangeFootprint.TableRewrite, ChangeFootprintClassifier.Classify(SqlDataType.Parse(from), SqlDataType.Parse(to)));
 
     // ---- EvolutionDdlGenerator: generation, ordering, idempotency, escaping ---------------------------
 

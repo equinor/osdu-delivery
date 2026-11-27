@@ -451,6 +451,7 @@ public sealed class YamlIngestionFlowLoader
             ReplaceInvalidCharsWith = NullIfBlank(y.ReplaceInvalidCharsWith),
             ConvertUnicodeToNonUnicode = y.ConvertUnicodeToNonUnicode ?? false,
             AllowTableRewrite = y.AllowTableRewrite ?? false,
+            ConvertTypes = y.ConvertTypes ?? false,
         };
     }
 

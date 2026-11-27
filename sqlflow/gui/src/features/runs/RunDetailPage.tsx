@@ -36,6 +36,7 @@ import { embeddedHealthCheckName } from "../../lib/definition";
 import { formatBytes, parseUtc } from "../../lib/time";
 import { kindContribution } from "../../modules/registry";
 import { runTraceId, runTraceSpec } from "./runTrace";
+import { RunTypeChangesCard } from "./TypeChanges";
 import { TriggerRunDialog } from "./TriggerRunDialog";
 import { hasCensus } from "../../lib/lsp/sqlflowLsp";
 
@@ -335,7 +336,7 @@ function RunDetailContent({ runId }: { runId: string }) {
           : undefined}
         badges={(
           <>
-            <RunStatusBadge status={run.status} />
+            <RunStatusBadge status={run.status} warningCount={run.warningCount} />
             {cancelling && (
               <Badge variant="secondary" className="bg-warning/15 text-warning" data-testid="run-cancelling">
                 cancelling
@@ -448,6 +449,9 @@ function RunDetailContent({ runId }: { runId: string }) {
           <CodeView value={run.failedStatementSql} language="sql" data-testid="run-error-sql" />
         </Card>
       )}
+
+      {/* What the run did about each change to an existing column's type: nothing shows for a run that considered none. */}
+      <RunTypeChangesCard runId={run.runId} />
 
       {run.assertionsOnly && (
         <Alert data-testid="run-assertions-only-banner">

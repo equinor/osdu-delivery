@@ -69,7 +69,7 @@ export function RecentRuns() {
                       className="flex h-9 items-center gap-3 px-4 transition-colors hover:bg-accent/50"
                       data-testid="home-recent-run"
                     >
-                      <RunStatusBadge status={run.status} testId="home-recent-run-status" />
+                      <RunStatusBadge status={run.status} warningCount={run.warningCount} testId="home-recent-run-status" />
                       <FlowKindBadge kind={run.flowKind} testId="home-recent-run-kind" />
                       <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={run.flowName}>{run.flowName}</span>
                       {run.operation !== null && <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{run.operation}</span>}

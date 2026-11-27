@@ -143,6 +143,7 @@ internal sealed class IngestionSchemaYaml
     public string? ReplaceInvalidCharsWith { get; set; }
     public bool? ConvertUnicodeToNonUnicode { get; set; }
     public bool? AllowTableRewrite { get; set; }
+    public bool? ConvertTypes { get; set; }
 }
 
 internal sealed class IngestionIncrementalYaml

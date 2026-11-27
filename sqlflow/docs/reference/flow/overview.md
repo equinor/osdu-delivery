@@ -116,10 +116,10 @@ The value is projected to `CatalogPipeline.Lifecycle` on every catalog sync and 
 
 ### One load path, one executor
 
-`validate` and `run` accept every kind through one load path: `DocumentLoader.Load` (src/SqlFlow.Execution/DocumentLoader.cs) wraps `YamlDocumentLoader` and applies the file-relative fixups and the secret-hygiene check. On `run`, `DocumentExecutor` (src/SqlFlow.Execution/DocumentExecutor.cs) dispatches the seven non-batch kinds to their engines; a batch document goes to the batch orchestrator, whose members run through that same `DocumentExecutor`, so a batch member loads and runs under exactly the same rules as a directly invoked flow. `plan` supports file flows only and rejects everything else with:
+`validate` and `run` accept every kind through one load path: `DocumentLoader.Load` (src/SqlFlow.Execution/DocumentLoader.cs) wraps `YamlDocumentLoader` and applies the file-relative fixups and the secret-hygiene check. On `run`, `DocumentExecutor` (src/SqlFlow.Execution/DocumentExecutor.cs) dispatches the seven non-batch kinds to their engines; a batch document goes to the batch orchestrator, whose members run through that same `DocumentExecutor`, so a batch member loads and runs under exactly the same rules as a directly invoked flow. `plan` supports file flows and ingestion flows (an ingestion document is planned through the runner its run builds, `DocumentExecutor.PlanIngestionAsync`) and rejects everything else with:
 
 ```text
-ERROR  'plan' supports file flows; ingestion, export, and stored-procedure work is determined at run time against the live source.
+ERROR  'plan' supports file flows and ingestion flows (flowType: ing); export and stored-procedure work is determined at run time against the live source.
 ```
 
 Path fixups applied per kind:

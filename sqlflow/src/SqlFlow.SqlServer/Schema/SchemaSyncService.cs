@@ -14,6 +14,9 @@ public sealed record EvolutionOutcome
     public required EvolutionPlan Plan { get; init; }
 
     public required IReadOnlyList<DdlStatement> AppliedStatements { get; init; }
+
+    /// <summary>The columns whose type the applied DDL changed in place.</summary>
+    public IReadOnlySet<string> AlteredColumns { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>The result of applying a temporal plan: what the planner decided plus the DDL that ran.</summary>
@@ -41,7 +44,9 @@ public sealed class SchemaSyncService
     }
 
     /// <summary>Introspects the live target over the supplied connection and returns the evolution plan,
-    /// applying nothing. The target's database is taken from the connection's current context.</summary>
+    /// applying nothing. The target's database is taken from the connection's current context. On a SQL Server
+    /// connection the table's indexes, references and states are read too, so every type change is classified against
+    /// what the table really holds (<see cref="TypeChangeClassifier"/>).</summary>
     public async Task<EvolutionPlan> PlanAsync(
         DbConnection connection,
         RelationalObject target,
@@ -53,13 +58,24 @@ public sealed class SchemaSyncService
         ArgumentNullException.ThrowIfNull(target);
 
         var live = await _catalog.IntrospectObjectAsync(connection, ToName(target), ct).ConfigureAwait(false);
-        var actual = live is null ? null : CatalogSchemaAdapter.ToEvolvableColumns(live);
-        return SchemaEvolutionPlanner.Plan(desired, actual, keyColumns);
+        if (live is null)
+        {
+            return SchemaEvolutionPlanner.Plan(desired, null, keyColumns);
+        }
+
+        var actual = CatalogSchemaAdapter.ToEvolvableColumns(live);
+        var dependencies = connection is SqlConnection sql
+            ? await TableDependencyReader.ReadAsync(sql, target, ct).ConfigureAwait(false)
+            : TableDependencies.None;
+        return SchemaEvolutionPlanner.Plan(desired, actual, keyColumns, dependencies, target.QualifiedName);
     }
 
-    /// <summary>Introspects, plans, generates, and applies in one operation. Returns the plan that was
-    /// applied plus the exact DDL statements that ran (for reporting and the run's SQL trace). Throws if the
-    /// plan is blocked or requires an unauthorized table rewrite, before any DDL runs.</summary>
+    /// <summary>Introspects, plans, generates, and applies in one operation: the additions and the in-place type changes
+    /// (an ALTER COLUMN recorded in metadata; one that rewrites the table only with <paramref name="allowTableRewrite"/>,
+    /// otherwise it stays pending and is reported by <see cref="TypeChangeApplier.DescribeAsync"/>). Returns the plan plus
+    /// the exact DDL statements that ran (for reporting and the run's SQL trace). The type changes the safe rewrite
+    /// carries are in the plan's <see cref="EvolutionPlan.TypeChanges"/> for <see cref="TypeChangeApplier"/>. Throws if
+    /// the plan is blocked, before any DDL runs.</summary>
     public async Task<EvolutionOutcome> EvolveAsync(
         string connectionString,
         RelationalObject target,
@@ -77,11 +93,30 @@ public sealed class SchemaSyncService
         await connection.OpenAsync(ct).ConfigureAwait(false);
         var plan = await PlanAsync(connection, target, desired, keyColumns, ct).ConfigureAwait(false);
 
-        // Generate validates the plan (throws on a blocked plan or an unauthorized rewrite). A plan with no
-        // changes and no block produces an empty batch, which ApplyDdlAsync treats as a no-op.
-        var batch = EvolutionDdlGenerator.Generate(target, plan, allowTableRewrite);
+        // Generate validates the permitted plan (throws on a blocked plan). A plan with no changes and no block produces
+        // an empty batch, which ApplyDdlAsync treats as a no-op.
+        var permitted = Permitted(plan, allowTableRewrite);
+        var batch = EvolutionDdlGenerator.Generate(target, permitted, allowTableRewrite);
         await SqlServerSchemaProvider.ApplyDdlAsync(connection, batch, options, ct).ConfigureAwait(false);
-        return new EvolutionOutcome { Plan = plan, AppliedStatements = batch.Statements };
+        return new EvolutionOutcome
+        {
+            Plan = plan,
+            AppliedStatements = batch.Statements,
+            AlteredColumns = permitted.ColumnsToAlter.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
+        };
+    }
+
+    /// <summary>The plan as <see cref="EvolveAsync"/> applies it: an in-place change that rewrites the table is left out of
+    /// the DDL batch unless <paramref name="allowTableRewrite"/>, so it stays a pending, reported change rather than failing
+    /// the run (the load still writes whatever the current type holds, guarded against loss). A plan of a run reads the
+    /// columns it would alter from here too.</summary>
+    public static EvolutionPlan Permitted(EvolutionPlan plan, bool allowTableRewrite)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan with
+        {
+            ColumnsToAlter = plan.ColumnsToAlter.Where(a => allowTableRewrite || a.Footprint == ChangeFootprint.MetadataOnly).ToList(),
+        };
     }
 
     /// <summary>

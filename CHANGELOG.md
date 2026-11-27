@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every column keeps its type history, and a run that succeeded with warnings shows it.** Each change to an existing
+  column's type a run reports is kept with its tier and outcome: a run's page lists them (opening one shows why, the
+  values that refused it and the steps to make it by hand), a pipeline's page shows the ones its latest run left for an
+  operator, and a change a run made sets the column's type in the catalog at once. `GET /api/v1/runs/{runId}/type-changes`
+  and `GET /api/v1/schema-changes/columns?objectKey=&column=` answer them. A run counts its warnings (`warningCount`),
+  so one that succeeded with warnings keeps the status succeeded and wears the warning tone wherever a run's status
+  shows ([column type history](sqlflow/docs/reference/concepts/column-type-history.md)).
+- **Changing the type of a column an ingestion target already has.** Declare the type in the pre flow and the next runs
+  take the column to it in the pre view and in the ingestion target, with no hand-written SQL and no reload: a widening
+  automatically (one that rewrites the table with `schema.allowTableRewrite`), a checked conversion such as text to a
+  date with the new `schema.convertTypes` after a check that every stored value converts, and a key column or a lossy
+  change refused with the manual steps. The table keeps every row, its `RecId` and its system dates; values that do not
+  convert refuse the change with a count and a sample until the pre flow maps them and a full-load run re-renders them
+  ([Column type changes](sqlflow/docs/reference/concepts/column-type-changes.md)).
 - **Every delivery flow's counts in one call.** `GET /api/v1/delivery/flows/stats?partition=` answers each flow's counts
   as a whole and in the partition named, and says why for a flow that cannot be counted; the Delivery page and the home
   page read it in place of a call or two per flow. A flow whose document does not parse shows **Not counted** with why on
@@ -811,6 +825,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `missing=<group>` ([Restricted until complete](osdu/docs/reference/flow/mapping-restricted-access.md)).
 
 ### Changed
+- A pre flow rebuilds its typed view on every run, also when it finds no new file, so a column or type declared in its
+  transform reaches the view (and the ingestion flow adds or converts it in its target) on the next run, not when the next
+  file lands. Inference no longer re-types a column the view already has. An ingestion run reports every pending,
+  refused or manual type change as a warning, and stops before writing when a value would change on its way into a
+  column that kept its type ([Column type changes](sqlflow/docs/reference/concepts/column-type-changes.md)).
 - **The lineage graph's bar is one row.** The graph showed every control at once: two rows of labelled groups over a
   line that said most of them again. The bar now holds what is chosen every time (the search, the scope, how much is
   drawn, **What moved**). **View** holds how the drawing is made (the wave range, kinds, folders and stacks, described

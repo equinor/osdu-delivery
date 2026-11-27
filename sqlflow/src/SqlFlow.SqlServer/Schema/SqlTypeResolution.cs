@@ -143,8 +143,19 @@ public static class SqlTypeResolution
 
     private static SqlDataType? WidenDateTime(SqlDataType a, SqlDataType b)
     {
-        // Conservative: a differing date/time base (for example date vs datetime2) is surfaced rather than
-        // promoted. Only the fractional-second scale of an identical base is widened.
+        // A date is a datetime2 at midnight, so datetime2 holds every date exactly: date widens to datetime2 (at the
+        // incoming scale), and a datetime2 target already holds an incoming date. Every other differing base (datetime
+        // and smalldatetime round, time and datetimeoffset carry other parts) is surfaced rather than promoted.
+        if (a.BaseType == "date" && b.BaseType == "datetime2")
+        {
+            return b;
+        }
+
+        if (a.BaseType == "datetime2" && b.BaseType == "date")
+        {
+            return a;
+        }
+
         if (a.BaseType != b.BaseType)
         {
             return null;

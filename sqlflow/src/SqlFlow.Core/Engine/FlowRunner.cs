@@ -173,8 +173,64 @@ public sealed class FlowRunner
             executingSequence = 0;
         }
 
+        // Rebuild the typed transformation view over the landed table (the V2 post-process downstream chained flows read
+        // for correct data types): introspect, infer, resolve, then trace-then-execute so a failure stamps the exact view
+        // statement and the live sink sees it before it runs.
+        async Task<TransformViewResult> RefreshViewAsync(string cs)
+        {
+            var refreshed = await StageAsync("transform.view", context, async () =>
+            {
+                var built = await BuildTransformViewAsync(flow, cs, ct).ConfigureAwait(false);
+                Trace("transform.view", built.Ddl);
+                executingSequence = trace.Count;
+                await _schema.ExecuteDdlAsync(cs, [built.Ddl], ct).ConfigureAwait(false);
+                executingSequence = 0;
+                return built;
+            }, r => r.Columns.Count).ConfigureAwait(false);
+            Emit(context,
+                $"transformation view [{flow.Target.Schema}].[{refreshed.ViewName}] refreshed "
+                + $"({refreshed.Columns.Count} column(s), {refreshed.Columns.Count(c => c.Converted)} typed)",
+                stage: "transform.view");
+            foreach (var change in refreshed.TypeChanges)
+            {
+                Emit(context, change.Message, change.IsWarning ? FlowEventLevel.Warning : FlowEventLevel.Info, "view.typechange");
+            }
+
+            return refreshed;
+        }
+
         using var scope = _logger.BeginScope("Flow {FlowName} {FlowId} ({RunId})", flow.Name, context.FlowId, context.RunId);
         using var activity = SqlFlowDiagnostics.ActivitySource.StartActivity("flow.run");
+
+        // The failed result of the run, with the failure stamped onto the statement that was mid-execution (a DDL group
+        // or the view refresh) and reported to the live sink, so both the artifact trace and the live rows mark which
+        // one broke. A failure outside any traced statement (the bulk load) leaves executingSequence 0 and blames nothing.
+        FlowResult Failure(Exception ex)
+        {
+            var totalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogError(ex, "Flow '{Flow}' failed after {ElapsedMs:F0} ms.", flow.Name, totalMs);
+            Emit(context, $"Flow '{flow.Name}' failed: {ex.Message}", FlowEventLevel.Error);
+
+            if (executingSequence > 0)
+            {
+                trace[executingSequence - 1] = trace[executingSequence - 1] with { Error = SecretHygiene.RedactedMessage(ex) };
+                statements.ReportFailure(executingSequence, ex.Message);
+            }
+
+            return new FlowResult
+            {
+                RunId = context.RunId,
+                FlowId = context.FlowId,
+                FlowName = flow.Name,
+                Status = FlowStatus.Failed,
+                SqlTrace = trace,
+                Trace = context.Trace,
+                TotalMs = totalMs,
+                Error = SecretHygiene.RedactedMessage(ex),
+                Incremental = incrementalSummary,
+            };
+        }
         activity?.SetTag("flow.name", flow.Name);
         activity?.SetTag("flow.id", context.FlowId);
         activity?.SetTag("flow.run_id", context.RunId);
@@ -316,22 +372,7 @@ public sealed class FlowRunner
             TransformViewResult? transformView = null;
             if (flow.Inference.GeneratesView)
             {
-                var cs = connectionString;
-                transformView = await StageAsync("transform.view", context, async () =>
-                {
-                    // Build the view DDL (introspect + infer + resolve), trace it, then execute: trace-then-execute
-                    // so a failure here stamps the exact view statement, and the live sink sees it before it runs.
-                    var built = await BuildTransformViewAsync(flow, cs, ct).ConfigureAwait(false);
-                    Trace("transform.view", built.Ddl);
-                    executingSequence = trace.Count;
-                    await _schema.ExecuteDdlAsync(cs, [built.Ddl], ct).ConfigureAwait(false);
-                    executingSequence = 0;
-                    return built;
-                }, r => r.Columns.Count).ConfigureAwait(false);
-                Emit(context,
-                    $"transformation view [{flow.Target.Schema}].[{transformView.ViewName}] refreshed "
-                    + $"({transformView.Columns.Count} column(s), {transformView.Columns.Count(c => c.Converted)} typed)",
-                    stage: "transform.view");
+                transformView = await RefreshViewAsync(connectionString).ConfigureAwait(false);
             }
 
             var totalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
@@ -362,6 +403,7 @@ public sealed class FlowRunner
                 Trace = context.Trace,
                 TotalMs = totalMs,
                 TransformView = transformView,
+                TypeChanges = transformView?.TypeChanges ?? [],
                 Incremental = incrementalSummary,
                 DataSetConvention = read.DataSetConvention,
             };
@@ -372,7 +414,6 @@ public sealed class FlowRunner
             // selection runs before any target mutation, so there is nothing to roll back here. This holds for
             // every kind of run (incremental, full load, an explicit backfill window, a flow with no incremental
             // spec): the run did what it was asked and the answer was "nothing".
-            var totalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
 
             // What separates the cases is how loudly the no-op is reported. An incremental run that found
             // candidate files and selected none of them (nothing newer than the watermark, within whatever window
@@ -394,6 +435,33 @@ public sealed class FlowRunner
 
             Emit(context, $"Flow '{flow.Name}': {ex.Message}", warn ? FlowEventLevel.Warning : FlowEventLevel.Info);
 
+            // The typed view follows the flow's declaration as much as the landed files: a column declared, a type
+            // changed or an expression written in transform.columns must reach the view on the next run, not on the run
+            // after the next file lands, or every flow reading the view keeps the old shape (and an ingestion flow never
+            // adds or re-types the column) for as long as no file arrives. So a run that found nothing new still rebuilds
+            // the view over what earlier runs landed; CREATE OR ALTER makes that a no-op when nothing changed. A table
+            // nothing has landed in yet has no columns to build a view over, and a view that cannot be built fails the
+            // run, as it does after a load.
+            TransformViewResult? refreshedView = null;
+            if (flow.Inference.GeneratesView && connectionString is not null)
+            {
+                try
+                {
+                    if (await _schema.GetTableSchemaAsync(connectionString, flow.Target.Schema, flow.Target.Table, ct).ConfigureAwait(false) is not null)
+                    {
+                        refreshedView = await RefreshViewAsync(connectionString).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        Emit(context, $"transformation view not built: nothing has landed in {flow.Target.QualifiedName} yet", stage: "transform.view");
+                    }
+                }
+                catch (Exception viewEx) when (viewEx is not OperationCanceledException)
+                {
+                    return Failure(viewEx);
+                }
+            }
+
             return new FlowResult
             {
                 RunId = context.RunId,
@@ -403,8 +471,10 @@ public sealed class FlowRunner
                 RowsLoaded = 0,
                 SqlTrace = trace,
                 Trace = context.Trace,
-                TotalMs = totalMs,
+                TotalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds,
                 Incremental = incrementalSummary,
+                TransformView = refreshedView,
+                TypeChanges = refreshedView?.TypeChanges ?? [],
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -423,32 +493,7 @@ public sealed class FlowRunner
                 }
             }
 
-            var totalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            _logger.LogError(ex, "Flow '{Flow}' failed after {ElapsedMs:F0} ms.", flow.Name, totalMs);
-            Emit(context, $"Flow '{flow.Name}' failed: {ex.Message}", FlowEventLevel.Error);
-
-            // Stamp the failure onto the statement that was mid-execution (a DDL group or the view refresh) and
-            // report it to the live sink, so both the artifact trace and the live rows mark which one broke. A
-            // failure outside any traced statement (the bulk load) leaves executingSequence 0 and blames nothing.
-            if (executingSequence > 0)
-            {
-                trace[executingSequence - 1] = trace[executingSequence - 1] with { Error = SecretHygiene.RedactedMessage(ex) };
-                statements.ReportFailure(executingSequence, ex.Message);
-            }
-
-            return new FlowResult
-            {
-                RunId = context.RunId,
-                FlowId = context.FlowId,
-                FlowName = flow.Name,
-                Status = FlowStatus.Failed,
-                SqlTrace = trace,
-                Trace = context.Trace,
-                TotalMs = totalMs,
-                Error = SecretHygiene.RedactedMessage(ex),
-                Incremental = incrementalSummary,
-            };
+            return Failure(ex);
         }
     }
 
@@ -744,17 +789,38 @@ public sealed class FlowRunner
             ?? throw new SqlFlowException(
                 $"The transformation view cannot be generated: {flow.Target.QualifiedName} was not found after the load.");
         var tableColumns = table.Columns.Select(c => c.Name).ToList();
+        var viewName = $"v_{flow.Target.Table}";
+
+        // The view as the previous run left it: each column's type there is what downstream flows read today.
+        var live = await _schema.GetTableSchemaAsync(connectionString, flow.Target.Schema, viewName, ct).ConfigureAwait(false);
+        var liveTypes = (live?.Columns ?? []).ToDictionary(c => c.Name, c => c.SqlType, StringComparer.OrdinalIgnoreCase);
+
+        // A declared type that changes an existing view column is checked against the landed values first, so the
+        // view never casts a value it would round, cut or read by the session's language. A refused declaration leaves
+        // the column as it was (its old type, or the raw text) and is reported until the author fixes the values with
+        // an expression or declares a type that holds them.
+        var (policy, typeChanges) = await CheckDeclaredTypesAsync(flow, connectionString, viewName, table, liveTypes, ct).ConfigureAwait(false);
 
         IReadOnlyList<InferredColumn> inferred = [];
-        if (flow.Inference.Enabled)
+        if (policy.Enabled)
         {
+            // Inference never re-types a column the view already has: only a declared type changes it. The types the
+            // view gives the undeclared columns today go along, and each such column keeps its type (text stays text).
+            var declaredOutputs = policy.Columns
+                .Select(t => string.IsNullOrWhiteSpace(t.Alias) ? t.Name : t.Alias!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var existing = liveTypes
+                .Where(kv => !declaredOutputs.Contains(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+
             // The inference service resolves the connection reference itself (same secret path as the load).
             var report = await _inference.InferAsync(new InferenceRequest
             {
                 Connection = flow.Target.Connection,
                 Schema = flow.Target.Schema,
                 Table = flow.Target.Table,
-                Policy = flow.Inference,
+                Policy = policy,
+                ExistingTypes = existing,
             }, ct).ConfigureAwait(false);
 
             inferred = report.Columns.Select(c => new InferredColumn
@@ -768,12 +834,117 @@ public sealed class FlowRunner
             }).ToList();
         }
 
-        var resolved = ColumnTransformResolver.Resolve(tableColumns, flow.Inference, inferred);
-        var viewName = $"v_{flow.Target.Table}";
+        var resolved = ColumnTransformResolver.Resolve(tableColumns, policy, inferred);
         var ddl = TransformViewBuilder.Build(flow.Target.Schema, viewName, flow.Target.Schema, flow.Target.Table, resolved);
 
-        return new TransformViewResult { ViewName = viewName, Ddl = ddl, Columns = resolved };
+        return new TransformViewResult { ViewName = viewName, Ddl = ddl, Columns = resolved, TypeChanges = typeChanges };
     }
+
+    /// <summary>
+    /// Checks every declared type-only transform (a <c>type</c> with no <c>expr</c>) that changes the type an existing
+    /// view column has, against the values the raw table holds. Returns the policy to build the view with (a refused
+    /// declaration replaced by the column's current type, or dropped when that is the raw text) and a report per change.
+    /// A declared expression is the author's own conversion: SQL Server raises its errors when the view is read.
+    /// </summary>
+    private async Task<(TypeInferencePolicy Policy, IReadOnlyList<TypeChangeReport> Reports)> CheckDeclaredTypesAsync(
+        FlowDefinition flow, string connectionString, string viewName, TableSchema table, IReadOnlyDictionary<string, string> liveTypes,
+        CancellationToken ct)
+    {
+        var rawTypes = table.Columns.ToDictionary(c => c.Name, c => c.SqlType, StringComparer.OrdinalIgnoreCase);
+        var changed = flow.Inference.Columns
+            .Where(t => !t.Virtual && !t.ExcludeFromView && t.Expression is null && !string.IsNullOrWhiteSpace(t.Type)
+                        && rawTypes.ContainsKey(t.Name)
+                        && liveTypes.TryGetValue(string.IsNullOrWhiteSpace(t.Alias) ? t.Name : t.Alias!, out var current)
+                        && !SameSqlType(current, t.Type!))
+            .ToList();
+        if (changed.Count == 0)
+        {
+            return (flow.Inference, []);
+        }
+
+        var findings = await _schema.FindLossyConversionsAsync(
+            connectionString, flow.Target.Schema, flow.Target.Table,
+            changed.Select(t => new LossCheck(t.Name, rawTypes[t.Name], t.Type!)).ToList(), SampleSize, ct).ConfigureAwait(false);
+        var byColumn = findings.ToDictionary(f => f.Column, StringComparer.OrdinalIgnoreCase);
+
+        var view = $"[{flow.Target.Schema}].[{viewName}]";
+        var reports = new List<TypeChangeReport>();
+        var replaced = new Dictionary<string, ColumnTransform?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var transform in changed)
+        {
+            var output = string.IsNullOrWhiteSpace(transform.Alias) ? transform.Name : transform.Alias!;
+            var current = liveTypes[output];
+            var finding = byColumn.TryGetValue(transform.Name, out var f) ? f : new LossFinding(transform.Name, 0, 0, []);
+            if (finding.Failing == 0)
+            {
+                reports.Add(new TypeChangeReport
+                {
+                    Layer = TypeChangeReport.ViewLayer,
+                    Table = view,
+                    Column = output,
+                    FromType = current,
+                    ToType = transform.Type!,
+                    Tier = TypeChangeTier.CheckedConversion,
+                    Status = TypeChangeStatus.Applied,
+                    Rows = finding.Rows,
+                    Message = $"{view}.[{output}] {current} -> {transform.Type}: applied, every landed value of [{flow.Target.Table}].[{transform.Name}] " +
+                              "converts to the declared type without loss. " + TypeChangeReport.Downstream,
+                });
+                continue;
+            }
+
+            // Keep the column as the view has it: its current type cast from the raw value, or the raw text itself.
+            replaced[transform.Name] = IsTextType(current) ? null : transform with { Type = current };
+            var sample = string.Join(", ", finding.Sample.Select(s => $"'{s.Value}' in {s.Rows.ToString(CultureInfo.InvariantCulture)} row(s)"));
+            reports.Add(new TypeChangeReport
+            {
+                Layer = TypeChangeReport.ViewLayer,
+                Table = view,
+                Column = output,
+                FromType = current,
+                ToType = transform.Type!,
+                Tier = TypeChangeTier.CheckedConversion,
+                Status = TypeChangeStatus.Refused,
+                Rows = finding.Rows,
+                FailingValues = finding.Failing,
+                Sample = finding.Sample,
+                Message = $"{view}.[{output}] {current} -> {transform.Type}: refused, the view keeps {current}. " +
+                          $"{finding.Failing.ToString(CultureInfo.InvariantCulture)} of {finding.Rows.ToString(CultureInfo.InvariantCulture)} landed value(s) of " +
+                          $"[{flow.Target.Table}].[{transform.Name}] do not convert to {transform.Type} without loss (for example {sample}). Map them in the " +
+                          "declaration with an expression (an expr such as NULLIF(@ColName, 'NA') beside the type, or a CONVERT with the style the text is written in), " +
+                          "or declare a type that holds them.",
+            });
+        }
+
+        var columns = flow.Inference.Columns
+            .Select(t => replaced.TryGetValue(t.Name, out var swap) ? swap : t)
+            .OfType<ColumnTransform>()
+            .ToList();
+        return (flow.Inference with { Columns = columns }, reports);
+    }
+
+    private const int SampleSize = 5;
+
+    // The view's reported type and a declared type name the same SQL type: case, spacing and numeric/decimal aside, and
+    // a fractional-second type reported without its scale (the catalog renders datetime2 bare) counts as declared.
+    private static bool SameSqlType(string live, string declared)
+    {
+        static string Normal(string type) => type.Replace(" ", string.Empty, StringComparison.Ordinal).ToLowerInvariant()
+            .Replace("numeric", "decimal", StringComparison.Ordinal);
+
+        var a = Normal(live);
+        var b = Normal(declared);
+        if (a == b)
+        {
+            return true;
+        }
+
+        var baseB = b.Split('(')[0];
+        return !a.Contains('(', StringComparison.Ordinal) && a == baseB && baseB is "datetime2" or "time" or "datetimeoffset" or "float";
+    }
+
+    private static bool IsTextType(string type)
+        => type.Split('(')[0].Trim().ToLowerInvariant() is "char" or "varchar" or "nchar" or "nvarchar" or "text" or "ntext";
 
     /// <param name="flow">The flow to plan.</param>
     /// <param name="context">Per-run state for events and tracing.</param>

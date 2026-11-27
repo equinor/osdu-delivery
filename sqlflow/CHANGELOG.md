@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- A widening that rewrites the table and is not allowed (`schema.allowTableRewrite` unset) no longer fails the run with
+  `SchemaRewriteNotPermittedException`: it is reported pending on every run, the table is untouched, and the load still
+  runs. A load that would write a staged value into a column of another type in a way that changes it (a fraction into an
+  `int`, a time into a `date`) now stops before writing anything, naming the column, the count and a sample, where it
+  used to convert silently. The `target.drift` warning for an incompatible type (`DriftKind.IncompatibleOrdinaryColumn`)
+  is gone: the change is a `target.typechange` report with its tier ([Column type changes](docs/reference/concepts/column-type-changes.md#when-in-a-run)).
+- The footprint of an `ALTER COLUMN` follows SQL Server's measured behaviour: only a longer `varchar`/`nvarchar`/
+  `varbinary` of the same base type is metadata-only. `varchar` to `nvarchar`, a `decimal` precision or scale change
+  inside one storage class, a `datetime2` scale change inside one class, `real` to `float` and `smallmoney` to `money` are
+  rewrites, so they need `schema.allowTableRewrite`. `date` to `datetime2` is now a widening
+  ([Column type changes](docs/reference/concepts/column-type-changes.md#what-sql-server-records-in-metadata)).
+- Inference never re-types a column the typed view already has: text stays text, and a typed column keeps its type,
+  widening within its family; only a declared type changes it. A declared type the landed values do not hold without
+  loss is refused for the run and the column keeps its type ([Transform](docs/reference/flow/transform.md)).
+- A file flow rebuilds its typed view on every run, also when it finds no new file, so a declared column or type reaches
+  the view, and the ingestion flow reading it, on the next run rather than when the next file lands
+  ([Transform](docs/reference/flow/transform.md)).
 - A schedule's Run now and an external trigger's fire record their runs as asked for (`TriggerSource` `manual`, naming
   the caller or `trigger:<name>`), where they were recorded as the schedule firing on its own (`schedule`). A schedule
   fired behind its parents records `chain`. The `RunTriggerCause` migration records past run-now and trigger runs as
@@ -55,6 +72,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   baseline comparison; queries no longer need it. The chat capability `dataOpsRunQuery` is `runQuery`.
 
 ### Added
+- **Changing the type of a column that already exists.** A declared type change reaches the typed view and the ingestion
+  target on the next run, classified in three tiers: a widening (in place when SQL Server records it in metadata, by a
+  safe rewrite with `schema.allowTableRewrite` otherwise), a checked conversion (text to a date, a number, a bit or a
+  GUID, a typed column to text, a shorter text, an integer to a wide enough decimal: with the new `schema.convertTypes`,
+  after every stored value is shown to convert without loss), and a manual change the engine refuses with its steps (a
+  key column, a lossy change, a temporal or columnstore table, a column something references). The safe rewrite fills a
+  shadow column in batches while a trigger keeps it in step, rebuilds the column's indexes and statistics on it and
+  swaps it in under a short lock, keeping every row, identity and system date; a run that dies part way is finished or
+  rolled back by the next. Every change is reported in run.json (`result.typeChanges`) and logged as
+  `target.typechange` or `view.typechange`, at warning level until it is resolved ([Column type changes](docs/reference/concepts/column-type-changes.md)).
+- Every column keeps its type history. Each change to an existing column's type a run reports (`result.typeChanges`)
+  is a row of `catalog.ColumnTypeChange`, with its tier, its outcome, the values that refused it and the steps to make
+  it by hand; a change the run made sets the column's type in the catalog at once. `GET /runs/{runId}/type-changes`
+  answers a run's, `GET /schema-changes/columns?objectKey=&column=` a column's history, newest first. A run counts its
+  warnings (`warningCount` on a run, a run list and a pipeline's last run; the CLI's run detail prints it), so a run
+  that succeeded with warnings keeps the status `succeeded` and shows apart in the warning tone wherever a run's status
+  does. A run's page lists its type changes, and a pipeline's page shows those its latest run left for an operator
+  until a run no longer reports them. The migration `RunWarningCountAndColumnTypeHistory` adds both
+  ([Column type history](docs/reference/concepts/column-type-history.md)).
 - The title bar names the environment a deployment is and opens the estate's others. An estate that runs dev, test and
   prod as separate deployments gives each control plane the list (`ControlPlane:Environments:Links`, each a name, the
   address of its GUI and a description) and the one it is (`ControlPlane:Environments:Current`); the menu opens another

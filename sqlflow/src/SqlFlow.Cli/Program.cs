@@ -320,15 +320,26 @@ internal static class Program
 
                 case "plan":
                 {
-                    if (DocumentLoader.Load(documents, file, Console.Error.WriteLine) is not FileFlowDocument doc)
+                    switch (DocumentLoader.Load(documents, file, Console.Error.WriteLine))
                     {
-                        Console.Error.WriteLine("ERROR  'plan' supports file flows; ingestion, export, and stored-procedure work is determined at run time against the live source.");
-                        return 1;
-                    }
+                        case FileFlowDocument doc:
+                            PrintPlan(await runner.PlanAsync(doc.Flow).ConfigureAwait(false));
+                            return 0;
 
-                    var plan = await runner.PlanAsync(doc.Flow).ConfigureAwait(false);
-                    PrintPlan(plan);
-                    return 0;
+                        // An ingestion flow is planned against its live source and target, through the runner its run builds.
+                        case IngestionFlowDocument doc:
+                        {
+                            var plan = await provider.GetRequiredService<DocumentExecutor>().PlanIngestionAsync(doc).ConfigureAwait(false);
+                            PrintIngestionPlan(doc.Document.Flow, plan);
+                            return IngestionPlanExitCode(plan);
+                        }
+
+                        default:
+                            Console.Error.WriteLine(
+                                "ERROR  'plan' supports file flows and ingestion flows (flowType: ing); export and stored-procedure " +
+                                "work is determined at run time against the live source.");
+                            return 1;
+                    }
                 }
 
                 case "run":
@@ -2409,6 +2420,135 @@ internal static class Program
         PrintTrace(plan.Trace, totalMs: null);
     }
 
+    /// <summary>Prints an ingestion flow's plan: the target, what schema sync adds and alters in place, the columns it
+    /// keeps, every type change with its facts and what a run would do about it, what blocks the load, and a verdict.</summary>
+    private static void PrintIngestionPlan(IngestionFlow flow, IngestionPlan plan)
+    {
+        static string OnOff(bool on) => on ? "on" : "off";
+
+        Console.WriteLine($"Plan for '{flow.SysAlias ?? flow.Target.Table.Name}' -> {plan.Target}");
+        Console.WriteLine($"  source : {plan.Source}");
+        Console.WriteLine(plan.TargetExists ? "  target : exists" : "  target : does not exist (will create)");
+        if (!plan.SchemaSync)
+        {
+            Console.WriteLine("  schema sync : off (a run changes no column of the target)");
+        }
+        else
+        {
+            Console.WriteLine(
+                $"  schema sync : on (schema.convertTypes {OnOff(plan.Policy.ConvertTypes)}, " +
+                $"schema.allowTableRewrite {OnOff(plan.Policy.AllowTableRewrite)})");
+            Console.WriteLine($"  columns to add : {plan.ColumnsToAdd.Count}");
+            foreach (var column in plan.ColumnsToAdd)
+            {
+                Console.WriteLine($"    [{column.Name}] {column.Type}");
+            }
+
+            Console.WriteLine($"  columns to alter in place : {plan.ColumnsToAlter.Count}");
+            foreach (var alter in plan.ColumnsToAlter)
+            {
+                Console.WriteLine($"    [{alter.Name}] {alter.FromType} -> {alter.ToType} ({(alter.RewritesTable ? "rewrites the table" : "metadata only")})");
+            }
+
+            if (plan.ExtraColumns.Count > 0)
+            {
+                Console.WriteLine(
+                    $"  columns kept : {plan.ExtraColumns.Count} in the target and not in the source, never dropped: " +
+                    string.Join(", ", plan.ExtraColumns.Select(c => $"[{c}]")));
+            }
+
+            Console.WriteLine($"  type changes : {plan.TypeChanges.Count}");
+            foreach (var change in plan.TypeChanges)
+            {
+                PrintPlannedTypeChange(change);
+            }
+
+            // Each critical mismatch is a key column's tier 3 change, explained with its manual steps in the list above.
+            if (plan.CriticalMismatches.Count > 0)
+            {
+                Console.WriteLine(
+                    $"  critical mismatches : {plan.CriticalMismatches.Count} (" +
+                    string.Join(", ", plan.CriticalMismatches.Select(m => $"[{m.Column}]")) + "), each a type change above");
+            }
+        }
+
+        Console.WriteLine(plan.IsBlocked
+            ? "  verdict : BLOCKED, a run stops at schema sync, before it loads the target"
+            : plan.NeedsAttention
+                ? $"  verdict : {plan.TypeChanges.Count(c => c.NeedsAttention)} type change(s) need attention; a run loads and ends with a warning"
+                : "  verdict : nothing needs attention");
+    }
+
+    // One type change of a plan: what a run does about it and the column, then its facts, then the explanation (and a tier 3
+    // change's manual steps, one per line).
+    private static void PrintPlannedTypeChange(TypeChangeReport change)
+    {
+        const string Indent = "             ";
+        var label = change.Status switch
+        {
+            TypeChangeStatus.Planned => "PLANNED",
+            TypeChangeStatus.Pending => "PENDING",
+            TypeChangeStatus.Refused => "REFUSED",
+            TypeChangeStatus.Manual => "MANUAL",
+            TypeChangeStatus.KeptWider => "KEPT",
+            TypeChangeStatus.RolledBack => "ROLLBACK",
+            _ => change.Status.ToString().ToUpperInvariant(),
+        };
+        Console.WriteLine($"    {label,-9}[{change.Column}] {(change.FromType.Length == 0 ? "?" : change.FromType)} -> {change.ToType}");
+
+        var facts = new List<string>
+        {
+            $"tier {(int)change.Tier} {SqlFlow.SqlServer.Schema.ColumnTypeChange.TierName(change.Tier)}",
+            change.RewritesTable ? "rewrites the table" : "metadata only",
+        };
+        if (change.IsKey)
+        {
+            facts.Add("key column");
+        }
+
+        if (change.Indexes.Count > 0)
+        {
+            facts.Add("indexed by " + string.Join(", ", change.Indexes.Select(i => $"[{i}]")));
+        }
+
+        if (change.References.Count > 0)
+        {
+            facts.Add("referenced by " + string.Join(", ", change.References));
+        }
+
+        if (change.Rows is { } rows)
+        {
+            facts.Add($"{rows} row(s)");
+        }
+
+        if (change.FailingValues is { } failing)
+        {
+            facts.Add($"{failing} value(s) do not convert");
+        }
+
+        if (change.Status == TypeChangeStatus.Pending && change.RequiresOptIn is { } optIn)
+        {
+            facts.Add($"needs {optIn}: true");
+        }
+
+        Console.WriteLine(Indent + string.Join("; ", facts));
+        Console.WriteLine(Indent + SqlFlow.SqlServer.Schema.TypeChangeApplier.WithoutManualSteps(change));
+        if (change.Status == TypeChangeStatus.Manual && change.ManualSteps.Count > 0)
+        {
+            Console.WriteLine(Indent + "manual steps:");
+            foreach (var step in change.ManualSteps)
+            {
+                Console.WriteLine($"{Indent}  - {step}");
+            }
+        }
+    }
+
+    /// <summary>0 when nothing in an ingestion plan needs attention; 1 when a critical mismatch blocks the load (a run would
+    /// fail, as a file flow's plan fails on drift its policy refuses); 2 when the run would load but a type change needs an
+    /// operator (the CLI's "worked, and found what you asked to be told about").</summary>
+    private static int IngestionPlanExitCode(IngestionPlan plan)
+        => plan.IsBlocked ? 1 : plan.NeedsAttention ? 2 : 0;
+
     private static void PrintResult(FlowResult result)
     {
         var status = result.Status == FlowStatus.Success ? "OK" : "FAILED";
@@ -2454,7 +2594,7 @@ internal static class Program
 
             Usage:
               sqlflow validate <pipeline.yaml>   Validate a pipeline definition
-              sqlflow plan     <pipeline.yaml>   Show the SQL that would run (changes nothing; file flows)
+              sqlflow plan     <pipeline.yaml>   Show what a run would do (changes nothing; file and ingestion flows)
               sqlflow run      <pipeline.yaml>   Execute the pipeline (Ctrl+C aborts the in-flight statement and rolls back)
                                [--full]          Backfill: ignore the watermark, read everything the flow selects
                                [--from <date>]   Backfill: externally-bounded window low bound (file date /

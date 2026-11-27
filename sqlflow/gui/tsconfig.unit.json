@@ -70,6 +70,7 @@
     "src/features/runs/runCountColumns.ts",
     "src/features/runs/runInputs.ts",
     "src/features/runs/startedBy.ts",
+    "src/features/runs/typeChangeOutcome.ts",
     "src/features/schedules/scheduleValues.ts",
     "src/features/schedules/timeline.ts",
     "src/lib/time.ts",

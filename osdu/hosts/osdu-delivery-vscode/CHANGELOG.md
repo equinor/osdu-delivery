@@ -50,6 +50,18 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   Record** and the Home page still do
   ([the Delivery page](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/gui-ledger.md#delivery)).
 
+### Runs
+
+- **A run that succeeded with warnings shows it.** Wherever a run's status shows, one that succeeded with warnings wears
+  the warning tone and an alert, and its label says how many; a pipeline's **Last run** says the count beside the
+  duration, and `sqlflow runs show` prints it after the status
+  ([column type history](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/concepts/column-type-history.md#the-gui)).
+- **A run's page lists its column type changes.** A **Type changes** card lists what the run did about each change to an
+  existing column's type: the column, from which type to which, the tier and the outcome, and on opening a row why, the
+  values that refused it and the steps to make it by hand. A pipeline's page shows the ones its latest run left for an
+  operator until a run no longer reports them
+  ([column type history](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/concepts/column-type-history.md#the-gui)).
+
 ### Pages left open
 
 - **A page behind another tab asks for nothing.** A page you keep open behind another tab, and the side bar while it is
@@ -72,6 +84,13 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ### The command line
 
+- **`sqlflow plan` plans an ingestion flow.** It reads the live source and target and prints what the next run would do:
+  the columns it adds, and every change to an existing column's type with its tier, what it costs and its verdict (planned,
+  pending an opt-in, refused with the values that do not convert, or manual with the steps). It changes nothing, and
+  exits 2 when a change needs attention and 1 when the load is blocked ([plan](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/cli/plan.md)).
+- **`schema.convertTypes` in an ingestion flow.** The editor knows the new key, which lets a run convert an existing
+  column to the type its source now declares after checking every stored value, and a pre flow's typed view is rebuilt
+  on every run, also one that finds no new file ([column type changes](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/concepts/column-type-changes.md)).
 - **`sqlflow records release` names the records it releases.** It takes `--key`, `--issue` or `--all`, and with none of
   them stops and says so, where it used to release every blocked record of the flow. The control plane the pages and the
   MCP server talk to refuses a release, redelivery, bringing up to date or deletion from the ledger that names no

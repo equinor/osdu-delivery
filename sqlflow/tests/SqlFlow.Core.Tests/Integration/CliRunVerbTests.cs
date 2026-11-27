@@ -155,6 +155,77 @@ public sealed class CliRunVerbTests : IDisposable
     }
 
     [SkippableFact]
+    public async Task Plan_IngestionFlow_SaysWhatARunWouldDo_ExitsByWhatNeedsAttention_AndLeavesTheTarget()
+    {
+        var (dll, cs) = Require();
+        var suffix = Suffix();
+        var src = "IT_CliPlanIngSrc_" + suffix;
+        var trg = "IT_CliPlanIngTrg_" + suffix;
+        await IntegrationDb.DropTableAsync(cs, src);
+        await IntegrationDb.DropTableAsync(cs, trg);
+        await IntegrationDb.ExecuteAsync(cs, $"CREATE TABLE dbo.[{src}] (Id int NOT NULL, Logged varchar(30) NULL);");
+        await IntegrationDb.ExecuteAsync(cs, $"INSERT INTO dbo.[{src}] VALUES (1, '2026-01-05'), (2, NULL);");
+        var dbName = await IntegrationDb.ScalarAsync<string>(cs, "SELECT DB_NAME();");
+        var yaml = WriteFile("plan-ing.flow.yaml", $$"""
+            flowType: ing
+            name: cli-plan-ing-{{suffix}}
+            connections:
+              sink: ${env:SQLFlowSinkConStr}
+            source:
+              server: sink
+              object: {{dbName}}.dbo.{{src}}
+            target:
+              server: sink
+              object: {{dbName}}.dbo.{{trg}}
+              identityColumn: RecId
+            load:
+              keyColumns: [Id]
+            """);
+        (string, string?)[] env = [("SQLFlowSinkConStr", cs)];
+
+        try
+        {
+            var created = await CliBinary.RunAsync(dll, ["run", yaml], env: env, workingDirectory: _dir);
+            Assert.True(created.Exit == 0, created.AllOutput);
+
+            // Source and target agree.
+            var settled = await CliBinary.RunAsync(dll, ["plan", yaml], env: env, workingDirectory: _dir);
+            Assert.True(settled.Exit == 0, settled.AllOutput);
+            Assert.Contains("target : exists", settled.StdOut, StringComparison.Ordinal);
+            Assert.Contains("type changes : 0", settled.StdOut, StringComparison.Ordinal);
+            Assert.Contains("verdict : nothing needs attention", settled.StdOut, StringComparison.Ordinal);
+
+            // The source declares its text a date: a run leaves the change pending its opt-in and ends with a warning.
+            await IntegrationDb.ExecuteAsync(cs, $"ALTER TABLE dbo.[{src}] ALTER COLUMN Logged date NULL;");
+            var pending = await CliBinary.RunAsync(dll, ["plan", yaml], env: env, workingDirectory: _dir);
+            Assert.True(pending.Exit == 2, pending.AllOutput);
+            Assert.Contains("PENDING  [Logged] varchar(30) -> date", pending.StdOut, StringComparison.Ordinal);
+            Assert.Contains("tier 2 checked conversion; rewrites the table", pending.StdOut, StringComparison.Ordinal);
+            Assert.Contains("needs schema.convertTypes: true", pending.StdOut, StringComparison.Ordinal);
+            Assert.Contains("1 type change(s) need attention", pending.StdOut, StringComparison.Ordinal);
+
+            // And its key text: a run is blocked before it changes or loads anything.
+            await IntegrationDb.ExecuteAsync(cs, $"ALTER TABLE dbo.[{src}] ALTER COLUMN Id varchar(20) NOT NULL;");
+            var blocked = await CliBinary.RunAsync(dll, ["plan", yaml], env: env, workingDirectory: _dir);
+            Assert.True(blocked.Exit == 1, blocked.AllOutput);
+            Assert.Contains("MANUAL   [Id] int -> varchar(20)", blocked.StdOut, StringComparison.Ordinal);
+            Assert.Contains("key column", blocked.StdOut, StringComparison.Ordinal);
+            Assert.Contains("manual steps:", blocked.StdOut, StringComparison.Ordinal);
+            Assert.Contains("critical mismatches : 1", blocked.StdOut, StringComparison.Ordinal);
+            Assert.Contains("verdict : BLOCKED", blocked.StdOut, StringComparison.Ordinal);
+
+            Assert.Equal("varchar(30)", await IntegrationDb.ColumnTypeAsync(cs, trg, "Logged"));
+            Assert.Equal("int", await IntegrationDb.ColumnTypeAsync(cs, trg, "Id"));
+            Assert.Equal(2, await IntegrationDb.RowCountAsync(cs, trg));
+        }
+        finally
+        {
+            await IntegrationDb.DropTableAsync(cs, src);
+            await IntegrationDb.DropTableAsync(cs, trg);
+        }
+    }
+
+    [SkippableFact]
     public async Task Run_ExportFlow_WritesTheCsvFile()
     {
         var (dll, cs) = Require();

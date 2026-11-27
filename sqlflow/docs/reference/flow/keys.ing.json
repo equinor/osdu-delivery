@@ -4,7 +4,7 @@
   "flowType": "ing",
   "generatedFrom": "source code: src/SqlFlow.Yaml, src/SqlFlow.Core, and the matching runner project",
   "naming": "Every loader builds its YamlDotNet IDeserializer with new DeserializerBuilder().WithNamingConvention(CamelCaseNamingConvention.Instance).IgnoreUnmatchedProperties().Build(). A C# PascalCase property binds to the camelCase YAML key. Dictionary keys are never renamed by the convention. Enum-like string values are parsed case-insensitively; some (like load.mode) additionally strip - and _ before matching, confirmed per-case in the file-flow census (docs/reference/flow/keys.json), not assumed for these new document kinds.",
-  "keyCount": 122,
+  "keyCount": 123,
   "keys": [
     {
       "path": "assertions",
@@ -469,7 +469,11 @@
       "type": "enum(auto|manual|disabled)",
       "required": false,
       "default": "auto",
-      "enumValues": ["auto", "manual", "disabled"],
+      "enumValues": [
+        "auto",
+        "manual",
+        "disabled"
+      ],
       "description": "The flow's execution mode, read at the document envelope (YamlDocumentLoader's probe, FlowDocument.Mode) and projected to the catalog pipeline row. 'auto' (the default) runs on schedule fires and in batch/node group runs; 'manual' reserves a working flow for direct triggers; 'disabled' deactivates a retired one (a retired source, a run-once replay) with the same exclusions and a visible 'disabled' badge. A node-scoped run can opt into includeAll ('find all') to replay non-auto descendants deliberately, and naming a flow directly always runs it.",
       "definedIn": "src/SqlFlow.Yaml/YamlDocumentLoader.cs (FlowDocument.Mode, parsed by YamlDocumentParts.ParseExecutionMode)",
       "validation": "Unknown value fails to load: \"<source>: 'mode' has unknown value '<value>'. Allowed: auto, manual, disabled.\""
@@ -491,7 +495,7 @@
       "path": "schema",
       "type": "object",
       "required": false,
-      "default": "{ sync: true, cleanColumnNames: false, cleanColumnNameRegex: null, replaceInvalidCharsWith: null, convertUnicodeToNonUnicode: false, allowTableRewrite: false } (MapSchema produces these defaults even when the whole block is absent)",
+      "default": "{ sync: true, cleanColumnNames: false, cleanColumnNameRegex: null, replaceInvalidCharsWith: null, convertUnicodeToNonUnicode: false, allowTableRewrite: false, convertTypes: false } (MapSchema produces these defaults even when the whole block is absent)",
       "description": "Optional schema-synchronization block for the ing document: distinct from, and much simpler than, the file-flow document's schema block (no evolve/defaultColumnType/overrides keys here). Bound from IngestionYaml.Schema and mapped by MapSchema (src/SqlFlow.Yaml/YamlIngestionFlowLoader.cs:359-375) onto IngestionFlow.SchemaSync (SchemaSyncPolicy). Consumed by IngestionSchemaBuilder.Build, which always runs (for both the staging and target desired-schema passes) regardless of sync, and by IngestionFlowRunner's target-evolution step, which runs only when sync is true (IngestionFlowRunner.cs:334-355).",
       "definedIn": "src/SqlFlow.Yaml/IngestionYaml.cs:24 (model: src/SqlFlow.Core/Ingestion/IngestionFlow.cs:78, src/SqlFlow.Core/Ingestion/IngestionPolicies.cs:169)"
     },
@@ -500,10 +504,20 @@
       "type": "bool",
       "required": false,
       "default": "false",
-      "description": "Opt-in for an expensive table-rewrite ALTER (for example widening int to bigint) on the TARGET table. Consulted only inside the schema.sync evolution call against the target (IngestionFlowRunner.cs:341); the staging-table evolution call earlier in the same run hardcodes allowTableRewrite: false regardless of this setting (IngestionFlowRunner.cs:266). RewritePolicy.Decide maps false to RewriteHandling.RequireOptIn (src/SqlFlow.SqlServer/Schema/RewritePolicy.cs:20-21); EvolutionDdlGenerator.Generate then refuses the whole evolution plan before generating any DDL whenever the plan needs a rewrite and the policy requires opt-in (src/SqlFlow.SqlServer/Schema/EvolutionDdlGenerator.cs:31-34).",
+      "description": "Opt-in for a widening of an existing TARGET column that makes SQL Server rewrite every row (for example int to bigint, varchar to nvarchar, any decimal precision or datetime2 scale change; only a longer varchar/nvarchar/varbinary of the same base type is metadata-only and needs no opt-in). With it the change is carried by the safe rewrite (ColumnRetyper: a shadow column filled in batches, swapped in under a short schema lock, every row, identity, system date, index and statistics kept; on a system-versioned table an in-place ALTER COLUMN). Without it the change is reported Pending (a run warning, target.typechange) and the table is untouched. The staging-table evolution always runs without it. See docs/reference/concepts/column-type-changes.md.",
       "appliesWhen": "schema.sync is true (the target evolution call this governs runs only inside that gate)",
-      "validation": "When a plan needs a table rewrite and this is false: SchemaRewriteNotPermittedException \"Schema evolution on '<target>' requires a table rewrite on column(s) <columns> (for example int to bigint). This holds a table lock for the full rewrite and is refused by default. Set AllowTableRewrite to run it, ideally in a maintenance window.\" (src/SqlFlow.Core/SchemaRewriteNotPermittedException.cs:12-14, thrown from src/SqlFlow.SqlServer/Schema/EvolutionDdlGenerator.cs:33).",
+      "validation": "None at load time. Without the opt-in a rewriting widening stays Pending; the load still runs, and StagingWriteGuard stops it before anything is written when a staged value would change on its way into the column's current type.",
       "definedIn": "src/SqlFlow.Yaml/IngestionYaml.cs:109 (model: src/SqlFlow.Core/Ingestion/IngestionPolicies.cs:190)"
+    },
+    {
+      "path": "schema.convertTypes",
+      "type": "bool",
+      "required": false,
+      "default": "false",
+      "description": "Opt-in for a checked conversion of an existing TARGET column to the type its source now declares: text (varchar/nvarchar) to tinyint, smallint, int, bigint, decimal, date, datetime2, bit or uniqueidentifier; one of those to varchar/nvarchar; a shorter varchar/nvarchar or nvarchar to varchar; an integer to a decimal with room for it. Only on a column that is not a key, identity, hash or primary-key column. Every stored value is checked first (LosslessConversion); one that does not convert without loss refuses the change with a count and a sample and leaves the table untouched. A text column becoming typed is converted after the load, so a full-load run re-renders stored values from the source first. Without it the change is reported Pending on every run. See docs/reference/concepts/column-type-changes.md.",
+      "appliesWhen": "schema.sync is true",
+      "validation": "None at load time; a refused or pending change is a warning of the run (target.typechange), never a partial change.",
+      "definedIn": "src/SqlFlow.Yaml/IngestionYaml.cs (model: src/SqlFlow.Core/Ingestion/IngestionPolicies.cs, SchemaSyncPolicy.ConvertTypes)"
     },
     {
       "path": "schema.cleanColumnNameRegex",

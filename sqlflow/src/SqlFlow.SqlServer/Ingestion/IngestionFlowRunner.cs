@@ -80,6 +80,11 @@ public sealed record IngestionRunResult
     /// resolved watermark with its probed object); null on the failure path, where it may not have resolved.</summary>
     public IncrementalSummary? Incremental { get; init; }
 
+    /// <summary>Every change to the type of an existing target column this run considered, and what became of it
+    /// (applied, pending an opt-in, refused by its data check, manual, finished or rolled back from an earlier run).
+    /// Serialized into run.json, from where the catalog keeps the column's type history.</summary>
+    public IReadOnlyList<TypeChangeReport> TypeChanges { get; init; } = [];
+
     /// <summary>The failure message (already redacted of any secret), or null on success.</summary>
     public string? Error { get; init; }
 }
@@ -187,21 +192,11 @@ public sealed class IngestionFlowRunner
             return await RunAssertionsOnlyAsync(flow, options, runId, startUtc, staging, ct).ConfigureAwait(false);
         }
 
-        var resolvedSource = await _resolver.ResolveAsync(flow.Source.ConnectionReference, ConnectionRole.Source, ct: ct).ConfigureAwait(false);
-        var resolvedTarget = await _resolver.ResolveAsync(flow.Target.ConnectionReference, ConnectionRole.Target, ct: ct).ConfigureAwait(false);
-        var targetConnectionString = resolvedTarget.CanonicalString;
-
-        // Per-source provider pieces: the catalog reader, SQL dialect, and type mapper for the source's kind.
-        // The target is always SQL Server; its reader drives schema evolution and the target-side watermark
-        // probe, both constructed per run (they are cheap and stateless).
-        var sourceCatalog = _catalogs.ReaderFor(resolvedSource);
-        var sourceDialect = _dialects.FirstOrDefault(d => d.CanHandle(resolvedSource.Kind))
-            ?? throw new SqlFlowException(
-                $"No source SQL dialect is registered for data source kind '{resolvedSource.Kind}'. Register the matching provider (for example from SqlFlow.Providers).");
-        var sourceTypeMapper = _typeMappers.FirstOrDefault(m => m.CanHandle(resolvedSource.Kind))
-            ?? throw new SqlFlowException(
-                $"No source type mapper is registered for data source kind '{resolvedSource.Kind}'. Register the matching provider (for example from SqlFlow.Providers).");
-        var targetCatalog = _catalogs.ReaderFor(resolvedTarget);
+        var sides = await ResolveSidesAsync(flow, ct).ConfigureAwait(false);
+        var resolvedSource = sides.Source;
+        var targetConnectionString = sides.Target.CanonicalString;
+        var sourceDialect = sides.SourceDialect;
+        var targetCatalog = sides.TargetCatalog;
         var schemaSync = new SchemaSyncService(targetCatalog);
         var incremental = new IncrementalWindowResolver(targetCatalog, _factory);
 
@@ -249,33 +244,36 @@ public sealed class IngestionFlowRunner
             statements.ReportFailure(trace[index].Sequence, failure.Message);
         }
 
+        // Every type change the run considers is reported once, at info when it needs nothing (applied, kept wider) and as
+        // a warning when it needs an operator (pending, refused, manual, rolled back), so the run ends with a warning
+        // outcome until the change is resolved, rather than the target silently keeping a type the source moved away from.
+        var typeChanges = new List<TypeChangeReport>();
+        void ReportTypeChanges(IReadOnlyList<TypeChangeReport> reports)
+        {
+            foreach (var report in reports)
+            {
+                typeChanges.Add(report);
+                if (report.IsWarning)
+                {
+                    Warn("target.typechange", report.Message);
+                }
+                else
+                {
+                    Info("target.typechange", report.Message);
+                }
+            }
+        }
+
+        var typePolicy = new TypeChangePolicy(flow.SchemaSync.AllowTableRewrite, flow.SchemaSync.ConvertTypes);
+        var retypeOptions = new RetypeOptions { Apply = applyOptions };
+
         try
         {
             // Fail fast on flags that are accepted by the loaders but not yet implemented by the engine, so a
             // flow can never silently believe it got temporal history or an unknown-member row. These are guarded
             // here (the universal path for YAML, control-DB, and legacy sources) rather than silently ignored.
             EnsureSupportedFeatures(flow);
-
-            // The consolidation-gated landing truncate (step 8c) needs a watermark to compare the two sides and a
-            // SQL Server source to issue the T-SQL truncate on. Validate both here, before any data work, so a
-            // misconfigured flow fails immediately rather than after a committed load.
-            if (flow.Load.TruncateSourceWhenConsolidated)
-            {
-                if (ConsolidationWatermarkColumn(flow) is null)
-                {
-                    throw new SqlFlowException(
-                        "load.truncateSourceWhenConsolidated requires an incremental watermark (incremental.columns or " +
-                        "incremental.dateColumn): the landing table is truncated only once the target's MAX(watermark) has " +
-                        "caught up to it, so a watermark column is mandatory.");
-                }
-
-                if (resolvedSource.Kind != DataSourceKind.MSSQL)
-                {
-                    throw new SqlFlowException(
-                        $"load.truncateSourceWhenConsolidated is supported only for SQL Server sources (the [pre] landing " +
-                        $"database), not '{resolvedSource.Kind}': the landing truncate is issued as T-SQL on the source connection.");
-                }
-            }
+            EnsureConsolidationGate(flow, resolvedSource.Kind);
 
             Info("run.start",
                 $"ingestion '{flow.SysAlias ?? flow.Target.Table.Name}' (flow {flow.FlowId}, run {runToken}): " +
@@ -290,37 +288,13 @@ public sealed class IngestionFlowRunner
                 await _invoke.RunByAliasAsync(flow.Process.PreInvokeAlias!.Trim(), ct).ConfigureAwait(false);
             }
 
-            // 1. Introspect the source object and shape its columns: drop ignored columns and clear the
-            //    source identity/primary-key facts so staging and target do not inherit them.
-            IReadOnlyList<SqlColumn> sourceColumns;
-            await using (var sourceConnection = await _factory.OpenAsync(resolvedSource, ct).ConfigureAwait(false))
-            {
-                // A catalog that returns nothing has told us the object is not VISIBLE, which is weaker than
-                // "it does not exist": every engine we read (SQL Server's metadata visibility rules, MySQL's
-                // information_schema, and their equivalents) hides an object from a login that holds no
-                // privilege on it, so a dropped table, a renamed table, and a revoked grant are indistinguishable
-                // from here. Say exactly that, so nobody reads a permissions change as a schema change.
-                var introspected = await sourceCatalog.IntrospectObjectAsync(sourceConnection, ToName(flow.Source.Table), ct).ConfigureAwait(false)
-                    ?? throw new SqlFlowException(
-                        $"Source object {flow.Source.Table.QualifiedName} is not visible on the {resolvedSource.Kind} source: it was " +
-                        "dropped, it was renamed, or this login holds no privilege on it (an object a login cannot read is absent " +
-                        "from the catalog rather than refused).");
-
-                sourceColumns = CatalogSchemaAdapter.ToColumns(introspected, sourceTypeMapper)
-                    .Where(c => !flow.Source.IgnoreColumns.Contains(c.Name, StringComparer.OrdinalIgnoreCase))
-                    .Select(c => c with { IsIdentity = false, IsPrimaryKey = false })
-                    .ToList();
-            }
-
-            if (sourceColumns.Count == 0)
-            {
-                throw new SqlFlowException($"Source object {flow.Source.Table.QualifiedName} exposes no columns to ingest.");
-            }
-
-            // 2. Build the desired target schema (data + system + hash + identity) and the source read that fills
-            //    staging: every source column as itself, plus each virtual column as its expression (legacy
-            //    flw.IngestionVirtual), which from staging on is an ordinary data column.
-            var targetSchema = new IngestionSchemaBuilder(new DefaultColumnNameCleaner()).Build(sourceColumns, flow, forStaging: false);
+            // 1. Introspect the source object and shape its columns, then 2. build the desired target schema and the
+            //    source read that fills staging: every source column as itself, plus each virtual column as its
+            //    expression (legacy flw.IngestionVirtual), which from staging on is an ordinary data column. A plan
+            //    builds the schema through the same call.
+            var shape = await ShapeAsync(flow, sides, ct).ConfigureAwait(false);
+            var sourceColumns = shape.SourceColumns;
+            var targetSchema = shape.Schema;
             var nameMap = targetSchema.SourceToTargetNames;
             var projections = targetSchema.Projections;
             var byName = sourceColumns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
@@ -488,11 +462,20 @@ public sealed class IngestionFlowRunner
             string? createCmd = null;
             if (flow.SchemaSync.Sync)
             {
+                var targetKeys = KeySet(EffectiveKeyColumns(flow));
+
+                // 5a. A safe rewrite an earlier run left unfinished (the run died part way) is finished when this run
+                //     still wants that change and may make it, and rolled back otherwise, before anything else touches
+                //     the table: its column is untouched until the swap, so either way the table ends consistent.
+                ReportTypeChanges(await TypeChangeApplier.ResumeAsync(
+                    schemaSync, targetConnectionString, flow.Target.Table, targetSchema.Columns, targetKeys, typePolicy,
+                    retypeOptions, Trace, ct).ConfigureAwait(false));
+
                 var targetOutcome = await schemaSync.EvolveAsync(
                     targetConnectionString,
                     flow.Target.Table,
                     targetSchema.Columns,
-                    KeySet(EffectiveKeyColumns(flow)),
+                    targetKeys,
                     flow.SchemaSync.AllowTableRewrite,
                     applyOptions,
                     ct).ConfigureAwait(false);
@@ -509,10 +492,23 @@ public sealed class IngestionFlowRunner
                 }
 
                 // Adding a column and re-typing one are not the same event, and reporting both as "N change(s)"
-                // hides the one that matters. An added column leaves every existing column as its consumers
-                // know it. An ALTER COLUMN changes the type a consumer already reads, which no downstream query
-                // asked for, so it is a warning even though the engine applied it successfully.
-                ReportEvolution(targetOutcome.Plan, flow.Target.Table, Info, Warn);
+                // hides the one that matters. An added column leaves every existing column as its consumers know it;
+                // every change to an existing column's type is reported on its own below, with its tier and outcome.
+                ReportEvolution(targetOutcome.Plan, flow.Target.Table, Info);
+
+                // 5b. The type changes: the in-place ones the DDL above applied (or left pending an opt-in), the tier 3
+                //     ones with their manual steps, then the safe rewrites that belong before the load (a widening that
+                //     rewrites, a typed column becoming text, a shorter text). A text column becoming typed waits for
+                //     the load (step 7.1), so a full-load run re-renders its stored values from the source first.
+                if (!targetCreated)
+                {
+                    ReportTypeChanges(await TypeChangeApplier.DescribeAsync(
+                        targetConnectionString, flow.Target.Table, targetOutcome.Plan, targetOutcome.AlteredColumns, retypeOptions,
+                        Trace, ct).ConfigureAwait(false));
+                    ReportTypeChanges(await TypeChangeApplier.ApplyAsync(
+                        schemaSync, targetConnectionString, flow.Target.Table, targetSchema.Columns, targetKeys,
+                        TypeChangeTiming.BeforeLoad, typePolicy, retypeOptions, Trace, ct).ConfigureAwait(false));
+                }
 
                 // The planner also records what it deliberately did NOT do. That is the half an operator never
                 // sees otherwise: the target silently keeps a type the source has moved away from, or stays
@@ -626,6 +622,27 @@ public sealed class IngestionFlowRunner
             // types of its own, and hashing a staged row against a target row without accounting for that
             // compares two renderings of the same value and rewrites every matched row on every run.
             var targetColumnTypes = await ReadColumnTypesAsync(targetCatalog, targetConnectionString, flow.Target.Table, ct).ConfigureAwait(false);
+
+            // 6.9. A target column that kept its type while the source declares another (a change pending an opt-in,
+            //      refused, or manual) receives every staged value through SQL Server's implicit conversion, which
+            //      changes a value silently when the column cannot hold it (a fraction into an int, a time into a
+            //      date). Prove none would change, or stop here, before anything is written.
+            if (flow.SchemaSync.Sync && !targetCreated)
+            {
+                var written = stagingColumns
+                    .Where(c => targetColumnTypes.ContainsKey(c.Name))
+                    .Select(c => new StagingWriteGuard.WrittenColumn(c.Name, c.DataType, targetColumnTypes[c.Name]))
+                    .ToList();
+                var guarded = await StagingWriteGuard.EnsureLosslessAsync(
+                    targetConnectionString, staging, flow.Target.Table, written, retypeOptions.SampleSize, Trace, ct).ConfigureAwait(false);
+                if (guarded.Count > 0)
+                {
+                    Info("staging.type-guard",
+                        $"every staged value of {guarded.Count} column(s) goes into the target's own type without loss: "
+                        + string.Join(", ", guarded.Select(g => $"[{g.Name}] {g.Staged.Render()} into {g.Target.Render()}")));
+                }
+            }
+
             var loadStatements = BuildLoadStatements(flow, staging, dataColumnNames, stagingColumns, nameMap, targetColumnTypes, events);
             foreach (var statement in loadStatements)
             {
@@ -655,6 +672,17 @@ public sealed class IngestionFlowRunner
             Info("upsert.apply", reloadReplace
                 ? $"per-file replace on [{flow.Load.ReloadColumn}]: {rowsPurged} purged, {rowsInserted} inserted"
                 : $"{rowsInserted} inserted, {rowsUpdated} updated");
+            // 7.1. The checked conversions of a text column to a typed one run once the load has committed: the load
+            //      wrote the source's current rendering of every row it read into the column, so a full-load run
+            //      re-renders every stored value (an expression in the source mapping 'NA' to NULL, say) before the
+            //      conversion checks them.
+            if (flow.SchemaSync.Sync && !targetCreated)
+            {
+                ReportTypeChanges(await TypeChangeApplier.ApplyAsync(
+                    schemaSync, targetConnectionString, flow.Target.Table, targetSchema.Columns, KeySet(EffectiveKeyColumns(flow)),
+                    TypeChangeTiming.AfterLoad, typePolicy, retypeOptions, Trace, ct).ConfigureAwait(false));
+            }
+
             var insertCmd = loadStatements.FirstOrDefault(s => s.Kind is not LoadKind.Update and not LoadKind.Purge)?.Sql;
             var updateCmd = loadStatements.FirstOrDefault(s => s.Kind == LoadKind.Update)?.Sql;
 
@@ -881,6 +909,7 @@ public sealed class IngestionFlowRunner
                 SqlTrace = trace,
                 TransformView = transformView,
                 Incremental = BuildIncrementalSummary(flow, options, window),
+                TypeChanges = typeChanges,
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -914,8 +943,151 @@ public sealed class IngestionFlowRunner
                 EndTimeUtc = endUtc,
                 DurationSeconds = duration,
                 SqlTrace = trace,
+                TypeChanges = typeChanges,
             };
         }
+    }
+
+    /// <summary>
+    /// Plans a run of <paramref name="flow"/> without changing anything. The source and target resolve as a run resolves
+    /// them and the target schema the run wants is built from the live source by the run's own steps; schema sync then plans
+    /// against the live target what the run would create, add and alter in place, and what stops the load, and
+    /// <see cref="TypeChangeApplier.PlanAsync"/> says what the run would do, with this flow's settings, about every change to
+    /// an existing column's type (a checked conversion after its data check) and about a rewrite an earlier run left
+    /// unfinished. Only reads run: no DDL, no trigger, no shadow column, no staging table, no hook, no invoke and no run
+    /// log. A flow a run refuses before it reads anything is refused here too. With <c>schema.sync</c> off a run changes no
+    /// column, so the plan lists none; it checks that the target takes every column the run writes, as the run does, unless
+    /// a pre-process hook would run first (a plan runs no hook, and the hook may add the column).
+    /// </summary>
+    public async Task<IngestionPlan> PlanAsync(IngestionFlow flow, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+
+        var sides = await ResolveSidesAsync(flow, ct).ConfigureAwait(false);
+        EnsureSupportedFeatures(flow);
+        EnsureConsolidationGate(flow, sides.Source.Kind);
+        var shape = await ShapeAsync(flow, sides, ct).ConfigureAwait(false);
+        var target = flow.Target.Table;
+        var policy = new TypeChangePolicy(flow.SchemaSync.AllowTableRewrite, flow.SchemaSync.ConvertTypes);
+
+        await using var connection = new SqlConnection(sides.Target.CanonicalString);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        if (!flow.SchemaSync.Sync)
+        {
+            if (!TargetProcessHooks.ShouldRun(flow.Process.PreProcessOnTarget))
+            {
+                await EnsureTargetAcceptsWrittenColumnsAsync(
+                    sides.TargetCatalog, sides.Target.CanonicalString, flow, shape.Schema.Projections.Select(p => p.TargetName).ToList(), ct)
+                    .ConfigureAwait(false);
+            }
+
+            return new IngestionPlan
+            {
+                Source = flow.Source.Table.QualifiedName,
+                Target = target.QualifiedName,
+                TargetExists = await sides.TargetCatalog.IntrospectObjectAsync(connection, ToName(target), ct).ConfigureAwait(false) is not null,
+                SchemaSync = false,
+                Policy = policy,
+            };
+        }
+
+        var evolution = await new SchemaSyncService(sides.TargetCatalog)
+            .PlanAsync(connection, target, shape.Schema.Columns, KeySet(EffectiveKeyColumns(flow)), ct).ConfigureAwait(false);
+        var permitted = SchemaSyncService.Permitted(evolution, flow.SchemaSync.AllowTableRewrite);
+
+        // A plan keeps no SQL trace of its own: the reads it makes are the checks whose findings the reports carry.
+        static void NoTrace(string step, string sql)
+        {
+        }
+
+        IReadOnlyList<TypeChangeReport> typeChanges = evolution.CreateTable
+            ? []
+            : await TypeChangeApplier.PlanAsync(
+                connection, target, evolution, permitted.ColumnsToAlter.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                policy, new RetypeOptions(), NoTrace, ct).ConfigureAwait(false);
+
+        return new IngestionPlan
+        {
+            Source = flow.Source.Table.QualifiedName,
+            Target = target.QualifiedName,
+            TargetExists = !evolution.CreateTable,
+            SchemaSync = true,
+            Policy = policy,
+            ColumnsToAdd = (evolution.CreateTable ? evolution.CreateColumns : evolution.ColumnsToAdd)
+                .Select(c => new IngestionPlanColumn(c.Name, c.DataType.Render()))
+                .ToList(),
+            ColumnsToAlter = permitted.ColumnsToAlter
+                .Select(a => new IngestionPlanAlter(a.Name, a.FromType.Render(), a.ToType.Render(), a.Footprint == ChangeFootprint.TableRewrite))
+                .ToList(),
+            CriticalMismatches = evolution.CriticalMismatches,
+            ExtraColumns = evolution.Drift.Where(d => d.Kind == DriftKind.ExtraTargetColumn).Select(d => d.Column).ToList(),
+            TypeChanges = typeChanges,
+        };
+    }
+
+    /// <summary>The source and target a run works against: both connections resolved through the registry, the provider
+    /// pieces for the source's kind (its catalog reader, SQL dialect and type mapper), and the target's catalog reader.</summary>
+    private sealed record FlowSides(
+        ResolvedConnection Source,
+        ResolvedConnection Target,
+        ICatalogReader SourceCatalog,
+        ISourceSqlDialect SourceDialect,
+        ISourceTypeMapper SourceTypeMapper,
+        ICatalogReader TargetCatalog);
+
+    /// <summary>The source's columns as a run reads them, and the target schema the run wants from them.</summary>
+    private sealed record FlowShape(IReadOnlyList<SqlColumn> SourceColumns, DesiredSchema Schema);
+
+    // Resolves the flow's source and target and picks the provider pieces for the source's kind. The target is always SQL
+    // Server; its reader drives schema evolution and the target-side watermark probe, both constructed per run (they are
+    // cheap and stateless).
+    private async Task<FlowSides> ResolveSidesAsync(IngestionFlow flow, CancellationToken ct)
+    {
+        var source = await _resolver.ResolveAsync(flow.Source.ConnectionReference, ConnectionRole.Source, ct: ct).ConfigureAwait(false);
+        var target = await _resolver.ResolveAsync(flow.Target.ConnectionReference, ConnectionRole.Target, ct: ct).ConfigureAwait(false);
+        var sourceCatalog = _catalogs.ReaderFor(source);
+        var sourceDialect = _dialects.FirstOrDefault(d => d.CanHandle(source.Kind))
+            ?? throw new SqlFlowException(
+                $"No source SQL dialect is registered for data source kind '{source.Kind}'. Register the matching provider (for example from SqlFlow.Providers).");
+        var sourceTypeMapper = _typeMappers.FirstOrDefault(m => m.CanHandle(source.Kind))
+            ?? throw new SqlFlowException(
+                $"No source type mapper is registered for data source kind '{source.Kind}'. Register the matching provider (for example from SqlFlow.Providers).");
+        return new FlowSides(source, target, sourceCatalog, sourceDialect, sourceTypeMapper, _catalogs.ReaderFor(target));
+    }
+
+    /// <summary>
+    /// Steps 1 and 2 of a run, which a plan shares: introspect the source object and shape its columns (drop the ignored
+    /// ones, and clear the source identity and primary-key facts so staging and target do not inherit them), then build
+    /// the desired target schema (data, system, hash and identity columns) and the projections of the source read.
+    /// </summary>
+    private async Task<FlowShape> ShapeAsync(IngestionFlow flow, FlowSides sides, CancellationToken ct)
+    {
+        IReadOnlyList<SqlColumn> sourceColumns;
+        await using (var sourceConnection = await _factory.OpenAsync(sides.Source, ct).ConfigureAwait(false))
+        {
+            // A catalog that returns nothing has told us the object is not VISIBLE, which is weaker than
+            // "it does not exist": every engine we read (SQL Server's metadata visibility rules, MySQL's
+            // information_schema, and their equivalents) hides an object from a login that holds no
+            // privilege on it, so a dropped table, a renamed table, and a revoked grant are indistinguishable
+            // from here. Say exactly that, so nobody reads a permissions change as a schema change.
+            var introspected = await sides.SourceCatalog.IntrospectObjectAsync(sourceConnection, ToName(flow.Source.Table), ct).ConfigureAwait(false)
+                ?? throw new SqlFlowException(
+                    $"Source object {flow.Source.Table.QualifiedName} is not visible on the {sides.Source.Kind} source: it was " +
+                    "dropped, it was renamed, or this login holds no privilege on it (an object a login cannot read is absent " +
+                    "from the catalog rather than refused).");
+
+            sourceColumns = CatalogSchemaAdapter.ToColumns(introspected, sides.SourceTypeMapper)
+                .Where(c => !flow.Source.IgnoreColumns.Contains(c.Name, StringComparer.OrdinalIgnoreCase))
+                .Select(c => c with { IsIdentity = false, IsPrimaryKey = false })
+                .ToList();
+        }
+
+        if (sourceColumns.Count == 0)
+        {
+            throw new SqlFlowException($"Source object {flow.Source.Table.QualifiedName} exposes no columns to ingest.");
+        }
+
+        return new FlowShape(sourceColumns, new IngestionSchemaBuilder(new DefaultColumnNameCleaner()).Build(sourceColumns, flow, forStaging: false));
     }
 
     /// <summary>
@@ -1241,6 +1413,32 @@ public sealed class IngestionFlowRunner
             throw new SqlFlowException(
                 "insertUnknownDimensionRow is not yet implemented. Remove the flag; an unknown-member row must be " +
                 "seeded explicitly for now (a designed implementation with match-key exemption is pending).");
+        }
+    }
+
+    // The consolidation-gated landing truncate (step 8c) needs a watermark to compare the two sides and a SQL Server
+    // source to issue the T-SQL truncate on. Both are validated before any data work, so a misconfigured flow fails
+    // immediately rather than after a committed load.
+    private static void EnsureConsolidationGate(IngestionFlow flow, DataSourceKind sourceKind)
+    {
+        if (!flow.Load.TruncateSourceWhenConsolidated)
+        {
+            return;
+        }
+
+        if (ConsolidationWatermarkColumn(flow) is null)
+        {
+            throw new SqlFlowException(
+                "load.truncateSourceWhenConsolidated requires an incremental watermark (incremental.columns or " +
+                "incremental.dateColumn): the landing table is truncated only once the target's MAX(watermark) has " +
+                "caught up to it, so a watermark column is mandatory.");
+        }
+
+        if (sourceKind != DataSourceKind.MSSQL)
+        {
+            throw new SqlFlowException(
+                $"load.truncateSourceWhenConsolidated is supported only for SQL Server sources (the [pre] landing " +
+                $"database), not '{sourceKind}': the landing truncate is issued as T-SQL on the source connection.");
         }
     }
 
@@ -1657,23 +1855,13 @@ public sealed class IngestionFlowRunner
     /// warning: <c>SELECT</c> against that column starts returning a different type, no consumer asked for it,
     /// and it is the change an operator needs to find later when a downstream contract breaks.
     /// </summary>
-    private static void ReportEvolution(
-        EvolutionPlan plan, RelationalObject target, Action<string, string> info, Action<string, string> warn)
+    private static void ReportEvolution(EvolutionPlan plan, RelationalObject target, Action<string, string> info)
     {
         if (plan.ColumnsToAdd.Count > 0)
         {
             info("target.evolve",
                 $"{plan.ColumnsToAdd.Count} column(s) added to {target.QualifiedName}: "
                 + string.Join(", ", plan.ColumnsToAdd.Select(c => $"[{c.Name}] {c.DataType.Render()}")));
-        }
-
-        if (plan.ColumnsToAlter.Count > 0)
-        {
-            warn("target.evolve",
-                $"{plan.ColumnsToAlter.Count} existing column(s) of {target.QualifiedName} were re-typed to follow the "
-                + "source, which changes the type every downstream consumer reads: "
-                + string.Join(", ", plan.ColumnsToAlter.Select(a =>
-                    $"[{a.Name}] {a.FromType.Render()} -> {a.ToType.Render()}")));
         }
     }
 

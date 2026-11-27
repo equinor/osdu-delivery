@@ -106,11 +106,12 @@ Exit 2 is reserved for "the command worked, and the answer is the one you asked 
 - `db status` returns 2 when catalog migrations are pending (0 when the schema is current).
 - `lineage` returns 2 only when `--strict` is set and the graph contains cycles; without `--strict`, cycles do not affect the exit code.
 - `detect-unique-key` returns 2 when no unique key was found (0 when at least one verified candidate is unique).
+- `plan` returns 2 for an ingestion flow a run would load but whose type changes need attention (pending an opt-in, refused by their data, manual, or an unfinished rewrite to roll back); a plan blocked by a critical mismatch returns 1, as the run would fail.
 
 Command-specific notes:
 
 - `validate` exits 0 for a valid document of any flow kind.
-- `plan` exits 1 for non-file documents; only file flows can be planned offline.
+- `plan` exits 1 for a document that is neither a file flow nor an ingestion flow; only those two kinds can be planned.
 - `auth` exits 0 only when an Azure token was actually acquired for the requested scope, 1 otherwise.
 - Batch runs exit 0 only when the whole batch succeeded; per `BatchRunResult.Success`, a member failure listed in `ignoreErrors` does not by itself fail the batch.
 

@@ -1,4 +1,6 @@
-﻿using SqlFlow.Core.Runs;
+﻿using System.Text.Json;
+using SqlFlow.Catalog;
+using SqlFlow.Core.Runs;
 
 namespace SqlFlow.ControlPlane.Api;
 
@@ -86,6 +88,64 @@ public sealed record SchemaChangeDto(
     string ChangeType,
     string? CommitSha,
     DateTime OccurredUtc);
+
+/// <summary>A stored value a refused type change found that does not convert, with how many rows hold it.</summary>
+public sealed record TypeChangeSampleDto(string Value, long Rows);
+
+/// <summary>
+/// One change to the type of an existing column, as a run reported it (<see cref="CatalogColumnTypeChange"/>): the
+/// object (<c>ObjectKey</c>, the catalog key its columns and lineage are keyed by) and the table as the run named it, the
+/// layer (<c>target</c> or <c>view</c>), the column, the types it was from and to, the tier (<c>Widening</c>,
+/// <c>CheckedConversion</c>, <c>Manual</c>) and the outcome (<c>Applied</c>, <c>Pending</c>, <c>Refused</c>,
+/// <c>Manual</c>, <c>KeptWider</c>, <c>Planned</c>, <c>Resumed</c>, <c>RolledBack</c>). <c>NeedsAttention</c> is true for
+/// an outcome an operator has to act on (pending an opt-in, refused, manual, rolled back), the ones that end the run with
+/// a warning. A refusal carries how many stored values do not convert and a sample of them; a manual change carries the
+/// steps to make it by hand; <c>Message</c> explains it in full. <c>OccurredUtc</c> is when the run reported it (its end),
+/// <c>RequestedBy</c> who asked for the run.
+/// </summary>
+public sealed record ColumnTypeChangeDto(
+    long Id,
+    Guid RunId,
+    Guid PipelineId,
+    string ObjectKey,
+    string Table,
+    string Layer,
+    string Column,
+    string FromType,
+    string ToType,
+    string Tier,
+    string Status,
+    bool NeedsAttention,
+    bool RewritesTable,
+    bool IsKey,
+    string? RequiresOptIn,
+    long? Rows,
+    long? FailingValues,
+    IReadOnlyList<TypeChangeSampleDto> Sample,
+    string Message,
+    IReadOnlyList<string> ManualSteps,
+    DateTime OccurredUtc,
+    string? RequestedBy)
+{
+    private static readonly JsonSerializerOptions StoredJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>The row as the API serves it: its stored sample and steps read back from their JSON, and whether its
+    /// outcome needs an operator by the rule the engine warns by (TypeChangeReport in SqlFlow.Core).</summary>
+    public static ColumnTypeChangeDto From(CatalogColumnTypeChange row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        var needsAttention = Enum.TryParse<SqlFlow.Core.Model.TypeChangeStatus>(row.Status, ignoreCase: false, out var status)
+            && SqlFlow.Core.Model.TypeChangeReport.StatusNeedsAttention(status);
+        return new ColumnTypeChangeDto(
+            row.Id, row.RunId, row.PipelineId, row.ObjectKey, row.TableName, row.Layer, row.ColumnName,
+            row.FromType, row.ToType, row.Tier, row.Status, needsAttention, row.RewritesTable, row.IsKey,
+            row.RequiresOptIn, row.Rows, row.FailingValues,
+            row.SampleJson is null ? [] : JsonSerializer.Deserialize<List<TypeChangeSampleDto>>(row.SampleJson, StoredJson) ?? [],
+            row.Message,
+            row.ManualStepsJson is null ? [] : JsonSerializer.Deserialize<List<string>>(row.ManualStepsJson, StoredJson) ?? [],
+            row.OccurredUtc, row.RequestedBy);
+    }
+}
 
 /// <summary>One tracked database's change tally over the requested window, and when it last changed.</summary>
 public sealed record SchemaChangeDatabaseDto(

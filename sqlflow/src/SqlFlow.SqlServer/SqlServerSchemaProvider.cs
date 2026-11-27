@@ -74,6 +74,61 @@ public sealed class SqlServerSchemaProvider : ISchemaProvider
         }
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LossFinding>> FindLossyConversionsAsync(
+        string connectionString, string schema, string table, IReadOnlyList<LossCheck> checks, int sampleSize,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(checks);
+        if (checks.Count == 0)
+        {
+            return [];
+        }
+
+        var qualified = $"[{schema.Replace("]", "]]", StringComparison.Ordinal)}].[{table.Replace("]", "]]", StringComparison.Ordinal)}]";
+        var flags = checks
+            .Select(c => Schema.LosslessConversion.LosslessFlag(
+                Schema.SqlDataType.Parse(c.FromType), Schema.SqlDataType.Parse(c.ToType), $"[{c.Column.Replace("]", "]]", StringComparison.Ordinal)}]"))
+            .ToList();
+        var sql = $"SELECT COUNT_BIG(*), {string.Join(", ", flags.Select(f => $"COUNT_BIG(CASE WHEN {f} = 0 THEN 1 END)"))} FROM {qualified};";
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        long rows;
+        var failing = new long[checks.Count];
+        await using (var command = new SqlCommand(sql, connection) { CommandTimeout = 0 })
+        await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            await reader.ReadAsync(ct).ConfigureAwait(false);
+            rows = reader.GetInt64(0);
+            for (var i = 0; i < checks.Count; i++)
+            {
+                failing[i] = reader.GetInt64(i + 1);
+            }
+        }
+
+        var findings = new List<LossFinding>(checks.Count);
+        for (var i = 0; i < checks.Count; i++)
+        {
+            var sample = new List<TypeChangeValueSample>();
+            if (failing[i] > 0)
+            {
+                var sampleSql = Schema.ColumnRetyper.SampleSql(
+                    qualified, $"[{checks[i].Column.Replace("]", "]]", StringComparison.Ordinal)}]", $"{flags[i]} = 0", sampleSize);
+                await using var command = new SqlCommand(sampleSql, connection) { CommandTimeout = 0 };
+                await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    sample.Add(new TypeChangeValueSample { Value = reader.GetString(0), Rows = reader.GetInt64(1) });
+                }
+            }
+
+            findings.Add(new LossFinding(checks[i].Column, rows, failing[i], sample));
+        }
+
+        return findings;
+    }
+
     /// <summary>
     /// Applies a classified DDL batch to one target object under an object-scoped, case-canonical session
     /// app lock. Metadata-only statements commit in one short READ COMMITTED transaction; each table-rewrite

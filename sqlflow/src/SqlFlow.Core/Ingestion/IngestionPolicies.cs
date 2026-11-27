@@ -188,6 +188,12 @@ public sealed record SchemaSyncPolicy
     /// expensive rewrite holds a table lock for the full row rewrite, so it is refused unless explicitly
     /// opted in, to be run in a maintenance window. Legacy had no such guard.</summary>
     public bool AllowTableRewrite { get; init; }
+
+    /// <summary>Allow schema sync to convert an existing column to the type its source now declares when the change is a
+    /// checked conversion (text to a date, a number or a GUID; a typed column to text; a shorter text; an integer to a
+    /// decimal with room for it), after checking that every stored value converts without loss. Default false: the
+    /// change stays pending, reported on every run, and the table is untouched.</summary>
+    public bool ConvertTypes { get; init; }
 }
 
 /// <summary>Incremental-capture policy (legacy IncrementalColumns, DateColumn, NoOfOverlapDays, FullLoad).</summary>

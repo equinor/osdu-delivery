@@ -77,16 +77,18 @@ internal sealed record RunScopePreviewMemberDto(string FlowName, string FlowKind
 internal sealed record RunScopePreviewDto(
     string Scope, string Anchor, int MemberCount, int WaveCount, IReadOnlyList<RunScopePreviewMemberDto> Members);
 
-/// <summary>A run as it appears in lists.</summary>
+/// <summary>A run as it appears in lists. <c>WarningCount</c> is how many warnings it raised: a run that succeeded with
+/// warnings keeps the status <c>succeeded</c>.</summary>
 internal sealed record RunSummaryDto(
     Guid RunId, Guid PipelineId, Guid? RepoId, string FlowName, string FlowKind, string Batch, int Wave,
     string Status, bool Success,
     string? TargetPool, string? CommitSha, DateTime WrittenUtc, DateTime? EnqueuedUtc, double? DurationSeconds,
     long? RowsLoaded, long? RowsInserted, long? RowsUpdated, long? RowsDeleted, int FileCount, Guid? GroupId,
     string? LastAction, DateTime? LastActionUtc, string? Error = null, string? Operation = null, string? RequestedBy = null,
-    Guid? FanOutRoot = null, int? FanOutSlot = null, int? FanOutCount = null, RunStartedByDto? StartedBy = null);
+    Guid? FanOutRoot = null, int? FanOutSlot = null, int? FanOutCount = null, RunStartedByDto? StartedBy = null,
+    int WarningCount = 0);
 
-/// <summary>One run with its full header for the detail view.</summary>
+/// <summary>One run with its full header for the detail view; <c>WarningCount</c> as on <see cref="RunSummaryDto"/>.</summary>
 internal sealed record RunDetailDto(
     Guid RunId, Guid PipelineId, Guid? RepoId, string FlowName, string FlowKind, string Batch, int Wave,
     string Status, bool Success,
@@ -100,7 +102,8 @@ internal sealed record RunDetailDto(
     int? FailedStatementOrdinal, string? FailedStatementStep, string? FailedStatementSql, Guid? GroupId,
     string? Operation = null, string? RequestedBy = null, [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values = null,
     System.Text.Json.JsonElement? Payload = null, Guid? FanOutRoot = null, int? FanOutSlot = null, int? FanOutCount = null,
-    string? ResultJson = null, RunStartedByDto? StartedBy = null, IReadOnlyList<RunCauseDto>? Causes = null);
+    string? ResultJson = null, RunStartedByDto? StartedBy = null, IReadOnlyList<RunCauseDto>? Causes = null,
+    int WarningCount = 0);
 
 /// <summary>What started a run, as the control plane words it (<c>startedBy</c> on a run, a run list row and a group).</summary>
 internal sealed record RunStartedByDto(

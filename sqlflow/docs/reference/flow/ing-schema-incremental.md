@@ -68,7 +68,8 @@ incremental:
 | `cleanColumnNameRegex` | string | no | null | Regex whose matches are removed or replaced in column names; overrides the built-in default pattern. |
 | `replaceInvalidCharsWith` | string | no | null | Replacement text for regex matches; blank means matches are removed. |
 | `convertUnicodeToNonUnicode` | bool | no | `false` | Convert Unicode source types to non-Unicode on the target (designed for SAP Open Hub, which uses NVARCHAR for all text). |
-| `allowTableRewrite` | bool | no | `false` | Permit an expensive table-rewrite ALTER (for example int to bigint) to run inline. |
+| `allowTableRewrite` | bool | no | `false` | Permit a widening that rewrites the table (for example int to bigint), carried by the safe rewrite. |
+| `convertTypes` | bool | no | `false` | Permit a checked conversion of an existing column to the type its source now declares (text to a date, a number or a GUID; a typed column to text; a shorter text), after every stored value is shown to convert without loss. |
 
 ### incremental
 
@@ -122,13 +123,16 @@ Default `false`. Converts Unicode source data types to their non-Unicode counter
 
 ### schema.allowTableRewrite
 
-Default `false`. Some type changes (for example widening `int` to `bigint`) require SQL Server to rewrite every row of the table while holding a table lock. By default the engine refuses such a plan and fails the run with a `SchemaRewriteNotPermittedException` (src/SqlFlow.Core/SchemaRewriteNotPermittedException.cs):
+Default `false`. Most widenings (for example `int` to `bigint`, `varchar` to `nvarchar`, any `decimal` precision change) make SQL Server rewrite every row; only a longer `varchar`/`nvarchar`/`varbinary` of the same base type is recorded in metadata and applied without an opt-in. With `allowTableRewrite: true` a rewriting widening is carried by the safe rewrite: a shadow column filled in batches and swapped in under a short schema lock, keeping every row, its identity, system dates, indexes and statistics. Without it the change is reported pending (a warning on every run) and the table is untouched; the load still writes into the current type, and stops before writing when a staged value would change on the way in ([column type changes](../concepts/column-type-changes.md)).
 
-```text
-Schema evolution on '<target>' requires a table rewrite on column(s) <columns> (for example int to bigint). This holds a table lock for the full rewrite and is refused by default. Set AllowTableRewrite to run it, ideally in a maintenance window.
+### schema.convertTypes
+
+Default `false`. A change to an existing column's type that depends on the data (a checked conversion: text to `date`, `datetime2`, an integer, `decimal`, `bit` or `uniqueidentifier`; one of those to text; a shorter text; an integer to a wide enough `decimal`) is applied only when this is `true`, and only on a column that is not a key, identity, hash or primary-key column. Every stored value is checked first; one that does not convert without loss refuses the change, leaves the table untouched, and the run reports the count and a sample. A text column becoming typed is converted after the load, so a run with a full load (`sqlflow run --full`) re-renders stored values from the source before they are checked. Every other change (a key column, a lossy change, a system-versioned or columnstore table, a column something references) is refused with its manual steps ([column type changes](../concepts/column-type-changes.md#the-three-tiers)).
+
+```yaml
+schema:
+  convertTypes: true   # take a type the source now declares to this table, after checking the data
 ```
-
-Set `allowTableRewrite: true` explicitly, ideally for a maintenance-window run, to let the rewrite proceed. The legacy engine had no such guard.
 
 ## incremental section
 

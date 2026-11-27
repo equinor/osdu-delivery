@@ -1,3 +1,4 @@
+using SqlFlow.Core.Model;
 using SqlFlow.SqlServer.Schema;
 using Xunit;
 
@@ -55,18 +56,24 @@ public sealed class SchemaEvolutionPlannerTests
     public void IntegerWiden_IsTableRewriteAlter()
     {
         var plan = SchemaEvolutionPlanner.Plan([Col("Amount", "bigint")], [Col("Amount", "int")], NoKeys);
-        var alter = Assert.Single(plan.ColumnsToAlter);
+        var alter = Assert.Single(plan.TypeChanges);
         Assert.Equal(ChangeFootprint.TableRewrite, alter.Footprint);
-        Assert.True(plan.HasRewrite);
-        Assert.Single(plan.RewriteColumns);
+        Assert.Equal(TypeChangeMechanism.ShadowRewrite, alter.Mechanism);
+        Assert.Equal(ColumnTypeChange.AllowTableRewrite, alter.RequiresOptIn);
+        Assert.Empty(plan.ColumnsToAlter);
+        Assert.False(plan.HasRewrite);
     }
 
     [Fact]
-    public void IncompatibleOnOrdinaryColumn_IsDrift_NotBlocked()
+    public void IncompatibleOnOrdinaryColumn_IsACheckedConversion_NotBlocked()
     {
         var plan = SchemaEvolutionPlanner.Plan([Col("X", "int")], [Col("X", "nvarchar(50)")], NoKeys);
         Assert.False(plan.IsBlocked);
-        Assert.Contains(plan.Drift, d => d.Kind == DriftKind.IncompatibleOrdinaryColumn && d.Column == "X");
+        var change = Assert.Single(plan.TypeChanges);
+        Assert.Equal("X", change.Column);
+        Assert.Equal(TypeChangeTier.CheckedConversion, change.Tier);
+        Assert.Equal(TypeChangeTiming.AfterLoad, change.Timing); // text becoming typed waits for the load
+        Assert.Equal(ColumnTypeChange.ConvertTypes, change.RequiresOptIn);
     }
 
     [Fact]

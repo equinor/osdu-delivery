@@ -73,7 +73,7 @@ label; color never carries meaning alone.
 | Token | Light | Dark | States |
 |---|---|---|---|
 | `success` | `#09762f` | `#49b861` | succeeded, online, active, enabled |
-| `warning` | `#8c5d00` | `#d29922` | queued, degraded, paused, rate-limited |
+| `warning` | `#8c5d00` | `#d29922` | queued, succeeded with warnings, degraded, paused, rate-limited |
 | `info` | `primary` | `primary` | running, syncing, informational |
 | `destructive` | `#c41b27` | `#f87171` | failed, offline, error |
 | `muted-foreground` | | | cancelled, skipped, disabled, unknown |
@@ -397,7 +397,9 @@ selects. A navigation tree (`TreeState.navigation`) announces its selected row a
 
 One component maps every domain status (run, node, schedule, user, sync) to {icon, label, status
 color}: succeeded = success, failed/error = destructive, running/syncing = info with a spinning
-indicator, queued/paused = warning, cancelled/skipped/disabled = muted.
+indicator, queued/paused = warning, cancelled/skipped/disabled = muted. A run that succeeded with warnings
+(`warningCount` above zero) keeps the word succeeded and takes the warning tone and `CircleAlert`, its label saying
+how many: it finished, and something in it needs an operator.
 
 **Two families, never one silhouette.** A status is either an *outcome* (something ran and finished: a
 run status, a delivery, a connection test) or a *state* (how an object is configured right now: a
@@ -406,7 +408,7 @@ shape and fill, not only by color, because the pages that show both show them si
 check meant both "succeeded" and "switched on":
 
 - **Outcome** = filled tinted surface (`bg-<status>/12`), `rounded-full`, result glyphs
-  (`CircleCheck`, `CircleX`, `Clock3`, spinning `Loader2`, `Ban`, `SkipForward`).
+  (`CircleCheck`, `CircleAlert`, `CircleX`, `Clock3`, spinning `Loader2`, `Ban`, `SkipForward`).
 - **State** = no fill, hairline `ring-1 ring-inset` in the status color, `rounded-md` (pill) or
   `rounded-[6px]` (icon-only), on/off glyphs (`Power`, `PowerOff`, `Pause`, `Wifi`/`WifiOff`).
 

@@ -435,6 +435,230 @@ public static class CatalogProjection
         return list;
     }
 
+    /// <summary>How many warnings a run raised: the entries of the artifact's top-level <c>events</c> array at level
+    /// <c>warning</c>, read by the rule <see cref="RunEvents"/> projects them by (an entry without a message or a
+    /// timestamp is no event), so the count always agrees with the run's warning events. Zero for an artifact that
+    /// carries no events.</summary>
+    public static int WarningCount(JsonElement root)
+    {
+        if (Prop(root, "events") is not { ValueKind: JsonValueKind.Array } events)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var entry in events.EnumerateArray())
+        {
+            if (!string.IsNullOrWhiteSpace(Str(entry, "message")) && Date(entry, "timestampUtc") is not null
+                && string.Equals(Str(entry, "level"), Core.Runs.RunEventLevels.Warning, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>The length of a type change's table name in <c>catalog.ColumnTypeChange</c>: three bracketed,
+    /// escaped identifiers of up to 128 characters and their separators.</summary>
+    public const int TypeChangeTableLength = 776;
+
+    /// <summary>The length of a type change's column name, as <c>catalog.ObjectColumn</c> holds one.</summary>
+    public const int TypeChangeColumnLength = 512;
+
+    /// <summary>The length of a type change's from and to types, as <c>catalog.ObjectColumn</c> holds a type.</summary>
+    public const int TypeChangeTypeLength = 128;
+
+    /// <summary>The tables and views a run's type changes name (<c>result.typeChanges[].table</c>), each once, in the
+    /// order first reported: what the caller resolves to object keys before projecting the changes.</summary>
+    public static IReadOnlyList<string> TypeChangeTables(JsonElement root)
+    {
+        var tables = new List<string>();
+        foreach (var item in TypeChangeItems(root))
+        {
+            if (NullIfBlank(Str(item, "table")) is { } table && !tables.Contains(table, StringComparer.Ordinal))
+            {
+                tables.Add(table);
+            }
+        }
+
+        return tables;
+    }
+
+    /// <summary>
+    /// The changes to existing columns' types a run reported, read from its result's <c>typeChanges</c> (one
+    /// TypeChangeReport each, in SqlFlow.Core), one row per report in the order reported. <paramref name="objectKeyOf"/>
+    /// gives the catalog key of each reported table (<see cref="TypeChangeObjectKey"/>, fed what the catalog knows of
+    /// the run's pipeline). A report without its layer, table, column, types, tier, status or message is skipped
+    /// rather than stored half-identified, the message is redacted like every stored engine text, and every bounded
+    /// value is cut to its column. A run that reported none projects no rows.
+    /// </summary>
+    public static IReadOnlyList<CatalogColumnTypeChange> TypeChanges(
+        JsonElement root, Guid runId, Guid repoId, Guid pipelineId, DateTime occurredUtc, string? requestedBy,
+        Func<string, string> objectKeyOf)
+    {
+        ArgumentNullException.ThrowIfNull(objectKeyOf);
+        var list = new List<CatalogColumnTypeChange>();
+        foreach (var item in TypeChangeItems(root))
+        {
+            if (NullIfBlank(Str(item, "layer")) is not { } layer
+                || NullIfBlank(Str(item, "table")) is not { } table
+                || NullIfBlank(Str(item, "column")) is not { } column
+                || NullIfBlank(Str(item, "fromType")) is not { } fromType
+                || NullIfBlank(Str(item, "toType")) is not { } toType
+                || NullIfBlank(Str(item, "tier")) is not { } tier
+                || NullIfBlank(Str(item, "status")) is not { } status
+                || NullIfBlank(Str(item, "message")) is not { } message)
+            {
+                continue;
+            }
+
+            list.Add(new CatalogColumnTypeChange
+            {
+                RepoId = repoId,
+                RunId = runId,
+                PipelineId = pipelineId,
+                ObjectKey = Truncate(objectKeyOf(table), 900),
+                TableName = Truncate(table, TypeChangeTableLength),
+                Layer = Truncate(layer, 16),
+                ColumnName = Truncate(column, TypeChangeColumnLength),
+                FromType = Truncate(fromType, TypeChangeTypeLength),
+                ToType = Truncate(toType, TypeChangeTypeLength),
+                Tier = Truncate(tier, 32),
+                Status = Truncate(status, 16),
+                RewritesTable = Bool(item, "rewritesTable") ?? false,
+                IsKey = Bool(item, "isKey") ?? false,
+                RequiresOptIn = NullIfBlank(Str(item, "requiresOptIn")) is { } optIn ? Truncate(optIn, 128) : null,
+                Rows = Long(item, "rows"),
+                FailingValues = Long(item, "failingValues"),
+                SampleJson = TypeChangeSampleJson(item),
+                Message = SecretHygiene.RedactedMessage(message),
+                ManualStepsJson = TypeChangeStepsJson(item),
+                OccurredUtc = occurredUtc,
+                RequestedBy = NullIfBlank(requestedBy) is { } who ? Truncate(who, 256) : null,
+            });
+        }
+
+        return list;
+    }
+
+    /// <summary>One object a run's pipeline writes or creates, as the catalog knows it: the candidates a reported
+    /// table is matched against.</summary>
+    public sealed record WrittenObject(string Key, string? Database, string? Schema, string Name);
+
+    /// <summary>
+    /// The catalog key of a table or view a type change names, resolved the way the catalog keys the object: among the
+    /// objects the run's pipeline writes or creates (<paramref name="written"/>, its lineage), the one with that schema
+    /// and name, in the named database when the name carries one, so the row joins to the object's
+    /// <see cref="CatalogObjectColumn"/> rows and its lineage. A two-part name (a file flow's typed view) takes the one
+    /// database its candidates agree on, since the catalog may have resolved the view's database from its connection.
+    /// When lineage names no such object (it has not been computed yet, or the name is ambiguous), the key is composed
+    /// the way lineage composes a declared object's (NodeKey in SqlFlow.Lineage): the pipeline's target server, then
+    /// the database, schema and name the run reported.
+    /// </summary>
+    public static string TypeChangeObjectKey(string table, string? targetServer, IReadOnlyCollection<WrittenObject> written)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(written);
+        var server = targetServer ?? string.Empty;
+        var parts = SqlFlow.Core.Ingestion.IngestionText.SplitRespectingBrackets(table, '.')
+            .Select(SqlFlow.Core.Ingestion.IngestionText.Unbracket)
+            .ToList();
+        if (parts.Count < 2 || parts.Any(p => p.Length == 0))
+        {
+            return SqlFlow.Lineage.Collection.NodeKey.For(server, null, null, table);
+        }
+
+        var name = parts[^1];
+        var schema = parts[^2];
+        var database = parts.Count >= 3 ? parts[^3] : null;
+        var matches = written
+            .Where(o => SameName(o.Schema, schema) && SameName(o.Name, name))
+            .OrderBy(o => o.Key, StringComparer.Ordinal)
+            .ToList();
+
+        if (database is not null)
+        {
+            return matches.FirstOrDefault(o => SameName(o.Database, database))?.Key
+                ?? SqlFlow.Lineage.Collection.NodeKey.For(server, database, schema, name);
+        }
+
+        var databases = matches
+            .Where(o => !string.IsNullOrWhiteSpace(o.Database))
+            .Select(o => o.Database!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return databases.Count switch
+        {
+            1 => matches.First(o => SameName(o.Database, databases[0])).Key,
+            0 when matches.Count > 0 => matches[0].Key,
+            _ => SqlFlow.Lineage.Collection.NodeKey.For(server, null, schema, name),
+        };
+    }
+
+    private static bool SameName(string? left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The entries of a run's <c>result.typeChanges</c> array that are objects; none when it has no such array.</summary>
+    private static IEnumerable<JsonElement> TypeChangeItems(JsonElement root)
+    {
+        if (Prop(root, "result") is not { } result
+            || Prop(result, "typeChanges") is not { ValueKind: JsonValueKind.Array } items)
+        {
+            yield break;
+        }
+
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Object)
+            {
+                yield return item;
+            }
+        }
+    }
+
+    /// <summary>A refusal's sample of the values that do not convert, as compact JSON (<c>[{"value": ..., "rows": ...}]</c>),
+    /// each value redacted and cut to the length the engine reports; null when the report carries none.</summary>
+    private static string? TypeChangeSampleJson(JsonElement item)
+    {
+        if (Prop(item, "sample") is not { ValueKind: JsonValueKind.Array } sample)
+        {
+            return null;
+        }
+
+        var values = new List<TypeChangeSampleValue>();
+        foreach (var entry in sample.EnumerateArray())
+        {
+            if (Str(entry, "value") is { } value)
+            {
+                values.Add(new TypeChangeSampleValue(
+                    Truncate(SecretHygiene.RedactedMessage(value), TypeChangeValueSample.MaxLength), Long(entry, "rows") ?? 0));
+            }
+        }
+
+        return values.Count == 0 ? null : JsonSerializer.Serialize(values, StoredJson);
+    }
+
+    /// <summary>The manual steps of a report as a compact JSON array of strings, redacted; null when it carries none.</summary>
+    private static string? TypeChangeStepsJson(JsonElement item)
+    {
+        if (Prop(item, "manualSteps") is not { ValueKind: JsonValueKind.Array } steps)
+        {
+            return null;
+        }
+
+        var list = steps.EnumerateArray()
+            .Where(s => s.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(s.GetString()))
+            .Select(s => SecretHygiene.RedactedMessage(s.GetString()!))
+            .ToList();
+        return list.Count == 0 ? null : JsonSerializer.Serialize(list, StoredJson);
+    }
+
+    /// <summary>One stored sample value of a type change (the shape <see cref="CatalogColumnTypeChange.SampleJson"/> holds).</summary>
+    private sealed record TypeChangeSampleValue(string Value, long Rows);
+
+    /// <summary>How the type history's JSON columns are written: camelCase, compact.</summary>
+    private static readonly JsonSerializerOptions StoredJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     /// <summary>
     /// The schema differences a source-control run observed, read from its result's added/changed/deleted path
     /// lists. Each path is the repository-relative
@@ -699,6 +923,7 @@ public static class CatalogProjection
             SchemaVersion = Int(Long(root, "schemaVersion")),
             WrittenUtc = Date(root, "writtenUtc") ?? default,
             Error = NullIfBlank(Str(root, "error")),
+            WarningCount = WarningCount(root),
             StartUtc = startUtc,
             EndUtc = endUtc,
             // The kind's own figure when it reports one; a kind that reports only when it started and ended is timed by

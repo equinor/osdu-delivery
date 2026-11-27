@@ -116,7 +116,9 @@ public sealed class InferenceService : IInferenceService
         var columns = table.Columns.Select(c => c.Name).ToList();
         var profiles = await _profiler.ProfileAsync(connectionString, request.Schema, request.Table, columns, request.Policy, locale, ct).ConfigureAwait(false);
 
-        var inferred = profiles.Select(p => _inferencer.Infer(p, request.Policy, locale)).ToList();
+        var inferred = profiles
+            .Select(p => _inferencer.Infer(p, request.Policy, locale, request.ExistingTypes.TryGetValue(p.ColumnName, out var existing) ? existing : null))
+            .ToList();
         var profileByName = profiles.ToDictionary(p => p.ColumnName, StringComparer.Ordinal);
 
         var reported = inferred.Select(c => new InferredColumnReport

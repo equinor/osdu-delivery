@@ -48,8 +48,8 @@ public sealed class ChangeFootprintClassifierTests
     [Theory]
     [InlineData("decimal(5,2)", "decimal(9,4)")]    // storage class 0 -> 0
     [InlineData("decimal(10,2)", "decimal(19,4)")]  // storage class 1 -> 1
-    public void DecimalWithinStorageClass_IsMetadataOnly(string from, string to)
-        => Assert.Equal(ChangeFootprint.MetadataOnly, Classify(from, to));
+    public void DecimalWithinStorageClass_IsStillARewrite(string from, string to)
+        => Assert.Equal(ChangeFootprint.TableRewrite, Classify(from, to)); // measured: SQL Server touches every row
 
     [Theory]
     [InlineData("datetime2(2)", "datetime2(3)")]  // scale class 0 -> 1
@@ -60,6 +60,6 @@ public sealed class ChangeFootprintClassifierTests
     [Theory]
     [InlineData("datetime2(0)", "datetime2(2)")]  // scale class 0 -> 0
     [InlineData("datetime2(5)", "datetime2(7)")]  // scale class 2 -> 2
-    public void DateTimeScaleWithinClass_IsMetadataOnly(string from, string to)
-        => Assert.Equal(ChangeFootprint.MetadataOnly, Classify(from, to));
+    public void DateTimeScaleWithinClass_IsStillARewrite(string from, string to)
+        => Assert.Equal(ChangeFootprint.TableRewrite, Classify(from, to)); // measured: SQL Server touches every row
 }
