@@ -926,8 +926,9 @@ export default function LineageGraphPage() {
       `}</style>
 
       {/* The bar holds what a reader chooses every time, in the order it is chosen: what to look at, then how much of
-          it. How the drawing is made is behind View, and a trace's own controls are on the canvas with the trace, so
-          nothing in the bar comes and goes. The two ends take equal room, which keeps the level in the middle. */}
+          it. How the drawing is made is behind View, and a trace's side and reach are glyphs on the canvas's control
+          beside the zoom, so nothing in the bar comes and goes. The two ends take equal room, which keeps the level in
+          the middle. */}
       <div
         data-testid="graph-toolbar"
         className="@container/graph-bar flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2"
@@ -1019,16 +1020,7 @@ export default function LineageGraphPage() {
         <GraphStatusLine
           drawn={view.nodes.length}
           total={view.total}
-          trace={tracing && (
-            <TraceControl
-              name={traceName}
-              hops={params.hops}
-              direction={params.direction}
-              onHops={(hops) => patch({ trace: traceId, hops })}
-              onDirection={(direction) => patch({ trace: traceId, direction })}
-              onClear={stopTracing}
-            />
-          )}
+          trace={tracing && <TraceControl name={traceName} onClear={stopTracing} />}
           data={lensOn && hasContent && !lensTooBig && !activityQuery.isError && (
             activity === undefined || lensDay === null ? (
               <Skeleton className="h-4 w-48 rounded-sm" data-testid="graph-day-loading" />
@@ -1237,6 +1229,14 @@ export default function LineageGraphPage() {
               lens={canvasLens}
               detailsWidth={detailsWidth}
               anchorId={selectedId ?? (traceId === "" ? null : traceId)}
+              trace={tracing
+                ? {
+                  direction: params.direction,
+                  hops: params.hops,
+                  onDirection: (direction) => patch({ trace: traceId, direction }),
+                  onHops: (hops) => patch({ trace: traceId, hops }),
+                }
+                : null}
               centerRequest={centerRequest}
               actions={cardActions}
               onSelect={select}

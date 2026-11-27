@@ -2,7 +2,7 @@
 id: guide-lineage-graph
 title: "Reading the lineage graph: scope, level, folders, stacks, waves, kinds and trace"
 type: guide
-summary: How the GUI's lineage graph decides what to draw, what its bar, its View menu and a trace's controls each change, and how a drawing is shared as a link.
+summary: How the GUI's lineage graph decides what to draw, what its bar, View menu, line and canvas tools each change, and how a drawing is shared as a link.
 keywords:
   - lineage graph
   - lineage page
@@ -32,6 +32,7 @@ sourceRefs:
   - gui/src/features/lineage/graphLayout.ts
   - gui/src/features/lineage/graphBands.ts
   - gui/src/features/lineage/GraphControls.tsx
+  - gui/src/features/lineage/CanvasControl.tsx
   - gui/src/features/lineage/GraphStatusLine.tsx
   - gui/src/features/lineage/GraphDetails.tsx
   - gui/src/features/lineage/LineageNodeCard.tsx
@@ -45,9 +46,10 @@ A repository's lineage is hundreds of nodes: every flow, and every table, view, 
 A reader has one question at a time, so the graph at **Explore > Lineage** never draws everything it knows. It opens on
 the smallest drawing that still tells the order of things, and each control widens or narrows that drawing in one
 predictable way. The page shows as few controls as the step at hand needs: the bar holds what is chosen every time, the
-**View** menu holds how the drawing is made, and a trace's controls stand in the line under the bar. Nothing stands on
-the canvas but the drawing and one control in its lower left corner: the zoom buttons, under a map of the whole drawing
-when it is too large to see whole.
+**View** menu holds how the drawing is made, and the line under the bar says what is drawn. Nothing stands on the canvas
+but the drawing and one control in its lower left corner, whose tools are glyphs that say what they do on hover: a
+trace's side and reach while a node is traced, and the zoom, under a map of the whole drawing when it is too large to
+see whole.
 
 ## The order: one band per wave
 
@@ -158,11 +160,14 @@ joins what they joined, so hiding `ing` flows leaves the landed table pointing a
 ## Trace
 
 **Trace** on a selected node (or on its menu) draws only what is upstream and downstream of it. While a node is traced,
-the line under the bar names it and offers:
+the line under the bar names it, beside a cross that stops tracing and draws the whole scope again, and the canvas's
+control in its lower left corner holds the trace's own tools over the zoom:
 
-- **Upstream**, **Both**, **Downstream**: what the node is made from, what a change to it reaches, or both.
-- **1, 2, 3, All**: how many hops from the node are drawn.
-- The cross: stops tracing and draws the whole scope again.
+- Three arrows: **Upstream** (what the node is made from), **Both sides**, and **Downstream** (what a change to it
+  reaches). Each points the way that side lies in the drawing: up and down when data runs top to bottom, left and right
+  when it runs left to right.
+- The reach: how many hops from the node are drawn, shown as the count (the infinity sign for all of them). It opens
+  **1 hop**, **2 hops**, **3 hops** and **All, to the ends**.
 
 Each flow a trace draws comes with the derived datasets it reads: the document a flow renders through is part of the
 flow, wherever the trace started. A producer or consumer the trace left out beside a drawn node is counted above or below
@@ -195,7 +200,7 @@ of it.
 
 ## The line under the bar
 
-The line counts how many nodes are drawn of how many are in scope, holds a trace's controls while a node is traced
+The line counts how many nodes are drawn of how many are in scope, names the traced node with the way out of the trace
 ([Trace](#trace)), names the day looked at while **What moved** is on ([What moved](#what-moved)), and names each
 reduction the reader made: folders collapsed, the wave range, hidden kinds, nodes the walk was continued past. Each
 has a remove button that undoes just that one, and **Reset** returns the drawing to how its scope opens. What the bar

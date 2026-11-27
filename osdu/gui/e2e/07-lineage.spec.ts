@@ -177,16 +177,18 @@ test.describe.serial("lineage", () => {
     await expect(panel.getByTestId("graph-detail-reads")).toContainText(WELL_LOG_MAPPING);
     await expect(panel.getByTestId("graph-detail-writes")).toContainText(WELL_LOG);
 
-    // Trace draws only what is upstream and downstream of it, and puts its controls in the line under the bar: what
-    // is traced, which side of it, and how far.
+    // Trace draws only what is upstream and downstream of it. The line under the bar names what is traced, and the
+    // canvas's control holds which side of it is drawn and how far, the reach behind one glyph that opens its choices.
     await panel.getByTestId("graph-trace-selected").click();
     const trace = graph.getByTestId("graph-trace-control");
     await expect(trace.getByTestId("graph-trace-name")).toHaveText(DELIVERY_FLOW);
     await expect(named("welldb-welllog-02-header-ing")).toHaveCount(1);
-    await trace.getByTestId("graph-trace-hops-1").click();
-    await trace.getByTestId("graph-trace-upstream").click();
-    await expect(trace.getByTestId("graph-trace-hops-1")).toHaveAttribute("aria-checked", "true");
-    await expect(trace.getByTestId("graph-trace-upstream")).toHaveAttribute("aria-checked", "true");
+    const tools = graph.getByTestId("graph-canvas-control");
+    await tools.getByTestId("graph-trace-hops").click();
+    await adminPage.getByTestId("graph-trace-hops-1").click();
+    await tools.getByTestId("graph-trace-upstream").click();
+    await expect(tools.getByTestId("graph-trace-hops")).toHaveAttribute("data-hops", "1");
+    await expect(tools.getByTestId("graph-trace-upstream")).toHaveAttribute("aria-checked", "true");
     const traced = new URL(adminPage.url()).searchParams;
     expect([traced.get("hops"), traced.get("dir")]).toEqual(["1", "up"]);
 
@@ -194,9 +196,10 @@ test.describe.serial("lineage", () => {
     await panel.getByTestId("graph-detail-reads").getByTestId("graph-detail-node").filter({ hasText: WELL_LOG_MAPPING }).first().click();
     await expect(named(WELL_LOG_MAPPING)).toHaveCount(1);
 
-    // Stopping the trace from its bar draws the repository again, and takes the bar away.
+    // Stopping the trace from the line draws the repository again, and takes the trace's tools off the canvas.
     await trace.getByTestId("graph-trace-clear").click();
     await expect(trace).toHaveCount(0);
+    await expect(tools.getByTestId("graph-trace-tools")).toHaveCount(0);
 
     // How the drawing is made is in the View menu, which stays open while its choices are made. A hidden kind leaves
     // the drawing, and the line under the bar names it; the kinds are one line of the menu until opened.

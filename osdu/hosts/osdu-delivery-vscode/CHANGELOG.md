@@ -3,7 +3,18 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
-## [Unreleased]
+## [1.0.8]
+
+### Lineage
+
+- **A trace's side and reach are glyphs on the canvas.** While a node is traced, the canvas's control in its lower left
+  corner holds three arrows over the zoom, **Upstream**, **Both sides** and **Downstream**, each pointing the way that
+  side lies in the drawing, and the reach as one glyph showing how many hops are drawn, which opens **1 hop**, **2
+  hops**, **3 hops** and **All, to the ends**. Each says what it does on hover. The line under the bar names the traced
+  node and the way out, and no longer spells out the sides and the hops ([reading the lineage
+  graph](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/guides/lineage-graph.md#trace)).
+
+## [1.0.7]
 
 ### What a drop zone's files carry
 

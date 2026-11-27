@@ -3,21 +3,17 @@ import {
   Background,
   MarkerType,
   MiniMap,
-  Panel,
   ReactFlow,
   useNodesState,
   useReactFlow,
-  useStore,
   useStoreApi,
   type Viewport,
   type Edge as FlowEdge,
   type Node as FlowNode,
   type OnNodesChange,
 } from "@xyflow/react";
-import { Maximize, Minus, Plus } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import type { StreamStatus } from "../../api/types";
+import { CanvasControl, type CanvasTrace } from "./CanvasControl";
 import { edgeWidth, type Outcome } from "./dataLens";
 import { type CardSize, type Orientation, type Position } from "./graphLayout";
 import type { Lane } from "./graphBands";
@@ -38,7 +34,7 @@ const MINIMAP_ABOVE = 60;
 const ARROW_SIZE = 18;
 /** The data view's cards are larger and placed for reading, so far fewer of them fill a window. */
 const MAP_DATA_ABOVE = 6;
-/** The map of the whole drawing, over the zoom buttons in the canvas's lower left corner. */
+/** The map of the whole drawing, over the canvas's tools in its lower left corner. */
 const MAP_WIDTH = 132;
 const MAP_HEIGHT = 124;
 /** The room a placed drawing keeps clear on its left for the map, where one is drawn. */
@@ -51,8 +47,8 @@ const LABEL_SELECTED_EDGES_UP_TO = 10;
 /** The room kept clear beside the details panel when a drawing is fitted with a node selected. */
 const DETAILS_MARGIN = 24;
 /**
- * The room a placed drawing keeps clear on its left, where the zoom buttons stand in the canvas's lower corner: a
- * band's name is the first thing on that side, and the buttons would cover the name of whichever band ends there.
+ * The room a placed drawing keeps clear on its left, where the canvas's tools stand in its lower corner: a band's
+ * name is the first thing on that side, and the tools would cover the name of whichever band ends there.
  */
 const CONTROLS_ROOM = 56;
 
@@ -61,7 +57,7 @@ function hasMap(lensOn: boolean, nodes: number): boolean {
   return nodes > (lensOn ? MAP_DATA_ABOVE : MINIMAP_ABOVE);
 }
 
-/** The room the canvas's own control takes on the left: the map over the zoom buttons, or the buttons alone. */
+/** The room the canvas's own control takes on the left: the map over the tools, or the tools alone, stacked. */
 function controlRoom(mapped: boolean): number {
   return mapped ? MAP_ROOM : CONTROLS_ROOM;
 }
@@ -204,6 +200,8 @@ interface CanvasProps {
   detailsWidth: number;
   /** The node a drawing placed for reading keeps in view: the one traced or selected. */
   anchorId: string | null;
+  /** While a node is traced: which side of it is drawn and how far, set from the canvas's control. */
+  trace: CanvasTrace | null;
   centerRequest: CenterRequest | null;
   actions: CardActions;
   onSelect: (id: string | null) => void;
@@ -219,68 +217,6 @@ interface CanvasProps {
 const MAP_STYLE: CSSProperties = {
   position: "relative", margin: 0, width: MAP_WIDTH, height: MAP_HEIGHT, border: "none", borderRadius: 0,
 };
-
-const CONTROL_BUTTON = "inline-flex h-7 min-w-7 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground";
-
-/**
- * The one thing that stands on the canvas: the map of the whole drawing, where one is drawn, over the three zoom
- * buttons, as a single control in the lower left corner. A drawing small enough to see whole has the buttons alone,
- * stacked, so they take the least width beside the bands' names. Everything else about the drawing is said in the
- * page's own edges: the line over the canvas and the details beside it.
- */
-function CanvasControl({ onFit, children }: { onFit: () => void; children: ReactNode }) {
-  const flow = useReactFlow();
-  const atLeast = useStore((state) => state.transform[2] <= state.minZoom);
-  const atMost = useStore((state) => state.transform[2] >= state.maxZoom);
-  const mapped = children !== null && children !== undefined && children !== false;
-  const side = mapped ? "top" as const : "right" as const;
-  return (
-    <Panel position="bottom-left" className="!m-3">
-      <div
-        data-testid="graph-canvas-control"
-        className="flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm"
-      >
-        {children}
-        <div className={cn("flex", mapped ? "border-t border-border" : "flex-col")} role="group" aria-label="Zoom">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button" className={cn(CONTROL_BUTTON, mapped && "flex-1")} disabled={atMost} aria-label="Zoom in"
-                onClick={() => void flow.zoomIn({ duration: 160 })} data-testid="graph-zoom-in"
-              >
-                <Plus aria-hidden className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side={side}>Zoom in</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button" className={cn(CONTROL_BUTTON, mapped ? "flex-1 border-x border-border" : "border-y border-border")}
-                disabled={atLeast} aria-label="Zoom out"
-                onClick={() => void flow.zoomOut({ duration: 160 })} data-testid="graph-zoom-out"
-              >
-                <Minus aria-hidden className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side={side}>Zoom out</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button" className={cn(CONTROL_BUTTON, mapped && "flex-1")} aria-label="Fit the whole drawing"
-                onClick={onFit} data-testid="graph-zoom-fit"
-              >
-                <Maximize aria-hidden className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side={side}>Fit the whole drawing in the canvas</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-    </Panel>
-  );
-}
 
 function edgeLabel(edge: ViewEdge, nameOf: (id: string) => string): string {
   if (edge.labels.length > 0) {
@@ -301,7 +237,7 @@ function edgeLabel(edge: ViewEdge, nameOf: (id: string) => string): string {
  */
 export function GraphCanvas({
   view, positions, orientation, lanes, laneReach, selection, statuses, previewWaves, nameOf, colorMode, size, lens, detailsWidth,
-  anchorId, centerRequest, actions,
+  anchorId, trace, centerRequest, actions,
   onSelect, onActivate, onNodeContextMenu, children,
 }: CanvasProps) {
   const flow = useReactFlow();
@@ -548,7 +484,7 @@ export function GraphCanvas({
         zoomOnDoubleClick={false}
       >
         <Background />
-        <CanvasControl onFit={() => fitWhole.current(240)}>
+        <CanvasControl orientation={orientation} trace={trace} onFit={() => fitWhole.current(240)}>
           {/* A drawing too large to see whole gets a map of all of it. In the data view, which is placed for
               reading and so often runs past the window, each node is in the ink of what happened there, which is
               where the data stopped at a glance. */}

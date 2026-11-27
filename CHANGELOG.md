@@ -856,11 +856,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line that said most of them again. The bar now holds what is chosen every time (the search, the scope, how much is
   drawn, **What moved**). **View** holds how the drawing is made (the wave range, kinds, folders and stacks, described
   steps, the layout), each choice saying what it does, and wears a mark while one differs from how the scope opens. The
-  line under the bar counts what is drawn, holds a trace's controls while a node is traced, and names only the
-  reductions made. Nothing stands on the canvas but the drawing and one control in its lower left corner (the zoom
-  buttons, under a map of the drawing when it is too large to see whole), and a node's details dock to the canvas's
-  right edge. **More** holds Download as SVG and the object explorer. Every choice and every link works as before; a
-  level's node count is on hover ([reading the lineage graph](sqlflow/docs/reference/guides/lineage-graph.md#the-bar)).
+  line under the bar counts what is drawn, names the traced node while a node is traced, and names only the reductions
+  made. Nothing stands on the canvas but the drawing and one control in its lower left corner, whose tools are glyphs
+  that say what they do on hover: a trace's side (three arrows pointing the way each side lies) and reach (the count of
+  hops, which opens its choices) while a node is traced, and the zoom, under a map of the drawing when it is too large
+  to see whole. A node's details dock to the canvas's right edge. **More** holds Download as SVG and the object
+  explorer. Every choice and every link works as before; a level's node count is on hover ([reading the lineage
+  graph](sqlflow/docs/reference/guides/lineage-graph.md#trace)).
 - **`sqlflow records adopt --key` takes the partition typed back.** Every adoption from the command line now takes
   `--confirm <partition>`, records named by `--key` as well as every record or an issue's, the rule the API's flow routes
   already kept; a command without it, or with another partition, asks nothing. The refusals of a release or an adoption

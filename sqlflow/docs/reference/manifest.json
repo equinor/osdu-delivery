@@ -4174,7 +4174,7 @@
       "path": "guides/lineage-graph.md",
       "title": "Reading the lineage graph: scope, level, folders, stacks, waves, kinds and trace",
       "type": "guide",
-      "summary": "How the GUI's lineage graph decides what to draw, what its bar, its View menu and a trace's controls each change, and how a drawing is shared as a link.",
+      "summary": "How the GUI's lineage graph decides what to draw, what its bar, View menu, line and canvas tools each change, and how a drawing is shared as a link.",
       "keywords": [
         "lineage graph",
         "lineage page",
@@ -4206,6 +4206,7 @@
         "gui/src/features/lineage/graphLayout.ts",
         "gui/src/features/lineage/graphBands.ts",
         "gui/src/features/lineage/GraphControls.tsx",
+        "gui/src/features/lineage/CanvasControl.tsx",
         "gui/src/features/lineage/GraphStatusLine.tsx",
         "gui/src/features/lineage/GraphDetails.tsx",
         "gui/src/features/lineage/LineageNodeCard.tsx",

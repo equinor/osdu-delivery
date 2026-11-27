@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { counted, kindLook } from "./graphKinds";
 import type { Orientation } from "./graphLayout";
-import type { GraphLevel, KindCount, TraceDirection } from "./graphModel";
+import type { GraphLevel, KindCount } from "./graphModel";
 
 /**
  * A pressed choice is told by its edge and fill, not by a shade the eye has to compare. Keyed on the ARIA state, not
@@ -538,101 +538,22 @@ export function OrientationControl({ value, onChange }: { value: Orientation; on
   );
 }
 
-const HOPS: readonly { value: string; label: string }[] = [
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "3", label: "3" },
-  { value: "all", label: "All" },
-];
-
-const SIDES: readonly { value: TraceDirection; label: string; testId: string; effect: string }[] = [
-  { value: "upstream", label: "Upstream", testId: "graph-trace-upstream", effect: "Upstream only: what it is made from." },
-  { value: "both", label: "Both", testId: "graph-trace-both", effect: "Both sides: what it is made from, and what a change to it reaches." },
-  { value: "downstream", label: "Downstream", testId: "graph-trace-downstream", effect: "Downstream only: what a change to it reaches." },
-];
-
-/** The segments of a control that stands in the line under the bar: the same control, at the line's height. */
-const LINE_SEGMENTS = "rounded-[5px] border border-border p-px";
-const LINE_SEGMENT = "h-5 min-w-0 rounded-[3px] border border-transparent px-2 text-[12px] font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-foreground";
-
 /**
- * A trace's own controls, in the line under the bar and there only while a node is traced: which node, which side
- * of it, how far, and the way out. A trace is the largest reduction a reader makes to a drawing, so it is said where
- * the line says what is drawn, and nothing of it floats over the drawing or moves when a node's details open.
+ * What a trace draws, in the line under the bar and there only while a node is traced: the node, and the way out.
+ * The line says what the canvas shows, so the node is named here; which side of it is drawn and how far are glyphs on
+ * the canvas's own control, beside the zoom, where they act.
  */
-export function TraceControl({ name, hops, direction, onHops, onDirection, onClear }: {
-  name: string;
-  hops: number | null;
-  direction: TraceDirection;
-  onHops: (hops: number | null) => void;
-  onDirection: (direction: TraceDirection) => void;
-  onClear: () => void;
-}) {
+export function TraceControl({ name, onClear }: { name: string; onClear: () => void }) {
   return (
     <span
       role="group"
       aria-label={`Trace of ${name}`}
       data-testid="graph-trace-control"
-      className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+      className="inline-flex min-w-0 items-center gap-1.5"
     >
-      <span className="inline-flex min-w-0 items-center gap-1.5">
-        <Crosshair aria-hidden className="size-3.5 shrink-0 text-primary" />
-        <span className="text-muted-foreground">Tracing</span>
-        <span className="max-w-[280px] truncate font-mono font-medium" title={name} data-testid="graph-trace-name">{name}</span>
-      </span>
-      <ToggleGroup
-        type="single"
-        spacing={0.5}
-        value={direction}
-        onValueChange={(next) => {
-          if (next !== "") {
-            onDirection(next as TraceDirection);
-          }
-        }}
-        aria-label="Side of the traced node that is drawn"
-        data-testid="graph-trace-direction"
-        className={LINE_SEGMENTS}
-      >
-        {SIDES.map((side) => (
-          <Tooltip key={side.value}>
-            <TooltipTrigger asChild>
-              <ToggleGroupItem value={side.value} data-testid={side.testId} className={cn(LINE_SEGMENT, PRESSED)}>
-                {side.label}
-              </ToggleGroupItem>
-            </TooltipTrigger>
-            <TooltipContent>{side.effect}</TooltipContent>
-          </Tooltip>
-        ))}
-      </ToggleGroup>
-      <span className="inline-flex items-center gap-1.5">
-        <ToggleGroup
-          type="single"
-          spacing={0.5}
-          value={hops === null ? "all" : String(Math.min(hops, 3))}
-          onValueChange={(next) => {
-            if (next !== "") {
-              onHops(next === "all" ? null : Number(next));
-            }
-          }}
-          aria-label="Hops drawn around the traced node"
-          data-testid="graph-trace-hops"
-          className={LINE_SEGMENTS}
-        >
-          {HOPS.map((option) => (
-            <Tooltip key={option.value}>
-              <TooltipTrigger asChild>
-                <ToggleGroupItem value={option.value} data-testid={`graph-trace-hops-${option.value}`} className={cn(LINE_SEGMENT, PRESSED, "px-1.5 tabular-nums")}>
-                  {option.label}
-                </ToggleGroupItem>
-              </TooltipTrigger>
-              <TooltipContent>
-                {option.value === "all" ? "Everything upstream and downstream of it." : `What is within ${counted(Number(option.value), "step")} of it.`}
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </ToggleGroup>
-        <span className="text-muted-foreground">hops</span>
-      </span>
+      <Crosshair aria-hidden className="size-3.5 shrink-0 text-primary" />
+      <span className="text-muted-foreground">Tracing</span>
+      <span className="max-w-[280px] truncate font-mono font-medium" title={name} data-testid="graph-trace-name">{name}</span>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
