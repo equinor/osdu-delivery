@@ -59,6 +59,9 @@ top to bottom, each named **Wave 1**, **Wave 2** and so on:
 - What a flow writes sits under it, in its band, and a view over that one line further down.
 - What nothing in the drawing writes (a landed file, a table kept by hand) sits above the first flow that reads it, in
   that flow's band.
+- A derived dataset (a document a flow renders through, a model, a rule set, which a module declares as derived from
+  other datasets) is an input of the flows reading it: it sits above the first of them, in that flow's band, even when
+  what it is derived from was written several waves earlier. Its sources are drawn into it from their own bands.
 
 So every arrow runs down the page, from a band to a later one. The exceptions are real: a flow that reads back what it
 wrote itself, or two flows the plan leaves unordered, draw one arrow upwards. A band too wide for one line is laid in
@@ -161,8 +164,9 @@ the line under the bar names it and offers:
 - **1, 2, 3, All**: how many hops from the node are drawn.
 - The cross: stops tracing and draws the whole scope again.
 
-A producer or consumer the trace left out beside a drawn node is counted above or below that node (`+3`); clicking the count
-draws exactly those. With folders on, the folders of the traced node and of the flows next to it are open, and folders
+Each flow a trace draws comes with the derived datasets it reads: the document a flow renders through is part of the
+flow, wherever the trace started. A producer or consumer the trace left out beside a drawn node is counted above or below
+that node (`+3`); clicking the count draws exactly those. With folders on, the folders of the traced node and of the flows next to it are open, and folders
 further away stay collapsed: the trace is exact where you are looking and coarse beyond.
 
 ## Selecting a node

@@ -252,6 +252,36 @@ describe("a trace", () => {
     assert.ok(view.traceMissing);
     assert.equal(view.nodes.length, 7);
   });
+
+  it("draws each flow with the document it renders through, and counts the branches beside it", () => {
+    // The publishing flow renders through a mapping derived from the queue the lookup flow fills, and one derived from
+    // nothing.
+    const payload = estate((p) => {
+      p.objects.push({ ...object("map", "mapping"), derived: true }, { ...object("bare", "mapping"), derived: true });
+      p.flowGraph.push(edge("C", "map"), edge("map", "publish"), edge("bare", "publish"));
+    });
+    const view = draw({ level: "all", trace: { id: "ing", hops: null, direction: "downstream" } }, payload);
+    // The mappings are the flow's own; the queue and the dictionary are branches it reads.
+    assert.deepEqual(ids(view), ["A", "T", "bare", "check-1", "check-2", "check-3", "ing", "map", "publish"]);
+    const node = (id: string) => view.nodes.find((item) => item.id === id)!;
+    assert.equal(node("publish").hiddenUp, 2);
+    assert.equal(node("map").hiddenUp, 1);
+    assert.ok(node("map").derived);
+    assert.ok(edges(view).includes("map>publish"));
+    // Asked back, the branch draws.
+    assert.ok(ids(draw({ level: "all", trace: { id: "ing", hops: null, direction: "downstream" }, revealUp: new Set(["map"]) }, payload)).includes("C"));
+  });
+
+  it("leaves a flow's documents out at a level that folds them away", () => {
+    const payload = estate((p) => {
+      p.objects.push({ ...object("map", "mapping"), derived: true });
+      p.flowGraph.push(edge("C", "map"), edge("map", "publish"));
+    });
+    assert.deepEqual(
+      ids(draw({ level: "flows", trace: { id: "ing", hops: null, direction: "downstream" } }, payload)),
+      ["check-1", "check-2", "check-3", "ing", "publish"],
+    );
+  });
 });
 
 describe("stacks", () => {
@@ -439,7 +469,7 @@ describe("clipMiddle", () => {
 
 describe("the wave bands", () => {
   const banded = (view: View) => bandedLayout(
-    view.nodes.map((node) => ({ id: node.id, flow: node.memberType === "flow", waves: node.waves })),
+    view.nodes.map((node) => ({ id: node.id, flow: node.memberType === "flow", waves: node.waves, derived: node.derived === true })),
     view.edges,
   );
   const laneOf = (layout: ReturnType<typeof bandedLayout>, id: string) => {
@@ -480,6 +510,25 @@ describe("the wave bands", () => {
     assert.ok(y("pre") < y("P") && y("P") < y("v_P") && y("v_P") < y("ing"));
     assert.equal(laneOf(layout, "v_P").wave, 1);
     assert.equal(view.edges.filter((item) => y(item.source) >= y(item.target)).length, 0);
+  });
+
+  it("draws a document a flow renders through above that flow, in its band, not under what it is derived from", () => {
+    // The publishing flow (wave 3) renders through a mapping derived from the table the landing flow (wave 1) writes.
+    const payload = estate((p) => {
+      p.objects.push({ ...object("map", "mapping"), derived: true });
+      p.flowGraph.push(edge("P", "map"), edge("map", "publish"));
+    });
+    const view = draw({ level: "all" }, payload);
+    const layout = banded(view);
+    const y = (id: string) => layout.positions.get(id)!.y;
+    assert.equal(laneOf(layout, "map").wave, 3);
+    assert.ok(y("P") < y("map") && y("map") < y("publish"));
+    assert.equal(view.edges.filter((item) => y(item.source) >= y(item.target)).length, 0);
+    // Read by no flow drawn, it stays under what it is derived from, so no arrow into it runs up.
+    const alone = draw({ level: "all", waves: new Set([1, 2]) }, payload);
+    const left = banded(alone);
+    assert.equal(laneOf(left, "map").wave, 1);
+    assert.ok(left.positions.get("P")!.y < left.positions.get("map")!.y);
   });
 
   it("keeps a flow's inputs above it and what it writes under it when it reads its own data back", () => {

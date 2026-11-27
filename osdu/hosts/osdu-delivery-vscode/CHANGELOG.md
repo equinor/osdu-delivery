@@ -15,6 +15,10 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ### Lineage
 
+- **A mapping is drawn as its delivery's input.** On the lineage graph a mapping sits right above the delivery
+  rendering with it, in that delivery's wave, even when it reads what an earlier wave delivered, and a trace draws every
+  delivery it draws with its mappings ([the mapping in
+  lineage](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/lineage.md#the-mapping-is-a-node-between-the-cache-and-the-flow)).
 - **The lineage graph's bar is one row.** The bar holds the search, the scope, how much is drawn and **What moved**.
   **View** holds how the drawing is made (the wave range, kinds, folders and stacks, described steps, the layout), and
   **More** holds Download as SVG and the object explorer. The line under the bar counts what is drawn, holds a trace's

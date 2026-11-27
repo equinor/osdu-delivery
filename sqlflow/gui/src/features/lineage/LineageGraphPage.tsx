@@ -341,7 +341,11 @@ export default function LineageGraphPage() {
     }
     return bandedLayout(
       view.nodes.map((node) => ({
-        id: node.id, flow: node.memberType === "flow", waves: node.waves, described: node.described === true,
+        id: node.id,
+        flow: node.memberType === "flow",
+        waves: node.waves,
+        described: node.described === true,
+        derived: node.derived === true,
       })),
       view.edges,
       params.orientation,

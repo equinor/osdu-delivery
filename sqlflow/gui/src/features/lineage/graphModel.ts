@@ -10,7 +10,8 @@ import { isLineageDescription } from "../../modules/lineageDescriptionKind.ts";
  *   2. kinds    node kinds the reader hid; a hidden node is bridged, so the chain through it stays connected
  *   3. waves    flows outside the chosen waves are dropped (no bridging: a wave range trims the drawing)
  *   4. folders  the flows of a folder draw as one node until the folder is opened (around a traced node they are open)
- *   5. trace    only what is upstream and downstream of one node, within a number of hops
+ *   5. trace    only what is upstream and downstream of one node, within a number of hops, each flow drawn with the
+ *               derived datasets it renders through
  *   6. stacks   nodes of one kind with the same neighbours draw as one node until the stack is opened
  *
  * Everything here is pure: no React, no DOM, no layout. The canvas lays out and paints the result.
@@ -46,6 +47,12 @@ export interface BaseNode {
    * for the described lineage.
    */
   described?: boolean;
+  /**
+   * True for a derived dataset: a document a flow renders through, a model, a rule set, which no flow writes and which
+   * is derived from the objects drawn into it. It is an input of the flows reading it, so a trace draws it with them
+   * and the bands put it above the first of them, never under what it is derived from.
+   */
+  derived?: boolean;
 }
 
 /** A directed graph over base nodes: the mixed drawing (flows and objects) or the data-only one. */
@@ -128,6 +135,8 @@ export interface ViewNode {
   anchor: boolean;
   /** True when every node it stands for is of the described lineage (see {@link BaseNode.described}). */
   described?: boolean;
+  /** True when every node it stands for is a derived dataset (see {@link BaseNode.derived}). */
+  derived?: boolean;
 }
 
 export interface ViewEdge {
@@ -242,6 +251,7 @@ export function buildGraphSource(payload: Pick<ProjectGraph, "pipelines" | "obje
       frontier: object.frontier,
       incompleteReason: null,
       described: object.described === true,
+      derived: object.derived === true,
     });
   }
 
@@ -335,6 +345,7 @@ function plainNode(node: BaseNode): ViewNode {
     repoId: node.repoId,
     anchor: false,
     described: node.described === true,
+    derived: node.derived === true,
   };
 }
 
@@ -548,6 +559,7 @@ function quotient(
       repoId: repoIds.size === 1 ? [...repoIds][0] : null,
       anchor: members.some((member) => member.anchor),
       described: members.every((member) => member.described === true),
+      derived: members.every((member) => member.derived === true),
     };
     for (const member of members) {
       union(merged.members, member.members);
@@ -784,11 +796,19 @@ function applyTrace(work: Work, options: ViewOptions): Work | null {
       keep.add(id);
     }
   }
-  // What the reader asked back in, one hop at a time; a node brought back may itself have been asked to show more.
+  // Each flow drawn comes with the derived datasets it reads: the mapping, model or rule set it renders through is
+  // part of the flow, not a branch of the lineage. What they are derived from is a branch: their cards count it.
+  const ownInputs = (id: string): string[] =>
+    work.nodes.get(id)!.memberType === "flow"
+      ? (incoming.get(id) ?? []).filter((input) => work.nodes.get(input)!.derived === true)
+      : [];
+  // With what the reader asked back in, one hop at a time: a node brought back may itself have been asked to show
+  // more, and a flow brought back comes with what it renders through.
   for (let changed = true; changed;) {
     changed = false;
     for (const id of [...keep]) {
       const more = [
+        ...ownInputs(id),
         ...(options.revealUp.has(id) ? incoming.get(id) ?? [] : []),
         ...(options.revealDown.has(id) ? outgoing.get(id) ?? [] : []),
       ];

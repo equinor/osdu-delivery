@@ -24,7 +24,10 @@ import {
  *
  *   - an object a flow writes sits under that flow, in the same band, and a view over it one line further down;
  *   - an object nothing in the drawing writes (a landed file, a table kept by hand) sits above the first flow that
- *     reads it, in that flow's band, and a view over such objects between them and the flow.
+ *     reads it, in that flow's band, and a view over such objects between them and the flow;
+ *   - a derived dataset (a mapping, a model, a rule set a flow renders through) is an input of the flows reading it,
+ *     not data that comes into being: it sits above the first of them, in that flow's band, even when what it is
+ *     derived from was written bands earlier. Its reading flows still run after everything it reads.
  *
  * So every arrow runs down the page: within a band from inputs to flows to what they write, and from a band to a
  * later one. A flow drawn after a flow of another repository, a folder of flows or a stack has no single wave; it
@@ -46,6 +49,8 @@ export interface BandNode {
   waves: readonly number[];
   /** True for a node of the described lineage: a lineage description, or an object only descriptions name. */
   described?: boolean;
+  /** True for a derived dataset: an input of the flows reading it, drawn above the first of them. */
+  derived?: boolean;
 }
 
 /** One band of the drawing, along the axis data runs on (top to bottom: y). */
@@ -220,7 +225,11 @@ export function bandedLayout(
       depth.set(id, 0);
     } else {
       made.set(id, above);
-      if (above > 0) {
+      // A derived dataset read by flows alone is placed with them below, above the first; one read by data, or by
+      // nothing drawn, stays where it comes into being, so no arrow into it runs up.
+      const readers = forward(id).filter((reader) => !isDescribed(reader));
+      const input = node.derived === true && readers.length > 0 && readers.every((reader) => byId.get(reader)!.flow);
+      if (above > 0 && !input) {
         // Written in this band: one line under the flow, or under the data of this band it is derived from.
         const under = backward.get(id)!
           .filter((producer) => section.get(producer) === "after" && band.get(producer) === above)
@@ -231,7 +240,8 @@ export function bandedLayout(
       }
     }
   }
-  // Data nothing in the drawing writes, consumers first: above the first thing that reads it.
+  // Data nothing in the drawing writes, and the derived datasets flows read, consumers first: above the first thing
+  // that reads it.
   for (let i = order.length - 1; i >= 0; i--) {
     const id = order[i];
     if (section.has(id) || isDescribed(id)) {

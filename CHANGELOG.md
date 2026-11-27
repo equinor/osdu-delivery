@@ -1398,6 +1398,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A mapping is drawn as its delivery's input on the lineage graph.** A mapping that reads what an earlier wave
+  delivered (a record's parent, a searched kind) was drawn in that wave's band, under what it reads and after that wave's
+  deliveries, so it read as theirs; it now sits right above the delivery rendering with it, in that delivery's wave. A
+  trace drew a delivery without its mappings, counting them on the card; it now draws every delivery it draws with its
+  mappings, enrichment mappings and mappings that read nothing included
+  ([the mapping in lineage](osdu/docs/reference/concepts/lineage.md#the-mapping-is-a-node-between-the-cache-and-the-flow)).
 - **A page refused for calling too often comes back by itself.** When the control plane refused the GUI with a 429,
   the page stopped polling for good and showed "HTTP 429" until it was reloaded, and with a dozen delivery flows Home
   and the Delivery page asked for more than the 120 calls a minute a person is allowed. A 429 now says how long its

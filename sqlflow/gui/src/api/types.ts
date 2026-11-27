@@ -1830,6 +1830,9 @@ export interface ProjectGraphObject {
   frontier: boolean;
   /** True for an object only lineage descriptions name: no registry row is behind it, and `kind` is its system. */
   described?: boolean;
+  /** True for a derived dataset whose sources the graph holds (a document a flow renders through, a model, a rule
+   * set): no flow writes it, and it is an input of the flows reading it, drawn with them rather than under its sources. */
+  derived?: boolean;
 }
 
 /** One resolved, drawable edge of the project graph. `source`/`target` are node ids (a pipeline id or an object

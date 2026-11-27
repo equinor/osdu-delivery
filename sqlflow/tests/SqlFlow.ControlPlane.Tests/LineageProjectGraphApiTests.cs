@@ -256,7 +256,8 @@ public sealed class LineageProjectGraphApiTests
     /// module), the flow's read of the dataset, and what the flow inherits through it; the graph draws each source
     /// into the dataset and the dataset into the flow, and never a second, direct edge from a source to the flow. A
     /// read the flow makes in its own right still draws, the walk reaches the reading flow from the flow writing a
-    /// source, and a deep link onto the dataset shows what it is derived from.
+    /// source, the dataset is marked derived (and so is one of its system that reads nothing), and a deep link onto the
+    /// dataset shows what it is derived from.
     /// </summary>
     [SkippableFact]
     public async Task ProjectGraph_DrawsADerivedDatasetBetweenItsSourcesAndTheFlowReadingIt()
@@ -276,6 +277,7 @@ public sealed class LineageProjectGraphApiTests
         var written = $"{storeRef}|tenant1|master|wks:unit:1.0.0";
         var unwritten = $"{storeRef}|tenant1|master|wks:code:1.0.0";
         var model = $"{modelRef}|tenant1|models|well-model";
+        var bare = $"{modelRef}|tenant1|models|bare-model";
         var direct = $"{serverRef}|dw|arc|wells";
         var target = $"{serverRef}|dw|mart|wells_out";
 
@@ -288,6 +290,7 @@ public sealed class LineageProjectGraphApiTests
                 db.Objects.Add(SeedDataset(written, storeRef, "tenant1", "master", "wks:unit:1.0.0", now));
                 db.Objects.Add(SeedDataset(unwritten, storeRef, "tenant1", "master", "wks:code:1.0.0", now));
                 db.Objects.Add(SeedDataset(model, modelRef, "tenant1", "models", "Well-Model", now));
+                db.Objects.Add(SeedDataset(bare, modelRef, "tenant1", "models", "Bare-Model", now));
                 db.Objects.Add(SeedTable(direct, serverRef, "DW", "arc", "Wells", now));
                 db.Objects.Add(SeedTable(target, serverRef, "DW", "mart", "Wells_out", now));
 
@@ -300,8 +303,10 @@ public sealed class LineageProjectGraphApiTests
                 db.LineageEdges.Add(ModuleEdge(repo, model, written, "wks:unit:1.0.0"));
                 db.LineageEdges.Add(ModuleEdge(repo, model, unwritten, "wks:code:1.0.0"));
 
-                // The flow reads the dataset and a table of its own, inherits the dataset's sources, and writes a table.
+                // The flow reads the dataset, a second one of its system that is derived from nothing, and a table of its
+                // own, inherits the dataset's sources, and writes a table.
                 db.LineageEdges.Add(Edge(repo, reader, "Wells_render", "Reads", model, "Well-Model"));
+                db.LineageEdges.Add(Edge(repo, reader, "Wells_render", "Reads", bare, "Bare-Model"));
                 db.LineageEdges.Add(Edge(repo, reader, "Wells_render", "Reads", direct, "Wells"));
                 db.LineageEdges.Add(Inherited(repo, reader, "Wells_render", model, written, "wks:unit:1.0.0"));
                 db.LineageEdges.Add(Inherited(repo, reader, "Wells_render", model, unwritten, "wks:code:1.0.0"));
@@ -321,23 +326,33 @@ public sealed class LineageProjectGraphApiTests
             var node = Assert.Single(graph.Objects, o => o.Key == model);
             Assert.Equal(("Well-Model", "probe model " + suffix, "tenant1.models"), (node.Name, node.Kind, node.Location));
 
+            // The derived dataset is marked derived, and so is the one of its system that reads nothing; the datasets
+            // it reads, written or not, and the tables are not.
+            Assert.True(node.Derived);
+            Assert.True(Assert.Single(graph.Objects, o => o.Key == bare).Derived);
+            Assert.Equal(
+                [direct, target, unwritten, written],
+                graph.Objects.Where(o => !o.Derived).Select(o => o.Key).Order(StringComparer.Ordinal).ToList());
+
             var flows = graph.FlowGraph.Select(e => (e.Source, e.Target, e.Label, e.PipelineId)).ToHashSet();
             Assert.Contains((writer.ToString(), written, "writes", (Guid?)writer), flows);
             Assert.Contains((written, model, "reads", (Guid?)null), flows);
             Assert.Contains((unwritten, model, "reads", (Guid?)null), flows);
             Assert.Contains((model, reader.ToString(), "reads", (Guid?)reader), flows);
+            Assert.Contains((bare, reader.ToString(), "reads", (Guid?)reader), flows);
             Assert.Contains((direct, reader.ToString(), "reads", (Guid?)reader), flows);
             Assert.Contains((reader.ToString(), target, "writes", (Guid?)reader), flows);
             Assert.DoesNotContain(graph.FlowGraph, e => (e.Source == written || e.Source == unwritten) && e.Target == reader.ToString());
-            Assert.Equal(6, flows.Count);
+            Assert.Equal(7, flows.Count);
 
             var objects = graph.ObjectGraph.Select(e => (e.Source, e.Target, e.Label, e.PipelineId)).ToHashSet();
             Assert.Contains((written, model, "reads", (Guid?)null), objects);
             Assert.Contains((unwritten, model, "reads", (Guid?)null), objects);
             Assert.Contains((model, target, "Wells_render", (Guid?)reader), objects);
+            Assert.Contains((bare, target, "Wells_render", (Guid?)reader), objects);
             Assert.Contains((direct, target, "Wells_render", (Guid?)reader), objects);
             Assert.DoesNotContain(graph.ObjectGraph, e => (e.Source == written || e.Source == unwritten) && e.Target == target);
-            Assert.Equal(4, objects.Count);
+            Assert.Equal(5, objects.Count);
 
             // A deep link onto the dataset itself: the flow reading it, and what it is derived from.
             var fromModel = await GetJsonAsync<ProjectGraphDto>(

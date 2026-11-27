@@ -135,7 +135,11 @@ welldb-lookups-00-cache ──▶ UnitAlias (osdu cache) ──▶ WellLog@1.0.0
 ```
 
 The flow inherits everything the mapping reads, as a flow reading a SQL view inherits the view's tables, so it is still
-ordered after the cache flow. A mapping reads the cache in two ways, and lineage follows both:
+ordered after the cache flow. Unlike a view, the mapping is an input of the flow and not data that comes into being: the
+graph draws it in its delivery's wave, right above the delivery, even when what it reads was written waves earlier, and
+a trace drawing the delivery draws its mappings with it, enrichment mappings included
+([the order](../../../../sqlflow/docs/reference/guides/lineage-graph.md#the-order-one-band-per-wave)). A mapping that
+reads nothing is still drawn as one. A mapping reads the cache in two ways, and lineage follows both:
 
 | How the mapping reads | Written as | What lineage declares |
 | --- | --- | --- |

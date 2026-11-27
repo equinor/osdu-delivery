@@ -389,9 +389,13 @@ public sealed record ProjectGraphPipelineDto(
 /// it sits on the depth-capped frontier with un-included consumers (so the client can offer to expand it).</summary>
 /// <remarks><c>Described</c> is true for an object only lineage descriptions (flowType: lin) name: it is in the graph
 /// only when the described lineage was asked for, its <c>Kind</c> is the system it belongs to, and it has no
-/// registry row behind it.</remarks>
+/// registry row behind it. <c>Derived</c> is true for a derived dataset: a document a flow renders through, a model, a
+/// rule set, which a registered flow kind declares as derived from other datasets and no flow writes. One that reads
+/// nothing stores no sources, so a dataset no flow writes, of a system whose datasets in the graph carry sources, is
+/// marked too. It is an input of the flows reading it, so a client draws it with them, above the first of them, rather
+/// than under what it is derived from as it draws a view.</remarks>
 public sealed record ProjectGraphObjectDto(
-    string Key, string Name, string Kind, string? Location, bool Frontier, bool Described = false);
+    string Key, string Name, string Kind, string? Location, bool Frontier, bool Described = false, bool Derived = false);
 
 /// <summary>One resolved, drawable edge of the project graph. <c>Source</c>/<c>Target</c> are node ids (a
 /// pipeline id or an object key). <c>Label</c> is what the arrow says (<c>writes</c>/<c>creates</c>/<c>reads</c>/
@@ -2740,6 +2744,17 @@ public static class LineageEndpoints
 
         var includedSet = includedObjects as ISet<string> ?? new HashSet<string>(includedObjects, StringComparer.Ordinal);
 
+        // A derived dataset that reads nothing (a document that looks nothing up) stores no sources to tell it apart.
+        // It is still the same sort of thing as the derived datasets of its system, so a dataset no flow writes, of a
+        // system whose datasets here carry sources, is marked derived as well: an input of the flows reading it.
+        var derivedSystems = derivedKeys
+            .Select(ServerIdentity.DatasetSystem)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
+        var markedDerived = new HashSet<string>(derivedKeys, StringComparer.Ordinal);
+        markedDerived.UnionWith(includedSet.Where(key => !writtenKeys.Contains(key)
+            && ServerIdentity.DatasetSystem(key) is { } system && derivedSystems.Contains(system)));
+
         // A subscriber node is drawn only when something it reads is actually on the canvas; otherwise it would
         // float unattached in a project it consumes nothing from.
         var drawnSubscribers = subscriberKeys
@@ -2761,7 +2776,8 @@ public static class LineageEndpoints
                     KindOf(key),
                     string.IsNullOrEmpty(location) ? null : location,
                     frontierSet.Contains(key),
-                    LineageDescribedObject.IsDescribedKey(key));
+                    LineageDescribedObject.IsDescribedKey(key),
+                    markedDerived.Contains(key));
             })
             .ToList();
 
