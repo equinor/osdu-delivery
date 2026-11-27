@@ -88,7 +88,9 @@ The server answers from metadata. It reads data in three places, and only the fi
 query (below); a column's value profile (`infer_column_types`, and `delivery_column_types` with `profile`), which
 counts on a node how many of a column's values convert to each type and answers with those counts, the longest value's
 length and the type inference would choose; and a file flow's source scan (`source_columns`), which reads only the
-header of each of its newest files and answers with column names:
+header of each of its newest files and answers with column names. The scan runs on a node from the flow's own YAML, with
+the values the flow's runs are supplied with, so a location such as `${env:LANDING_URL}/wells` resolves as it does in a
+run:
 
 | Returned | Never returned |
 | --- | --- |

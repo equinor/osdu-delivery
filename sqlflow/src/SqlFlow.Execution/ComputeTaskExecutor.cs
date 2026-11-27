@@ -54,12 +54,18 @@ public sealed class ComputeTaskExecutor
     private readonly IConnectionResolver _resolver;
     private readonly IConnectionFactory _factory;
     private readonly IInferenceService _inference;
+    private readonly SourceColumnScanner _scanner;
     private readonly Dictionary<string, IComputeOperation> _registered = new(StringComparer.Ordinal);
+
+    /// <summary>The budget for scanSourceColumns: a header read per file, at most a few hundred files from a store that
+    /// may be remote, so longer than a catalog browse, and still bounded so a wedged store never pins a worker slot.</summary>
+    private static readonly TimeSpan ScanTimeout = TimeSpan.FromMinutes(10);
 
     /// <summary>An executor over the built-in datasource operations only.</summary>
     public ComputeTaskExecutor(
-        CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory, IInferenceService inference)
-        : this(catalog, resolver, factory, inference, [])
+        CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory, IInferenceService inference,
+        SourceColumnScanner scanner)
+        : this(catalog, resolver, factory, inference, scanner, [])
     {
     }
 
@@ -71,17 +77,19 @@ public sealed class ComputeTaskExecutor
     /// </summary>
     public ComputeTaskExecutor(
         CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory, IInferenceService inference,
-        IEnumerable<IComputeOperation> operations)
+        SourceColumnScanner scanner, IEnumerable<IComputeOperation> operations)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(resolver);
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(inference);
+        ArgumentNullException.ThrowIfNull(scanner);
         ArgumentNullException.ThrowIfNull(operations);
         _catalog = catalog;
         _resolver = resolver;
         _factory = factory;
         _inference = inference;
+        _scanner = scanner;
 
         foreach (var operation in operations)
         {
@@ -154,6 +162,7 @@ public sealed class ComputeTaskExecutor
             // impose a second one that could cut a query the approver deliberately allowed time for. A report's
             // query carries the one its document declares.
             ComputeOperations.RunQuery or ComputeOperations.ReportQuery => Timeout.InfiniteTimeSpan,
+            ComputeOperations.ScanSourceColumns => ScanTimeout,
             _ => BrowseTimeout,
         };
 
@@ -258,6 +267,9 @@ public sealed class ComputeTaskExecutor
             case ComputeOperations.RunQuery:
             case ComputeOperations.ReportQuery:
                 return await RunQueryAsync(payload, reference, kind, ct).ConfigureAwait(false);
+
+            case ComputeOperations.ScanSourceColumns:
+                return ToJson(await _scanner.ScanAsync(payload, ct).ConfigureAwait(false));
 
             default:
                 // Validate() has already refused unknown operations at both boundaries; reaching this arm means a

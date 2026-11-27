@@ -97,6 +97,44 @@ public sealed class ComputeTaskPayloadTests
     }
 
     [Fact]
+    public void Validate_ScanSourceColumns_CarriesItsFlowsDocument_NamesTheFlow_AndIsBounded()
+    {
+        var payload = new ComputeTaskPayload
+        {
+            Operation = ComputeOperations.ScanSourceColumns,
+            SourceRef = "pre_wells",
+            Flow = "name: pre_wells\nsource:\n  type: csv\n  location: ${env:LANDING_URL}/wells\n",
+        };
+        payload.Validate();
+        (payload with
+        {
+            FlowFile = "/repos/estate/flows/pre_wells.yaml",
+            Files = ComputeTaskPayload.MaxScanFiles,
+            Columns = ["spud_date", "Well Name"],
+            ScanTarget = new SqlFlow.Core.Model.SourceScanTarget("${env:dw}|landing|pre|wells", "Landing", "pre", "Wells", ["well_id"]),
+        }).Validate();
+
+        // A scan names its flow, not a connection; the location it reads is the one the document declares.
+        Assert.True(ComputeOperations.IsKnown(ComputeOperations.ScanSourceColumns));
+        Assert.Contains(ComputeOperations.ScanSourceColumns, ComputeOperations.All);
+
+        var missing = Assert.Throws<SqlFlowException>(() => (payload with { Flow = null }).Validate());
+        Assert.Contains("names the pipeline", missing.Message, StringComparison.Ordinal);
+        Assert.Throws<SqlFlowException>(() => (payload with { Files = 0 }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { Files = ComputeTaskPayload.MaxScanFiles + 1 }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { FlowFile = "" }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { Columns = ["\u0001"] }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { Columns = [.. Enumerable.Range(0, ComputeTaskPayload.MaxScanExpected + 1).Select(i => $"c{i}")] }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { Flow = new string('x', ComputeTaskPayload.MaxFlowLength + 1) }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { SourceRef = "pre\nwells" }).Validate());
+
+        // No other operation carries a flow document, and every other one still takes a whole reference.
+        var other = Assert.Throws<SqlFlowException>(() => (Valid() with { Flow = payload.Flow }).Validate());
+        Assert.Contains("carries none", other.Message, StringComparison.Ordinal);
+        Assert.Throws<SqlFlowException>(() => (Valid() with { SourceRef = "pre_wells" }).Validate());
+    }
+
+    [Fact]
     public void Validate_RejectsDetectUniqueKey_OnNonSqlServerKinds()
     {
         var payload = Valid(ComputeOperations.DetectUniqueKey) with { Schema = "dbo", ObjectName = "Orders" };

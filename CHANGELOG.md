@@ -29,10 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table's columns before the window against now; **Schema changes** lists the moved columns, and the MCP server's
   `database_schema_changes` and `database_object_compare` describe both origins
   ([schema history](sqlflow/docs/reference/concepts/schema-history.md)).
-- **What new files in a drop zone carry.** `GET /api/v1/pipelines/{id}/source-columns` reads the header of each of the
-  newest files a file flow's source matches, without loading a row, and sets their columns against the table the flow
-  loads into: the columns new to it, its columns no file carries, and the ones asked about, file by file. The MCP
-  server's `source_columns` calls it ([scanning a flow's source](sqlflow/docs/reference/concepts/file-discovery-and-lifecycle.md#scanning-a-flows-source)).
+- **What new files in a drop zone carry.** `POST /api/v1/pipelines/{id}/source-columns` queues a scan that reads the
+  header of each of the newest files a file flow's source matches, without loading a row, and sets their columns against
+  the table the flow loads into: the columns new to it, its columns no file carries, and the ones asked about, file by
+  file. A node reads them from the flow's own YAML with the values its runs are supplied with, so a location such as
+  `${env:LANDING_URL}/wells` resolves as it does in a run. The MCP server's `source_columns` queues it and answers with
+  the result ([scanning a flow's source](sqlflow/docs/reference/concepts/file-discovery-and-lifecycle.md#scanning-a-flows-source)).
 - **The type a column's values convert to, with the counts behind it.** The compute operation `inferColumnTypes` (the MCP
   server's `infer_column_types`) profiles a table's columns on a node with the engine's own type inference, and
   `sqlflow infer` prints the same counts: how many values convert to each type, the widest scale and the longest value,

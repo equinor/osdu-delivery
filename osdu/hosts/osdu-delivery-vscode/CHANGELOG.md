@@ -3,6 +3,16 @@
 What changed in the OSDU Delivery extension for VS Code, newest first. The extension has a version of its own; the
 product's own changes are in the [repository's change log](https://github.com/TahirRiaz/osdu-delivery/blob/main/CHANGELOG.md).
 
+## [Unreleased]
+
+### What a drop zone's files carry
+
+- **`source_columns` reads the drop zone a pre flow's own YAML names.** The scan runs on a node from the flow's stored
+  YAML, with the values the flow's runs are supplied with, so a location such as `${env:LANDING_URL}/wells` resolves as
+  it does in a run. In 1.0.6 it was read by the control plane, which does not hold those values, and failed as an unset
+  variable. The tool takes a `pool` for a flow whose runs run in a pool of their own
+  ([scanning a flow's source](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/concepts/file-discovery-and-lifecycle.md#scanning-a-flows-source)).
+
 ## [1.0.6]
 
 ### Templates

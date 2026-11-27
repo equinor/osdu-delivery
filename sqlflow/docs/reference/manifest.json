@@ -1318,7 +1318,9 @@
         "src/SqlFlow.Core/Model/FileRef.cs",
         "src/SqlFlow.Core/Model/PreIngestionCsv.cs",
         "src/SqlFlow.Core/Model/SourceFileScan.cs",
-        "src/SqlFlow.ControlPlane/Api/PipelineSourceColumns.cs"
+        "src/SqlFlow.ControlPlane/Api/PipelineSourceColumns.cs",
+        "src/SqlFlow.Execution/SourceColumnScanner.cs",
+        "src/SqlFlow.Core/Model/SourceColumnsReport.cs"
       ]
     },
     {

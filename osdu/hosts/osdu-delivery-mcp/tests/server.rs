@@ -1815,14 +1815,21 @@ async fn column_types_advise_each_column_and_a_profile_counts_its_values() {
 }
 
 /// What a file flow's source files carry is asked by the flow, and a table's value profile by its catalog key: neither
-/// names a connection, and both take their answer from SQLFlow's own routes.
+/// names a connection, and both take their answer from SQLFlow's own routes. The scan is a task the control plane queues
+/// from the flow's own document, followed to its answer.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sources_columns_are_asked_by_the_flow_and_a_tables_types_by_its_key() {
     let key = "${env:osdu_data_db}|osdudata|pre|well";
     let task = "55555555-6666-4777-8888-999999999999";
+    let scan_task = "66666666-7777-4888-8999-aaaaaaaaaaaa";
     let scan = format!("/api/v1/pipelines/{PIPELINE}/source-columns");
     let estate = Estate::start(vec![
-        (route(format!("GET {scan}")), 200, json!({ "filesMatched": 2, "newColumns": ["spud_date"] })),
+        (route(format!("POST {scan}")), 202, json!({ "taskId": scan_task, "status": "queued" })),
+        (
+            route(format!("GET /api/v1/datasources/tasks/{scan_task}")),
+            200,
+            json!({ "taskId": scan_task, "status": "succeeded", "result": { "filesMatched": 2, "newColumns": ["spud_date"] } }),
+        ),
         (
             "GET /api/v1/lineage/objects/dossier",
             200,
@@ -1834,11 +1841,12 @@ async fn a_sources_columns_are_asked_by_the_flow_and_a_tables_types_by_its_key()
     .await;
     let mut session = Session::open(&estate).await;
 
-    let files = session.json("source_columns", json!({ "pipelineId": PIPELINE, "files": 5, "expect": ["spud_date", " elevation ", ""] })).await;
-    assert_eq!(files["newColumns"], json!(["spud_date"]));
-    let asked = estate.only("GET", &scan).query;
-    assert!(asked.contains("files=5"), "{asked}");
-    assert!(asked.contains("expect=spud_date%2Celevation") || asked.contains("expect=spud_date,elevation"), "{asked}");
+    let files = session
+        .json("source_columns", json!({ "pipelineId": PIPELINE, "files": 5, "expect": ["spud_date", " elevation ", ""], "pool": " " }))
+        .await;
+    assert_eq!(files["result"]["newColumns"], json!(["spud_date"]));
+    assert_eq!(files["pipelineId"], json!(PIPELINE));
+    assert_eq!(estate.only("POST", &scan).body, json!({ "files": 5, "expect": ["spud_date", "elevation"] }));
 
     session.json("infer_column_types", json!({ "key": key, "columns": ["elevation"], "sampleSize": 0 })).await;
     assert_eq!(

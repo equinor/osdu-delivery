@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlFlow.Core.Comparison;
 using SqlFlow.Core.Connections;
+using SqlFlow.Core.Model;
 using SqlFlow.Core.Quality;
 using SqlFlow.Core.Query;
 using SqlFlow.Core.Secrets;
@@ -83,11 +84,17 @@ public static class ComputeOperations
     /// gated by <c>ControlPlane:DataOps:Enabled</c>.</summary>
     public const string CompareBaseline = "compareBaseline";
 
+    /// <summary>Read the header of each of the newest files a file flow's source matches, as a run of that flow reads
+    /// them, and set their columns against the table it loads into. The flow's document is the one the catalog stores for
+    /// it, placed on the queue row by the control plane and never by a client: a request names the pipeline, never a
+    /// location, and the task resolves the document's references with the values the flow's runs are supplied with.</summary>
+    public const string ScanSourceColumns = "scanSourceColumns";
+
     /// <summary>Every operation this build understands, for validation messages.</summary>
     public static readonly string[] All =
         [TestConnection, ListDatabases, ListSchemas, ListObjects, SearchObjects, IntrospectObject, DetectUniqueKey,
          InferColumnTypes, MissingIndexes, StatisticsHealth, IndexUsage, TopQueries, DuplicateKeys, CompareBaseline,
-         RunQuery, ReportQuery];
+         RunQuery, ReportQuery, ScanSourceColumns];
 
     /// <summary>The operations that run a statement the control plane placed on the queue row: an approved query, or a
     /// query a report declares. Neither is ever queued through the compute task endpoint.</summary>
@@ -106,7 +113,7 @@ public static class ComputeOperations
 
     public static bool IsKnown(string? operation)
         => operation is TestConnection or ListDatabases or ListSchemas or ListObjects or SearchObjects
-            or IntrospectObject or DetectUniqueKey or InferColumnTypes
+            or IntrospectObject or DetectUniqueKey or InferColumnTypes or ScanSourceColumns
             || IsQuery(operation) || IsWarehouseHealth(operation) || IsDataOps(operation);
 
     /// <summary>The longest name an operation a host module registers may have.</summary>
@@ -222,8 +229,42 @@ public sealed record ComputeTaskPayload
 
     /// <summary>duplicateKeys: the columns that identify one real row. Left empty the check reads the key
     /// the TABLE declares; this is where the answer to a report's <c>question</c> comes back when the table
-    /// declares no usable key. inferColumnTypes: the columns to profile; left empty, every column.</summary>
+    /// declares no usable key. inferColumnTypes: the columns to profile; left empty, every column.
+    /// scanSourceColumns: the columns the caller asks about, each answered with the files that carry it.</summary>
     public IReadOnlyList<string>? Columns { get; init; }
+
+    /// <summary>scanSourceColumns: the flow's document as the catalog stores it for the pipeline, the text a run of the
+    /// pipeline executes. Placed here by the control plane, never by a client.</summary>
+    public string? Flow { get; init; }
+
+    /// <summary>scanSourceColumns: the path of the flow's file in its repository's checkout, which a location relative to
+    /// the flow's own folder resolves against, as a run of the flow from that checkout resolves it.</summary>
+    public string? FlowFile { get; init; }
+
+    /// <summary>scanSourceColumns: how many of the newest files the scan reads.</summary>
+    public int? Files { get; init; }
+
+    /// <summary>scanSourceColumns: the table the flow loads into as the catalog holds it, which the files' columns are set
+    /// against; null when the catalog holds no columns of it.</summary>
+    public SourceScanTarget? ScanTarget { get; init; }
+
+    /// <summary>scanSourceColumns: how many of the newest files a scan reads when the request does not say.</summary>
+    public const int DefaultScanFiles = 20;
+
+    /// <summary>scanSourceColumns: the most files one scan reads.</summary>
+    public const int MaxScanFiles = 200;
+
+    /// <summary>scanSourceColumns: the most columns one scan is asked about.</summary>
+    public const int MaxScanExpected = 200;
+
+    /// <summary>scanSourceColumns: the longest flow document a task carries.</summary>
+    public const int MaxFlowLength = 1_000_000;
+
+    /// <summary>scanSourceColumns: the most columns of the target table a task carries.</summary>
+    public const int MaxScanTargetColumns = 4096;
+
+    /// <summary>scanSourceColumns: the longest flow file path and the longest column name a task carries.</summary>
+    public const int MaxScanNameLength = 1024;
 
     /// <summary>compareBaseline: what to compare (inventory, schema, or data).</summary>
     public BaselineCompareMode? CompareMode { get; init; }
@@ -388,7 +429,15 @@ public sealed record ComputeTaskPayload
             throw new SqlFlowException($"The source reference is longer than {MaxSourceRefLength} characters.");
         }
 
-        if (!IsWholeReference(SourceRef))
+        if (Operation == ComputeOperations.ScanSourceColumns)
+        {
+            // A scan names the flow whose source it reads; what it reads is the location the flow's own document declares.
+            if (HasControlCharacters(SourceRef))
+            {
+                throw new SqlFlowException("scanSourceColumns names its flow with no control characters.");
+            }
+        }
+        else if (!IsWholeReference(SourceRef))
         {
             throw new SqlFlowException(
                 "The source must be a whole ${env:...} / ${keyvault:...} reference or an @alias. Inline " +
@@ -469,6 +518,16 @@ public sealed record ComputeTaskPayload
                 $"Only the {ComputeOperations.ReportQuery} operation names a report and a query; '{Operation}' names none.");
         }
 
+        if (Operation == ComputeOperations.ScanSourceColumns)
+        {
+            ValidateScan();
+        }
+        else if (Flow is not null || FlowFile is not null || Files is not null || ScanTarget is not null)
+        {
+            throw new SqlFlowException(
+                $"Only the {ComputeOperations.ScanSourceColumns} operation carries a flow document; '{Operation}' carries none.");
+        }
+
         foreach (var (name, value) in new[] { ("report", Report), ("reportQuery", ReportQuery) })
         {
             if (value is not null && (value.Length is 0 or > MaxReportNameLength || HasControlCharacters(value)))
@@ -547,6 +606,71 @@ public sealed record ComputeTaskPayload
 
                 ValidateIdentifier(column, "columns");
             }
+        }
+    }
+
+    /// <summary>
+    /// scanSourceColumns: the flow's document is present and bounded (the control plane placed it; the node parses it as
+    /// a run would), the file path and the count are in range, and the columns asked about and the target's columns are
+    /// bounded names.
+    /// </summary>
+    private void ValidateScan()
+    {
+        if (string.IsNullOrWhiteSpace(Flow))
+        {
+            throw new SqlFlowException(
+                "scanSourceColumns carries the flow's document as the catalog stores it. A client does not send a document " +
+                "or a location here: it names the pipeline (POST /pipelines/{id}/source-columns), and the control plane " +
+                "places the pipeline's document in this payload.");
+        }
+
+        if (Flow.Length > MaxFlowLength)
+        {
+            throw new SqlFlowException($"The flow document of a scanSourceColumns task is longer than {MaxFlowLength} characters.");
+        }
+
+        if (FlowFile is not null && (FlowFile.Length is 0 or > MaxScanNameLength || HasControlCharacters(FlowFile)))
+        {
+            throw new SqlFlowException($"flowFile must be a path of 1 to {MaxScanNameLength} characters with no control characters.");
+        }
+
+        if (Files is < 1 or > MaxScanFiles)
+        {
+            throw new SqlFlowException($"files must be between 1 and {MaxScanFiles}.");
+        }
+
+        if (Columns is { Count: > MaxScanExpected })
+        {
+            throw new SqlFlowException($"A scan is asked about at most {MaxScanExpected} columns at once.");
+        }
+
+        foreach (var column in Columns ?? [])
+        {
+            ValidateScanName(column, "A column a scan is asked about");
+        }
+
+        if (ScanTarget is { } target)
+        {
+            ValidateScanName(target.ObjectKey, "The target's object key");
+            ValidateScanName(target.Schema, "The target's schema");
+            ValidateScanName(target.Table, "The target's table");
+            if (target.Columns is null || target.Columns.Count > MaxScanTargetColumns)
+            {
+                throw new SqlFlowException($"The target of a scan carries its columns, at most {MaxScanTargetColumns} of them.");
+            }
+
+            foreach (var column in target.Columns)
+            {
+                ValidateScanName(column, "A column of the target");
+            }
+        }
+    }
+
+    private static void ValidateScanName(string? value, string what)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > MaxScanNameLength || HasControlCharacters(value))
+        {
+            throw new SqlFlowException($"{what} must be a name of 1 to {MaxScanNameLength} characters with no control characters.");
         }
     }
 

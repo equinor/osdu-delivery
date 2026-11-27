@@ -317,6 +317,15 @@ public static class DatasourceEndpoints
                 StatusCodes.Status400BadRequest, "Invalid compute task");
         }
 
+        // A source scan reads the location a file flow's own document declares, never one a request body names.
+        if (operation == ComputeOperations.ScanSourceColumns)
+        {
+            return Problem(
+                $"The '{operation}' operation reads the source a file flow declares: POST /pipelines/{{pipelineId}}/source-columns "
+                + "names the pipeline, and the control plane takes the flow's document from the catalog.",
+                StatusCodes.Status400BadRequest, "Invalid compute task");
+        }
+
         // The feature switch is checked BEFORE anything else about the request, so a deployment with the
         // surface off answers the same way for a well-formed ask and a malformed one: not enabled here.
         if (ComputeOperations.IsDataOps(operation) && !dataOps.Enabled)

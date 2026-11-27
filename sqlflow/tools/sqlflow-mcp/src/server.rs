@@ -571,6 +571,9 @@ pub struct SourceColumnsInput {
     pub files: Option<i64>,
     /// Column names to check against each file, as the file writes them or as the load names them.
     pub expect: Option<Vec<String>>,
+    /// The pool of nodes to read the files from, when the flow's runs run in a pool of their own (default: the
+    /// default pool).
+    pub pool: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -2225,28 +2228,12 @@ not a flow (a mapping, a schedule library): {path, type, required}. list_flow_ki
             file, not yet in the table) and notInFiles (in the table, in no file read; the columns a load adds itself are left \
             out). Name columns in `expect` to learn, for each, whether every file carries it and which files do not. Use it \
             for 'did new columns arrive in the drop zone', 'do the latest files still carry spud_date', and before changing a \
-            flow's transform. Reads only the location the flow declares; filesMatched 0 comes with the engine's reason."
+            flow's transform. Runs on a node from the flow's own YAML, as its runs read the source: the same configured \
+            values and the same identity. Reads only the location the flow declares; filesMatched 0 comes with the \
+            engine's reason."
     )]
     async fn source_columns(&self, Parameters(i): Parameters<SourceColumnsInput>) -> String {
-        let mut q = Vec::new();
-        if let Some(files) = i.files {
-            q.push(("files", files.to_string()));
-        }
-        let expect: Vec<String> = i
-            .expect
-            .unwrap_or_default()
-            .into_iter()
-            .map(|name| name.trim().to_string())
-            .filter(|name| !name.is_empty())
-            .collect();
-        if !expect.is_empty() {
-            q.push(("expect", expect.join(",")));
-        }
-        let links = json!({ "page": self.links.pipeline(&i.pipeline_id) });
-        self.get_about(
-            &format!("/api/v1/pipelines/{}/source-columns", i.pipeline_id), &q,
-            ("pipelineId", &i.pipeline_id), links,
-        ).await
+        done(self.run_source_columns(i).await)
     }
 
     // ---- Runs (read) -----------------------------------------------------
@@ -3987,6 +3974,40 @@ impl SqlFlowMcp {
         let mut result = self.cp.get("/api/v1/lineage/objects/join-paths", &query).await?;
         self.links.decorate(&mut result);
         Ok(json_str(&result))
+    }
+
+    /// A file flow's source scan: the control plane queues it from the flow's stored document under its repository, so
+    /// the node that reads the files resolves the flow's references with the values its runs carry. The caller names the
+    /// pipeline, never a location.
+    async fn run_source_columns(&self, input: SourceColumnsInput) -> anyhow::Result<String> {
+        let mut body = json!({});
+        if let Some(files) = input.files {
+            body["files"] = json!(files);
+        }
+        let expect: Vec<String> = input
+            .expect
+            .unwrap_or_default()
+            .into_iter()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect();
+        if !expect.is_empty() {
+            body["expect"] = json!(expect);
+        }
+        if let Some(pool) = input.pool.map(|p| p.trim().to_string()).filter(|p| !p.is_empty()) {
+            body["pool"] = json!(pool);
+        }
+
+        let accepted = self
+            .cp
+            .post(&format!("/api/v1/pipelines/{}/source-columns", input.pipeline_id), body)
+            .await?;
+        let mut task = self.ctx.follow_task("source scan", &accepted, Some(TASK_TEXT_LIMIT)).await?;
+        if let Value::Object(map) = &mut task {
+            map.insert("pipelineId".to_string(), json!(input.pipeline_id));
+            map.insert("links".to_string(), json!({ "page": self.links.pipeline(&input.pipeline_id) }));
+        }
+        Ok(json_str(&task))
     }
 
     /// The profile of one catalog object's columns: the object's reference, database, schema and name are the catalog's

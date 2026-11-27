@@ -1,28 +1,37 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
+using SqlFlow.ControlPlane.Background;
+using SqlFlow.Core.Compute;
 using SqlFlow.Core.Identity;
+using SqlFlow.Core.Model;
 using Xunit;
 
 namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
-/// A file flow's source, scanned file by file through <c>GET /pipelines/{id}/source-columns</c>: the flow's document as the
-/// catalog stores it, its relative location resolved against its folder in the repository's checkout, the newest files'
-/// headers, and the table it loads into as the catalog holds it. The answer names the columns new to the table, the
-/// table's columns no file carries (leaving out the ones a load adds itself), and the columns asked about. A flow that
-/// reads no files is refused. The repository is a folder of the test's own; every catalog row is removed in a finally.
+/// A file flow's source, scanned file by file through <c>POST /pipelines/{id}/source-columns</c> as a run of the flow reads
+/// it: the control plane queues a compute task carrying the flow's document as the catalog stores it and the table it loads
+/// into, under the pipeline's repository, so the task carries the values that repository's runs are supplied with; the
+/// host's worker reads the newest files' headers and answers. The flow's location names a reference only those supplied
+/// values resolve, never the process's environment, as a deployed flow's landing location does. A flow that reads no
+/// files, an unbounded count and a scan queued through the generic task endpoint are refused. The repository is a folder
+/// of the test's own; every catalog row is removed in a finally.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class PipelineSourceColumnsApiTests : IDisposable
 {
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "sqlflow_srccols_" + Guid.NewGuid().ToString("N"));
 
     [SkippableFact]
-    public async Task AFileFlowsSource_IsReadFileByFile_AgainstTheTableItLoadsInto()
+    public async Task AFileFlowsSource_IsReadOnANode_WithTheValuesItsRunsAreSupplied_AgainstTheTableItLoadsInto()
     {
         var cs = CatalogTestDb.Require();
         await CatalogDatabase.MigrateAsync(cs);
@@ -37,24 +46,31 @@ public sealed class PipelineSourceColumnsApiTests : IDisposable
         var connection = "${env:srccols_" + suffix + "}";
         var objectKey = $"{connection.ToLowerInvariant()}|landing|pre|{table.ToLowerInvariant()}";
 
+        // The landing location, as a deployment's central configuration supplies it with every run of the repository.
+        var landing = "SRCCOLS_LANDING_" + suffix.ToUpperInvariant();
+        Assert.Null(Environment.GetEnvironmentVariable(landing));
+        var supplied = new Dictionary<string, string>(StringComparer.Ordinal) { [landing] = Path.Combine(_root, "landing") };
+
         Directory.CreateDirectory(Path.Combine(_root, "flows"));
-        Directory.CreateDirectory(Path.Combine(_root, "data", "wells"));
-        WriteFile("data/wells/wells_1.csv", "well_id,well name,elevation\nW1,One,10\n", DateTime.UtcNow.AddDays(-2));
-        WriteFile("data/wells/wells_2.csv", "well_id,well name,elevation,spud_date\nW2,Two,11,2026-01-01\n", DateTime.UtcNow.AddDays(-1));
-        var yaml = $"""
-            name: {flowName}
+        Directory.CreateDirectory(Path.Combine(_root, "landing", "wells"));
+        WriteFile("landing/wells/wells_1.csv", "well_id,well name,elevation\nW1,One,10\n", DateTime.UtcNow.AddDays(-2));
+        WriteFile("landing/wells/wells_2.csv", "well_id,well name,elevation,spud_date\nW2,Two,11,2026-01-01\n", DateTime.UtcNow.AddDays(-1));
+        var yaml = $$"""
+            name: {{flowName}}
             source:
               type: csv
-              location: ../data/wells
+              location: ${env:{{landing}}}/wells
               options:
                 srcFile: "*.csv"
             target:
-              connection: {connection}
+              connection: {{connection}}
               schema: pre
-              table: {table}
+              table: {{table}}
             """;
 
-        await using var factory = new ControlPlaneAppFactory().WithCatalog(cs);
+        await using var factory = new ControlPlaneAppFactory()
+            .WithCatalog(cs)
+            .WithServices(services => services.AddSingleton<IRunReferenceSource>(new RepositorySource(repoId, supplied)));
         try
         {
             await using (var db = CatalogDatabase.Create(cs))
@@ -88,12 +104,32 @@ public sealed class PipelineSourceColumnsApiTests : IDisposable
             using var client = factory.CreateClient();
             var token = await AiContextTestKit.IssueTokenAsync(client, ["read", "operate"]);
 
-            using var response = await GetAsync(client, token, $"/api/v1/pipelines/{pipelineId}/source-columns?expect=spud_date,Well Name,depth");
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var scan = await response.Content.ReadFromJsonAsync<SourceColumnsDto>();
-            Assert.NotNull(scan);
+            SourceColumnsScanAccepted accepted;
+            using (var response = await SendAsync(
+                       client, token, HttpMethod.Post, $"/api/v1/pipelines/{pipelineId}/source-columns",
+                       new { expect = new[] { "spud_date", " Well Name ", "depth", "" } }))
+            {
+                var text = await response.Content.ReadAsStringAsync();
+                Assert.True(response.StatusCode == HttpStatusCode.Accepted, $"the scan answered {(int)response.StatusCode}: {text}");
+                accepted = JsonSerializer.Deserialize<SourceColumnsScanAccepted>(text, Web)!;
+                Assert.Equal((pipelineId, flowName), (accepted.PipelineId, accepted.Flow));
+                Assert.Equal($"/api/v1/datasources/tasks/{accepted.TaskId}", response.Headers.Location?.ToString());
+            }
 
-            Assert.Equal((flowName, "csv", "../data/wells"), (scan.Flow, scan.SourceType, scan.Location));
+            // The queued task carries the pipeline's own document and the values its repository's runs are supplied with.
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                var task = await db.ComputeTasks.AsNoTracking().SingleAsync(t => t.TaskId == accepted.TaskId);
+                Assert.Equal((ComputeOperations.ScanSourceColumns, flowName), (task.Operation, task.SourceRef));
+                var payload = ComputeTaskPayload.FromJson(task.ArgumentsJson);
+                Assert.Equal(yaml, payload.Flow);
+                Assert.Equal(Path.GetFullPath(Path.Combine(_root, "flows/wells.yaml")), payload.FlowFile);
+                Assert.Equal(supplied, payload.References);
+                Assert.Equal(objectKey, payload.ScanTarget?.ObjectKey);
+            }
+
+            var scan = await WaitAsync(client, token, accepted.TaskId);
+            Assert.Equal((flowName, "csv", $"${{env:{landing}}}/wells"), (scan.Flow, scan.SourceType, scan.Location));
             Assert.Equal((2, 2), (scan.FilesMatched, scan.FilesRead));
             Assert.Equal(["wells_2.csv", "wells_1.csv"], scan.Files.Select(f => f.Name));
             Assert.Equal(["well_id", "well_name", "elevation", "spud_date"], scan.Columns.Select(c => c.Name));
@@ -114,15 +150,19 @@ public sealed class PipelineSourceColumnsApiTests : IDisposable
                 name => Assert.Equal(("Well Name", 2, true), (name.Name, name.Files, name.InEveryFile)),
                 depth => Assert.Equal(("depth", 0, false), (depth.Name, depth.Files, depth.InEveryFile)));
 
-            // A flow that reads no files has no source to scan, and the count is bounded.
-            using var proc = await GetAsync(client, token, $"/api/v1/pipelines/{procId}/source-columns");
-            Assert.Equal(HttpStatusCode.BadRequest, proc.StatusCode);
-            using var tooMany = await GetAsync(client, token, $"/api/v1/pipelines/{pipelineId}/source-columns?files=500");
-            Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
+            // A flow that reads no files has no source to scan, the count is bounded, an unknown pipeline is not found,
+            // and no client queues a scan of a document or a location of its own.
+            await RefusedAsync(client, token, $"/api/v1/pipelines/{procId}/source-columns", new { }, HttpStatusCode.BadRequest);
+            await RefusedAsync(client, token, $"/api/v1/pipelines/{pipelineId}/source-columns", new { files = 500 }, HttpStatusCode.BadRequest);
+            await RefusedAsync(client, token, $"/api/v1/pipelines/{Guid.NewGuid()}/source-columns", new { }, HttpStatusCode.NotFound);
+            await RefusedAsync(
+                client, token, "/api/v1/datasources/tasks",
+                new { reference = flowName, operation = ComputeOperations.ScanSourceColumns }, HttpStatusCode.BadRequest);
         }
         finally
         {
             await using var db = CatalogDatabase.Create(cs);
+            await db.ComputeTasks.Where(t => t.SourceRef == flowName || t.SourceRef == procName).ExecuteDeleteAsync();
             await db.LineageEdges.Where(e => e.RepoId == repoId).ExecuteDeleteAsync();
             await db.ObjectColumns.Where(c => c.ObjectKey == objectKey).ExecuteDeleteAsync();
             await db.Objects.Where(o => o.Key == objectKey).ExecuteDeleteAsync();
@@ -139,6 +179,29 @@ public sealed class PipelineSourceColumnsApiTests : IDisposable
         }
     }
 
+    /// <summary>Long-polls the scan's task to its end (bounded, so a stuck worker fails rather than hangs) and reads its
+    /// answer.</summary>
+    private static async Task<SourceColumnsReport> WaitAsync(HttpClient client, string token, Guid taskId)
+    {
+        for (var attempt = 0; attempt < 60; attempt++)
+        {
+            using var detail = await SendAsync(client, token, HttpMethod.Get, $"/api/v1/datasources/tasks/{taskId}?waitMs=2000", null);
+            Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+            var body = await detail.Content.ReadAsStringAsync();
+            using var task = JsonDocument.Parse(body);
+            var status = task.RootElement.GetProperty("status").GetString();
+            if (status is "queued" or "running")
+            {
+                continue;
+            }
+
+            Assert.True(status == "succeeded", $"the scan ended '{status}': {body}");
+            return task.RootElement.GetProperty("result").Deserialize<SourceColumnsReport>(Web)!;
+        }
+
+        throw new Xunit.Sdk.XunitException($"the scan's task {taskId} did not finish.");
+    }
+
     private static CatalogPipeline Pipeline(Guid id, Guid repoId, string name, string kind, string path, string yaml, DateTime now) => new()
     {
         Id = id, RepoId = repoId, Name = name, Kind = kind, RelativePath = path, Active = true, Yaml = yaml,
@@ -153,10 +216,30 @@ public sealed class PipelineSourceColumnsApiTests : IDisposable
         File.SetLastWriteTimeUtc(path, modifiedUtc);
     }
 
-    private static async Task<HttpResponseMessage> GetAsync(HttpClient client, string token, string relativeUri)
+    private static async Task RefusedAsync(HttpClient client, string token, string relativeUri, object body, HttpStatusCode expected)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(relativeUri, UriKind.Relative));
+        using var response = await SendAsync(client, token, HttpMethod.Post, relativeUri, body);
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == expected, $"POST {relativeUri} answered {(int)response.StatusCode}, not {(int)expected}: {text}");
+    }
+
+    private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string token, HttpMethod method, string relativeUri, object? body)
+    {
+        using var request = new HttpRequestMessage(method, new Uri(relativeUri, UriKind.Relative));
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
+        }
+
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request);
+    }
+
+    /// <summary>The values a deployment's central configuration supplies with the runs of one repository, and nothing for
+    /// any other: the host's scheduler and managed sync share the test database with other tests.</summary>
+    private sealed class RepositorySource(Guid repoId, IReadOnlyDictionary<string, string> values) : IRunReferenceSource
+    {
+        public Task<IReadOnlyDictionary<string, string>> ReferencesAsync(Guid? repo, CancellationToken ct)
+            => Task.FromResult(repo == repoId ? values : new Dictionary<string, string>(StringComparer.Ordinal));
     }
 }

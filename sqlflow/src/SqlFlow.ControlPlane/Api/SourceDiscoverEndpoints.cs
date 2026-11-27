@@ -64,9 +64,10 @@ public static class SourceDiscoverEndpoints
     {
         ArgumentNullException.ThrowIfNull(group);
         group.MapPost("/sources/discover", DiscoverSourceAsync).WithTags("Sources").WithName("DiscoverSource");
-        // A file flow's own source, file by file: what its drop zone carries now, against the table it loads into.
-        group.MapGet("/pipelines/{id:guid}/source-columns", PipelineSourceColumns.GetAsync)
-            .WithTags("Sources").WithName("GetPipelineSourceColumns");
+        // A file flow's own source, file by file: what its drop zone carries now, against the table it loads into, read on a
+        // node as a run of the flow reads it.
+        group.MapPost("/pipelines/{id:guid}/source-columns", PipelineSourceColumns.ScanAsync)
+            .WithTags("Sources").WithName("ScanPipelineSourceColumns");
         return group;
     }
 

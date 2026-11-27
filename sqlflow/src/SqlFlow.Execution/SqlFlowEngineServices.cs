@@ -115,6 +115,7 @@ public static class SqlFlowEngineServices
         services.AddSingleton<CatalogService>();
         // Ad-hoc datasource compute (list tables, introspect, test connection, unique-key detection): the
         // executor behind queued compute tasks, resolving connections through the exact same registry as flows.
+        services.AddSingleton<SourceColumnScanner>();
         services.AddSingleton<ComputeTaskExecutor>();
         services.AddSingleton<IServerLocaleProvider, SqlServerLocaleProvider>();
         services.AddSingleton<IColumnProfiler, SqlServerColumnProfiler>();
