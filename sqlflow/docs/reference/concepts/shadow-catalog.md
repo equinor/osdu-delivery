@@ -39,7 +39,7 @@ sourceRefs:
 
 The shadow catalog is a SQL Server read-model of the SQLFlow estate. Git/YAML flow documents plus the on-disk `run.json` history are the source of truth; the catalog database mirrors them in ONE direction (files to database, never back), so it can always be rebuilt from scratch by re-syncing. Several git repos sync into a single catalog for cross-repo queries; every pipeline and run row is attributed to its repo. The whole schema lives under the `catalog` schema and is owned by EF Core migrations (`CatalogDbContext`, `src/SqlFlow.Catalog/CatalogDbContext.cs`); it is the only place in the product that uses Entity Framework.
 
-Tables in the `catalog` schema: `Repo`, `Pipeline`, `Run`, `Object`, `LineageEdge`, `FlowDependency`, `RunFile`, `RunAssertion`, `RunStatement`, `RunEvent`, `RunSurrogateKey`, `RunHealthCheckMetric`, `SchemaChange`, `ColumnTypeChange`, `ObjectColumn`, `ColumnPolicy`, `PipelineColumn`, `Schedule`, `Node`, `RepoSource`, `User`, `Role`.
+Tables in the `catalog` schema: `Repo`, `Pipeline`, `Run`, `Object`, `LineageEdge`, `FlowDependency`, `RunFile`, `RunAssertion`, `RunStatement`, `RunEvent`, `RunSurrogateKey`, `RunHealthCheckMetric`, `SchemaChange`, `SchemaChangeColumn`, `ColumnTypeChange`, `ObjectColumn`, `ColumnPolicy`, `PipelineColumn`, `Schedule`, `Node`, `RepoSource`, `User`, `Role`.
 
 A full sync pass (`CatalogSync.SyncAsync`, `src/SqlFlow.Catalog/CatalogSync.cs`) runs in one serializable transaction wrapped in the context's execution strategy, so two concurrent syncs of the same repo serialize instead of racing, and a connection-resiliency retry re-collects the estate from disk safely.
 
@@ -55,11 +55,15 @@ Pipeline names are unique per `(RepoId, Name)`, not globally. Cross-table links 
 
 ## Schema history
 
-Source-control (`scm`) runs additionally project into `SchemaChange`: one row per database object they found
-added, changed, or dropped, carrying the database, the object category, schema and name, the change kind, the
-commit that holds the diff, and when the snapshot observed it. It is written by the same one-run-one-insert path
-as every other run detail (`CatalogSync.AddRunDetailAsync`), so the CLI, the full sync, and the live run queue record
-it identically. Non-scm runs project no rows, and a dry run is deliberately skipped.
+`SchemaChange` is the estate's [schema history](schema-history.md), written two ways. Source-control (`scm`) runs
+project into it one row per database object they found added, changed, or dropped, with the commit that holds the
+diff, through the same one-run-one-insert path as every other run detail (`CatalogSync.AddRunDetailAsync`), so the CLI,
+the full sync, and the live run queue record it identically; a dry run is deliberately skipped. And every write of
+the data dictionary (`ObjectColumn`) compares the columns it read with the ones the catalog held: one writer per
+pass (`WriteObjectColumnsAsync`) takes the most authoritative read of each object, rewrites only an object whose
+columns differ, and records each difference, with its moved columns in `SchemaChangeColumn`.
+`ColumnTypeChange` is the other half: what a run did about each change to an existing column's type (its tier and
+outcome), where `SchemaChangeColumn` is what the catalog then reads the column to be.
 
 The rows are keyed by their own `RepoId` and outlive nothing else: they are not pruned with run history, because
 a change feed that forgets is not a history. They are removed only when their repo is deleted.

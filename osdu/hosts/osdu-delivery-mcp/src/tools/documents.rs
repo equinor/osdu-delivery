@@ -10,9 +10,99 @@ use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
 use sqlflow_mcp::{encode, json_str};
 
-use super::DeliveryTools;
+use super::{DeliveryTools, PIPELINE_HINT};
 use crate::links::{explorer_kind, template_page};
-use crate::support::{composed, optional_guid, put_links, refuse, section, text, Query};
+use crate::support::{composed, guid, optional_guid, put_links, refuse, section, text, Query};
+
+/// The most characters a string of a value profile's task carries back; the counts are short.
+const PROFILE_TEXT_LIMIT: usize = 4_000;
+
+impl DeliveryTools {
+    /// Profiles the values of each advised column in the raw table its pre-ingestion flow lands it in: one
+    /// `inferColumnTypes` task per table, on a node, for the columns of it the answer advises. Each column gains
+    /// `valueProfile` (the type inference would choose, the rows profiled and the counts behind it, or why there is none)
+    /// and, where its advice names the count that must cover every value, `valuesFit`. Counts and types only.
+    async fn profile_columns(&self, answer: &mut Value) {
+        let Some(columns) = answer.get_mut("columns").and_then(Value::as_array_mut) else {
+            return;
+        };
+
+        // The columns of each raw table, so one task profiles all of a table's columns.
+        let mut tables: Vec<(Value, Vec<usize>)> = Vec::new();
+        for (index, column) in columns.iter().enumerate() {
+            let target = &column["profile"];
+            if target.is_null() {
+                continue;
+            }
+            let table = json!([target["reference"], target["database"], target["schema"], target["table"]]);
+            match tables.iter_mut().find(|(key, _)| *key == table) {
+                Some((_, indexes)) => indexes.push(index),
+                None => tables.push((table, vec![index])),
+            }
+        }
+
+        let mut profiles: Vec<(usize, Value)> = Vec::new();
+        for (table, indexes) in &tables {
+            let names: Vec<Value> = indexes.iter().map(|&i| columns[i]["profile"]["column"].clone()).collect();
+            let mut body = json!({
+                "operation": "inferColumnTypes",
+                "reference": table[0],
+                "schema": table[2],
+                "objectName": table[3],
+                "columns": names,
+            });
+            if !table[1].is_null() {
+                body["database"] = table[1].clone();
+            }
+            let task = match self.ctx.send("/api/v1/datasources/tasks", body).await {
+                Ok(accepted) => self.ctx.follow_task("inferColumnTypes", &accepted, Some(PROFILE_TEXT_LIMIT)).await,
+                Err(error) => Err(error),
+            };
+            for &index in indexes {
+                let profile = match &task {
+                    Ok(task) if task["status"] == json!("succeeded") => {
+                        let name = columns[index]["profile"]["column"].as_str().unwrap_or_default().to_lowercase();
+                        task["result"]["columns"]
+                            .as_array()
+                            .and_then(|rows| rows.iter().find(|row| row["columnName"].as_str().is_some_and(|c| c.to_lowercase() == name)))
+                            .map(|row| {
+                                json!({
+                                    "inferredType": row["inferredType"],
+                                    "profiled": row["profiled"],
+                                    "rows": row["rows"],
+                                    "evidence": row["evidence"],
+                                })
+                            })
+                            .unwrap_or_else(|| json!({ "error": "the profile of the raw table holds no such column" }))
+                    }
+                    Ok(task) => json!({ "error": task["error"].clone(), "status": task["status"].clone() }),
+                    Err(error) => json!({ "error": format!("{error:#}") }),
+                };
+                profiles.push((index, profile));
+            }
+        }
+
+        for (index, column) in columns.iter_mut().enumerate() {
+            let profile = profiles
+                .iter()
+                .find(|(i, _)| *i == index)
+                .map(|(_, p)| p.clone())
+                .unwrap_or_else(|| json!({ "error": "lineage reaches no raw table this column is landed in, so its values cannot be profiled" }));
+            let fit = match (column["profileCount"].as_str(), profile.get("evidence")) {
+                (Some(count), Some(evidence)) if evidence.is_object() => {
+                    Some(evidence[count].as_i64().is_some() && evidence[count] == evidence["nonNull"])
+                }
+                _ => None,
+            };
+            if let Some(map) = column.as_object_mut() {
+                map.insert("valueProfile".to_string(), profile);
+                if let Some(fit) = fit {
+                    map.insert("valuesFit".to_string(), json!(fit));
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MappingsInput {
@@ -86,6 +176,22 @@ pub struct OsduSchemasInput {
     pub kind: Option<String>,
     /// With release alone: keep kinds containing this text, for example "WellLog".
     pub search: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ColumnTypesInput {
+    /// The delivery flow's pipeline id: the `id` of a delivery flow in list_pipelines.
+    #[serde(rename = "pipelineId")]
+    pub pipeline_id: String,
+    /// The interface of a flow that declares several.
+    pub interface: Option<String>,
+    /// The partition, for a flow that names its partitions.
+    pub partition: Option<String>,
+    /// One column, by name; omit for every column the mapping reads.
+    pub column: Option<String>,
+    /// true also profiles each column's values on a node, in the raw table the pre-ingestion flow lands them in: counts,
+    /// lengths and the type inference would choose, never a value.
+    pub profile: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -353,6 +459,46 @@ delivery_osdu_schemas."
         );
         put_links(&mut detail, page);
         json_str(&detail)
+    }
+
+    #[tool(
+        description = "The SQL type each column a delivery flow's mapping reads should have, for the OSDU properties it \
+reaches: per column, the property paths and their template types, its type in the catalog, the type its pre-ingestion \
+flow declares and the one its last run detected (declaredInFlow is the flow to change), and the advice: the type to \
+declare, a verdict (fits, parsed, approximate, refused when the render holds every record, unknown) and why. Use it for \
+'what datatype should elevation be', 'why are records held as not a number'. profile=true adds each column's value \
+counts from the raw table the pre flow lands it in."
+    )]
+    async fn delivery_column_types(&self, Parameters(i): Parameters<ColumnTypesInput>) -> String {
+        let pipeline = match guid("pipelineId", &i.pipeline_id, PIPELINE_HINT) {
+            Ok(pipeline) => pipeline,
+            Err(refused) => return refused,
+        };
+        let query = Query::new().text("interface", i.interface).text("partition", i.partition).text("column", i.column);
+        let mut answer = match self.ctx.read(&format!("/api/v1/delivery/flows/{pipeline}/column-types"), query.pairs()).await {
+            Ok(answer) => answer,
+            Err(error) => return refuse(format!("{error:#}")),
+        };
+        if i.profile.unwrap_or(false) {
+            self.profile_columns(&mut answer).await;
+        }
+
+        let mut links = Map::new();
+        links.insert("page".to_string(), json!(self.ctx.links().pipeline(&pipeline)));
+        put_links(&mut answer, links);
+        if let Some(map) = answer.as_object_mut() {
+            map.insert(
+                "readingThis".to_string(),
+                json!(
+                    "Declare `recommended` for a column in the transform.columns of declaredInFlow, where the type a column \
+                     reaches the delivery with is set. `refused` holds every record that reads the column; `parsed` holds \
+                     each record whose value cannot be read as the property needs it. With a profile, valuesFit says whether \
+                     every value profiled converts to what the property needs (the evidence count profileCount names \
+                     against nonNull)."
+                ),
+            );
+        }
+        json_str(&answer)
     }
 
     #[tool(

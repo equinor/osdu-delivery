@@ -1,4 +1,5 @@
 using LibGit2Sharp;
+using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
 using SqlFlow.Node;
 using Xunit;
@@ -331,7 +332,9 @@ public sealed class GitHistoryTests
             // Two snapshots moved the table inside the window; the answer is still ONE before and ONE after.
             Assert.Equal("CREATE TABLE arc.Cyclehire_Bikes (BikeId int);\n", comparison!.BeforeText);
             Assert.Equal("CREATE TABLE arc.Cyclehire_Bikes (BikeId int, Lat decimal(9,6), Lon decimal(9,6));\n", comparison.AfterText);
-            Assert.Equal(tip.Sha, comparison.After.Sha);
+            Assert.NotNull(comparison.After);
+            Assert.Equal(tip.Sha, comparison.After!.Sha);
+            Assert.Equal(SchemaChangeOrigins.Snapshot, comparison.Origin);
             Assert.NotNull(comparison.Before);
             Assert.Equal(LongBefore.UtcDateTime, comparison.Before!.CommittedUtc);
             Assert.Equal(8, comparison.Before.ShortSha.Length);

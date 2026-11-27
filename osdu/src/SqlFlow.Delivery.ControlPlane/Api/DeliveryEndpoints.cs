@@ -85,6 +85,9 @@ public static partial class DeliveryEndpoints
         delivery.MapGet("/mappings/{mappingId:guid}", GetMappingAsync).WithName("GetDeliveryMapping");
         DeliveryValueCheckEndpoints.MapReads(delivery);
 
+        // The type each column a flow's mapping reads should have, for the properties it reaches.
+        DeliveryColumnTypeEndpoints.MapReads(delivery);
+
         // What keeps a flow's records blocked, grouped by issue, and one issue with the files its records came from.
         DeliveryIssueEndpoints.MapReads(delivery);
 

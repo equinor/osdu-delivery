@@ -82,6 +82,7 @@ public sealed class CatalogDbContext : DbContext
 
     /// <summary>Every change to an existing column's type a run reported: each column's type history.</summary>
     public DbSet<CatalogColumnTypeChange> ColumnTypeChanges => Set<CatalogColumnTypeChange>();
+    public DbSet<CatalogSchemaChangeColumn> SchemaChangeColumns => Set<CatalogSchemaChangeColumn>();
 
     public DbSet<CatalogObjectColumn> ObjectColumns => Set<CatalogObjectColumn>();
 
@@ -649,6 +650,9 @@ public sealed class CatalogDbContext : DbContext
             entity.Property(c => c.Name).HasMaxLength(512).IsRequired();
             entity.Property(c => c.ChangeType).HasMaxLength(16).IsRequired();
             entity.Property(c => c.CommitSha).HasMaxLength(64);
+            // Every row written before the catalog recorded its own reads came from a snapshot.
+            entity.Property(c => c.Origin).HasMaxLength(16).IsRequired().HasDefaultValue(SchemaChangeOrigins.Snapshot);
+            entity.Property(c => c.ObjectKey).HasMaxLength(900);
             // The feed query: the estate's changes newest first, optionally narrowed to one database. Descending
             // on the date so the index serves the ordering, not just the filter.
             entity.HasIndex(c => new { c.RepoId, c.OccurredUtc }).IsDescending(false, true);
@@ -657,6 +661,27 @@ public sealed class CatalogDbContext : DbContext
             entity.HasIndex(c => c.RunId);
             // "Everything that ever happened to this object", the history panel behind one table or view.
             entity.HasIndex(c => new { c.RepoId, c.Database, c.Schema, c.Name });
+            // The same for one catalog object, across every repository whose pass saw it change: its columns then are
+            // worked back from the ones it has now through these rows.
+            entity.HasIndex(c => new { c.ObjectKey, c.OccurredUtc });
+        });
+
+        modelBuilder.Entity<CatalogSchemaChangeColumn>(entity =>
+        {
+            entity.ToTable("SchemaChangeColumn");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Name).HasMaxLength(512).IsRequired();
+            entity.Property(c => c.ChangeType).HasMaxLength(16).IsRequired();
+            entity.Property(c => c.FromType).HasMaxLength(128);
+            entity.Property(c => c.ToType).HasMaxLength(128);
+            // A change's columns, read with the change; the cascade takes them with it when a repository's history goes.
+            entity.HasIndex(c => c.SchemaChangeId);
+            // "When did this column appear, or change type": a change is found by a column it moved.
+            entity.HasIndex(c => c.Name);
+            entity.HasOne(c => c.SchemaChange)
+                  .WithMany(s => s.Columns)
+                  .HasForeignKey(c => c.SchemaChangeId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CatalogColumnTypeChange>(entity =>

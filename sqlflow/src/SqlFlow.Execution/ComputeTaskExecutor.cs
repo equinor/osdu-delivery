@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlFlow.Core;
+using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Catalog;
 using SqlFlow.Core.Comparison;
 using SqlFlow.Core.Compute;
@@ -52,11 +53,13 @@ public sealed class ComputeTaskExecutor
     private readonly CatalogService _catalog;
     private readonly IConnectionResolver _resolver;
     private readonly IConnectionFactory _factory;
+    private readonly IInferenceService _inference;
     private readonly Dictionary<string, IComputeOperation> _registered = new(StringComparer.Ordinal);
 
     /// <summary>An executor over the built-in datasource operations only.</summary>
-    public ComputeTaskExecutor(CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory)
-        : this(catalog, resolver, factory, [])
+    public ComputeTaskExecutor(
+        CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory, IInferenceService inference)
+        : this(catalog, resolver, factory, inference, [])
     {
     }
 
@@ -67,15 +70,18 @@ public sealed class ComputeTaskExecutor
     /// them unreachable.
     /// </summary>
     public ComputeTaskExecutor(
-        CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory, IEnumerable<IComputeOperation> operations)
+        CatalogService catalog, IConnectionResolver resolver, IConnectionFactory factory, IInferenceService inference,
+        IEnumerable<IComputeOperation> operations)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(resolver);
         ArgumentNullException.ThrowIfNull(factory);
+        ArgumentNullException.ThrowIfNull(inference);
         ArgumentNullException.ThrowIfNull(operations);
         _catalog = catalog;
         _resolver = resolver;
         _factory = factory;
+        _inference = inference;
 
         foreach (var operation in operations)
         {
@@ -142,8 +148,8 @@ public sealed class ComputeTaskExecutor
             // large warehouse and an anti-join over a billion rows both legitimately outrun any deadline that
             // would be safe for an interactive browse. They stay cancellable (the operator cancel path) and
             // are backstopped by the queue's running-task expiry, exactly like detectUniqueKey.
-            ComputeOperations.DetectUniqueKey or ComputeOperations.DuplicateKeys or ComputeOperations.CompareBaseline
-                => Timeout.InfiniteTimeSpan,
+            ComputeOperations.DetectUniqueKey or ComputeOperations.InferColumnTypes or ComputeOperations.DuplicateKeys
+                or ComputeOperations.CompareBaseline => Timeout.InfiniteTimeSpan,
             // A business query carries its OWN timeout, chosen when it was approved, so the executor does not
             // impose a second one that could cut a query the approver deliberately allowed time for. A report's
             // query carries the one its document declares.
@@ -233,6 +239,9 @@ public sealed class ComputeTaskExecutor
 
             case ComputeOperations.DetectUniqueKey:
                 return await DetectUniqueKeyAsync(payload, reference, kind, ct).ConfigureAwait(false);
+
+            case ComputeOperations.InferColumnTypes:
+                return await InferColumnTypesAsync(payload, reference, kind, ct).ConfigureAwait(false);
 
             case ComputeOperations.MissingIndexes:
             case ComputeOperations.StatisticsHealth:
@@ -325,6 +334,62 @@ public sealed class ComputeTaskExecutor
         var report = (await UniqueKeyDetector.DetectAsync(probe, probe.EligibleColumns, options, ct).ConfigureAwait(false))
             with { ObjectName = name.QualifiedName, ExcludedColumns = probe.ExcludedColumns };
         return ToJson(report);
+    }
+
+    /// <summary>
+    /// The SQL type each column's values convert to, through the engine's own type inference (<see cref="IInferenceService"/>,
+    /// what a load's <c>inferTypes</c> runs and what <c>sqlflow infer</c> prints), with the counts it chose from. It profiles
+    /// the rows the task's sample names (by default <see cref="ComputeTaskPayload.DefaultInferenceSample"/>, 0 for every
+    /// row) of the named columns (every column when it names none), in the database the task names or the connection's own.
+    /// The answer carries counts, lengths and types, never a value; the transform SELECT the report also builds is left
+    /// out, since each column's own expression is in it.
+    /// </summary>
+    private async Task<string> InferColumnTypesAsync(
+        ComputeTaskPayload payload, string reference, DataSourceKind? kind, CancellationToken ct)
+    {
+        var resolved = await _resolver.ResolveAsync(reference, ConnectionRole.Source, kind, ct).ConfigureAwait(false);
+        if (resolved.Kind is not (DataSourceKind.MSSQL or DataSourceKind.AZDB))
+        {
+            throw new SqlFlowException(
+                $"inferColumnTypes profiles with T-SQL; the source resolved to kind '{resolved.Kind}'. Only SQL Server and " +
+                "Azure SQL sources are supported.");
+        }
+
+        var name = RequiredName(payload);
+        var connection = name.Database is { } database
+            ? new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(resolved.CanonicalString) { InitialCatalog = database }.ConnectionString
+            : resolved.CanonicalString;
+        var sample = payload.SampleSize ?? ComputeTaskPayload.DefaultInferenceSample;
+        var report = await _inference.InferAsync(
+            new Core.Model.InferenceRequest
+            {
+                Connection = connection,
+                Schema = name.Schema,
+                Table = name.Name,
+                Columns = payload.Columns ?? [],
+                Policy = new Core.Model.TypeInferencePolicy { Enabled = true, SampleSize = sample },
+            },
+            ct).ConfigureAwait(false);
+
+        return ToJson(new
+        {
+            @object = name.QualifiedName,
+            sampleSize = sample,
+            culture = report.Culture,
+            dateOrder = report.DateOrder,
+            columns = report.Columns.Select(c => new
+            {
+                c.ColumnName,
+                inferredType = c.DataType,
+                c.Converted,
+                c.SelectExpression,
+                c.Style,
+                c.NumericFormat,
+                profiled = c.Sampled,
+                rows = c.Total,
+                c.Evidence,
+            }),
+        });
     }
 
     /// <summary>Runs one of the warehouse-health DMV probes. The kind gate ran at enqueue for explicit kinds; an

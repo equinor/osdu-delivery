@@ -26,6 +26,8 @@ sourceRefs:
   - src/SqlFlow.Core/Model/FileDiscovery.cs
   - src/SqlFlow.Core/Model/FileRef.cs
   - src/SqlFlow.Core/Model/PreIngestionCsv.cs
+  - src/SqlFlow.Core/Model/SourceFileScan.cs
+  - src/SqlFlow.ControlPlane/Api/PipelineSourceColumns.cs
 ---
 
 # File discovery, date windows, and post-load lifecycle
@@ -125,6 +127,12 @@ After a successful load, `CompleteAsync` reuses the same file snapshot the load 
 The whole step is a no-op when none of the four options is set.
 
 A lifecycle target path is treated as a directory when it exists as one or has no file extension; otherwise it is used as the destination file name. Missing destination directories are created automatically (src/SqlFlow.Sources/LocalFileLifecycle.cs).
+
+## Scanning a flow's source
+
+`GET /api/v1/pipelines/{id}/source-columns?files=20&expect=a,b` reads what the files at a file flow's source carry now, file by file, without loading a row: what a drop zone holds after new files arrive, and whether a column a downstream step needs is in every one of them. It takes the flow's document as the last sync stored it, resolves a relative location against the flow's folder in the repository's checkout and a `${...}` location through the control plane's resolver (as a run does, `SourceLocations`), and asks the flow's reader for `ISourceReader.ScanFileColumnsAsync`: the files Stages 1 and 2 select, newest first and at most `files` of them (1 to 200, default 20), each read for its header alone through the same per-file schema read a load makes, so a column is named as the load names it. The caller names the flow, never a location.
+
+The answer lists each read file with its columns (a file whose header cannot be read is listed with its error, and the others are still read), every column with how many files carry it and the oldest and newest of those, and the table the flow loads into as the catalog holds it. `newColumns` are in some file and not yet in that table; `notInFiles` are in the table and in no file read, leaving out the columns a load adds itself (the reader's provenance and key columns, `generated`, and SQLFlow's `_DW` columns). Each name in `expect` is answered with how many files carry it, whether every one does, whether the table has it, and the files it is missing from; it matches a column as the load names it or as the file writes it. A selection that matches no file answers `filesMatched: 0` with the engine's reason. The route is in the operate scope, as source discovery is, since it reads the source with the deployment's identity; the MCP tool `source_columns` calls it.
 
 ## Configuration touchpoints
 

@@ -45,6 +45,77 @@ public sealed record InferredColumnReport
 
     public long Sampled { get; init; }
     public long Total { get; init; }
+
+    /// <summary>What the profile counted of the column's values, which the type was chosen from: the counts each type
+    /// converts, and the longest text and widest number seen. Counts and lengths only, never a value.</summary>
+    public ColumnEvidence? Evidence { get; init; }
+}
+
+/// <summary>
+/// The counts behind an inferred column type: of the column's non-null values in the profiled rows, how many convert to
+/// each type the inference considers, with the type picked when every one of them does. A column whose values are all
+/// 0 and 1 converts to <c>bit</c>, a whole number and a decimal alike, which is why the counts are worth reading beside
+/// the type chosen: the type a value must have where it goes may be another of those it fits.
+/// </summary>
+public sealed record ColumnEvidence
+{
+    /// <summary>The non-null values profiled.</summary>
+    public long NonNull { get; init; }
+
+    /// <summary>Values that are boolean tokens (0, 1, true, false, yes, no, y, n).</summary>
+    public long AsBoolean { get; init; }
+
+    /// <summary>Values that convert to <c>bigint</c>.</summary>
+    public long AsInteger { get; init; }
+
+    /// <summary>Integer values with significant leading zeros (a code, a zip), which inference keeps as text.</summary>
+    public long WithLeadingZeros { get; init; }
+
+    /// <summary>Values that convert to <c>decimal</c> under the convention that fits most of them.</summary>
+    public long AsDecimal { get; init; }
+
+    /// <summary>Values that convert to <c>float</c> under that convention (scientific notation included).</summary>
+    public long AsFloat { get; init; }
+
+    /// <summary>The most digits after the decimal point, under that convention.</summary>
+    public int MaxScale { get; init; }
+
+    /// <summary>The most digits before the decimal point, under that convention.</summary>
+    public int MaxIntegerDigits { get; init; }
+
+    /// <summary>Values that convert to <c>datetime2</c> under the date style that fits most of them.</summary>
+    public long AsDateTime { get; init; }
+
+    /// <summary>Values that convert to <c>date</c> under the date style that fits most of them.</summary>
+    public long AsDate { get; init; }
+
+    /// <summary>Values that convert to <c>uniqueidentifier</c>.</summary>
+    public long AsGuid { get; init; }
+
+    /// <summary>The longest value, in characters.</summary>
+    public int MaxLength { get; init; }
+
+    /// <summary>The counts of one profile.</summary>
+    public static ColumnEvidence From(ColumnProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        var numeric = profile.NumericCandidates.OrderByDescending(c => c.AsDecimal).ThenByDescending(c => c.AsFloat).FirstOrDefault();
+        return new ColumnEvidence
+        {
+            NonNull = profile.NonNull,
+            AsBoolean = profile.AsBitTokens,
+            AsInteger = profile.AsBigInt,
+            WithLeadingZeros = profile.LeadingZeroInts,
+            AsDecimal = numeric?.AsDecimal ?? 0,
+            AsFloat = numeric?.AsFloat ?? 0,
+            MaxScale = numeric?.MaxScale ?? 0,
+            MaxIntegerDigits = numeric?.MaxIntegerDigits ?? 0,
+            AsDateTime = profile.DateTimeCandidates.Select(c => c.Count).DefaultIfEmpty(0).Max(),
+            AsDate = profile.DateCandidates.Select(c => c.Count).DefaultIfEmpty(0).Max(),
+            AsGuid = profile.AsGuid,
+            MaxLength = profile.MaxLen,
+        };
+    }
 }
 
 /// <summary>Result of running the inferred conversions against the table to sanity-check them.</summary>

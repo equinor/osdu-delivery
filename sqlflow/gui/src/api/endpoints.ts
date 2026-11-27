@@ -216,13 +216,15 @@ export interface PipelineFilesQuery extends PageQuery {
 export interface SchemaChangeQuery extends PageQuery {
   repoId?: string;
   database?: string;
+  /** One catalog object's changes, by its key. */
+  objectKey?: string;
   changeType?: string;
   /** ISO instant; only changes observed at or after it are returned. */
   since?: string;
   search?: string;
 }
 
-/** What the source-control snapshots found changing in the managed databases. */
+/** What the source-control snapshots and the catalog's own reads found changing in the managed databases. */
 export const schemaChangeApi = {
   list: (query: SchemaChangeQuery = {}) =>
     get<PagedResult<SchemaChange>>("/api/v1/schema-changes", query as QueryParams),

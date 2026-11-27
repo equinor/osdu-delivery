@@ -382,13 +382,16 @@ impl GuiLinks {
             }
         }
 
-        // One recorded schema change. Its object has no catalog key here (the feed records the database, not
-        // the server reference that keys the catalog), so the board's own tree, filtered to the object's name,
-        // is where the change is read. Claimed before the run rule below, so the run that saw it stays a
-        // reference rather than becoming the row's page.
-        if !links.contains_key("page") && map.contains_key("changeType") {
+        // One recorded schema change (a column it moved has a change type and a name too, but no database). The
+        // board's own tree, filtered to the object's name, is where the change is read; a change the catalog read
+        // itself carries the object's catalog key, which opens the object too. Claimed before the run rule below,
+        // so the run that saw it stays a reference rather than becoming the row's page.
+        if !links.contains_key("page") && map.contains_key("changeType") && map.contains_key("database") {
             if let Some(name) = text(map, "name") {
                 links.insert("page".to_string(), self.schema_changes(Some(name)).into());
+            }
+            if let Some(key) = text(map, "objectKey") {
+                links.insert("object".to_string(), self.object(key).into());
             }
         }
 
@@ -1027,6 +1030,25 @@ mod tests {
         // The snapshot run that saw it, and the scm flow that took it, stay references.
         assert_eq!(links_of(&payload, "/0/links/run"), json!("/runs/run-4"));
         assert_eq!(links_of(&payload, "/0/links/flow"), json!("/pipelines/p-9"));
+    }
+
+    #[test]
+    fn a_change_the_catalog_read_opens_its_object_and_leaves_its_columns_alone() {
+        let links = GuiLinks::new("");
+        let mut payload = json!([{
+            "id": 92, "repoId": "r-1", "runId": null, "pipelineId": null, "database": "Warehouse",
+            "category": "Table", "schema": "pre", "name": "Trips", "changeType": "Changed", "origin": "Sync",
+            "objectKey": "${env:warehouse_db}|warehouse|pre|trips", "occurredUtc": "2026-11-27T10:00:00Z",
+            "columns": [{ "name": "distance", "changeType": "Changed", "fromType": "bit", "toType": "decimal(38,18)" }]
+        }]);
+        links.decorate(&mut payload);
+
+        assert_eq!(links_of(&payload, "/0/links/page"), json!("/schema-changes?q=Trips&window=all"));
+        assert_eq!(
+            links_of(&payload, "/0/links/object"),
+            json!(GuiLinks::new("").object("${env:warehouse_db}|warehouse|pre|trips"))
+        );
+        assert!(payload.pointer("/0/columns/0/links").is_none(), "{payload}");
     }
 
     #[test]

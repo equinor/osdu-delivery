@@ -16,5 +16,8 @@ public sealed record InferenceRequest
     /// only a declared type changes an existing column's type. Empty on the view's first build.</summary>
     public IReadOnlyDictionary<string, string> ExistingTypes { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The columns to profile, by name; empty profiles every column of the table.</summary>
+    public IReadOnlyList<string> Columns { get; init; } = [];
+
     public string QualifiedName => $"[{Schema}].[{Table}]";
 }

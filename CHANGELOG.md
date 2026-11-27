@@ -22,6 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change refused with the manual steps. The table keeps every row, its `RecId` and its system dates; values that do not
   convert refuse the change with a count and a sample until the pre flow maps them and a full-load run re-renders them
   ([Column type changes](sqlflow/docs/reference/concepts/column-type-changes.md)).
+- **Schema history without a snapshot flow.** Each sync, and each schema registration run, records a table or view whose
+  columns it read differently from the time before, with every column added, dropped, or changed in type, nullability or
+  place. `GET /api/v1/schema-changes` returns each change's `origin` (`Sync` or `Snapshot`), its `objectKey` and its
+  `columns`, filters by `objectKey` and finds a change by a column it moved; the comparison of a sync change sets the
+  table's columns before the window against now; **Schema changes** lists the moved columns, and the MCP server's
+  `database_schema_changes` and `database_object_compare` describe both origins
+  ([schema history](sqlflow/docs/reference/concepts/schema-history.md)).
+- **What new files in a drop zone carry.** `GET /api/v1/pipelines/{id}/source-columns` reads the header of each of the
+  newest files a file flow's source matches, without loading a row, and sets their columns against the table the flow
+  loads into: the columns new to it, its columns no file carries, and the ones asked about, file by file. The MCP
+  server's `source_columns` calls it ([scanning a flow's source](sqlflow/docs/reference/concepts/file-discovery-and-lifecycle.md#scanning-a-flows-source)).
+- **The type a column's values convert to, with the counts behind it.** The compute operation `inferColumnTypes` (the MCP
+  server's `infer_column_types`) profiles a table's columns on a node with the engine's own type inference, and
+  `sqlflow infer` prints the same counts: how many values convert to each type, the widest scale and the longest value,
+  never a value ([type inference](sqlflow/docs/reference/concepts/type-inference.md#profiling-a-table-on-request)).
+- **The type a delivery flow's source column should have.** `GET /api/v1/delivery/flows/{pipelineId}/column-types` (the
+  MCP server's `delivery_column_types`) sets each column the flow's mapping reads beside the OSDU properties it fills,
+  with its catalog type, the type its pre flow declares and the one its last run detected, the type to declare and
+  whether the render would hold its records; asked to profile, the MCP tool adds the column's value counts
+  ([column types](osdu/docs/reference/concepts/column-types.md)).
 - **Every delivery flow's counts in one call.** `GET /api/v1/delivery/flows/stats?partition=` answers each flow's counts
   as a whole and in the partition named, and says why for a flow that cannot be counted; the Delivery page and the home
   page read it in place of a call or two per flow. A flow whose document does not parse shows **Not counted** with why on

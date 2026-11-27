@@ -37,6 +37,11 @@ public static class ComputeOperations
     /// <summary>Profile one table/view for its minimal unique key(s) (SQL Server / Azure SQL sources only).</summary>
     public const string DetectUniqueKey = "detectUniqueKey";
 
+    /// <summary>Profile the columns of one table/view for the SQL type each one's values convert to, with the counts
+    /// behind the choice, through the engine's own type inference (SQL Server / Azure SQL sources only). It returns
+    /// counts, lengths and the chosen types, never a value.</summary>
+    public const string InferColumnTypes = "inferColumnTypes";
+
     /// <summary>Report the engine's missing-index advisories (<c>sys.dm_db_missing_index_*</c>) for the scoped
     /// database, ranked by estimated improvement, with a ready-to-review CREATE INDEX suggestion per advisory
     /// (SQL Server / Azure SQL sources only).</summary>
@@ -81,7 +86,7 @@ public static class ComputeOperations
     /// <summary>Every operation this build understands, for validation messages.</summary>
     public static readonly string[] All =
         [TestConnection, ListDatabases, ListSchemas, ListObjects, SearchObjects, IntrospectObject, DetectUniqueKey,
-         MissingIndexes, StatisticsHealth, IndexUsage, TopQueries, DuplicateKeys, CompareBaseline,
+         InferColumnTypes, MissingIndexes, StatisticsHealth, IndexUsage, TopQueries, DuplicateKeys, CompareBaseline,
          RunQuery, ReportQuery];
 
     /// <summary>The operations that run a statement the control plane placed on the queue row: an approved query, or a
@@ -101,7 +106,8 @@ public static class ComputeOperations
 
     public static bool IsKnown(string? operation)
         => operation is TestConnection or ListDatabases or ListSchemas or ListObjects or SearchObjects
-            or IntrospectObject or DetectUniqueKey || IsQuery(operation) || IsWarehouseHealth(operation) || IsDataOps(operation);
+            or IntrospectObject or DetectUniqueKey or InferColumnTypes
+            || IsQuery(operation) || IsWarehouseHealth(operation) || IsDataOps(operation);
 
     /// <summary>The longest name an operation a host module registers may have.</summary>
     public const int MaxRegisteredNameLength = 32;
@@ -216,7 +222,7 @@ public sealed record ComputeTaskPayload
 
     /// <summary>duplicateKeys: the columns that identify one real row. Left empty the check reads the key
     /// the TABLE declares; this is where the answer to a report's <c>question</c> comes back when the table
-    /// declares no usable key.</summary>
+    /// declares no usable key. inferColumnTypes: the columns to profile; left empty, every column.</summary>
     public IReadOnlyList<string>? Columns { get; init; }
 
     /// <summary>compareBaseline: what to compare (inventory, schema, or data).</summary>
@@ -429,7 +435,7 @@ public sealed record ComputeTaskPayload
 
                 break;
 
-            case ComputeOperations.IntrospectObject or ComputeOperations.DetectUniqueKey:
+            case ComputeOperations.IntrospectObject or ComputeOperations.DetectUniqueKey or ComputeOperations.InferColumnTypes:
                 if (string.IsNullOrWhiteSpace(Schema) || string.IsNullOrWhiteSpace(ObjectName))
                 {
                     throw new SqlFlowException($"{Operation} requires both schema and objectName.");
@@ -510,7 +516,46 @@ public sealed record ComputeTaskPayload
                 throw new SqlFlowException("maxCandidates must be between 1 and 20.");
             }
         }
+
+        if (Operation == ComputeOperations.InferColumnTypes)
+        {
+            // The profile is SQL Server's own TRY_CONVERT, as a load's inference is. An @alias resolves its kind on the
+            // node, where the executor checks the RESOLVED kind again.
+            if (ProviderKind is DataSourceKind.MySQL or DataSourceKind.PostgreSQL or DataSourceKind.Oracle)
+            {
+                throw new SqlFlowException(
+                    "inferColumnTypes profiles with T-SQL; the source must be SQL Server or Azure SQL (kind mssql or azdb).");
+            }
+
+            if (SampleSize is < 0 or (> 0 and < 1000) or > MaxSampleSize)
+            {
+                throw new SqlFlowException(
+                    $"sampleSize must be 0 (every row), omitted ({DefaultInferenceSample} rows), or between 1000 and {MaxSampleSize}.");
+            }
+
+            if (Columns is { Count: > MaxInferredColumns })
+            {
+                throw new SqlFlowException($"inferColumnTypes profiles at most {MaxInferredColumns} named columns at once.");
+            }
+
+            foreach (var column in Columns ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(column))
+                {
+                    throw new SqlFlowException("A column inferColumnTypes is asked to profile has no name.");
+                }
+
+                ValidateIdentifier(column, "columns");
+            }
+        }
     }
+
+    /// <summary>inferColumnTypes: how many rows a profile reads when the task does not say: enough for the counts to stand
+    /// for a landing table's values, few enough that one ask stays an interactive read.</summary>
+    public const int DefaultInferenceSample = 100_000;
+
+    /// <summary>inferColumnTypes: the most columns one task names.</summary>
+    public const int MaxInferredColumns = 500;
 
     /// <summary>The transport contract of an operation a host module registered: a non-blank, bounded target reference
     /// free of control characters (what it names is the operation's business: a flow, an object, a reference), and at

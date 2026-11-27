@@ -54,32 +54,52 @@ public sealed record GitRevisionDto(
     string Message);
 
 /// <summary>
-/// One database object's DDL at the two ends of a window: what the snapshot repository held before the window
-/// opened (<c>Before</c>) and what it holds now (<c>After</c>), so a reader sees the net change rather than
-/// replaying one commit at a time.
+/// One database object at the two ends of a window: how it stood before the window opened and how it stands now, so a
+/// reader sees the net change rather than replaying one change at a time. <c>Origin</c> says which history answered.
 ///
-/// A null <c>Before</c> revision means the repository has no commit at or before the window start (the history
-/// begins inside the window), and a null text on either side means the object's file was absent at that
-/// revision: no <c>BeforeText</c> is an object added during the window, no <c>AfterText</c> one dropped in it.
-/// <c>Truncated</c> says at least one side was cut at the inline limit, so a clipped script is never mistaken
-/// for the whole of it.
+/// For a <c>Snapshot</c> change the two sides are the object's DDL as the snapshot repository held it: a null
+/// <c>Before</c> revision means the repository has no commit at or before the window start (the history begins inside
+/// the window), and <c>After</c> is the commit it holds now. For a <c>Sync</c> change both revisions are null and the
+/// two sides are the object's columns, one line each (<c>[name] type NULL</c>): now as the catalog last read them, and
+/// before as they stood ahead of the first change the catalog recorded in the window. <c>Path</c> is the object's file
+/// in the snapshot repository, or its qualified name.
+///
+/// A null text on either side means the object was absent there: no <c>BeforeText</c> is an object added during the
+/// window, no <c>AfterText</c> one dropped in it (or, for a sync change, one the catalog no longer holds columns of).
+/// <c>Truncated</c> says at least one side was cut at the inline limit, so a clipped script is never mistaken for the
+/// whole of it.
 /// </summary>
 public sealed record SchemaObjectCompareDto(
     string Path,
     GitRevisionDto? Before,
-    GitRevisionDto After,
+    GitRevisionDto? After,
     string? BeforeText,
     string? AfterText,
     int LinesAdded,
     int LinesDeleted,
-    bool Truncated);
+    bool Truncated,
+    string Origin);
 
-/// <summary>One object a source-control snapshot found added, changed, or dropped, as the schema-history feed
-/// returns it. <c>CommitSha</c> links the row to the commit that carries the diff.</summary>
+/// <summary>One column a sync change found added, dropped or changed: its type, nullability and 1-based place before
+/// (<c>From</c>, null for an added column) and now (<c>To</c>, null for a dropped one).</summary>
+public sealed record SchemaChangeColumnDto(
+    string Name,
+    string ChangeType,
+    string? FromType,
+    string? ToType,
+    bool? FromNullable,
+    bool? ToNullable,
+    int? FromOrdinal,
+    int? ToOrdinal);
+
+/// <summary>One object found added, changed, or dropped, as the schema-history feed returns it. <c>Origin</c> says what
+/// found it: <c>Snapshot</c>, a source-control run, whose <c>CommitSha</c> links the row to the commit that carries the
+/// diff; or <c>Sync</c>, the catalog's own read of the object's columns (<c>ObjectKey</c>), whose <c>Columns</c> are the
+/// ones that moved. <c>RunId</c> is the run that found it, null for a change a repository sync found.</summary>
 public sealed record SchemaChangeDto(
     long Id,
     Guid RepoId,
-    Guid RunId,
+    Guid? RunId,
     Guid? PipelineId,
     string Database,
     string Category,
@@ -87,7 +107,10 @@ public sealed record SchemaChangeDto(
     string Name,
     string ChangeType,
     string? CommitSha,
-    DateTime OccurredUtc);
+    DateTime OccurredUtc,
+    string Origin,
+    string? ObjectKey,
+    IReadOnlyList<SchemaChangeColumnDto> Columns);
 
 /// <summary>A stored value a refused type change found that does not convert, with how many rows hold it.</summary>
 public sealed record TypeChangeSampleDto(string Value, long Rows);

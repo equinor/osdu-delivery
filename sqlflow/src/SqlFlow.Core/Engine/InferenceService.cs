@@ -114,6 +114,20 @@ public sealed class InferenceService : IInferenceService
         var locale = await ResolveLocaleAsync(request.Policy, connectionString, ct).ConfigureAwait(false);
 
         var columns = table.Columns.Select(c => c.Name).ToList();
+        if (request.Columns.Count > 0)
+        {
+            var named = new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);
+            var unknown = request.Columns.Where(c => !named.Contains(c)).ToList();
+            if (unknown.Count > 0)
+            {
+                throw new SqlFlowException(
+                    $"Table {request.QualifiedName} has no column {string.Join(", ", unknown.Select(c => $"'{c}'"))}.");
+            }
+
+            var asked = new HashSet<string>(request.Columns, StringComparer.OrdinalIgnoreCase);
+            columns = columns.Where(asked.Contains).ToList();
+        }
+
         var profiles = await _profiler.ProfileAsync(connectionString, request.Schema, request.Table, columns, request.Policy, locale, ct).ConfigureAwait(false);
 
         var inferred = profiles
@@ -131,6 +145,7 @@ public sealed class InferenceService : IInferenceService
             NumericFormat = c.NumericFormat?.ToString(),
             Sampled = profileByName.TryGetValue(c.ColumnName, out var p) ? p.NonNull : 0,
             Total = profileByName.TryGetValue(c.ColumnName, out var pt) ? pt.Total : 0,
+            Evidence = profileByName.TryGetValue(c.ColumnName, out var pe) ? ColumnEvidence.From(pe) : null,
         }).ToList();
 
         var report = new InferenceReport

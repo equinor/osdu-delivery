@@ -85,6 +85,8 @@ Which tool:
   delivery_cache_changes for what awaits approval.
 - Mappings and schemas: delivery_mappings, delivery_templates, delivery_osdu_schemas, delivery_osdu_schema_compare.
   Writing a mapping: delivery_scaffold_mapping, then delivery_check_mapping until valid, then propose_pipelines.
+  The type a source column should have: delivery_column_types (profile=true counts its values); what new files in a
+  pre flow's drop zone carry: source_columns; what changed in a table: database_schema_changes.
   A custom copy of a canonical kind, delivered beside it and linked to it both ways (the custom template's
   x-osdu-inheriting-from-kind, $parent in its mapping, $child in the canonical mapping): delivery-guide-linked-records.
 - Tests and dimensions: delivery_assertions, delivery_assertion_runs, delivery_dimensions. Retrievals: delivery_retrievals.

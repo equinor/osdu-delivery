@@ -80,6 +80,23 @@ public sealed class ComputeTaskPayloadTests
     }
 
     [Fact]
+    public void Validate_InferColumnTypes_NamesAnObject_OnSqlServer_WithBoundedColumnsAndSample()
+    {
+        var payload = Valid(ComputeOperations.InferColumnTypes) with { Schema = "pre", ObjectName = "Wells" };
+        payload.Validate();
+        (payload with { ProviderKind = DataSourceKind.AZDB, Columns = ["elevation", "spud_date"], SampleSize = 0 }).Validate();
+        (payload with { SampleSize = 1000 }).Validate();
+
+        Assert.Throws<SqlFlowException>(() => (payload with { ObjectName = null }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { ProviderKind = DataSourceKind.PostgreSQL }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { SampleSize = 999 }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { Columns = [" "] }).Validate());
+        Assert.Throws<SqlFlowException>(() => (payload with { Columns = [.. Enumerable.Range(0, ComputeTaskPayload.MaxInferredColumns + 1).Select(i => $"c{i}")] }).Validate());
+        Assert.Contains(ComputeOperations.InferColumnTypes, ComputeOperations.All);
+        Assert.True(ComputeOperations.IsKnown(ComputeOperations.InferColumnTypes));
+    }
+
+    [Fact]
     public void Validate_RejectsDetectUniqueKey_OnNonSqlServerKinds()
     {
         var payload = Valid(ComputeOperations.DetectUniqueKey) with { Schema = "dbo", ObjectName = "Orders" };

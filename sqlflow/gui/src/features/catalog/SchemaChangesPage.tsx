@@ -24,6 +24,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { RelativeTime } from "../../components/RelativeTime";
 import { SearchInput } from "../../components/SearchInput";
 import { fetchSchemaChanges } from "./fetchSchemaChanges";
+import { describeColumnChange, movesColumnMatching } from "./schemaChangeColumns";
 
 const windows = [
   { value: "1", label: "Last 24 hours" },
@@ -124,7 +125,8 @@ function foldTree(changes: readonly SchemaChange[]): DatabaseBranch[] {
     .sort((a, b) => byNameCi(a.database, b.database));
 }
 
-/** The panel behind a selected object: every time the snapshots saw it move, newest first. */
+/** The panel behind a selected object: every time a snapshot or the catalog saw it move, newest first, with the
+ * columns that moved when the catalog's own read found it. */
 function ObjectHistory({ branch, database }: { branch: ObjectBranch; database: string }) {
   const navigate = useNavigate();
   return (
@@ -136,29 +138,57 @@ function ObjectHistory({ branch, database }: { branch: ObjectBranch; database: s
         {branch.category} in <span className="font-mono">{database}</span>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-3">
         {branch.history.map((change) => {
           const meta = changeMeta[change.changeType];
           const Icon = meta.icon;
+          const runId = change.runId;
           return (
-            <div key={change.id} className="flex items-center gap-2 text-[13px]">
-              <Icon className={cn("size-4 shrink-0", meta.tone)} />
-              <span className={cn("w-[70px] shrink-0 font-medium", meta.tone)}>{meta.verb}</span>
-              <RelativeTime value={change.occurredUtc} />
-              {change.commitSha !== null && (
-                <Badge variant="outline" className="h-[18px] gap-1 px-1.5 font-mono text-[11px] text-muted-foreground">
-                  <GitCommit className="size-3" />
-                  {change.commitSha.slice(0, 8)}
-                </Badge>
+            <div key={change.id} data-testid={`schema-change-${change.id}`}>
+              <div className="flex items-center gap-2 text-[13px]">
+                <Icon className={cn("size-4 shrink-0", meta.tone)} />
+                <span className={cn("w-[70px] shrink-0 font-medium", meta.tone)}>{meta.verb}</span>
+                <RelativeTime value={change.occurredUtc} />
+                {change.commitSha !== null && (
+                  <Badge variant="outline" className="h-[18px] gap-1 px-1.5 font-mono text-[11px] text-muted-foreground">
+                    <GitCommit className="size-3" />
+                    {change.commitSha.slice(0, 8)}
+                  </Badge>
+                )}
+                {change.origin === "Sync" && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {runId === null ? "read by a sync" : "read by a registration run"}
+                  </span>
+                )}
+                {runId !== null && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-6 text-xs"
+                    onClick={() => navigate(`/runs/${runId}`)}
+                  >
+                    Run
+                  </Button>
+                )}
+              </div>
+              {change.columns.length > 0 && (
+                <ul className="mt-1 ml-6 space-y-0.5" data-testid="schema-change-columns">
+                  {change.columns.map((column) => {
+                    const columnMeta = changeMeta[column.changeType];
+                    return (
+                      <li key={column.name} className="flex min-w-0 items-baseline gap-2 text-[12px]">
+                        <span className={cn("w-3 shrink-0 font-mono", columnMeta.tone)}>
+                          {column.changeType === "Added" ? "+" : column.changeType === "Deleted" ? "-" : "~"}
+                        </span>
+                        <span className="shrink-0 font-mono">{column.name}</span>
+                        <span className="min-w-0 truncate font-mono text-muted-foreground">
+                          {describeColumnChange(column)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto h-6 text-xs"
-                onClick={() => navigate(`/runs/${change.runId}`)}
-              >
-                Run
-              </Button>
             </div>
           );
         })}
@@ -167,13 +197,14 @@ function ObjectHistory({ branch, database }: { branch: ObjectBranch; database: s
   );
 }
 
-/** One end of the comparison, named by the commit it came from so a reader can trace it back to a snapshot. */
-function Revision({ label, commit }: { label: string; commit: SchemaObjectCompare["before"] }) {
+/** One end of the comparison, named by the commit it came from so a reader can trace it back to a snapshot. A side
+ * the catalog's own reads give has no commit, so it is named by where it stands: before the window, or now. */
+function Revision({ label, commit, unnamed }: { label: string; commit: SchemaObjectCompare["before"]; unnamed: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className="text-muted-foreground">{label}</span>
       {commit === null
-        ? <span className="text-muted-foreground">the first snapshot</span>
+        ? <span className="text-muted-foreground">{unnamed}</span>
         : (
           <>
             <GitCommit className="size-3 shrink-0 text-muted-foreground" />
@@ -186,25 +217,27 @@ function Revision({ label, commit }: { label: string; commit: SchemaObjectCompar
 }
 
 /**
- * The DDL behind the selected object at both ends of the window: the script the snapshots held when the window
- * opened, against the one they hold now. The history list above says an object moved; this says what actually
- * moved inside it.
+ * The selected object at both ends of the window: for a snapshot change the script the snapshots held when the window
+ * opened against the one they hold now, and for a change the catalog read the object's columns before the window
+ * against the ones it reads now. The history list above says an object moved; this says what actually moved inside it.
  *
- * However many snapshots touched the object, this stays ONE before and ONE after, because that is the question
- * the window asks: not "what did each nightly run do" but "what is different now from then". The comparison is
- * read from the snapshot repository by the control plane, which resolves the git credential server-side, so the
- * browser never holds one.
+ * However many changes touched the object, this stays ONE before and ONE after, because that is the question the
+ * window asks: not "what did each nightly run do" but "what is different now from then". A snapshot comparison is read
+ * from the snapshot repository by the control plane, which resolves the git credential server-side, so the browser
+ * never holds one; a catalog comparison is worked back from the columns the catalog holds.
  */
 function ObjectCompare({
   branch, database, windowLabel, since,
 }: { branch: ObjectBranch; database: string; windowLabel: string; since: string | undefined }) {
-  // The newest row carries the object's identity and the snapshot flow that recorded it; the server derives the
-  // repository path from it, so no path is built here.
+  // The newest row carries the object's identity and what recorded it; the server derives the repository path or the
+  // catalog object from it, so nothing is built here.
   const latest = branch.history[0];
+  const synced = latest.origin === "Sync";
+  const unresolvable = !synced && latest.pipelineId === null;
   const compareQuery = useQuery({
     queryKey: ["schema-changes", "compare", latest.id, since],
     queryFn: () => schemaChangeApi.compare(latest.id, since === undefined ? {} : { since }),
-    enabled: latest.pipelineId !== null,
+    enabled: !unresolvable,
   });
 
   const compare = compareQuery.data;
@@ -226,7 +259,7 @@ function ObjectCompare({
         )}
       </div>
 
-      {latest.pipelineId === null
+      {unresolvable
         ? (
           <Alert className="mt-3">
             <AlertDescription>
@@ -250,9 +283,21 @@ function ObjectCompare({
               ? (
                 <Alert className="mt-3">
                   <AlertDescription>
-                    The snapshot repository holds no file at
-                    {" "}<span className="font-mono">{compare.path}</span> at either end of this window, so there
-                    is no script to compare. Widen the window to reach the snapshot that last carried it.
+                    {synced
+                      ? (
+                        <>
+                          The catalog holds no columns of
+                          {" "}<span className="font-mono">{compare.path}</span> at either end of this window, so there
+                          is nothing to compare. The next sync that reads it fills them in.
+                        </>
+                      )
+                      : (
+                        <>
+                          The snapshot repository holds no file at
+                          {" "}<span className="font-mono">{compare.path}</span> at either end of this window, so there
+                          is no script to compare. Widen the window to reach the snapshot that last carried it.
+                        </>
+                      )}
                   </AlertDescription>
                 </Alert>
               )
@@ -274,9 +319,13 @@ function ObjectCompare({
                     data-testid="schema-changes-diff"
                     caption={(
                       <span className="flex min-w-0 items-center gap-2">
-                        <Revision label="from" commit={compare.before} />
+                        <Revision
+                          label="from"
+                          commit={compare.before}
+                          unnamed={synced ? (since === undefined ? "the first read kept" : "before the window") : "the first snapshot"}
+                        />
                         <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
-                        <Revision label="to" commit={compare.after} />
+                        <Revision label="to" commit={compare.after} unnamed={synced ? "now" : "the latest snapshot"} />
                         <span className="min-w-0 truncate font-mono text-muted-foreground">{compare.path}</span>
                       </span>
                     )}
@@ -289,12 +338,13 @@ function ObjectCompare({
 
 /**
  * The schema history of the managed databases as a browsable tree: database, then schema, then the objects that
- * moved, each expanding to every time a snapshot saw it change. Source-control (scm) flows write this as they
- * run, so the page reads what the catalog already holds and touches no tracked database.
+ * moved, each expanding to every time it was seen to change. Source-control (scm) flows write this as they run, and
+ * so does every sync that reads an object's columns differently from the time before, so the page reads what the
+ * catalog already holds and touches no tracked database.
  *
  * The window defaults to the last 24 hours, which on a daily snapshot cadence is the last run: what moved in the
  * estate overnight, with the wider windows a click away when a change has to be traced further back. A change is
- * dated to the snapshot that first SAW it, so that cadence dates a change to the day, not the minute, the DDL ran.
+ * dated to the pass that first SAW it, so a daily cadence dates a change to the day, not the minute, the DDL ran.
  */
 export default function SchemaChangesPage() {
   const [window, setWindow] = useLocalStorageState("schema-changes.window", "1");
@@ -336,7 +386,8 @@ export default function SchemaChangesPage() {
       c.name.toLowerCase().includes(term)
       || (c.schema ?? "").toLowerCase().includes(term)
       || c.category.toLowerCase().includes(term)
-      || c.database.toLowerCase().includes(term));
+      || c.database.toLowerCase().includes(term)
+      || movesColumnMatching(c.columns, term));
   }, [changesQuery.data, term]);
 
   const tree = useMemo(() => foldTree(matching), [matching]);
@@ -393,7 +444,7 @@ export default function SchemaChangesPage() {
     <Page data-testid="page-schema-changes">
       <PageHeader
         title="Schema changes"
-        subtitle="What the source-control snapshots found changing in the managed databases."
+        subtitle="What changed in the tables and views of the managed databases."
       />
 
       {/* One card per tracked database: the tally over the window and how long since it last moved. Together
@@ -450,7 +501,7 @@ export default function SchemaChangesPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Object, schema, or type"
+          placeholder="Object, schema, type, or column"
           label="Search schema changes"
           testId="schema-changes-search"
           className="w-[240px]"
@@ -481,7 +532,7 @@ export default function SchemaChangesPage() {
           ? (
             <EmptyState
               title="No schema history yet"
-              description="Schema history is written by source-control flows (flowType: scm). Add one per database you want tracked, or wait for the first scheduled snapshot to run."
+              description="Schema history is written when a sync reads a table's columns differently from the time before, and by source-control flows (flowType: scm). The first sync of a repository is the starting point, so changes show from the next one on."
             />
           )
           : tree.length === 0
@@ -550,7 +601,7 @@ export default function SchemaChangesPage() {
                 {selected === null
                   ? (
                     <Card className="flex items-center justify-center gap-0 rounded-lg p-8 text-sm text-muted-foreground">
-                      Select an object to see every change the snapshots recorded for it.
+                      Select an object to see every change recorded for it.
                     </Card>
                   )
                   : <ObjectHistory branch={selected.branch} database={selected.database} />}

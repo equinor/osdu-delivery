@@ -28,6 +28,22 @@ public interface ISourceReader
     Task<IReadOnlyList<SourceColumn>> GetColumnsAsync(SourceSpec source, CancellationToken ct = default);
 
     /// <summary>
+    /// The columns each file of the source carries, newest file first and at most <paramref name="maxFiles"/> of them,
+    /// read from each file's header as a run reads it: the same selection, the same names. What a drop zone holds now,
+    /// file by file, so a column that arrived in some files and not others is seen. A source that is not a set of files
+    /// answers with its columns as one entry naming no file. Reads no row.
+    /// </summary>
+    async Task<SourceFileScan> ScanFileColumnsAsync(SourceSpec source, int maxFiles, CancellationToken ct = default)
+    {
+        var columns = await GetColumnsAsync(source, ct).ConfigureAwait(false);
+        return new SourceFileScan(
+            1,
+            [new SourceFileColumns(null, null, null, null, columns, [.. columns.Select(c => c.Name)], null)],
+            [],
+            null);
+    }
+
+    /// <summary>
     /// Opens a forward-only reader over the source rows (shaped to <paramref name="columns"/>) and
     /// returns the manifest of files read - the in-result file log for stateless mode.
     /// </summary>

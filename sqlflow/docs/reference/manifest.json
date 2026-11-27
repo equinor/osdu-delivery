@@ -1316,7 +1316,9 @@
         "src/SqlFlow.Core/Model/FileDateSpec.cs",
         "src/SqlFlow.Core/Model/FileDiscovery.cs",
         "src/SqlFlow.Core/Model/FileRef.cs",
-        "src/SqlFlow.Core/Model/PreIngestionCsv.cs"
+        "src/SqlFlow.Core/Model/PreIngestionCsv.cs",
+        "src/SqlFlow.Core/Model/SourceFileScan.cs",
+        "src/SqlFlow.ControlPlane/Api/PipelineSourceColumns.cs"
       ]
     },
     {
@@ -1987,6 +1989,46 @@
       ]
     },
     {
+      "id": "concept-schema-history",
+      "corpus": "reference",
+      "path": "concepts/schema-history.md",
+      "title": "Schema history: what changed in a table or view, and when",
+      "type": "concept",
+      "summary": "The catalog's record of every table and view whose columns changed: written by each sync and schema registration that reads an object's columns differently, ...",
+      "keywords": [
+        "schema history",
+        "schema changes",
+        "column added",
+        "column dropped",
+        "type changed",
+        "what changed",
+        "SchemaChange",
+        "SchemaChangeColumn",
+        "database_schema_changes",
+        "database_object_compare",
+        "origin sync",
+        "origin snapshot"
+      ],
+      "related": [
+        "concept-shadow-catalog",
+        "concept-column-type-history",
+        "flow-scm",
+        "concept-schema-evolution",
+        "concept-lineage-tiers",
+        "concept-maintenance"
+      ],
+      "sourceRefs": [
+        "src/SqlFlow.Catalog/CatalogEntities.cs",
+        "src/SqlFlow.Catalog/CatalogSync.cs",
+        "src/SqlFlow.Catalog/SchemaColumnDiff.cs",
+        "src/SqlFlow.Catalog/Migrations/20261127123211_SchemaHistoryFromSync.cs",
+        "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/GitHistoryEndpoints.cs",
+        "tools/sqlflow-mcp/src/server.rs",
+        "gui/src/features/catalog/SchemaChangesPage.tsx"
+      ]
+    },
+    {
       "id": "concept-semantic-layer",
       "corpus": "reference",
       "path": "concepts/semantic-layer.md",
@@ -2153,7 +2195,11 @@
         "src/SqlFlow.SqlServer/SqlServerLocaleProvider.cs",
         "src/SqlFlow.Yaml/YamlFlowLoader.cs",
         "src/SqlFlow.Yaml/InferSpecLoader.cs",
-        "src/SqlFlow.Cli/Program.cs"
+        "src/SqlFlow.Cli/Program.cs",
+        "src/SqlFlow.Core/Model/InferenceReport.cs",
+        "src/SqlFlow.Core/Compute/ComputeTaskModels.cs",
+        "src/SqlFlow.Execution/ComputeTaskExecutor.cs",
+        "tools/sqlflow-mcp/src/server.rs"
       ]
     },
     {

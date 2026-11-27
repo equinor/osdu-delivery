@@ -188,11 +188,24 @@ public static class GitHistoryEndpoints
     {
         var change = await db.SchemaChanges.AsNoTracking()
             .Where(c => c.Id == id)
-            .Select(c => new { c.PipelineId, c.Database, c.Category, c.Schema, c.Name })
+            .Select(c => new { c.PipelineId, c.Database, c.Category, c.Schema, c.Name, c.Origin, c.ObjectKey })
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (change is null)
         {
             return NotFound("schema change", id);
+        }
+
+        if (string.Equals(change.Origin, SchemaChangeOrigins.Sync, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(change.ObjectKey))
+            {
+                return BadRequest(
+                    "No catalog object",
+                    "This change names no catalog object, so its columns cannot be set against the ones the catalog holds now.");
+            }
+
+            var name = string.Join('.', new[] { change.Database, change.Schema, change.Name }.Where(part => !string.IsNullOrEmpty(part)));
+            return TypedResults.Ok(await CompareSyncedObjectAsync(db, change.ObjectKey, name, since, ct).ConfigureAwait(false));
         }
 
         if (change.PipelineId is not { } pipelineId)
@@ -439,7 +452,46 @@ public static class GitHistoryEndpoints
             afterText,
             patch.LinesAdded,
             patch.LinesDeleted,
-            beforeTruncated || afterTruncated);
+            beforeTruncated || afterTruncated,
+            SchemaChangeOrigins.Snapshot);
+    }
+
+    /// <summary>
+    /// One catalog object's columns at the two ends of a window, from the catalog's own history of it: after, the columns
+    /// the catalog last read; before, those worked back from them through every change the catalog recorded for the
+    /// object since <paramref name="since"/> (through every change it ever recorded when no window is given, which is
+    /// the first read it kept, or nothing for an object it saw added). Read across every repository whose pass recorded
+    /// a change to the object, since the object is one whichever repository's flows reach it.
+    /// </summary>
+    private static async Task<SchemaObjectCompareDto> CompareSyncedObjectAsync(
+        CatalogDbContext db, string objectKey, string name, DateTime? since, CancellationToken ct)
+    {
+        var now = (await db.ObjectColumns.AsNoTracking()
+                .Where(c => c.ObjectKey == objectKey)
+                .OrderBy(c => c.Ordinal)
+                .ToListAsync(ct).ConfigureAwait(false))
+            .Select(c => new SchemaColumnState(c.Name, c.DataType, c.Nullable, c.Ordinal))
+            .ToList();
+
+        var changes = db.SchemaChanges.AsNoTracking()
+            .Where(c => c.ObjectKey == objectKey && c.Origin == SchemaChangeOrigins.Sync);
+        if (since is { } from)
+        {
+            changes = changes.Where(c => c.OccurredUtc >= from);
+        }
+
+        var newestFirst = await changes
+            .Include(c => c.Columns)
+            .OrderByDescending(c => c.OccurredUtc).ThenByDescending(c => c.Id)
+            .AsSplitQuery()
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var before = SchemaColumnDiff.Before(now, newestFirst);
+        var beforeText = before is null ? null : SchemaColumnDiff.Render(before);
+        var afterText = SchemaColumnDiff.Render(now);
+        var (added, deleted) = SchemaColumnDiff.LineTally(beforeText, afterText);
+        return new SchemaObjectCompareDto(
+            name, null, null, beforeText, afterText, added, deleted, Truncated: false, SchemaChangeOrigins.Sync);
     }
 
     /// <summary>The newest commit no later than an instant: the repository's state as the window opened. Null when

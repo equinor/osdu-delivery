@@ -102,6 +102,19 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   without it nothing is asked
   ([records adopt](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/cli/records.md#records-adopt)).
 
+### What changed in a table, and the type a column should have
+
+- **Schema changes covers every table a flow reaches.** Each sync records a table or view whose columns it read
+  differently from the time before, and **Schema changes** lists the columns that moved under each change (added,
+  dropped, or changed in type, nullability or place), finds a change by a column's name, and sets the table's columns
+  before the window against now. No snapshot flow is needed
+  ([schema history](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/concepts/schema-history.md)).
+- **The MCP server answers three new questions.** `source_columns` reads the headers of the newest files at a pre
+  flow's source and sets their columns against the table it loads into; `infer_column_types` counts what a table's
+  column values convert to; `delivery_column_types` says, for each column a delivery flow's mapping reads, the type it
+  should have for the OSDU property it fills, and why
+  ([column types](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/column-types.md)).
+
 ## [1.0.5]
 
 ### Environments

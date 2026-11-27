@@ -533,12 +533,14 @@ public static class CatalogEndpoints
 
     /// <summary>
     /// The estate's schema history, newest first: every object a source-control snapshot found added, changed, or
-    /// dropped. Filters narrow it to one database, one kind of change, or a time window, and a free-text term
-    /// matches the object's schema, name, or category so "where did Citybikes_Trips change" is one query. This is
-    /// a read of what the snapshots already recorded; it touches no database being tracked.
+    /// dropped, and every object whose columns the catalog read differently from the time before, with the columns that
+    /// moved. Filters narrow it to one database, one object (its catalog key), one kind of change, or a time window, and
+    /// a free-text term matches the object's schema, name, or category, or a column a change moved, so "where did
+    /// Citybikes_Trips change" and "when did TripDuration appear" are one query each. This is a read of what the history
+    /// already recorded; it touches no database being tracked.
     /// </summary>
     private static async Task<Ok<PagedResult<SchemaChangeDto>>> ListSchemaChangesAsync(
-        CatalogDbContext db, Guid? repoId, string? database, string? changeType, DateTime? since, string? search,
+        CatalogDbContext db, Guid? repoId, string? database, string? objectKey, string? changeType, DateTime? since, string? search,
         int? page, int? pageSize, CancellationToken ct)
     {
         var (p, size) = PageRequest.Normalize(page, pageSize);
@@ -547,6 +549,12 @@ public static class CatalogEndpoints
         if (repoId is { } repo)
         {
             query = query.Where(c => c.RepoId == repo);
+        }
+
+        if (!string.IsNullOrWhiteSpace(objectKey))
+        {
+            var key = objectKey.Trim();
+            query = query.Where(c => c.ObjectKey == key);
         }
 
         if (!string.IsNullOrWhiteSpace(database))
@@ -567,19 +575,44 @@ public static class CatalogEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            query = query.Where(c => c.Name.Contains(term) || c.Schema!.Contains(term) || c.Category.Contains(term));
+            query = query.Where(c => c.Name.Contains(term) || c.Schema!.Contains(term) || c.Category.Contains(term)
+                || c.Columns.Any(column => column.Name.Contains(term)));
         }
 
         var total = await query.LongCountAsync(ct).ConfigureAwait(false);
-        var items = await query
+        var rows = await query
             .OrderByDescending(c => c.OccurredUtc).ThenBy(c => c.Database).ThenBy(c => c.Id)
             .Skip((p - 1) * size).Take(size)
+            .Select(c => new
+            {
+                c.Id, c.RepoId, c.RunId, c.PipelineId, c.Database, c.Category, c.Schema, c.Name,
+                c.ChangeType, c.CommitSha, c.OccurredUtc, c.Origin, c.ObjectKey,
+            })
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        // The page's columns in one read, in the order the change recorded them.
+        var ids = rows.Select(c => c.Id).ToList();
+        var columns = ids.Count == 0
+            ? []
+            : await db.SchemaChangeColumns.AsNoTracking()
+                .Where(c => ids.Contains(c.SchemaChangeId))
+                .OrderBy(c => c.Id)
+                .ToListAsync(ct).ConfigureAwait(false);
+        var columnsByChange = columns.ToLookup(c => c.SchemaChangeId);
+
+        var items = rows
             .Select(c => new SchemaChangeDto(
                 c.Id, c.RepoId, c.RunId, c.PipelineId, c.Database, c.Category, c.Schema, c.Name,
-                c.ChangeType, c.CommitSha, c.OccurredUtc))
-            .ToListAsync(ct).ConfigureAwait(false);
+                c.ChangeType, c.CommitSha, c.OccurredUtc, c.Origin, c.ObjectKey,
+                columnsByChange[c.Id].Select(ToDto).ToList()))
+            .ToList();
         return TypedResults.Ok(new PagedResult<SchemaChangeDto>(items, p, size, total));
     }
+
+    /// <summary>One moved column as the feed returns it.</summary>
+    internal static SchemaChangeColumnDto ToDto(CatalogSchemaChangeColumn column)
+        => new(column.Name, column.ChangeType, column.FromType, column.ToType,
+            column.FromNullable, column.ToNullable, column.FromOrdinal, column.ToOrdinal);
 
     /// <summary>
     /// One row per tracked database: how many changes it has recorded, split by kind, and when it was last seen to

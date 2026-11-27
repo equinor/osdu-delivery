@@ -381,7 +381,7 @@ public sealed class CatalogSync
                 var scheduleWarnings = new List<string>();
                 var stageable = await DropSchedulesNamedByApiAsync(context, repoId, schedules, scheduleWarnings, ct).ConfigureAwait(false);
 
-                await UpsertRepoAsync(context, repoId, repoName, repoRemoteUrl, root, nowUtc, ct).ConfigureAwait(false);
+                var repoSyncedBefore = await UpsertRepoAsync(context, repoId, repoName, repoRemoteUrl, root, nowUtc, ct).ConfigureAwait(false);
                 var pipelineTally = await ApplyPipelinesAsync(context, repoId, nowUtc, pipelines, presentIds, stageable, excludedFlowPaths, brokenPaths, ct).ConfigureAwait(false);
                 var runTally = await ApplyRunsAsync(context, repoId, runs, runsSkipped, runsFailed, report, nowUtc, ct).ConfigureAwait(false);
 
@@ -391,7 +391,7 @@ public sealed class CatalogSync
                     lineage = await ApplyLineageAsync(
                         context, repoId, report, includeDerived,
                         collected.SchemaRegistrations.Select(r => r.Flow).ToHashSet(StringComparer.OrdinalIgnoreCase),
-                        nowUtc, ct).ConfigureAwait(false);
+                        repoSyncedBefore, nowUtc, ct).ConfigureAwait(false);
                     await ApplyExtractedReportSpecsAsync(context, repoId, collected, nowUtc, ct).ConfigureAwait(false);
                     RecordSubscriberInputs(context, repoId, collected.SubscriberInputHash);
                 }
@@ -591,7 +591,9 @@ public sealed class CatalogSync
         return Path.GetFullPath(path).StartsWith(root, comparison);
     }
 
-    private static async Task UpsertRepoAsync(
+    /// <summary>Records the repository and this pass's sighting of it. Returns whether the catalog already held it: false
+    /// for its first sync, whose objects are all new to the catalog without being new to their databases.</summary>
+    private static async Task<bool> UpsertRepoAsync(
         CatalogDbContext context, Guid repoId, string repoName, string? remoteUrl, string root, DateTime nowUtc, CancellationToken ct)
     {
         // Tracked explicitly: the control plane's context defaults to no-tracking, and the updates below (and the
@@ -608,14 +610,14 @@ public sealed class CatalogSync
                 FirstSeenUtc = nowUtc,
                 LastSyncUtc = nowUtc,
             });
+            return false;
         }
-        else
-        {
-            repo.Name = repoName;
-            repo.RemoteUrl = NullIfBlank(remoteUrl) ?? repo.RemoteUrl;
-            repo.RootPath = root;
-            repo.LastSyncUtc = nowUtc;
-        }
+
+        repo.Name = repoName;
+        repo.RemoteUrl = NullIfBlank(remoteUrl) ?? repo.RemoteUrl;
+        repo.RootPath = root;
+        repo.LastSyncUtc = nowUtc;
+        return true;
     }
 
     /// <summary>
@@ -1141,7 +1143,7 @@ public sealed class CatalogSync
             // A registration run's objects: this sync's own lineage pass owns the repo's edges, so only the objects
             // and their dictionary are recorded here.
             await ApplySchemaRegistrationAsync(
-                    context, prepared.Document.RootElement, repoId, prepared.Run.PipelineId, replaceEdges: false,
+                    context, prepared.Document.RootElement, repoId, prepared.Run.RunId, prepared.Run.PipelineId, replaceEdges: false,
                     nowUtc, ct)
                 .ConfigureAwait(false);
             files += detail.Files;
@@ -1424,12 +1426,14 @@ public sealed class CatalogSync
     /// Records what a successful schema registration run (flowType: sch) read: its tables and views go into the
     /// global object registry and data dictionary through the same write a lineage sync uses, and, when
     /// <paramref name="replaceEdges"/>, the run's pipeline's <c>Registers</c> edges are replaced by the objects it
-    /// registered now. The full sync passes false because its own lineage pass owns the repo's edges. Returns whether
-    /// the registered set changed, which is what makes subscriber links worth recomputing. Any other run, a failed
-    /// registration, or a dry run records nothing.
+    /// registered now. The full sync passes false because its own lineage pass owns the repo's edges. The columns it read
+    /// that differ from the ones the catalog held are recorded as schema changes of run <paramref name="runId"/>; an
+    /// object it registers for the first time is recorded as added only when its flow had registered before. Returns
+    /// whether the registered set changed, which is what makes subscriber links worth recomputing. Any other run, a
+    /// failed registration, or a dry run records nothing.
     /// </summary>
     internal static async Task<bool> ApplySchemaRegistrationAsync(
-        CatalogDbContext context, JsonElement root, Guid repoId, Guid? pipelineId, bool replaceEdges,
+        CatalogDbContext context, JsonElement root, Guid repoId, Guid runId, Guid? pipelineId, bool replaceEdges,
         DateTime nowUtc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -1472,15 +1476,25 @@ public sealed class CatalogSync
                 KeyOrigin = o.KeyColumns.Count > 0 ? LineageModelOrigin.Constraint : null,
             })
             .ToList();
+        // A flow that has registered before has a database the catalog knows, so an object new to the catalog is new to
+        // the database; a first registration only introduces what was already there.
+        var registersRelation = nameof(LineageRelation.Registers);
+        var registeredBefore = await context.LineageEdges.AsNoTracking()
+            .AnyAsync(e => e.RepoId == repoId && e.PipelineId == pipeline && e.Relation == registersRelation, ct)
+            .ConfigureAwait(false);
+        var passColumns = new PassColumns();
+        var changes = new SchemaChangeRecorder(new SchemaChangeScope(repoId, runId, pipeline, registeredBefore), nowUtc);
+
         // A registration reads its database live, so its spelling of every name is the database's own.
-        await UpsertObjectsAsync(context, nodes, static _ => true, nowUtc, ct).ConfigureAwait(false);
+        var touched = await UpsertObjectsAsync(context, nodes, static _ => true, nowUtc, passColumns, changes, ct).ConfigureAwait(false);
+        await WriteObjectColumnsAsync(context, passColumns, touched, changes, ct).ConfigureAwait(false);
+        changes.Stage(context, touched);
 
         if (!replaceEdges)
         {
             return false;
         }
 
-        var registersRelation = nameof(LineageRelation.Registers);
         var previous = (await context.LineageEdges.AsNoTracking()
                 .Where(e => e.RepoId == repoId && e.PipelineId == pipeline && e.Relation == registersRelation)
                 .Select(e => e.ObjectKey)
@@ -1604,7 +1618,7 @@ public sealed class CatalogSync
                         runRecorded = true;
                         detail = await AddRunDetailAsync(context, document.RootElement, run, ct: ct).ConfigureAwait(false);
                         await ApplySchemaRegistrationAsync(
-                                context, document.RootElement, repoId, run.PipelineId, replaceEdges: true, nowUtc, ct)
+                                context, document.RootElement, repoId, run.RunId, run.PipelineId, replaceEdges: true, nowUtc, ct)
                             .ConfigureAwait(false);
 
                         // Refresh the pipeline's detected view projection from this run ("latest run wins"),
@@ -1863,9 +1877,11 @@ public sealed class CatalogSync
     }
 
     /// <summary>
-    /// Upserts <paramref name="nodes"/> into the global object registry and refreshes their data dictionary: the one
-    /// object write shared by a lineage sync and a schema registration run. Returns every row touched (updated or
-    /// inserted) and how many column rows were staged.
+    /// Upserts <paramref name="nodes"/> into the global object registry and offers the columns each node carries to the
+    /// pass's data dictionary (<paramref name="columns"/>, written by <see cref="WriteObjectColumnsAsync"/>): the one
+    /// object write shared by a lineage sync and a schema registration run. Every object this inserts is named to
+    /// <paramref name="changes"/>, which records it as added when its pass records new objects. Returns every row
+    /// touched (updated or inserted).
     /// </summary>
     /// <param name="context">The catalog.</param>
     /// <param name="nodes">The objects to record.</param>
@@ -1873,10 +1889,12 @@ public sealed class CatalogSync
     /// object's database, schema and name the one kept: a pass that did not keeps the stored spelling of a name it only
     /// spells differently in case, so the spelling does not change with each kind of pass.</param>
     /// <param name="nowUtc">The pass's time, stamped as each touched object's last sighting.</param>
+    /// <param name="columns">The pass's column sets, which each node's columns are offered to.</param>
+    /// <param name="changes">The pass's schema changes, told of each object this inserts.</param>
     /// <param name="ct">Cancels the reads.</param>
-    private static async Task<(Dictionary<string, CatalogObject> Touched, int Columns)> UpsertObjectsAsync(
+    private static async Task<Dictionary<string, CatalogObject>> UpsertObjectsAsync(
         CatalogDbContext context, IReadOnlyList<Core.Lineage.LineageObjectNode> nodes, Func<string, bool> readLive, DateTime nowUtc,
-        CancellationToken ct)
+        PassColumns columns, SchemaChangeRecorder changes, CancellationToken ct)
     {
         // Objects are GLOBAL (shared across repos by their canonical key): upserted here, and forgotten only once
         // nothing knows them (RemoveUnknownObjectsAsync, after the pass commits). Load only the keys this report
@@ -1937,80 +1955,289 @@ public sealed class CatalogSync
                 var added = CatalogProjection.MapObject(node, nowUtc);
                 context.Objects.Add(added);
                 touchedObjects[node.Key] = added;
+                changes.Inserted(node.Key);
             }
         }
 
-        // Object columns are the data dictionary. Refresh ONLY the objects a tier supplied columns for this
-        // sync (the node carries columns); a failed or offline collection (no columns) never wipes a
-        // previously-collected dictionary. Replace-by-key so a re-read reflects schema changes. Precedence:
-        // an offline (Observed) set must not overwrite a live (Derived) set an earlier connected sync stored,
-        // so a key is refreshed only when this sync's tier is at least as authoritative as what is on record.
-        // A dropped object's columns are NOT cleaned up here: they go with the object itself when a pass forgets it
-        // (RemoveUnknownObjectsAsync), and until then the dictionary keeps what it last read.
-        var columns = 0;
-        var withColumns = nodes.Where(o => o.Columns.Count > 0).ToList();
-        if (withColumns.Count > 0)
+        // Only the objects a tier supplied columns for are offered (the node carries columns), so a failed or offline
+        // collection (no columns) never wipes a previously collected dictionary.
+        foreach (var node in nodes)
         {
-            var candidateKeys = withColumns.Select(o => o.Key).Distinct().ToList();
-            // Distinct per chunk is a true distinct: the chunks partition the keys, so no pair repeats.
-            var existingTiers = await SelectByKeysAsync(
-                    candidateKeys,
-                    chunk => context.ObjectColumns
-                        .Where(c => chunk.Contains(c.ObjectKey))
-                        .Select(c => new { c.ObjectKey, c.Tier })
-                        .Distinct()
-                        .ToListAsync(ct))
-                .ConfigureAwait(false);
-            var existingRankByKey = existingTiers
-                .GroupBy(x => x.ObjectKey, StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.Max(x => TierRank(x.Tier)), StringComparer.Ordinal);
+            columns.Offer(node.Key, (node.ColumnsTier ?? Core.Lineage.LineageTier.Observed).ToString(), node.Columns);
+        }
 
-            var nodesToRefresh = withColumns
-                .Where(o => TierRank((o.ColumnsTier ?? Core.Lineage.LineageTier.Observed).ToString())
-                            >= (existingRankByKey.TryGetValue(o.Key, out var rank) ? rank : -1))
-                // One object can be surfaced by more than one flow in a single report: a generated view is
-                // DECLARED by its pre flow (transform.generateView) and READ as the source of its ods flow, so
-                // the node list holds two nodes with the same key, each numbering columns from ordinal 1.
-                // Staging both would violate the (ObjectKey, Ordinal) unique index and abort the ENTIRE repo
-                // sync over one object. Keep a single column set per key: the most authoritative tier, then the
-                // richest declaration.
-                .GroupBy(o => o.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g
-                    .OrderByDescending(o => TierRank((o.ColumnsTier ?? Core.Lineage.LineageTier.Observed).ToString()))
-                    .ThenByDescending(o => o.Columns.Count)
-                    .First())
-                .ToList();
-            var refreshedKeys = nodesToRefresh.Select(o => o.Key).Distinct().ToList();
-            if (refreshedKeys.Count > 0)
+        return touchedObjects;
+    }
+
+    /// <summary>
+    /// The column sets one pass read, at most one per object, which <see cref="WriteObjectColumnsAsync"/> writes. One
+    /// object can be read more than once in a pass: a generated view is DECLARED by its pre flow (transform.generateView)
+    /// and READ as the source of the flow after it, so the report holds two nodes with the same key, each numbering its
+    /// columns from 1; and the run trace's generating DDL gives a column set of its own. Staging two would break the
+    /// dictionary's (ObjectKey, Ordinal) unique index and roll back the whole sync over one object, and comparing two with
+    /// the catalog would record one change twice. So the pass keeps one: the most authoritative tier, then the richest.
+    /// </summary>
+    private sealed class PassColumns
+    {
+        private readonly Dictionary<string, ObjectColumnSet> _sets = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The sets the pass keeps, one per object.</summary>
+        public IReadOnlyCollection<ObjectColumnSet> Sets => _sets.Values;
+
+        /// <summary>Offers one read of an object's columns. It replaces the set the pass holds for the object only when
+        /// it is more authoritative, or as authoritative with more columns; an empty read is no read.</summary>
+        public void Offer(string key, string tier, IReadOnlyList<Core.Lineage.LineageColumn> columns)
+        {
+            if (columns.Count == 0)
             {
-                await ExecuteByKeysAsync(
-                        refreshedKeys, chunk => context.ObjectColumns.Where(c => chunk.Contains(c.ObjectKey)).ExecuteDeleteAsync(ct))
-                    .ConfigureAwait(false);
-                var refreshed = new List<CatalogObjectColumn>();
-                foreach (var node in nodesToRefresh)
+                return;
+            }
+
+            if (_sets.TryGetValue(key, out var held)
+                && (TierRank(held.Tier) > TierRank(tier)
+                    || (TierRank(held.Tier) == TierRank(tier) && held.Columns.Count >= columns.Count)))
+            {
+                return;
+            }
+
+            _sets[key] = new ObjectColumnSet(held?.Key ?? key, tier, columns);
+        }
+    }
+
+    /// <summary>One read of one object's columns, and the tier it was read at.</summary>
+    private sealed record ObjectColumnSet(string Key, string Tier, IReadOnlyList<Core.Lineage.LineageColumn> Columns);
+
+    /// <summary>
+    /// What a pass's schema changes are recorded under (<see cref="CatalogSchemaChange"/>, origin
+    /// <see cref="SchemaChangeOrigins.Sync"/>): the repository, the schema registration run and its flow (none for a
+    /// repository sync), and whether an object new to the catalog is recorded as added. A repository's first sync and a
+    /// flow's first registration record no object as added: everything they find is new to the catalog without being new
+    /// to its database.
+    /// </summary>
+    private sealed record SchemaChangeScope(Guid RepoId, Guid? RunId, Guid? PipelineId, bool RecordsNewObjects);
+
+    /// <summary>
+    /// The schema changes one pass finds, at most one per object, staged once the pass has written its columns. Only a
+    /// database object is recorded (a table, a view, a function: one with a database), never a file, a dataset or a
+    /// subscriber, whose columns are what a flow reads of them rather than a schema.
+    /// </summary>
+    private sealed class SchemaChangeRecorder(SchemaChangeScope scope, DateTime nowUtc)
+    {
+        private readonly HashSet<string> _inserted = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, CatalogSchemaChange> _changes = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The pass inserted this object into the registry: the catalog had never seen it.</summary>
+        public void Inserted(string key) => _inserted.Add(key);
+
+        /// <summary>The pass read the columns of an object the catalog held none for: added with them when the pass
+        /// inserted the object and records new objects, else the first read of it, which is no change.</summary>
+        public void FirstRead(CatalogObject item, IReadOnlyList<SchemaColumnState> columns)
+        {
+            if (scope.RecordsNewObjects && _inserted.Contains(item.Key))
+            {
+                Record(item, SchemaChangeKinds.Added, SchemaColumnDiff.AllAdded(columns));
+            }
+        }
+
+        /// <summary>The pass read an object's columns differently from the columns the catalog held of it.</summary>
+        public void Changed(CatalogObject item, IReadOnlyList<CatalogSchemaChangeColumn> columns)
+            => Record(item, SchemaChangeKinds.Changed, columns);
+
+        /// <summary>Stages every change the pass found, with an object the pass inserted whose columns no read gave
+        /// recorded as added on its own. Returns how many it staged.</summary>
+        public int Stage(CatalogDbContext context, IReadOnlyDictionary<string, CatalogObject> objects)
+        {
+            if (scope.RecordsNewObjects)
+            {
+                foreach (var key in _inserted)
                 {
-                    var tier = (node.ColumnsTier ?? Core.Lineage.LineageTier.Observed).ToString();
-                    foreach (var column in node.Columns)
+                    if (!_changes.ContainsKey(key) && objects.TryGetValue(key, out var item))
                     {
-                        refreshed.Add(new CatalogObjectColumn
-                        {
-                            ObjectKey = node.Key,
-                            Ordinal = column.Ordinal,
-                            Name = column.Name,
-                            DataType = column.DataType,
-                            Nullable = column.Nullable,
-                            Tier = tier,
-                        });
+                        Record(item, SchemaChangeKinds.Added, []);
                     }
                 }
+            }
 
-                await ReplayAppliedTypeChangesAsync(context, refreshed, ct).ConfigureAwait(false);
-                context.ObjectColumns.AddRange(refreshed);
-                columns += refreshed.Count;
+            foreach (var change in _changes.Values)
+            {
+                context.SchemaChanges.Add(change);
+            }
+
+            return _changes.Count;
+        }
+
+        private void Record(CatalogObject item, string changeType, IReadOnlyList<CatalogSchemaChangeColumn> columns)
+        {
+            if (string.IsNullOrWhiteSpace(item.Database) || NonDatabaseKinds.Contains(item.Kind, StringComparer.Ordinal))
+            {
+                return;
+            }
+
+            _changes[item.Key] = new CatalogSchemaChange
+            {
+                RepoId = scope.RepoId,
+                RunId = scope.RunId,
+                PipelineId = scope.PipelineId,
+                Origin = SchemaChangeOrigins.Sync,
+                ObjectKey = item.Key,
+                Database = item.Database,
+                Category = string.IsNullOrWhiteSpace(item.Kind) ? nameof(Core.Lineage.LineageNodeKind.Unknown) : item.Kind,
+                Schema = item.Schema,
+                Name = item.Name,
+                ChangeType = changeType,
+                OccurredUtc = nowUtc,
+                Columns = [.. columns],
+            };
+        }
+    }
+
+    /// <summary>
+    /// Writes the pass's column sets into the data dictionary and records what moved. A set is written only when its tier
+    /// is at least as authoritative as what the catalog holds of the object (an offline read never overwrites a live one),
+    /// and only when it differs from it, so a re-read that finds the same columns writes nothing. Each set's types are first
+    /// brought up to the type changes runs have applied since (<see cref="ReplayAppliedTypeChangesAsync"/>), as the stored
+    /// columns were, so a re-read of the script a table was created with is not taken for a change back. A set read at the
+    /// same tier as the one held is compared with it column by column (<see cref="SchemaColumnDiff"/>) and a difference is
+    /// recorded as a change; a set read at another tier is a new baseline, since a live read and a parsed script describe
+    /// the same columns in their own words. A dropped object's columns are NOT cleaned up here: they go with the object
+    /// when a pass forgets it (RemoveUnknownObjectsAsync), and until then the dictionary keeps what it last read. Returns
+    /// how many columns the written and unchanged sets hold.
+    /// </summary>
+    private static async Task<int> WriteObjectColumnsAsync(
+        CatalogDbContext context, PassColumns pass, IReadOnlyDictionary<string, CatalogObject> objects, SchemaChangeRecorder changes,
+        CancellationToken ct)
+    {
+        var sets = pass.Sets.ToList();
+        if (sets.Count == 0)
+        {
+            return 0;
+        }
+
+        var keys = sets.Select(s => s.Key).ToList();
+        var stored = (await SelectByKeysAsync(
+                    keys,
+                    chunk => context.ObjectColumns.AsNoTracking().Where(c => chunk.Contains(c.ObjectKey)).ToListAsync(ct))
+                .ConfigureAwait(false))
+            .GroupBy(c => c.ObjectKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Ordinal).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        // Another write in this transaction (a schema registration run recorded by the same sync) may already have staged
+        // an object's columns: what it staged stands, unless this set outranks it, and the change was its to record.
+        var staged = context.ChangeTracker.Entries<CatalogObjectColumn>()
+            .Where(e => e.State == EntityState.Added)
+            .GroupBy(e => e.Entity.ObjectKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Max(e => TierRank(e.Entity.Tier)), StringComparer.OrdinalIgnoreCase);
+
+        // The rows each set would write, one per position (a read that numbered two columns alike keeps the first, as the
+        // unique index demands), for the sets the tier precedence lets through.
+        var candidates = new List<(ObjectColumnSet Set, List<CatalogObjectColumn> Rows, List<CatalogObjectColumn>? Held)>();
+        foreach (var set in sets)
+        {
+            stored.TryGetValue(set.Key, out var held);
+            if (held is not null && TierRank(set.Tier) < held.Max(c => TierRank(c.Tier)))
+            {
+                continue;
+            }
+
+            var rows = set.Columns
+                .GroupBy(c => c.Ordinal)
+                .Select(g => g.First())
+                .OrderBy(c => c.Ordinal)
+                .Select(c => new CatalogObjectColumn
+                {
+                    ObjectKey = set.Key,
+                    Ordinal = c.Ordinal,
+                    Name = c.Name,
+                    DataType = c.DataType,
+                    Nullable = c.Nullable,
+                    Tier = set.Tier,
+                })
+                .ToList();
+            candidates.Add((set, rows, held));
+        }
+
+        await ReplayAppliedTypeChangesAsync(context, [.. candidates.SelectMany(c => c.Rows)], ct).ConfigureAwait(false);
+
+        var columns = 0;
+        var rewrite = new List<(string Key, List<CatalogObjectColumn> Rows)>();
+        foreach (var (set, rows, held) in candidates)
+        {
+            if (staged.TryGetValue(set.Key, out var stagedRank))
+            {
+                if (TierRank(set.Tier) > stagedRank)
+                {
+                    rewrite.Add((set.Key, rows));
+                    columns += rows.Count;
+                }
+
+                continue;
+            }
+
+            columns += rows.Count;
+            if (held is not null && Identical(held, rows))
+            {
+                continue;
+            }
+
+            rewrite.Add((set.Key, rows));
+            if (!objects.TryGetValue(set.Key, out var item))
+            {
+                continue;
+            }
+
+            var after = rows.Select(c => new SchemaColumnState(c.Name, c.DataType, c.Nullable, c.Ordinal)).ToList();
+            if (held is null)
+            {
+                changes.FirstRead(item, after);
+            }
+            else if (held.All(c => string.Equals(c.Tier, set.Tier, StringComparison.Ordinal)))
+            {
+                var before = held.Select(c => new SchemaColumnState(c.Name, c.DataType, c.Nullable, c.Ordinal)).ToList();
+                var moved = SchemaColumnDiff.Compare(before, after);
+                if (moved.Count > 0)
+                {
+                    changes.Changed(item, moved);
+                }
             }
         }
 
-        return (touchedObjects, columns);
+        if (rewrite.Count == 0)
+        {
+            return columns;
+        }
+
+        await ExecuteByKeysAsync(
+                rewrite.Select(r => r.Key).ToList(),
+                chunk => context.ObjectColumns.Where(c => chunk.Contains(c.ObjectKey)).ExecuteDeleteAsync(ct))
+            .ConfigureAwait(false);
+        context.ObjectColumns.AddRange(rewrite.SelectMany(r => r.Rows));
+        return columns;
+    }
+
+    /// <summary>Whether the catalog already holds exactly these rows: the same columns at the same places with the same
+    /// spelling, type, nullability and tier. Only then is the write skipped; any other difference is written, whether or
+    /// not it is a schema change.</summary>
+    private static bool Identical(IReadOnlyList<CatalogObjectColumn> held, IReadOnlyList<CatalogObjectColumn> rows)
+    {
+        if (held.Count != rows.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < held.Count; i++)
+        {
+            var (was, now) = (held[i], rows[i]);
+            if (was.Ordinal != now.Ordinal
+                || !string.Equals(was.Name, now.Name, StringComparison.Ordinal)
+                || !string.Equals(was.DataType, now.DataType, StringComparison.Ordinal)
+                || was.Nullable != now.Nullable
+                || !string.Equals(was.Tier, now.Tier, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>The stored kinds of the nodes a flow declaration alone creates, which the endpoint sweep removes once no
@@ -2025,7 +2252,7 @@ public sealed class CatalogSync
     /// transaction opened.</summary>
     private static async Task<(int Objects, int Superseded, int Columns, int Edges, int FlowDeps, int Waves, bool Connected, int PreservedDerived)> ApplyLineageAsync(
         CatalogDbContext context, Guid repoId, LineageReport report, bool includeDerived,
-        IReadOnlySet<string> registrationFlows, DateTime nowUtc, CancellationToken ct)
+        IReadOnlySet<string> registrationFlows, bool repoSyncedBefore, DateTime nowUtc, CancellationToken ct)
     {
         // Identity adoption, the offline half of identity healing: a database-less identity in this report
         // adopts the registry's database-qualified row when exactly one exists for the same server reference
@@ -2036,22 +2263,27 @@ public sealed class CatalogSync
         report = await AdoptResolvedIdentitiesAsync(context, report, ct).ConfigureAwait(false);
 
         var readLive = report.InventoriedServers.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var (touchedObjects, columns) = await UpsertObjectsAsync(context, report.Objects, readLive.Contains, nowUtc, ct).ConfigureAwait(false);
+        var passColumns = new PassColumns();
+        // A repository sync is no run: its changes name the repository alone. Its first sync records no object as added.
+        var changes = new SchemaChangeRecorder(new SchemaChangeScope(repoId, null, null, repoSyncedBefore), nowUtc);
+        var touchedObjects = await UpsertObjectsAsync(context, report.Objects, readLive.Contains, nowUtc, passColumns, changes, ct).ConfigureAwait(false);
 
         // Offline object-body enrichment: fill each resolved object's generating script and interpreted column
         // dictionary from the run-statement trace already persisted in the catalog, so an offline sync (no live
         // catalog to read, no run.json on disk) still shows an object's code and columns, parsed from the exact
-        // T-SQL the engine ran. Additive to the tier-supplied columns above; a live (Derived) set is never
+        // T-SQL the engine ran. Offered beside the tier-supplied columns above; a live (Derived) set is never
         // downgraded.
-        columns += await ApplyObservedObjectScriptsAsync(context, repoId, report, touchedObjects, nowUtc, ct).ConfigureAwait(false);
+        await ApplyObservedObjectScriptsAsync(context, repoId, report, touchedObjects, nowUtc, passColumns, ct).ConfigureAwait(false);
+        var columns = await WriteObjectColumnsAsync(context, passColumns, touchedObjects, changes, ct).ConfigureAwait(false);
+        changes.Stage(context, touchedObjects);
 
-        // Final safety net for the data dictionary: the column set for one object is staged from more than one
-        // path (the report's tier-supplied columns above and the observed-script enrichment), and those paths
-        // delete-by-key against the DATABASE, not against each other's still-pending inserts. If two of them
-        // stage the same (ObjectKey, Ordinal), the unique index throws at SaveChanges and rolls back the WHOLE
-        // repo sync - every pipeline, run, and edge - over a single object. Collapse any duplicate staged column
-        // to the most authoritative tier so one object can never abort the sync. This runs on the change tracker
-        // just before the pass commits, so it catches collisions regardless of which path produced them.
+        // Final safety net for the data dictionary: this pass writes each object's columns once, but a schema
+        // registration run recorded by the same sync stages its objects' columns first, in the same transaction, and
+        // delete-by-key runs against the DATABASE, not against still-pending inserts. If two writes stage the same
+        // (ObjectKey, Ordinal), the unique index throws at SaveChanges and rolls back the WHOLE repo sync (every
+        // pipeline, run, and edge) over a single object. Collapse any duplicate staged column to the most
+        // authoritative tier so one object can never abort the sync. This runs on the change tracker just before the
+        // pass commits, so it catches collisions regardless of which write produced them.
         var stagedDuplicates = context.ChangeTracker.Entries<CatalogObjectColumn>()
             .Where(e => e.State == EntityState.Added)
             .Select(e => e.Entity)
@@ -2737,16 +2969,16 @@ public sealed class CatalogSync
         return result;
     }
 
-    private static async Task<int> ApplyObservedObjectScriptsAsync(
+    private static async Task ApplyObservedObjectScriptsAsync(
         CatalogDbContext context, Guid repoId, LineageReport report,
-        IReadOnlyDictionary<string, CatalogObject> touchedObjects, DateTime nowUtc, CancellationToken ct)
+        IReadOnlyDictionary<string, CatalogObject> touchedObjects, DateTime nowUtc, PassColumns passColumns, CancellationToken ct)
     {
         // Index this report's non-file objects by the database-less location key the generated two-part DDL
         // (`[schema].[name]`) resolves to, one location to all the object keys that share it (see EnrichableLocations).
         var keysByLocation = EnrichableLocations(report.Objects);
         if (keysByLocation.Count == 0)
         {
-            return 0;
+            return;
         }
 
         // The objects still awaiting a generating script. Only an object some flow WRITES or CREATES can have a
@@ -2762,7 +2994,7 @@ public sealed class CatalogSync
             StringComparer.Ordinal);
         if (remaining.Count == 0)
         {
-            return 0;
+            return;
         }
 
         // The active pipelines and the server each side of their generated SQL ran against (the target by
@@ -2776,7 +3008,7 @@ public sealed class CatalogSync
             .ToDictionary(g => g.Key, g => (g.First().TargetServer, g.First().SourceServer));
         if (pipelines.Count == 0)
         {
-            return 0;
+            return;
         }
 
         // Every committed run of this repo, newest first: an object's generating statement is taken from the most
@@ -2796,7 +3028,7 @@ public sealed class CatalogSync
             .ToList();
         if (runs.Count == 0)
         {
-            return 0;
+            return;
         }
 
         var runIds = runs.Select(r => r.RunId).ToList();
@@ -2811,7 +3043,7 @@ public sealed class CatalogSync
             .ToDictionary(g => g.Key, g => g.OrderBy(s => s.Ordinal).ToList());
         if (statementsByRun.Count == 0)
         {
-            return 0;
+            return;
         }
 
         // The generating script and column set discovered per resolved object key. First observation wins, and
@@ -2902,59 +3134,12 @@ public sealed class CatalogSync
             row.ScriptUpdatedUtc = nowUtc;
         }
 
-        // Refresh the column dictionary for each resolved object, replace-by-key, honoring the same tier
-        // precedence as the report's own column refresh: an Observed set never overwrites a Derived one.
-        if (columnsByKey.Count == 0)
+        // Offer each resolved object's parsed columns to the pass, which writes them under the same tier precedence as
+        // the report's own: an Observed set never overwrites a Derived one.
+        foreach (var (objectKey, columns) in columnsByKey)
         {
-            return 0;
+            passColumns.Offer(objectKey, nameof(Core.Lineage.LineageTier.Observed), columns);
         }
-
-        var candidateKeys = columnsByKey.Keys.ToList();
-        var existingTiers = await SelectByKeysAsync(
-                candidateKeys,
-                chunk => context.ObjectColumns
-                    .Where(c => chunk.Contains(c.ObjectKey))
-                    .Select(c => new { c.ObjectKey, c.Tier })
-                    .Distinct()
-                    .ToListAsync(ct))
-            .ConfigureAwait(false);
-        var existingRankByKey = existingTiers
-            .GroupBy(x => x.ObjectKey, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.Max(x => TierRank(x.Tier)), StringComparer.Ordinal);
-
-        var refreshKeys = candidateKeys
-            .Where(k => TierRank(nameof(Core.Lineage.LineageTier.Observed))
-                        >= (existingRankByKey.TryGetValue(k, out var rank) ? rank : -1))
-            .ToList();
-        if (refreshKeys.Count == 0)
-        {
-            return 0;
-        }
-
-        await ExecuteByKeysAsync(
-                refreshKeys, chunk => context.ObjectColumns.Where(c => chunk.Contains(c.ObjectKey)).ExecuteDeleteAsync(ct))
-            .ConfigureAwait(false);
-
-        var written = new List<CatalogObjectColumn>();
-        foreach (var objectKey in refreshKeys)
-        {
-            foreach (var column in columnsByKey[objectKey])
-            {
-                written.Add(new CatalogObjectColumn
-                {
-                    ObjectKey = objectKey,
-                    Ordinal = column.Ordinal,
-                    Name = column.Name,
-                    DataType = column.DataType,
-                    Nullable = column.Nullable,
-                    Tier = nameof(Core.Lineage.LineageTier.Observed),
-                });
-            }
-        }
-
-        await ReplayAppliedTypeChangesAsync(context, written, ct).ConfigureAwait(false);
-        context.ObjectColumns.AddRange(written);
-        return written.Count;
     }
 
     /// <summary>One type change a run made to a target column, as the column dictionary replays it.</summary>

@@ -283,7 +283,10 @@ Being out of the graph does not weaken anything else: the flow still has a lifec
 Every difference a snapshot finds is also recorded in the shadow catalog, one row per object, so "what changed in
 the warehouse this week" is a query rather than a diff of commits nobody has cloned. The rows carry the database,
 the object category, its schema and name, whether it was added, changed, or dropped, the commit that holds the
-diff, and when the snapshot observed it. A run that finds nothing writes no rows.
+diff, and when the snapshot observed it. A run that finds nothing writes no rows. They sit in the same
+[schema history](../concepts/schema-history.md) as the changes each sync records when it reads a table's columns
+differently, with `origin` `Snapshot` beside those changes' `Sync`: a snapshot adds the DDL itself, and changes the
+columns do not show (a view's new logic, a procedure's body).
 
 Three MCP tools read it, kept deliberately distinct from the pipeline-history tools so an assistant picks the
 right one: `database_schema_changes` searches what changed in a managed DATABASE, `database_object_compare`
@@ -293,8 +296,8 @@ different question about a different artifact.
 
 The GUI reads this at **Explore > Schema changes**: a database, schema, object tree over a date window (last 24
 hours by default, which on a daily snapshot cadence is the last run), where selecting an object shows every time a snapshot saw it move, each linking to the run.
-The `/api/v1/schema-changes` endpoint serves the same data, with `database`, `changeType`, `since`, and `search`
-filters, and `/api/v1/schema-changes/databases` returns the per-database tally.
+The `/api/v1/schema-changes` endpoint serves the same data, with `database`, `objectKey`, `changeType`, `since`,
+and `search` filters, and `/api/v1/schema-changes/databases` returns the per-database tally.
 
 Below the tree, the selected object's script is shown at both ends of the window, side by side (or as one inline
 patch), which is the "what actually changed" behind a row. The comparison is served by

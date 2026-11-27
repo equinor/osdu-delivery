@@ -1398,11 +1398,13 @@ public class CatalogRunFile
 }
 
 /// <summary>
-/// One database object a source-control snapshot found added, changed, or dropped since the previous run: the
-/// schema history of the managed estate as a queryable table instead of a git log. An scm run writes one row per
-/// difference, so "what changed in the warehouse this week" is a date-ordered read rather than a diff of commits
-/// nobody has cloned. A run that finds nothing writes no rows, which is the honest answer, and the schema is
-/// unchanged.
+/// One database object found added, changed, or dropped: the schema history of the managed estate as a queryable
+/// table instead of a git log. Two things write it (<see cref="Origin"/>). A source-control snapshot (an scm run)
+/// writes one row per object file its commit added, changed or deleted. The catalog itself writes one row per object
+/// whose columns a pass read differently from the columns it last read (a repository sync's connected read, the run
+/// trace's generating DDL, or a schema registration run), with the columns that moved in <see cref="Columns"/>. So
+/// "what changed in the warehouse this week" is a date-ordered read whether or not a snapshot flow watches the
+/// database. A pass that finds nothing writes no rows, which is the honest answer.
 /// </summary>
 public class CatalogSchemaChange
 {
@@ -1410,17 +1412,32 @@ public class CatalogSchemaChange
 
     public Guid RepoId { get; set; }
 
-    /// <summary>The scm run that observed the difference.</summary>
-    public Guid RunId { get; set; }
+    /// <summary>The run that observed the difference: the scm run of a <see cref="SchemaChangeOrigins.Snapshot"/>
+    /// row, or the schema registration run whose live read found a <see cref="SchemaChangeOrigins.Sync"/> row. Null
+    /// when a repository sync found it, which is no run.</summary>
+    public Guid? RunId { get; set; }
 
-    /// <summary>The snapshot flow's pipeline, so the change can be traced back to the document that found it.
-    /// Null when the run predates its pipeline row (a run recorded before the estate was synced).</summary>
+    /// <summary>The flow behind <see cref="RunId"/>, so the change can be traced back to the document that found it.
+    /// Null when the run predates its pipeline row (a run recorded before the estate was synced), and for a change a
+    /// repository sync found.</summary>
     public Guid? PipelineId { get; set; }
 
-    /// <summary>The database the object lives in, as the snapshot resolved it (the repository folder name).</summary>
+    /// <summary>What recorded the row: <see cref="SchemaChangeOrigins.Snapshot"/> (an scm run's commit, whose diff
+    /// holds the DDL) or <see cref="SchemaChangeOrigins.Sync"/> (the catalog's own reads of the object's columns,
+    /// whose difference is <see cref="Columns"/>).</summary>
+    public string Origin { get; set; } = SchemaChangeOrigins.Snapshot;
+
+    /// <summary>The catalog object a <see cref="SchemaChangeOrigins.Sync"/> row is about (server reference + database +
+    /// schema + name), so its columns then can be set against the ones the catalog holds now. Null on a snapshot row,
+    /// whose object is named by its file in the snapshot repository.</summary>
+    public string? ObjectKey { get; set; }
+
+    /// <summary>The database the object lives in, as the snapshot resolved it (the repository folder name), or as the
+    /// catalog holds it.</summary>
     public string Database { get; set; } = string.Empty;
 
-    /// <summary>The object category, which is also its repository folder: Table, View, StoredProcedure, and so on.</summary>
+    /// <summary>The object category: on a snapshot row its repository folder (Table, View, StoredProcedure, and so on),
+    /// on a sync row the catalog's kind of the object (Table, View, Function, and so on).</summary>
     public string Category { get; set; } = string.Empty;
 
     /// <summary>The object's schema, or null for a schema-less object (a database DDL trigger, a schema itself).</summary>
@@ -1435,12 +1452,19 @@ public class CatalogSchemaChange
     /// the run committed nothing (a dry run) or pushed no remote.</summary>
     public string? CommitSha { get; set; }
 
-    /// <summary>When the snapshot ran, in UTC: the resolution at which the change is dated. A daily snapshot dates
-    /// a change to the day it was first SEEN, which is not necessarily the day the DDL ran.</summary>
+    /// <summary>When the snapshot ran, or when the pass that read the difference ran, in UTC: the resolution at which
+    /// the change is dated. A change is dated to the pass that first SAW it, which is not necessarily when the DDL
+    /// ran: a daily snapshot dates it to the day, a sync to its own sync.</summary>
     public DateTime OccurredUtc { get; set; }
+
+    /// <summary>The columns that moved, on a <see cref="SchemaChangeOrigins.Sync"/> row: each one added, dropped, or
+    /// changed in type, nullability or place. An object the catalog saw for the first time lists every column it read
+    /// as added. Empty on a snapshot row.</summary>
+    public List<CatalogSchemaChangeColumn> Columns { get; set; } = [];
 }
 
-/// <summary>The three differences a snapshot can record. Compared ordinally; stored as written here.</summary>
+/// <summary>The three differences a schema change can record, for an object and for one of its columns. Compared
+/// ordinally; stored as written here.</summary>
 public static class SchemaChangeKinds
 {
     public const string Added = "Added";
@@ -1527,6 +1551,55 @@ public class CatalogColumnTypeChange
     /// <summary>Who asked for the run (<see cref="CatalogRun.RequestedBy"/>); null for a run recorded from its artifact
     /// alone.</summary>
     public string? RequestedBy { get; set; }
+}
+
+/// <summary>What writes a <see cref="CatalogSchemaChange"/> row. Compared ordinally; stored as written here.</summary>
+public static class SchemaChangeOrigins
+{
+    /// <summary>A source-control (scm) run's snapshot commit.</summary>
+    public const string Snapshot = "Snapshot";
+
+    /// <summary>The catalog's own reads of an object's columns, compared with the columns it read before.</summary>
+    public const string Sync = "Sync";
+}
+
+/// <summary>
+/// One column of a <see cref="CatalogSchemaChange"/> that the catalog read differently from the time before: added
+/// (only the <c>To</c> side), dropped (only the <c>From</c> side), or changed (both sides; its type, its nullability, or
+/// its place among the columns both reads hold). Types are as the catalog renders them, with length and precision
+/// (<c>nvarchar(100)</c>, <c>decimal(18,2)</c>).
+/// </summary>
+public class CatalogSchemaChangeColumn
+{
+    public long Id { get; set; }
+
+    /// <summary>The change this column is part of (<see cref="CatalogSchemaChange.Id"/>).</summary>
+    public long SchemaChangeId { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary><see cref="SchemaChangeKinds.Added"/>, <see cref="SchemaChangeKinds.Changed"/> or
+    /// <see cref="SchemaChangeKinds.Deleted"/>.</summary>
+    public string ChangeType { get; set; } = string.Empty;
+
+    /// <summary>The type it had before; null for an added column, or one whose type the earlier read did not say.</summary>
+    public string? FromType { get; set; }
+
+    /// <summary>The type it has now; null for a dropped column, or one whose type this read did not say.</summary>
+    public string? ToType { get; set; }
+
+    public bool? FromNullable { get; set; }
+
+    public bool? ToNullable { get; set; }
+
+    /// <summary>Its 1-based position before; null for an added column.</summary>
+    public int? FromOrdinal { get; set; }
+
+    /// <summary>Its 1-based position now; null for a dropped column.</summary>
+    public int? ToOrdinal { get; set; }
+
+    /// <summary>The change this column is part of.</summary>
+    public CatalogSchemaChange? SchemaChange { get; set; }
 }
 
 /// <summary>One data-quality assertion a run evaluated: the drill-down detail under a <see cref="CatalogRun"/>.</summary>

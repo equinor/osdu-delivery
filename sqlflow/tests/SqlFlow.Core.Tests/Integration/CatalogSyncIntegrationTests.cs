@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.Core.Identity;
@@ -265,6 +266,108 @@ public sealed class CatalogSyncIntegrationTests : IDisposable
             await using var db = CatalogDatabase.Create(cs);
             var key = await db.Objects.Where(o => o.ServerRef == serverRef && o.Name == targetTable).Select(o => o.Key).ToListAsync();
             await db.ObjectColumns.Where(c => key.Contains(c.ObjectKey)).ExecuteDeleteAsync();
+            await db.Objects.Where(o => o.ServerRef == serverRef && o.Name == targetTable).ExecuteDeleteAsync();
+            await db.LineageEdges.Where(e => e.RepoId == repoId).ExecuteDeleteAsync();
+            await db.RunStatements.Where(s => s.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+        }
+    }
+
+    [SkippableFact]
+    public async Task Sync_RecordsTheColumnsThatMoved_WhenATableIsReadDifferently()
+    {
+        // A repository sync is its own schema history: the first sync reads the table's columns as they are (no change),
+        // a later sync that reads them differently records one change with the columns that moved, and a sync that reads
+        // the same columns again records nothing. The table is created by a run whose CREATE TABLE the catalog keeps, and a
+        // newer run creates it again wider, as a run that rebuilt the table would. The flow's connection names its
+        // database, so the object is recorded under it.
+        var cs = IntegrationDb.Require();
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var repo = "cat_history_" + suffix;
+        var flowName = "cat_history_orders_" + suffix;
+        var targetTable = "HistoryTarget_" + suffix;
+        var repoId = FlowIdentity.FromName(repo);
+        var pipelineId = CatalogIdentity.Pipeline(repoId, flowName);
+        const string serverRef = "${env:SQLFlowSinkConStr}";
+
+        var path = Path.Combine(_dir, "flows", "history.flow.yaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $$"""
+            name: {{flowName}}
+            source:
+              type: csv
+              location: ./data.csv
+            target:
+              connection: {{serverRef}}
+              schema: dbo
+              table: {{targetTable}}
+            """);
+        await CatalogDatabase.MigrateAsync(cs);
+
+        async Task RunAsync(DateTime written, string ddl)
+        {
+            var runId = Guid.NewGuid();
+            await using var db = CatalogDatabase.Create(cs);
+            db.Runs.Add(new CatalogRun
+            {
+                RunId = runId, PipelineId = pipelineId, RepoId = repoId, FlowName = flowName, FlowKind = "file",
+                Success = true, Status = RunStatuses.Succeeded, WrittenUtc = written,
+            });
+            db.RunStatements.Add(new CatalogRunStatement { RunId = runId, RepoId = repoId, Ordinal = 1, Step = "schema.apply-ddl", Sql = ddl });
+            await db.SaveChangesAsync();
+        }
+
+        // Each pass recomputes lineage, as the control plane's connected sync does on every pass; offline, an unchanged
+        // flow file would let the sync keep the lineage it already holds.
+        async Task SyncAsync()
+        {
+            await using var db = CatalogDatabase.Create(cs);
+            await new CatalogSync().SyncAsync(db, _dir, repo, null, DateTime.UtcNow, forceLineage: true);
+        }
+
+        try
+        {
+            await RunAsync(DateTime.UtcNow.AddHours(-2),
+                $"CREATE TABLE [dbo].[{targetTable}] ([OrderID] int NOT NULL, [Customer] nvarchar(100) NULL);");
+            await SyncAsync();
+            string key;
+            string database;
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                var target = await db.Objects.AsNoTracking().SingleAsync(o => o.ServerRef == serverRef && o.Name == targetTable);
+                (key, database) = (target.Key, target.Database!);
+                Assert.Equal(new SqlConnectionStringBuilder(cs).InitialCatalog, database, ignoreCase: true);
+                Assert.Equal(2, await db.ObjectColumns.CountAsync(c => c.ObjectKey == key));
+                Assert.False(await db.SchemaChanges.AnyAsync(c => c.RepoId == repoId));
+            }
+
+            await RunAsync(DateTime.UtcNow.AddMinutes(-1),
+                $"CREATE TABLE [dbo].[{targetTable}] ([OrderID] int NOT NULL, [Customer] nvarchar(200) NULL, [Region] varchar(20) NULL);");
+            await SyncAsync();
+            await SyncAsync();
+
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                var change = await db.SchemaChanges.AsNoTracking().Include(c => c.Columns).SingleAsync(c => c.RepoId == repoId);
+                Assert.Equal((SchemaChangeOrigins.Sync, SchemaChangeKinds.Changed, key), (change.Origin, change.ChangeType, change.ObjectKey));
+                Assert.Equal((database, "dbo", targetTable), (change.Database, change.Schema, change.Name));
+                Assert.Null(change.RunId);
+                Assert.Collection(change.Columns.OrderBy(c => c.ToOrdinal),
+                    customer => Assert.Equal(("Customer", SchemaChangeKinds.Changed, "nvarchar(100)", "nvarchar(200)"), (customer.Name, customer.ChangeType, customer.FromType, customer.ToType)),
+                    region => Assert.Equal(("Region", SchemaChangeKinds.Added, "varchar(20)"), (region.Name, region.ChangeType, region.ToType)));
+
+                Assert.Equal(["OrderID", "Customer", "Region"],
+                    await db.ObjectColumns.Where(c => c.ObjectKey == key).OrderBy(c => c.Ordinal).Select(c => c.Name).ToListAsync());
+            }
+        }
+        finally
+        {
+            await using var db = CatalogDatabase.Create(cs);
+            var keys = await db.Objects.Where(o => o.ServerRef == serverRef && o.Name == targetTable).Select(o => o.Key).ToListAsync();
+            await db.SchemaChanges.Where(c => c.RepoId == repoId).ExecuteDeleteAsync();
+            await db.ObjectColumns.Where(c => keys.Contains(c.ObjectKey)).ExecuteDeleteAsync();
             await db.Objects.Where(o => o.ServerRef == serverRef && o.Name == targetTable).ExecuteDeleteAsync();
             await db.LineageEdges.Where(e => e.RepoId == repoId).ExecuteDeleteAsync();
             await db.RunStatements.Where(s => s.RepoId == repoId).ExecuteDeleteAsync();

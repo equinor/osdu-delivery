@@ -26,6 +26,10 @@ sourceRefs:
   - src/SqlFlow.Yaml/YamlFlowLoader.cs
   - src/SqlFlow.Yaml/InferSpecLoader.cs
   - src/SqlFlow.Cli/Program.cs
+  - src/SqlFlow.Core/Model/InferenceReport.cs
+  - src/SqlFlow.Core/Compute/ComputeTaskModels.cs
+  - src/SqlFlow.Execution/ComputeTaskExecutor.cs
+  - tools/sqlflow-mcp/src/server.rs
 ---
 
 # Type inference: profiling, decision rules, and server locale
@@ -140,6 +144,16 @@ Full key-by-key reference for the block, including authored column transforms (`
 **Standalone infer spec** (`*.infer.yaml`, parsed by src/SqlFlow.Yaml/InferSpecLoader.cs): `connection` (required), `table` (required, `dbo.Orders` or separate `schema` + `table`), `onConvertError` (default `fail`), `threshold`, `sample`, `preserveLeadingZeros`, `culture` (locale override, infer spec only).
 
 **CLI** (src/SqlFlow.Cli/Program.cs): `sqlflow infer <spec.infer.yaml>` profiles an already-loaded table and prints the JSON report. By default it also validates: the report carries the transform SELECT plus per-column fit. `--no-validate` skips validation; `--out <path>` (or `-o`) writes the report to a file instead of stdout.
+
+## The counts behind a type
+
+Each column of the report carries `evidence` (`ColumnEvidence`), what the profile counted of its non-null values: how many are boolean tokens (`asBoolean`), convert to `bigint` (`asInteger`, with `withLeadingZeros` for the ones a code keeps as text), to `decimal` and `float` under the numeric convention that fits most of them (`asDecimal`, `asFloat`, with `maxScale` and `maxIntegerDigits`), to `datetime2` and `date` under the style that fits most of them (`asDateTime`, `asDate`), and to `uniqueidentifier` (`asGuid`), and the longest value (`maxLength`). Counts and lengths only, never a value.
+
+The counts say what else a column fits beside the type chosen. A column whose values are all 0 and 1 is chosen as `bit`, the first rule above, and its counts show every value is also an integer and a decimal: where its values must be numbers, declare the type in `transform.columns` rather than leaving it to inference.
+
+## Profiling a table on request
+
+The compute operation `inferColumnTypes` runs the same `InferenceService` on a node, against any table or view a whole reference reaches, so the types a load would choose can be read before a flow is changed (`POST /api/v1/datasources/tasks` with `reference`, `schema`, `objectName`, an optional `database`, the `columns` to profile, every one when it names none, and `sampleSize`: 100,000 rows by default, 0 for every row, or 1,000 to 10,000,000). SQL Server and Azure SQL sources only. The task's answer is each column's `inferredType`, its `selectExpression`, the rows profiled and the `evidence`; the transform SELECT is left out. The MCP tool `infer_column_types` queues it for a catalog object by its key, taking the reference, database, schema and name from the catalog. A pre-ingestion flow's raw table is the one to profile: its columns are still the text the files held.
 
 ## Validation
 

@@ -2515,8 +2515,19 @@ namespace SqlFlow.Catalog.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<string>("ObjectKey")
+                        .HasMaxLength(900)
+                        .HasColumnType("nvarchar(900)");
+
                     b.Property<DateTime>("OccurredUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Snapshot");
 
                     b.Property<Guid?>("PipelineId")
                         .HasColumnType("uniqueidentifier");
@@ -2524,7 +2535,7 @@ namespace SqlFlow.Catalog.Migrations
                     b.Property<Guid>("RepoId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("RunId")
+                    b.Property<Guid?>("RunId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Schema")
@@ -2535,6 +2546,8 @@ namespace SqlFlow.Catalog.Migrations
 
                     b.HasIndex("RunId");
 
+                    b.HasIndex("ObjectKey", "OccurredUtc");
+
                     b.HasIndex("RepoId", "OccurredUtc")
                         .IsDescending(false, true);
 
@@ -2544,6 +2557,56 @@ namespace SqlFlow.Catalog.Migrations
                     b.HasIndex("RepoId", "Database", "Schema", "Name");
 
                     b.ToTable("SchemaChange", "catalog");
+                });
+
+            modelBuilder.Entity("SqlFlow.Catalog.CatalogSchemaChangeColumn", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<bool?>("FromNullable")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("FromOrdinal")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FromType")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<long>("SchemaChangeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool?>("ToNullable")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ToOrdinal")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ToType")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.HasIndex("SchemaChangeId");
+
+                    b.ToTable("SchemaChangeColumn", "catalog");
                 });
 
             modelBuilder.Entity("SqlFlow.Catalog.CatalogSemanticExample", b =>
@@ -3663,9 +3726,25 @@ namespace SqlFlow.Catalog.Migrations
                     b.Navigation("Schedule");
                 });
 
+            modelBuilder.Entity("SqlFlow.Catalog.CatalogSchemaChangeColumn", b =>
+                {
+                    b.HasOne("SqlFlow.Catalog.CatalogSchemaChange", "SchemaChange")
+                        .WithMany("Columns")
+                        .HasForeignKey("SchemaChangeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SchemaChange");
+                });
+
             modelBuilder.Entity("SqlFlow.Catalog.CatalogSchedule", b =>
                 {
                     b.Navigation("Parents");
+                });
+
+            modelBuilder.Entity("SqlFlow.Catalog.CatalogSchemaChange", b =>
+                {
+                    b.Navigation("Columns");
                 });
 #pragma warning restore 612, 618
         }

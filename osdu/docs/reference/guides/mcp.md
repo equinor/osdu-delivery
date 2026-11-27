@@ -84,10 +84,15 @@ and no more.
 
 ## Metadata, and a `!` question's query
 
-The server answers from metadata. The one read of data is a `!` question's query (below); nothing else reads it:
+The server answers from metadata. It reads data in three places, and only the first returns values: a `!` question's
+query (below); a column's value profile (`infer_column_types`, and `delivery_column_types` with `profile`), which
+counts on a node how many of a column's values convert to each type and answers with those counts, the longest value's
+length and the type inference would choose; and a file flow's source scan (`source_columns`), which reads only the
+header of each of its newest files and answers with column names:
 
 | Returned | Never returned |
 | --- | --- |
+| A column's value profile: counts, lengths and the type chosen. The column names a source file's header carries. | The values those counts are of, and any row of a file. |
 | The ledger's bookkeeping about a record: custody state, OSDU id and version, attempts with their outcome and error, the source file and row, who acted on it and when. | The record's content: what OSDU holds, what a mapping renders, the source row. |
 | Definitions: flows, interfaces, mappings (their YAML), templates and OSDU schemas, cache flows and the types they declare, assertion tests, dimension definitions. | Cached values, and the values a cache change moved from and to. |
 | Counts and health: records per state, submissions, cache versions and what each changed, test outcomes, dimension builds. | A dimension's values and keys, and the example records an assertion quotes (they are counted). |
@@ -155,6 +160,9 @@ Every `delivery_*` tool calls a route under `/api/v1/delivery` and nothing else 
 | Which templates do the repositories hold, and which properties does one require? | `delivery_templates` (every template file, or one file laid out by its repository and path) |
 | Which versions of a kind does a release publish? | `delivery_osdu_schemas` |
 | What breaks if we move to the next version of a kind? | `delivery_osdu_schema_compare` |
+| What type should this source column have? Why are records held as "not a number"? | `delivery_column_types` (each column the mapping reads, the properties it reaches, its declared, detected and catalog types and the type to declare; `profile` adds its value counts) |
+| Did new columns arrive in a pre flow's drop zone? Do the latest files still carry a column? | `source_columns` (the newest files' headers against the table the flow loads into, and the columns asked about) |
+| What changed in this table, and when did a column appear or change type? | `database_schema_changes`, then `database_object_compare` for the table before and now |
 | Are the data quality tests passing? What failed last night? | `delivery_assertions`, `delivery_assertion_runs` |
 | Which dimensions exist, and are they up to date? What does this dimension's YAML make? | `delivery_dimensions` (with `blueprint`, how it is built) |
 | Write a whole dimension or cache flow file the way the estate writes its others. | `delivery_flow_file` (`flowType` `dimension` or `cache`; the patterns first, then the document checked until valid: [a dimension flow file](dimension-flow-file.md), [a cache flow file](cache-flow-file.md)) |
@@ -258,7 +266,8 @@ osdu-delivery-mcp install vscode --mode estate   # "osdu-delivery-estate", with 
 
 A data-mode registration lists about a dozen tools (the semantic layer, the stored questions, the query tools, saving
 an answer, `get_mode`) and the sign-in tools, and is given only the rules for a question answered from data; an
-estate-mode registration lists SQLFlow's metadata tools and every `delivery_*` tool, and reads no rows. A registered
+estate-mode registration lists SQLFlow's metadata tools and every `delivery_*` tool, and returns no row (a value
+profile returns counts). A registered
 server stays in its mode: it lists no switch, and a call of the other mode's tool names the registration that answers
 it. `SQLFLOW_MCP_MODE` sets the mode when `--mode` is not given; an unknown argument or mode stops the server with its
 usage. Run by a client over stdio, the server reads

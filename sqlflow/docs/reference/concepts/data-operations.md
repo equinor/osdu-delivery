@@ -101,7 +101,8 @@ Both ride the existing ad-hoc compute queue, so nothing new was invented for tra
 
 The control plane never opens a connection to a datasource. Neither check carries a wall-clock deadline: an
 anti-join over a billion rows legitimately outruns any deadline safe for an interactive browse, so they stay
-cancellable and are backstopped by the queue's running-task expiry, exactly like `detectUniqueKey`.
+cancellable and are backstopped by the queue's running-task expiry, exactly like `detectUniqueKey` and
+`inferColumnTypes` ([type inference](type-inference.md#profiling-a-table-on-request)).
 
 Every task row records `RequestedBy` and the full arguments, so this surface is auditable by construction.
 

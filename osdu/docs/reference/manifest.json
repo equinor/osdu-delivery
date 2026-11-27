@@ -1706,6 +1706,45 @@
       ]
     },
     {
+      "id": "delivery-concept-column-types",
+      "corpus": "reference",
+      "path": "concepts/column-types.md",
+      "title": "Column types: the SQL type a source column should have for the property it fills",
+      "type": "concept",
+      "summary": "For each column a delivery flow's mapping reads: the properties it reaches, its declared and detected types, and the type to declare and why.",
+      "keywords": [
+        "column type",
+        "datatype",
+        "what datatype should a column be",
+        "declare a column type",
+        "transform.columns",
+        "bit for a number",
+        "a boolean is not a number",
+        "decimal(38,18)",
+        "column-types",
+        "delivery_column_types",
+        "value profile",
+        "infer_column_types",
+        "verdict"
+      ],
+      "related": [
+        "delivery-concept-mapping-overview",
+        "delivery-concept-api",
+        "delivery-guide-mcp",
+        "concept-type-inference",
+        "concept-pre-ingestion-transform"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Rendering/ColumnTypeAdvice.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/NumberValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/DateValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.Conversion.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryColumnTypeEndpoints.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs"
+      ]
+    },
+    {
       "id": "delivery-concept-compute-usage",
       "corpus": "reference",
       "path": "concepts/compute-usage.md",

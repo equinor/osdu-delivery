@@ -32,7 +32,7 @@ public static class DeliveryAssistantAccess
         "delivery_partitions", "delivery_config",
         "delivery_caches", "delivery_cache_versions", "delivery_cache_changes",
         "delivery_mappings", "delivery_check_mapping", "delivery_scaffold_mapping",
-        "delivery_templates", "delivery_osdu_schemas", "delivery_osdu_schema_compare",
+        "delivery_templates", "delivery_osdu_schemas", "delivery_osdu_schema_compare", "delivery_column_types",
         "delivery_assertions", "delivery_assertion_runs",
         "delivery_dimensions", "delivery_flow_file",
         "delivery_inventories", "delivery_removals",
@@ -74,7 +74,10 @@ public static class DeliveryAssistantAccess
         // delivery_mappings, delivery_templates, delivery_osdu_schemas, delivery_osdu_schema_compare.
         "ListDeliveryMappings", "GetDeliveryMapping", "ListDeliveryMappingFlows",
         "ListDeliveryTemplates", "GetDeliveryTemplate",
-        "ListDeliveryOsduReleases", "ListDeliveryOsduSchemas", "GetDeliveryOsduSchema", "CompareDeliveryOsduSchemas",
+        "ListDeliveryOsduReleases", "ListDeliveryOsduSchemas", "GetDeliveryOsduSchema", "ReportDeliveryOsduComparison",
+        // delivery_column_types: the type each column a flow's mapping reads should have, from metadata. Its value
+        // profile is a SQLFlow compute task, which stays closed to an assistant run.
+        "ListDeliveryFlowColumnTypes",
         // delivery_assertions and delivery_assertion_runs.
         "GetDeliveryAssertionBoard", "GetDeliveryAssertionFlowBoard", "ListDeliveryAssertionRuns", "GetDeliveryAssertionMatrix",
         "GetDeliveryAssertionRun",

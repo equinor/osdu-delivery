@@ -64,6 +64,9 @@ public static class SourceDiscoverEndpoints
     {
         ArgumentNullException.ThrowIfNull(group);
         group.MapPost("/sources/discover", DiscoverSourceAsync).WithTags("Sources").WithName("DiscoverSource");
+        // A file flow's own source, file by file: what its drop zone carries now, against the table it loads into.
+        group.MapGet("/pipelines/{id:guid}/source-columns", PipelineSourceColumns.GetAsync)
+            .WithTags("Sources").WithName("GetPipelineSourceColumns");
         return group;
     }
 

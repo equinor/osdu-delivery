@@ -135,7 +135,7 @@ The report is serialized with the shared execution JSON settings (indented, came
 - `onConvertError`: the effective error mode (`SilentNull`, `Fail`, or `KeepString`).
 - `culture`: the locale the run bound to (the server's, or the explicit override).
 - `dateOrder`: the date-component ordering applied (`Ymd`, `Dmy`, or `Mdy`).
-- `columns[]`: per column, the inferred `dataType`, the `selectExpression` that performs the conversion, whether it was `converted`, the SQL `style` for date conversions, the `numericFormat` convention (`Locale` or `Invariant`, null for non-numeric), and the `sampled`/`total` row counts.
+- `columns[]`: per column, the inferred `dataType`, the `selectExpression` that performs the conversion, whether it was `converted`, the SQL `style` for date conversions, the `numericFormat` convention (`Locale` or `Invariant`, null for non-numeric), the `sampled`/`total` row counts, and the `evidence` the type was chosen from: how many values convert to each type the inference considers, with the widest scale and the longest value ([the counts behind a type](../concepts/type-inference.md#the-counts-behind-a-type)).
 - `transformSelect`: a runnable SELECT applying every column's conversion against the table, to eyeball or execute before committing to the typed schema.
 - `validation`: null with `--no-validate`; otherwise `isValid` plus per-column `nonNull`, `silentNulls`, `fitPercent`, and `status`. Status is `ok` (converts cleanly), `lossy` (some non-null values would silently null out; `isValid` is false when any column is lossy), `kept-string` (no conversion applied), or `empty` (no values to evaluate).
 

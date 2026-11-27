@@ -738,7 +738,7 @@ public static class RunQueueStore
                         // A registration run refreshes its objects and Registers edges now. When the registered set
                         // changed, the repo's managed sync is queued so subscribers re-link to the new objects.
                         if (await CatalogSync.ApplySchemaRegistrationAsync(
-                                catalog, document.RootElement, repoId, existing.PipelineId, replaceEdges: true, nowUtc, ct)
+                                catalog, document.RootElement, repoId, runId, existing.PipelineId, replaceEdges: true, nowUtc, ct)
                             .ConfigureAwait(false))
                         {
                             var repoName = await catalog.Repos.AsNoTracking()

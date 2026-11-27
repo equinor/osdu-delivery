@@ -450,11 +450,27 @@ export interface PipelineFileStats {
   recent: PipelineRecentFiles | null;
 }
 
-/** One object a source-control snapshot found added, changed, or dropped in a managed database. */
+/** One column a sync change found added, dropped, or changed: its type, nullability and place before and now. */
+export interface SchemaChangeColumn {
+  name: string;
+  changeType: "Added" | "Changed" | "Deleted";
+  fromType: string | null;
+  toType: string | null;
+  fromNullable: boolean | null;
+  toNullable: boolean | null;
+  fromOrdinal: number | null;
+  toOrdinal: number | null;
+}
+
+/**
+ * One object found added, changed, or dropped in a managed database. `origin` says what found it: a source-control
+ * snapshot (`Snapshot`, whose `commitSha` holds the diff) or the catalog's own read of its columns (`Sync`, whose
+ * `columns` are the ones that moved). `runId` is null for a change a repository sync found, which is no run.
+ */
 export interface SchemaChange {
   id: number;
   repoId: string;
-  runId: string;
+  runId: string | null;
   pipelineId: string | null;
   database: string;
   category: string;
@@ -463,6 +479,9 @@ export interface SchemaChange {
   changeType: "Added" | "Changed" | "Deleted";
   commitSha: string | null;
   occurredUtc: string;
+  origin: "Snapshot" | "Sync";
+  objectKey: string | null;
+  columns: SchemaChangeColumn[];
 }
 
 /** The tier a change to an existing column's type falls into: a widening applied by itself, a conversion checked against
@@ -527,21 +546,24 @@ export interface GitRevision {
 }
 
 /**
- * One database object's DDL at the two ends of a window: what the snapshot repository held before the window
- * opened, and what it holds now. `before` is null when the history itself begins inside the window; a null
- * text on either side means the object's file was absent at that revision, so no `beforeText` is an object
- * added during the window and no `afterText` one dropped in it.
+ * One database object at the two ends of a window. For a `Snapshot` change: its DDL as the snapshot repository held
+ * it before the window opened and holds it now (`before` is null when the history itself begins inside the window).
+ * For a `Sync` change: its columns, one line each, before the first change the catalog recorded in the window and as
+ * the catalog last read them; both revisions are null and `path` is the object's qualified name. A null text on
+ * either side means the object was absent there, so no `beforeText` is an object added during the window and no
+ * `afterText` one dropped in it.
  */
 export interface SchemaObjectCompare {
   path: string;
   before: GitRevision | null;
-  after: GitRevision;
+  after: GitRevision | null;
   beforeText: string | null;
   afterText: string | null;
   linesAdded: number;
   linesDeleted: number;
   /** At least one side was cut at the server's inline limit, so it is not the whole script. */
   truncated: boolean;
+  origin: "Snapshot" | "Sync";
 }
 
 /** One tracked database's change tally over the requested window. */

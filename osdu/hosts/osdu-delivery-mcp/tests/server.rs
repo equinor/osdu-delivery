@@ -40,6 +40,7 @@ const DELIVERY_TOOLS: &[&str] = &[
     "delivery_cache_versions",
     "delivery_caches",
     "delivery_check_mapping",
+    "delivery_column_types",
     "delivery_config",
     "delivery_decide_cache_changes",
     "delivery_flow_file",
@@ -78,6 +79,10 @@ const SQLFLOW_OFFERED: &[&str] = &[
     "set_access_token", "logout",
     "list_repos", "get_repo", "list_pipelines", "list_flow_batches", "get_pipeline", "pipeline_definition",
     "pipeline_file_stats", "pipeline_columns",
+    // What the files at a file flow's declared source carry, header by header: column names, never a row. And a table's
+    // columns profiled for the type their values convert to, which the user asked for on 2026-11-27 to choose a pre
+    // flow's column types: it reads rows on a node, and answers with counts, lengths and types, never a value.
+    "source_columns", "infer_column_types",
     "list_runs", "get_run", "run_trace", "run_statements", "run_assertions", "run_files", "run_health_metrics",
     "list_schemas", "lineage_objects", "lineage_object_detail", "lineage_object_columns", "describe_object",
     "get_table_key", "get_table_joins", "object_lineage", "describe_object_refresh", "list_file_sources",
@@ -412,7 +417,7 @@ async fn every_delivery_tool_is_described_for_a_model_choosing_between_tools() {
             );
         }
     }
-    assert!(total <= 18_500, "the delivery tools' descriptions add up to {total} characters");
+    assert!(total <= 19_200, "the delivery tools' descriptions add up to {total} characters");
 
     // The operator's actions say what they are; nothing else claims to be one.
     let acts = ["delivery_probe_target", "delivery_verify_record", "delivery_sync_with_source", "delivery_release_records",
@@ -1748,4 +1753,97 @@ async fn no_tool_of_the_server_reads_or_removes_what_osdu_holds() {
             assert!(!code.contains(route), "{} calls a route that returns or removes data: {route}", path.display());
         }
     }
+}
+
+/// The type each column a delivery flow's mapping reads should have comes from the module's own endpoint and reads no
+/// row; asked to profile, one inferColumnTypes task per raw table counts each column's values, set beside the column
+/// with whether every value converts to what its properties need.
+#[tokio::test(flavor = "multi_thread")]
+async fn column_types_advise_each_column_and_a_profile_counts_its_values() {
+    let base = format!("/api/v1/delivery/flows/{PIPELINE}/column-types");
+    let task = "44444444-5555-4666-8777-888888888888";
+    let estate = Estate::start(vec![
+        (
+            route(format!("GET {base}")),
+            200,
+            json!({
+                "pipelineId": PIPELINE, "flow": "wells", "mapping": "Wellbore@1.0.0",
+                "columns": [
+                    { "column": "sequence_number", "type": "bit", "recommended": "bigint", "verdict": "refused", "profileCount": "asInteger",
+                      "profile": { "reference": "${env:OSDU_DATA_DB}", "database": "OsduData", "schema": "pre", "table": "Wellbore", "column": "sequence_number" } },
+                    { "column": "cost", "type": "float", "recommended": "decimal(38,18)", "verdict": "approximate", "profileCount": "asDecimal", "profile": null },
+                ],
+            }),
+        ),
+        ("POST /api/v1/datasources/tasks", 202, json!({ "taskId": task, "status": "queued" })),
+        (
+            route(format!("GET /api/v1/datasources/tasks/{task}")),
+            200,
+            json!({
+                "taskId": task, "status": "succeeded",
+                "result": { "columns": [{ "columnName": "Sequence_Number", "inferredType": "bit", "profiled": 4, "rows": 4,
+                    "evidence": { "nonNull": 4, "asBoolean": 4, "asInteger": 4, "asDecimal": 4 } }] },
+            }),
+        ),
+    ])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let plain = session.json("delivery_column_types", json!({ "pipelineId": PIPELINE, "partition": "dev" })).await;
+    assert_eq!(plain["columns"][0]["verdict"], json!("refused"));
+    assert!(plain["columns"][0].get("valueProfile").is_none(), "{plain}");
+    assert_eq!(plain["links"]["page"], json!(format!("https://delivery.example.com/pipelines/{PIPELINE}")));
+    assert_eq!(estate.only("GET", &base).query, "partition=dev");
+    assert!(estate.seen().iter().all(|request| !request.path.starts_with("/api/v1/datasources/tasks")));
+
+    let profiled = session.json("delivery_column_types", json!({ "pipelineId": PIPELINE, "profile": true })).await;
+    let body = estate.only("POST", "/api/v1/datasources/tasks").body;
+    assert_eq!(
+        body,
+        json!({ "operation": "inferColumnTypes", "reference": "${env:OSDU_DATA_DB}", "database": "OsduData", "schema": "pre",
+                "objectName": "Wellbore", "columns": ["sequence_number"] })
+    );
+    let sequence = &profiled["columns"][0];
+    assert_eq!(sequence["valueProfile"]["inferredType"], json!("bit"));
+    assert_eq!(sequence["valuesFit"], json!(true));
+    let cost = &profiled["columns"][1];
+    assert!(cost["valueProfile"]["error"].as_str().is_some_and(|e| e.contains("no raw table")), "{cost}");
+    assert!(cost.get("valuesFit").is_none(), "{cost}");
+
+    let refused = session.call("delivery_column_types", json!({ "pipelineId": "wells" })).await;
+    assert!(refused.contains("is not a GUID"), "{refused}");
+}
+
+/// What a file flow's source files carry is asked by the flow, and a table's value profile by its catalog key: neither
+/// names a connection, and both take their answer from SQLFlow's own routes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sources_columns_are_asked_by_the_flow_and_a_tables_types_by_its_key() {
+    let key = "${env:osdu_data_db}|osdudata|pre|well";
+    let task = "55555555-6666-4777-8888-999999999999";
+    let scan = format!("/api/v1/pipelines/{PIPELINE}/source-columns");
+    let estate = Estate::start(vec![
+        (route(format!("GET {scan}")), 200, json!({ "filesMatched": 2, "newColumns": ["spud_date"] })),
+        (
+            "GET /api/v1/lineage/objects/dossier",
+            200,
+            json!({ "object": { "key": key, "serverRef": "${env:OSDU_DATA_DB}", "database": "OsduData", "schema": "pre", "name": "Well" } }),
+        ),
+        ("POST /api/v1/datasources/tasks", 202, json!({ "taskId": task })),
+        (route(format!("GET /api/v1/datasources/tasks/{task}")), 200, json!({ "taskId": task, "status": "succeeded", "result": { "columns": [] } })),
+    ])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let files = session.json("source_columns", json!({ "pipelineId": PIPELINE, "files": 5, "expect": ["spud_date", " elevation ", ""] })).await;
+    assert_eq!(files["newColumns"], json!(["spud_date"]));
+    let asked = estate.only("GET", &scan).query;
+    assert!(asked.contains("files=5"), "{asked}");
+    assert!(asked.contains("expect=spud_date%2Celevation") || asked.contains("expect=spud_date,elevation"), "{asked}");
+
+    session.json("infer_column_types", json!({ "key": key, "columns": ["elevation"], "sampleSize": 0 })).await;
+    assert_eq!(
+        estate.only("POST", "/api/v1/datasources/tasks").body,
+        json!({ "operation": "inferColumnTypes", "reference": "${env:OSDU_DATA_DB}", "database": "OsduData", "schema": "pre",
+                "objectName": "Well", "columns": ["elevation"], "sampleSize": 0 })
+    );
 }

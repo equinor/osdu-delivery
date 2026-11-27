@@ -552,6 +552,28 @@ pub struct PipelineColumnsInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct InferColumnTypesInput {
+    /// The table's or view's catalog key (from search_all, lineage_objects or describe_object).
+    pub key: String,
+    /// The columns to profile; omit for every column.
+    pub columns: Option<Vec<String>>,
+    /// Rows to profile: omit for 100,000, 0 for every row, or 1,000 to 10,000,000.
+    #[serde(rename = "sampleSize")]
+    pub sample_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SourceColumnsInput {
+    /// The file flow's pipeline id (from list_pipelines, search_all or get_pipeline).
+    #[serde(rename = "pipelineId")]
+    pub pipeline_id: String,
+    /// How many of the newest files to read, 1 to 200 (default 20).
+    pub files: Option<i64>,
+    /// Column names to check against each file, as the file writes them or as the load names them.
+    pub expect: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListRunsInput {
     #[serde(rename = "repoId")]
     pub repo_id: Option<String>,
@@ -2168,13 +2190,62 @@ not a flow (a mapping, a schedule library): {path, type, required}. list_flow_ki
         ).await
     }
 
-    #[tool(description = "Get a pipeline's pre-ingestion transform columns (kind: declared|detected).")]
+    #[tool(
+        description = "WHAT TYPE A COLUMN'S VALUES ARE: profiles a table's or view's columns on a node with SQL Server's own \
+            conversions, as a flow's inferTypes does, and returns per column the type the engine would choose (inferredType, \
+            with the expression that casts it) and the counts behind it: of the non-null values profiled, how many convert to \
+            a boolean, an integer, a decimal (with the widest scale and integer digits) or float, a datetime or date, a guid, \
+            and the longest length. Counts, lengths and types only, never a value. Use it for 'what datatype should elevation \
+            be', before declaring transform.columns: a column of 0 and 1 fits bit, int and decimal alike, and the counts show \
+            it. Takes the object key; profiles 100,000 rows unless sampleSize says otherwise."
+    )]
+    async fn infer_column_types(&self, Parameters(i): Parameters<InferColumnTypesInput>) -> String {
+        done(self.run_infer_column_types(i).await)
+    }
+
+    #[tool(
+        description = "A pre-ingestion flow's transform columns: kind declared (the types its YAML gives in transform.columns) or \
+            detected (the typed view its last run generated: each column's SQL type and the expression that casts it, which \
+            inferTypes chose from the loaded data where the YAML gave none). Use it for 'what type does this flow give \
+            elevation'; for what the values themselves convert to, infer_column_types."
+    )]
     async fn pipeline_columns(&self, Parameters(input): Parameters<PipelineColumnsInput>) -> String {
         let q = vec![("kind", input.kind.unwrap_or_default())];
         let links = json!({ "page": self.links.pipeline(&input.id) });
         self.get_about(
             &format!("/api/v1/pipelines/{}/columns", input.id), &q,
             ("pipelineId", &input.id), links,
+        ).await
+    }
+
+    #[tool(
+        description = "WHAT A FILE FLOW'S FILES CARRY NOW, file by file: the columns of each of the newest files its \
+            selection matches (read from each file's header as a run reads it; no row is read), every column with how many \
+            of those files carry it and the oldest and newest that do, and the table the flow loads into: newColumns (in some \
+            file, not yet in the table) and notInFiles (in the table, in no file read; the columns a load adds itself are left \
+            out). Name columns in `expect` to learn, for each, whether every file carries it and which files do not. Use it \
+            for 'did new columns arrive in the drop zone', 'do the latest files still carry spud_date', and before changing a \
+            flow's transform. Reads only the location the flow declares; filesMatched 0 comes with the engine's reason."
+    )]
+    async fn source_columns(&self, Parameters(i): Parameters<SourceColumnsInput>) -> String {
+        let mut q = Vec::new();
+        if let Some(files) = i.files {
+            q.push(("files", files.to_string()));
+        }
+        let expect: Vec<String> = i
+            .expect
+            .unwrap_or_default()
+            .into_iter()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect();
+        if !expect.is_empty() {
+            q.push(("expect", expect.join(",")));
+        }
+        let links = json!({ "page": self.links.pipeline(&i.pipeline_id) });
+        self.get_about(
+            &format!("/api/v1/pipelines/{}/source-columns", i.pipeline_id), &q,
+            ("pipelineId", &i.pipeline_id), links,
         ).await
     }
 
@@ -2674,20 +2745,22 @@ there are, so read the last page for how a long run ended. The SQL it executed i
 
     #[tool(
         description = "WHAT CHANGED IN A DATABASE: its tables, views, procedures, and functions. Use this for questions about database \
-            objects: 'what changed in the warehouse last week', 'when did this column appear', 'was anything dropped from \
-            arc', 'has pre.v_Citybikes_Trips been edited'. Returns one row per object per change: database, category \
-            (Table/View/StoredProcedure/...), schema, name, changeType (Added|Changed|Deleted), the commit that holds the \
-            DDL diff, and occurredUtc. Filter with database, changeType, since (ISO instant), and search (matches the object \
-            name, its schema, or its category). The history is recorded by source-control (scm) flows that snapshot each \
-            managed database on a schedule, so a change is dated to the snapshot that first saw it: on a daily cadence that \
-            is the day, not the minute, the DDL ran, and a database with no scm flow has no history at all. For the actual \
-            DDL text, follow up with database_object_compare (the net change over a window) or database_object_ddl (what one \
-            single snapshot did). Not for pipeline or YAML edits: that is flow_definition_history."
+            objects: 'what changed in the warehouse last week', 'when did this column appear', 'which tables gained a column', \
+            'was anything dropped from arc', 'did pre.Well change type'. Returns one row per object per change: database, \
+            category, schema, name, objectKey, changeType (Added|Changed|Deleted), occurredUtc and origin. origin Sync is the \
+            catalog's own record: a sync (or a schema registration run) read the object's columns differently from the time \
+            before, and `columns` lists each column added, dropped, or changed in type, nullability or place, with both sides; \
+            this covers every database a flow reaches, from its second sync on. origin Snapshot comes from a source-control \
+            (scm) flow and carries the commit that holds the DDL diff. Filter with database, objectKey, changeType, since \
+            (ISO instant), and search (the object's name, schema or category, or a column a change moved). A change is dated \
+            to the pass that first saw it. For the object before and now, follow up with database_object_compare; \
+            database_object_ddl reads one snapshot commit. Not for pipeline or YAML edits: that is flow_definition_history."
     )]
     async fn database_schema_changes(&self, Parameters(i): Parameters<SchemaChangesInput>) -> String {
         let q = vec![
             ("repoId", i.repo_id.unwrap_or_default()),
             ("database", i.database.unwrap_or_default()),
+            ("objectKey", i.object_key.unwrap_or_default()),
             ("changeType", i.change_type.unwrap_or_default()),
             ("since", i.since.unwrap_or_default()),
             ("search", i.search.unwrap_or_default()),
@@ -2700,9 +2773,10 @@ there are, so read the last page for how a long run ended. The SQL it executed i
     #[tool(
         description = "List which MANAGED DATABASES have a schema history and how much they have changed: per \
             database, the total plus added/changed/deleted counts and when it last changed. Start here to \
-            learn which databases are tracked at all, then narrow with database_schema_changes(database). A \
-            database missing from this list has no source-control (scm) flow snapshotting it, which is a \
-            configuration answer, not an empty result. Optional since (ISO instant) scopes the tally."
+            learn which databases have changed at all, then narrow with database_schema_changes(database). A \
+            database missing from this list has had no change recorded: no sync has read its objects' columns \
+            differently since its first, and no source-control (scm) flow snapshots it. Optional since (ISO \
+            instant) scopes the tally."
     )]
     async fn database_schema_history_databases(
         &self,
@@ -2717,11 +2791,12 @@ there are, so read the last page for how a long run ended. The SQL it executed i
 
     #[tool(
         description = "Show the actual DDL that changed for ONE database object at one snapshot, as a unified diff (the CREATE TABLE / \
-            CREATE VIEW text before and after). Arguments come straight from a database_schema_changes row: pipelineId (its \
-            scm flow), sha (its commitSha), and path (the object's file, '<database>/<category>/<schema>.<name>.sql'). Use \
-            it to answer 'what exactly changed about this table', after database_schema_changes has told you THAT it \
-            changed. Reports truncated=true when the patch was clipped, so a large generated snapshot is never mistaken for \
-            a complete one."
+            CREATE VIEW text before and after). Only for a database_schema_changes row with origin Snapshot; its arguments come \
+            straight from that row: pipelineId (its scm flow), sha (its commitSha), and path (the object's file, \
+            '<database>/<category>/<schema>.<name>.sql'). Use it to answer 'what exactly did this snapshot change about this \
+            table'. A row with origin Sync carries its moved columns itself, and database_object_compare sets its columns \
+            before against now. Reports truncated=true when the patch was clipped, so a large generated snapshot is never \
+            mistaken for a complete one."
     )]
     async fn database_object_ddl(&self, Parameters(i): Parameters<ObjectDdlInput>) -> String {
         let pipeline_id = i.pipeline_id.clone();
@@ -2734,16 +2809,15 @@ there are, so read the last page for how a long run ended. The SQL it executed i
     }
 
     #[tool(
-        description = "Show one database object's whole DDL as it stood BEFORE a window against how it stands NOW: both scripts in \
-            full, the snapshot commits each side came from, and the line tally between them. Takes changeId (the id on a \
-            database_schema_changes row) and optional since (an ISO instant, the window start); omit since to compare \
-            against the start of the recorded history, which reads the whole script as added. Prefer this over \
-            database_object_ddl whenever the question is the net change ('what is different about this table since last \
-            week'): several snapshots may have touched the object, and this stays one before and one after, where \
-            database_object_ddl answers only what one snapshot did. beforeText is null when the object did not exist at the \
-            window start (it was added inside the window) and afterText is null when it has since been dropped, in which \
-            case beforeText still carries its last known script so the drop stays reviewable. Reports truncated=true when a \
-            side was clipped, so a large generated script is never mistaken for a complete one."
+        description = "Show one database object as it stood BEFORE a window against how it stands NOW, with the line tally between \
+            them. For a change with origin Snapshot both sides are its whole DDL, with the snapshot commits each came from; \
+            for origin Sync both sides are its columns, one line each ('[name] type NULL'), worked back from the columns the \
+            catalog holds now through every change it recorded. Takes changeId (the id on a database_schema_changes row) and \
+            optional since (an ISO instant, the window start); omit since to compare against the start of the recorded \
+            history. Prefer this whenever the question is the net change ('what is different about this table since last \
+            week'): several changes may have touched the object, and this stays one before and one after. beforeText is null \
+            when the object did not exist at the window start (it was added inside the window) and afterText is null when it \
+            has since been dropped. Reports truncated=true when a side was clipped."
     )]
     async fn database_object_compare(&self, Parameters(i): Parameters<ObjectCompareInput>) -> String {
         let q = vec![("since", i.since.unwrap_or_default())];
@@ -3915,6 +3989,45 @@ impl SqlFlowMcp {
         Ok(json_str(&result))
     }
 
+    /// The profile of one catalog object's columns: the object's reference, database, schema and name are the catalog's
+    /// own, so the caller names the object by its key and never a connection.
+    async fn run_infer_column_types(&self, input: InferColumnTypesInput) -> anyhow::Result<String> {
+        let dossier = self.cp.get("/api/v1/lineage/objects/dossier", &[("key", input.key.clone())]).await?;
+        let object = &dossier["object"];
+        let text = |field: &str| object[field].as_str().map(str::trim).filter(|v| !v.is_empty()).map(String::from);
+        let (Some(reference), Some(schema), Some(name)) = (text("serverRef"), text("schema"), text("name")) else {
+            anyhow::bail!(
+                "No table or view with a schema matches the key '{}'. Find it with search_all, lineage_objects or describe_object.",
+                input.key
+            );
+        };
+
+        let mut body = json!({
+            "reference": reference,
+            "operation": "inferColumnTypes",
+            "schema": schema,
+            "objectName": name,
+        });
+        if let Some(database) = text("database") {
+            body["database"] = json!(database);
+        }
+        let columns: Vec<String> = input
+            .columns
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+            .collect();
+        if !columns.is_empty() {
+            body["columns"] = json!(columns);
+        }
+        if let Some(sample) = input.sample_size {
+            body["sampleSize"] = json!(sample);
+        }
+
+        self.run_compute_task("inferColumnTypes", body).await
+    }
+
     async fn run_detect_unique_key(&self, input: DetectUniqueKeyInput) -> anyhow::Result<String> {
         let reference = self.resolve_reference(input.reference).await?;
         let mut body = json!({
@@ -4102,12 +4215,15 @@ pub struct SchemaChangesInput {
     pub repo_id: Option<String>,
     /// One managed database, exactly as database_schema_history_databases reports it (e.g. "dw-dwh-prod").
     pub database: Option<String>,
+    /// One catalog object's changes, by its key (from search_all, lineage_objects or a row's objectKey).
+    #[serde(rename = "objectKey")]
+    pub object_key: Option<String>,
     /// Added | Changed | Deleted.
     #[serde(rename = "changeType")]
     pub change_type: Option<String>,
     /// ISO instant; only changes observed at or after it are returned.
     pub since: Option<String>,
-    /// Substring match on the object name, its schema, or its category.
+    /// Substring match on the object name, its schema, its category, or a column a change moved.
     pub search: Option<String>,
     pub page: Option<i64>,
     #[serde(rename = "pageSize")]
@@ -4834,7 +4950,7 @@ ONLINE (needs the control plane):
 /// The estate's readers and the links every online result carries.
 const ESTATE_READ: &str = "\
 - Read: list_repos, list_pipelines, get_pipeline, pipeline_definition, pipeline_columns,
-  pipeline_file_stats, list_runs,
+  pipeline_file_stats, source_columns (what a file flow's newest files carry, header by header), list_runs,
   get_run, run_statements/assertions/files/health_metrics, lineage_objects/_detail/_columns/_edges/
   _waves/_dependencies, search_all and search_objects/_columns/_definitions/_flows/_flow_columns/_files/
   _statements, list_schedules, get_schedule, get_schedule_plan, list_nodes, list_repo_sources, summary.

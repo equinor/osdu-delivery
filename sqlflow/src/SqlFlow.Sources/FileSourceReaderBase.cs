@@ -12,6 +12,7 @@ using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Data;
 using SqlFlow.Core.Ingestion;
 using SqlFlow.Core.Model;
+using SqlFlow.Core.Secrets;
 
 namespace SqlFlow.Sources;
 
@@ -336,6 +337,82 @@ public abstract class FileSourceReaderBase : ISourceReader
                 return sourceColumns[name];
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// The columns each selected file carries, newest first and at most <paramref name="maxFiles"/> of them, read from
+    /// each file's header with the run's own selection and the same per-file schema read a load makes, so a name is
+    /// spelled as the load spells it. A selection that matches no file is no failure here: it is the answer, with the
+    /// reason the engine gives for it. A file whose header cannot be read is listed with its error, as a load would fail
+    /// on it, and the others are still read, since one broken file must not hide what the rest of a drop zone holds.
+    /// </summary>
+    public async Task<SourceFileScan> ScanFileColumnsAsync(SourceSpec source, int maxFiles, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxFiles, 1);
+        var options = ReadOptions(source);
+        var generated = GeneratedColumns(options);
+        var run = RunStateFor(source);
+
+        ResolvedFiles selection;
+        try
+        {
+            selection = await GetOrResolveAsync(run, options, ct).ConfigureAwait(false);
+        }
+        catch (NoSourceFilesException none)
+        {
+            return new SourceFileScan(0, [], generated, none.Message);
+        }
+
+        var newest = selection.Files
+            .OrderByDescending(f => f.Modified ?? DateTimeOffset.MinValue)
+            .ThenByDescending(f => f.Name, StringComparer.Ordinal)
+            .Take(maxFiles)
+            .ToList();
+
+        var files = new List<SourceFileColumns>(newest.Count);
+        await foreach (var read in ReadAheadAsync(newest, ReadOneAsync, options.ReadAhead, ct).ConfigureAwait(false))
+        {
+            files.Add(read);
+        }
+
+        return new SourceFileScan(selection.Files.Count, files, generated, null);
+
+        async Task<SourceFileColumns> ReadOneAsync(FileRef file, CancellationToken token)
+        {
+            try
+            {
+                var schema = await GetOrReadFileSchemaAsync(run, selection.Store, file, source, token).ConfigureAwait(false);
+                return new SourceFileColumns(file.Name, file.Path, file.Modified, file.Size, schema.Columns, schema.RawNames, null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return new SourceFileColumns(file.Name, file.Path, file.Modified, file.Size, [], [], SecretHygiene.RedactedMessage(ex));
+            }
+        }
+    }
+
+    /// <summary>The columns a load of this source adds to every row itself (its provenance and key columns), in the order
+    /// <see cref="GetColumnsAsync"/> appends them.</summary>
+    private static IReadOnlyList<string> GeneratedColumns(FileSourceOptions options)
+    {
+        var generated = EnabledSystemColumns(options).ToList();
+        if (options.IncludeFileLineNumber)
+        {
+            generated.Add(FileLineNumberColumn);
+        }
+
+        if (options.IncludeHashKey)
+        {
+            generated.Add(HashKeyColumn);
+        }
+
+        if (options.IncludeConcatKey)
+        {
+            generated.Add(ConcatKeyColumn);
+        }
+
+        return generated;
     }
 
     /// <summary>

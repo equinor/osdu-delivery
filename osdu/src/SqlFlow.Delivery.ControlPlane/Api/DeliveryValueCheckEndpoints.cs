@@ -272,7 +272,7 @@ public static class DeliveryValueCheckEndpoints
     /// through, so the columns are those of the object the flow's read lands on (<paramref name="objectKey"/>), and failing that
     /// those of the first such object the catalog describes.
     /// </summary>
-    private static async Task<IReadOnlyList<DeliverySourceColumnDto>> CatalogColumnsAsync(
+    internal static async Task<IReadOnlyList<DeliverySourceColumnDto>> CatalogColumnsAsync(
         CatalogDbContext db, string table, string objectKey, FlowSystemColumns? system, CancellationToken ct)
     {
         var name = SourceObjectName.Parse(table);
