@@ -5,7 +5,6 @@ import { CircleCheck, CircleX, ExternalLink, Loader2, Minus, X } from "lucide-re
 import { cn } from "@/lib/utils";
 import type { RunGroup } from "../../api/types";
 import { runApi } from "../../api/endpoints";
-import { pollingInterval } from "../../hooks/usePolling";
 import { useRunDock } from "./RunDockContext";
 
 /** A finished chip lingers this long so the operator registers the outcome, then removes itself rather than piling
@@ -52,7 +51,7 @@ function RunDockChip({ groupId }: { groupId: string }) {
         return false;
       }
 
-      return pollingInterval(3000)();
+      return 3000;
     },
   });
 

@@ -82,6 +82,26 @@ export interface DeliveryFlowStats {
   redeliverParts?: string[] | null;
 }
 
+/** Why a flow's counts could not be read: what its own stats call answers with (the document does not parse, say). */
+export interface DeliveryFlowProblem {
+  status: number;
+  title: string;
+  detail?: string | null;
+}
+
+/**
+ * One delivery flow's counts as the pages that show every flow read them, all in one call: the flow as a whole, its counts
+ * in the partition asked for when it is counted there apart from its whole, and why, when they could not be read.
+ */
+export interface DeliveryFlowCounts {
+  pipelineId: string;
+  /** The flow as a whole; null when its counts could not be read. */
+  stats: DeliveryFlowStats | null;
+  /** Its counts in the partition asked for, when it names that partition among others; absent otherwise. */
+  inPartition?: DeliveryFlowStats | null;
+  problem?: DeliveryFlowProblem | null;
+}
+
 /** One registered restriction as a check of a flow answers it: whether the flow can restrict under it and lift it again, and why not. */
 export interface DeliveryAccessRestrictionUse {
   restrictionId: number;

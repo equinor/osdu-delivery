@@ -2,7 +2,7 @@
 id: delivery-concept-templates
 title: "Templates: OSDU schemas a repository's template folders hold, settled for each document by the folders on its path"
 type: concept
-summary: "Templates as files of a repository's template folders: what the sync records, how a document's template is settled, downloading one, comparing versions."
+summary: "Templates as files of a repository's template folders: what the sync records, how a document's template is settled, and downloading one."
 keywords:
   - template
   - template folder
@@ -16,8 +16,6 @@ keywords:
   - import
   - pin
   - template variables
-  - compare versions
-  - breaking change
   - kind
   - custom template
   - template of one's own
@@ -47,6 +45,7 @@ related:
   - delivery-flow-mapping-child
   - delivery-guide-linked-records
   - delivery-cli-template-register
+  - delivery-concept-template-versions
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs
@@ -54,7 +53,6 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateSource.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateSources.cs
   - osdu/src/SqlFlow.Delivery/Templates/OsduDataDefinitions.cs
-  - osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplatePath.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
   - osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs
@@ -329,7 +327,8 @@ On the GUI's Templates page, the **Browse OSDU** tab:
 1. **Picks a release and searches the record kinds it publishes.**
 2. **Looks at a schema**: a kind laid out as a template, every variable with its type, requiredness, relationships, unit
    context and OSDU's description, read from the release and bundled. The kind links to its file in the repository.
-3. **Compares versions** of a kind ([below](#comparing-versions)).
+3. **Compares versions** of a kind, and takes a report on moving a mapping from one to the other
+   ([comparing template versions](template-versions.md)).
 4. **Downloads it** (**Download**, on its row or in its sheet, any signed-in user) as the file a template folder keeps:
    the kind's schema bundled with every shared schema it refers to, naming its kind, under the kind's file name
    (`GET /api/v1/delivery/templates/osdu/file?release=&kind=`, answered as a file to save). Nothing is kept: the
@@ -485,29 +484,9 @@ indentation and key order do not change.
 
 ## Comparing versions
 
-Before moving a mapping to a newer version of its kind, compare the two. On the Browse OSDU tab, **Compare versions**
-picks two versions of one kind, each from any release of the data definitions
-(`GET /api/v1/delivery/templates/osdu/compare?fromRelease=&fromKind=&toRelease=&toKind=`). The verdict comes first: the
-same file, files that differ only in the version identifiers each carries (`x-osdu-schema-source` and `$id`), whether
-the two are the same template version, and how many variables changed of each impact:
-
-| Impact | Means | Changes of this impact |
-| --- | --- | --- |
-| Breaking | A mapping written for the older version can stop rendering, or render a record the newer version does not accept. | A variable removed; its type or shape, format, pattern, free-key type, unit context or writer changed; a list of objects that became nested inside another array; a property that became required; an entity type it no longer points to; a new required property inside an object the older version already has. |
-| Additive | Something a mapping may now use. | A new optional variable (or a new required one inside a new object); a property no longer required; a new entity type it points to. |
-| Wording | Only how it reads. | A title or a description. |
-
-Every variable that differs is listed with each field that changed and its value on both sides. The two schema files
-are shown as the release publishes them, and so is every shared schema they refer to that differs, paired by name
-across versions (`AbstractFacility` 1.0.0 against 1.1.0): a kind's own file can be the same in two releases while a
-schema it refers to changed, and that is where its template's changes come from. A release's statuses are shown but
-judge nothing.
-
-Moving a mapping to the newer version: download the newer file into the template folder its mapping reads, fix what the
-comparison calls breaking, and check it ([check](../cli/check.md)). A mapping that names its version is moved by naming
-the new one (give it a new mapping version when both are to run side by side, each pinning its own); one that names the
-kind alone moves with the file. Run the flow's `plan` operation to see which records would be delivered again before
-delivering ([running an OSDU flow](../cli/run.md)).
+Two versions of a kind, each from any release of the data definitions, are compared on Browse OSDU variable by
+variable, each change rated breaking, additive or wording, and a report says what moving a mapping from one to the
+other takes, every synced mapping of the kind included: [comparing template versions](template-versions.md).
 
 ## Upgrading an estate that saved templates in the database
 
@@ -543,7 +522,8 @@ mapping reads before the repository is synced.
 | Write a schema of one's own as a template file | | `sqlflow template import <schema.json> --kind <kind> --out <file>` | |
 | Register the custom kinds a working copy holds with a partition's Schema service | | `sqlflow template register [<dir>] [--env-file <path>] [--dry-run \| --confirm <partition>]` | |
 | Lay out a schema without keeping it | Browse OSDU, a row | | `POST /templates/preview` |
-| Compare two versions of a kind | Browse OSDU, Compare versions | | `GET /templates/osdu/compare` |
+| Compare two versions of a kind ([comparing template versions](template-versions.md)) | Browse OSDU, Compare versions | | `GET /templates/osdu/compare` |
+| Take the report on moving a mapping to another version of its kind | Browse OSDU, Compare versions, Report | | `GET /templates/osdu/compare/report` |
 | Read the release list again and download a release | Sync with the repository | | `POST /templates/osdu/sync` |
 | Add or remove a template | Commit its file to, or delete it from, a template folder, and sync the repository | | |
 

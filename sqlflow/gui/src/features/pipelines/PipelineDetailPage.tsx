@@ -29,7 +29,6 @@ import { RelativeTime } from "../../components/RelativeTime";
 import { RunDuration } from "../../components/RunDuration";
 import { ActiveBadge, RunStatusBadge, ScheduleStateBadge } from "../../components/StatusBadge";
 import { TruncatedText } from "../../components/TruncatedText";
-import { pollingInterval } from "../../hooks/usePolling";
 import { useTabFlowKind, useTabTitle } from "../../layout/workbench/TabsContext";
 import { describedStepFacts, embeddedHealthCheckName } from "../../lib/definition";
 import { formatBytes, formatDurationSeconds } from "../../lib/time";
@@ -307,7 +306,7 @@ function RunTimes({ pipelineId }: { pipelineId: string }) {
     queryKey: ["pipelines", "run-durations", pipelineId],
     queryFn: () => pipelineApi.runDurations(pipelineId),
     enabled: pipelineId !== "",
-    refetchInterval: pollingInterval(15000),
+    refetchInterval: 15000,
   });
 
   const profile = durationsQuery.data;

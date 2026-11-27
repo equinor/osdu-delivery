@@ -34,6 +34,11 @@ sourceRefs:
   - src/SqlFlow.ControlPlane/Program.cs
   - src/SqlFlow.ControlPlane/Configuration/ControlPlaneOptions.cs
   - src/SqlFlow.ControlPlane/Infrastructure/CatalogConnectionProvider.cs
+  - src/SqlFlow.ControlPlane/Infrastructure/FixedWindowLimiter.cs
+  - src/SqlFlow.ControlPlane/Infrastructure/RateLimitRejection.cs
+  - gui/src/api/rateLimit.ts
+  - gui/src/api/pollingGate.ts
+  - gui/src/api/followStream.ts
   - src/SqlFlow.ControlPlane/Background/BootstrapProvisioningService.cs
   - src/SqlFlow.ControlPlane/Background/RepoSyncService.cs
   - src/SqlFlow.ControlPlane/Background/RepoSyncWaiter.cs
@@ -177,11 +182,13 @@ Anonymous: an external trigger exchanges its proof for its credential at `POST /
 ### Health probes and rate limiting
 
 - `GET /health/live` has no dependencies (its predicate excludes every check); `GET /health/ready` runs the catalog database check, the module database verification and any check a module adds; `GET /health/startup` runs the start-up pass's check (see [the start-up pass](#the-start-up-pass)). All three are mapped with `DisableRateLimiting()`, so probe traffic behind a shared egress IP can never be throttled into a false negative.
-- A global fixed-window rate limiter partitions per authenticated subject (the `sub` claim) or, when anonymous, per client IP: default 120 permits per 60 second window, `QueueLimit = 0`, and HTTP 429 on rejection. The limiter runs after authentication so the partition can key on the subject.
+- A global fixed-window rate limiter partitions per authenticated subject (the `sub` claim) or, when anonymous, per client IP: default 120 permits per 60 second window, and no queue. The node protocol gets a window per node (`NodePermitPerWindow`), and an external trigger's credential one per issued credential. The limiter runs after authentication so the partition can key on the subject.
+- Each partition's window is a `FixedWindowLimiter` (src/SqlFlow.ControlPlane/Infrastructure/FixedWindowLimiter.cs): it opens with the first call after the previous window ended and knows when it ends. A call past its permits is answered HTTP 429 with `Retry-After` set to the seconds the window has left (rounded up, at least 1), and a problem body titled `Too many requests` whose detail says the same, with the request's `correlationId` (src/SqlFlow.ControlPlane/Infrastructure/RateLimitRejection.cs). A client that waits that long finds the window open; the framework's own fixed window would state a whole window whatever was left of it.
+- The GUI answers a 429 by pausing for as long as its `Retry-After` says (30 seconds when it says nothing, at most 300) and showing **Rate limited** in the status bar (gui/src/api/rateLimit.ts). While the pause holds, its polling gate (gui/src/api/pollingGate.ts) tells TanStack Query the page is not focused, so no page's poll asks anything, whatever its interval; when it ends, every query gone stale is read again and so is every query a 429 refused, so the refusal does not stay on screen. The same gate holds the polls of a surface its host says is hidden (an editor's tab behind another). A live stream (a run's trace, a run group, an activity's trace) waits out the pause after a 429, connects again after 2 seconds doubling to 30 while it keeps failing, and stops, saying "not live" with why, on any other 4xx but 408 (gui/src/api/followStream.ts).
 
 ### CORS and reverse-proxy awareness
 
-- CORS is an explicit allowlist (`ControlPlane:Cors:AllowedOrigins`). An empty list means no CORS policy is registered at all: same-origin only.
+- CORS is an explicit allowlist (`ControlPlane:Cors:AllowedOrigins`). An empty list means no CORS policy is registered at all: same-origin only. The policy exposes `Retry-After` and `X-Correlation-ID` to the allowed origins, so a GUI served from another origin reads how long a 429 says to wait and the id a refusal is quoted by.
 - Forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`) are honored only when `ControlPlane:Proxy:Enabled` is true, and only from the proxies listed in `KnownNetworks` (CIDRs) or `KnownProxies` (IPs), with `ForwardLimit` hops (default 1). The forwarded-headers middleware runs first in the pipeline so the rate limiter and login throttle see the real client address. Enabling the proxy section while trusting no proxies is a startup error ("ControlPlane:Proxy is enabled but trusts no proxies; ...").
 
 ### Fleet visibility
@@ -231,7 +238,7 @@ All settings bind from the `ControlPlane` configuration section (environment var
 | `Bootstrap:DemoRepo` | unset | One repo source written the same way under its own key: `Name` and `RemoteUrl` required when configured; `Branch` default `main`; `SyncIntervalSeconds` default `300` |
 | `Bootstrap:NodeTokenReference` | unset | A `${...}` reference to the node credential the deployment's workers present (`SQLFLOW_TOKEN`): `sqlf_` and at least 32 random characters, kept in the deployment's vault. Needs `AdminUsername`, the token's owner |
 | `Cors:AllowedOrigins` | `[]` | Empty means same-origin only |
-| `RateLimit:PermitPerWindow` / `RateLimit:WindowSeconds` | `120` / `60` | Both must be positive |
+| `RateLimit:PermitPerWindow` / `RateLimit:WindowSeconds` | `120` / `60` | Both must be positive; a call past the window's permits is answered 429 with `Retry-After` |
 | `RateLimit:NodePermitPerWindow` | `6000` | The per-node window for the node protocol, keyed by the token subject plus the node name each call carries; must be positive |
 | `Scheduler:PollSeconds` | `15` | Schedule scan cadence; must be positive |
 | `ManagedSync:PollSeconds` | `30` | Repo-source scan cadence for the periodic syncs; a sync-now or a newly registered source wakes the scan at once instead of waiting for it |

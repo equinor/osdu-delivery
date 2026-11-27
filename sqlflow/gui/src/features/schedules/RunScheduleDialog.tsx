@@ -167,7 +167,7 @@ export function RunScheduleDialog({ schedule, onClose }: RunScheduleDialogProps)
   const refused = given.data === undefined ? 0 : refusedMembers(given.data.members);
 
   const onEnded = useCallback(() => setEnded(true), []);
-  const { members: liveMembers, connected } = useRunGroupStream(groupId ?? "", groupId !== null && !ended, onEnded);
+  const { members: liveMembers, connected, refused: streamRefused } = useRunGroupStream(groupId ?? "", groupId !== null && !ended, onEnded);
   const liveByFlow = useMemo(() => {
     const map = new Map<string, RunSummary>();
     for (const member of liveMembers) {
@@ -568,12 +568,13 @@ export function RunScheduleDialog({ schedule, onClose }: RunScheduleDialogProps)
                     <Badge
                       variant="outline"
                       className={cn(
-                        !ended && (connected ? "text-success" : "text-warning"),
-                        ended && "text-muted-foreground",
+                        !ended && streamRefused === null && (connected ? "text-success" : "text-warning"),
+                        (ended || streamRefused !== null) && "text-muted-foreground",
                       )}
+                      title={!ended && streamRefused !== null ? streamRefused : undefined}
                       data-testid="run-schedule-stream-state"
                     >
-                      {ended ? "finished" : connected ? "live" : "reconnecting"}
+                      {ended ? "finished" : streamRefused !== null ? "not live" : connected ? "live" : "reconnecting"}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {ended

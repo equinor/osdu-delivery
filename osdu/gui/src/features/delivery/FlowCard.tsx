@@ -14,7 +14,7 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { parseUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { PipelineSummary } from "@/api/types";
-import type { DeliveryFlowStats } from "../../api/delivery";
+import type { DeliveryFlowProblem, DeliveryFlowStats } from "../../api/delivery";
 import { deliversTo } from "./deliveryTotals";
 import {
   deliveredPercent, elsewhereLine, flowVerdict, percentOf, ringArcs, statusShares, type StatusKey, type StatusShare, type Verdict,
@@ -326,11 +326,13 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
  * that explains rather than counts is on hover. The card opens the flow's Delivery tab; its links open what they name.
  *
  * In the workbench's partition: a flow that delivers there is counted there; a flow that delivers only to other partitions
- * says where, and shows no counts, since none of its records are the workbench partition's.
+ * says where, and shows no counts, since none of its records are the workbench partition's. A flow whose counts cannot be
+ * read (`problem`: its document does not parse, say) says so in place of its verdict, with why on hover, and shows none.
  */
-export function FlowCard({ pipeline, stats, active, elsewhere }: {
+export function FlowCard({ pipeline, stats, problem = null, active, elsewhere }: {
   pipeline: PipelineSummary;
   stats: DeliveryFlowStats | undefined;
+  problem?: DeliveryFlowProblem | null;
   active: string | null;
   elsewhere: boolean;
 }) {
@@ -353,6 +355,7 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
   const batch = pipeline.batch !== null && pipeline.batch !== "default" ? pipeline.batch : null;
   const shares = stats === undefined ? [] : statusShares(stats);
   const verdict = stats === undefined || elsewhere ? null : flowVerdict(stats);
+  const uncounted = stats === undefined && problem !== null;
 
   return (
     <Card
@@ -363,10 +366,12 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
       onClick={onCard}
       data-testid={testId}
       data-elsewhere={elsewhere ? "true" : undefined}
-      data-verdict={verdict?.kind}
+      data-verdict={uncounted ? "uncounted" : verdict?.kind}
     >
       <div className="flex items-center gap-3">
-        {stats === undefined
+        {uncounted
+          ? <span className="flex size-12 shrink-0 items-center justify-center rounded-full border-2 border-destructive/50 text-destructive"><XCircle className="size-5" aria-hidden /></span>
+          : stats === undefined
           ? <Skeleton className="size-12 shrink-0 rounded-full" />
           : <HealthRing shares={elsewhere ? [] : shares} total={elsewhere ? 0 : stats.total} percent={elsewhere ? null : deliveredPercent(stats)} testId={`${testId}-ring`} />}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -396,7 +401,19 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
           >
             {pipeline.name}
           </Link>
-          {stats === undefined ? (
+          {uncounted ? (
+            <ExplainTip
+              title={problem.title}
+              text={problem.detail ?? `The control plane answered ${problem.status} for this flow's counts.`}
+              testId={`${testId}-problem-why`}
+              side="bottom"
+            >
+              <span tabIndex={0} className="flex items-center gap-1.5 text-[13px] leading-5 text-destructive outline-none" data-testid={`${testId}-problem`}>
+                <XCircle className="size-3.5 shrink-0" aria-hidden />
+                <span className="min-w-0 truncate">{`Not counted: ${problem.title}`}</span>
+              </span>
+            </ExplainTip>
+          ) : stats === undefined ? (
             <Skeleton className="mt-1 h-4 w-48" />
           ) : elsewhere ? (
             <ExplainTip
@@ -422,7 +439,7 @@ export function FlowCard({ pipeline, stats, active, elsewhere }: {
         </div>
       </div>
 
-      {stats === undefined ? (
+      {uncounted ? null : stats === undefined ? (
         <Skeleton className="h-11 w-full" />
       ) : !elsewhere && (
         <>

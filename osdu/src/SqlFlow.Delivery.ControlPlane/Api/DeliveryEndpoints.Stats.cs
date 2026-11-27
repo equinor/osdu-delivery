@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.Core;
+using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
@@ -35,6 +36,19 @@ public sealed record DeliveryFlowStatsDto(
     IReadOnlyList<string>? Partitions = null, string? HeaderPartition = null, IReadOnlyList<string>? RedeliverParts = null, long Reverted = 0,
     long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0, long Restricted = 0, long RestrictedUntilComplete = 0,
     long AccessRestricted = 0);
+
+/// <summary>
+/// One delivery flow's counts as the pages that show every flow at once read them (the Delivery page's cards, the home
+/// page's totals): <c>Stats</c> the flow as a whole, as <c>GET /flows/{pipelineId}/stats</c> answers it with no partition,
+/// and <c>InPartition</c> its counts in the partition the request names, when the flow is counted there apart from its
+/// whole (a flow naming several partitions, that one among them). A flow whose counts cannot be read says why in
+/// <c>Problem</c> (its stats null, or its partition's), so one flow's problem never hides the other flows' counts.
+/// </summary>
+public sealed record DeliveryFlowCountsDto(
+    Guid PipelineId, DeliveryFlowStatsDto? Stats, DeliveryFlowStatsDto? InPartition = null, DeliveryFlowProblemDto? Problem = null);
+
+/// <summary>Why a flow's counts could not be read: the status, title and detail its own stats call answers with.</summary>
+public sealed record DeliveryFlowProblemDto(int Status, string Title, string? Detail);
 
 /// <summary>
 /// One interface of a delivery flow (osdu/docs/reference/flow/interfaces.md): its ledger identity, how it is delivered
@@ -88,17 +102,101 @@ public static partial class DeliveryEndpoints
             return problem!;
         }
 
+        var (stats, refused) = await CountAsync(unbound, interfaceName, partition, new RegistryOnce(partitions), ledger, clock.GetUtcNow().UtcDateTime, ct)
+            .ConfigureAwait(false);
+        return stats is null ? refused! : TypedResults.Ok(stats);
+    }
+
+    /// <summary>
+    /// Every delivery flow's counts in one answer, for a page that shows them all: each flow as a whole, and in
+    /// <paramref name="partition"/> where the flow is counted there apart from its whole, each worked out as
+    /// <see cref="GetStatsAsync"/> works out one flow's. One call in place of one or two per flow, which a page that keeps
+    /// every flow's counts current would otherwise spend its caller's rate limit on. A flow whose counts cannot be read is
+    /// listed with why, in the catalog's order, among the rest.
+    /// </summary>
+    private static async Task<Ok<IReadOnlyList<DeliveryFlowCountsDto>>> ListStatsAsync(
+        [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger,
+        TimeProvider clock, CancellationToken ct)
+    {
+        var pipelines = await db.Pipelines.AsNoTracking()
+            .Where(p => p.Kind == FlowDefinition.FlowTypeName)
+            .OrderBy(p => p.Name).ThenBy(p => p.Id)
+            .ToListAsync(ct).ConfigureAwait(false);
+        var named = string.IsNullOrWhiteSpace(partition) ? null : partition.Trim();
+        var registry = new RegistryOnce(partitions);
+        var now = clock.GetUtcNow().UtcDateTime;
+        var counts = new List<DeliveryFlowCountsDto>(pipelines.Count);
+        foreach (var pipeline in pipelines)
+        {
+            counts.Add(await CountFlowAsync(documents, pipeline, named, registry, ledger, now, ct).ConfigureAwait(false));
+        }
+
+        return TypedResults.Ok<IReadOnlyList<DeliveryFlowCountsDto>>(counts);
+    }
+
+    /// <summary>
+    /// One flow's entry in <see cref="ListStatsAsync"/>: its counts as a whole, and in <paramref name="partition"/> when the
+    /// whole covers that partition among others. A document that does not parse, a partition that cannot be settled, or any
+    /// other refusal of the flow's own stats call is this flow's problem, not the list's.
+    /// </summary>
+    private static async Task<DeliveryFlowCountsDto> CountFlowAsync(
+        DeliveryDocumentLoader documents, CatalogPipeline pipeline, string? partition, RegistryOnce registry, ILedger ledger, DateTime now, CancellationToken ct)
+    {
+        try
+        {
+            var (source, unparsed) = Parse(documents, pipeline);
+            if (source is null)
+            {
+                return new DeliveryFlowCountsDto(pipeline.Id, null, Problem: ProblemOf(unparsed!));
+            }
+
+            var (whole, refused) = await CountAsync(source, null, null, registry, ledger, now, ct).ConfigureAwait(false);
+            if (whole is null)
+            {
+                return new DeliveryFlowCountsDto(pipeline.Id, null, Problem: ProblemOf(refused!));
+            }
+
+            if (partition is null
+                || whole.Partitions?.Contains(partition, StringComparer.Ordinal) != true
+                || string.Equals(whole.Partition, partition, StringComparison.Ordinal))
+            {
+                return new DeliveryFlowCountsDto(pipeline.Id, whole);
+            }
+
+            var (there, refusedThere) = await CountAsync(source, null, partition, registry, ledger, now, ct).ConfigureAwait(false);
+            return new DeliveryFlowCountsDto(pipeline.Id, whole, there, refusedThere is null ? null : ProblemOf(refusedThere));
+        }
+        catch (SqlFlowException ex)
+        {
+            // What the flow's own stats call answers 400 with (the control plane's exception handler), redacted the same way.
+            return new DeliveryFlowCountsDto(pipeline.Id, null, Problem: new DeliveryFlowProblemDto(
+                StatusCodes.Status400BadRequest, "Bad request", SecretHygiene.RedactedMessage(ex)));
+        }
+    }
+
+    private static DeliveryFlowProblemDto ProblemOf(ProblemHttpResult problem)
+        => new(problem.StatusCode, problem.ProblemDetails.Title ?? "Not counted", problem.ProblemDetails.Detail);
+
+    /// <summary>
+    /// A flow's dashboard card, read from its ledgers: one interface's counts when <paramref name="interfaceName"/> names it
+    /// (or the flow has one) and every interface's added up otherwise; for a flow that works in partitions, in
+    /// <paramref name="partition"/>, or as a whole (every partition it serves added up) when that names none. Null, with the
+    /// problem to answer, when the interface or the partition is not one the flow has.
+    /// </summary>
+    private static async Task<(DeliveryFlowStatsDto? Stats, ProblemHttpResult? Problem)> CountAsync(
+        SourceContext unbound, string? interfaceName, string? partition, RegistryOnce partitions, ILedger ledger, DateTime now, CancellationToken ct)
+    {
         var whole = unbound.Source.Partitioned && string.IsNullOrWhiteSpace(partition);
         var registry = whole && unbound.Source.FollowsRegistry
             ? await partitions.ReadAsync(ct).ConfigureAwait(false)
-            : await RegistryForAsync(partitions, unbound.Source, partition, ct).ConfigureAwait(false);
+            : await partitions.ForAsync(unbound.Source, partition, ct).ConfigureAwait(false);
         var source = unbound;
         if (!whole)
         {
             (source, var unpartitioned) = await BindKeptAsync(ledger, unbound, partition, registry, ct).ConfigureAwait(false);
             if (unpartitioned is not null)
             {
-                return unpartitioned;
+                return (null, unpartitioned);
             }
         }
 
@@ -109,7 +207,7 @@ public static partial class DeliveryEndpoints
         }
         else if (Pick(source.Source, interfaceName, out var named) is { } unknown)
         {
-            return unknown;
+            return (null, unknown);
         }
         else
         {
@@ -118,14 +216,28 @@ public static partial class DeliveryEndpoints
                 : [named!];
         }
 
-        var now = clock.GetUtcNow().UtcDateTime;
         var stats = new List<(FlowDefinition Flow, FlowStats Stats)>(flows.Count);
         foreach (var flow in flows)
         {
             stats.Add((flow, await ledger.StatsAsync(flow.Id, now, ct).ConfigureAwait(false)));
         }
 
-        return TypedResults.Ok(StatsDto(source.Pipeline, stats, await HeaderPartitionAsync(ledger, flows, ct).ConfigureAwait(false)));
+        return (StatsDto(source.Pipeline, stats, await HeaderPartitionAsync(ledger, flows, ct).ConfigureAwait(false)), null);
+    }
+
+    /// <summary>
+    /// The partition registry, read at most once however many flows one request settles partitions for, and only when
+    /// settling one needs it (<see cref="SourceDefinition.NeedsRegistry"/>), as <see cref="RegistryForAsync"/> reads it.
+    /// </summary>
+    private sealed class RegistryOnce(IPartitionRegistry partitions)
+    {
+        private RegisteredPartitions? _read;
+
+        public async Task<RegisteredPartitions> ReadAsync(CancellationToken ct)
+            => _read ??= await partitions.ReadAsync(ct).ConfigureAwait(false);
+
+        public Task<RegisteredPartitions> ForAsync(SourceDefinition source, string? partition, CancellationToken ct)
+            => source.NeedsRegistry(partition) ? ReadAsync(ct) : Task.FromResult(RegisteredPartitions.None);
     }
 
     /// <summary>

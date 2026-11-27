@@ -26,8 +26,8 @@ function pathnameOf(pagePath: string): string {
 /**
  * The GUI's pages in the editor's own tabs: each a webview that loads the hosted build and shows one page of the
  * workbench, which the person moves through as they would in a browser tab. A page asked for that a tab already shows
- * is brought to the front rather than opened twice, a tab keeps its page while hidden, and the tabs open when the
- * editor closes come back on the pages they showed.
+ * is brought to the front rather than opened twice, a tab keeps its page while hidden (and tells it so, so it polls
+ * nothing until it is shown again), and the tabs open when the editor closes come back on the pages they showed.
  */
 export class HostedPages implements vscode.Disposable {
     private readonly pages = new Set<OpenedPage>();
@@ -107,8 +107,12 @@ export class HostedPages implements vscode.Disposable {
             }),
         };
         this.pages.add(page);
+        // A page restored behind another tab starts hidden; one moved behind another, or brought forward, is told.
+        page.link.setShown(panel.visible);
+        const viewState = panel.onDidChangeViewState(() => page.link.setShown(panel.visible));
         panel.onDidDispose(() => {
             this.pages.delete(page);
+            viewState.dispose();
             page.link.dispose();
         });
         try {

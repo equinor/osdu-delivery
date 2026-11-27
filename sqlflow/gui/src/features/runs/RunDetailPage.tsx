@@ -30,7 +30,6 @@ import { RunDuration } from "../../components/RunDuration";
 import { RunCauseChain, RunStartedByLine } from "../../components/RunStartedBy";
 import { RunStatusBadge } from "../../components/StatusBadge";
 import { TruncatedText } from "../../components/TruncatedText";
-import { pollingInterval } from "../../hooks/usePolling";
 import { useTraceTray } from "../../layout/workbench/TraceTray";
 import { useTabTitle } from "../../layout/workbench/TabsContext";
 import { embeddedHealthCheckName } from "../../lib/definition";
@@ -174,7 +173,7 @@ function RunDetailContent({ runId }: { runId: string }) {
         return false;
       }
 
-      return pollingInterval(3000)();
+      return 3000;
     },
   });
   useTabTitle(query.data?.flowName);

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Net.Http.Headers;
 using SqlFlow.Catalog;
 using SqlFlow.Catalog.Modules;
 using SqlFlow.ControlPlane.Api;
@@ -449,9 +450,14 @@ public static class ControlPlaneHost
             // the API (GET /api/v1/bootstrap) that says why, rather than being taken out of rotation.
             .AddCheck<BootstrapReadiness>("bootstrap", tags: [BootstrapReadiness.Tag]);
 
+        // Every partition is a FixedWindowLimiter rather than the framework's fixed window: it knows when its window ends, so a
+        // refused call is told exactly how long to wait (Retry-After), where the framework's says a whole window whatever is
+        // left of it.
+        var window = TimeSpan.FromSeconds(options.RateLimit.WindowSeconds);
         builder.Services.AddRateLimiter(rate =>
         {
             rate.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            rate.OnRejected = RateLimitRejection.WriteAsync;
             rate.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 var subject = context.User.FindFirst("sub")?.Value;
@@ -467,12 +473,8 @@ public static class ControlPlaneHost
                 if (subject is not null && ExternalTriggerCredential.IsTriggerCredential(context.User))
                 {
                     var jti = context.User.FindFirst("jti")?.Value ?? string.Empty;
-                    return RateLimitPartition.GetFixedWindowLimiter("trigger:" + subject + "/" + jti, _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = options.RateLimit.PermitPerWindow,
-                        Window = TimeSpan.FromSeconds(options.RateLimit.WindowSeconds),
-                        QueueLimit = 0,
-                    });
+                    return RateLimitPartition.Get("trigger:" + subject + "/" + jti, _ => new FixedWindowLimiter(
+                        options.RateLimit.PermitPerWindow, window, TimeProvider.System));
                 }
 
                 if (subject is not null
@@ -480,23 +482,15 @@ public static class ControlPlaneHost
                     && HasScope(context.User, NodeProtocol.Scope))
                 {
                     var nodeName = context.Request.Headers[NodeProtocol.NodeHeader].ToString();
-                    return RateLimitPartition.GetFixedWindowLimiter("node:" + subject + "/" + nodeName, _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = options.RateLimit.NodePermitPerWindow,
-                        Window = TimeSpan.FromSeconds(options.RateLimit.WindowSeconds),
-                        QueueLimit = 0,
-                    });
+                    return RateLimitPartition.Get("node:" + subject + "/" + nodeName, _ => new FixedWindowLimiter(
+                        options.RateLimit.NodePermitPerWindow, window, TimeProvider.System));
                 }
 
                 var partitionKey = subject
                     ?? context.Connection.RemoteIpAddress?.ToString()
                     ?? "anonymous";
-                return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = options.RateLimit.PermitPerWindow,
-                    Window = TimeSpan.FromSeconds(options.RateLimit.WindowSeconds),
-                    QueueLimit = 0,
-                });
+                return RateLimitPartition.Get(partitionKey, _ => new FixedWindowLimiter(
+                    options.RateLimit.PermitPerWindow, window, TimeProvider.System));
             });
         });
 
@@ -504,10 +498,13 @@ public static class ControlPlaneHost
         var hasCors = options.Cors.AllowedOrigins.Length > 0;
         if (hasCors)
         {
+            // A browser shows a cross-origin page only the response headers CORS names, besides the few every page reads:
+            // the GUI reads how long a 429 says to wait, and the correlation id a refusal is quoted by.
             builder.Services.AddCors(cors => cors.AddPolicy(corsPolicy, policy => policy
                 .WithOrigins(options.Cors.AllowedOrigins)
                 .AllowAnyHeader()
-                .AllowAnyMethod()));
+                .AllowAnyMethod()
+                .WithExposedHeaders(HeaderNames.RetryAfter, CorrelationIdMiddleware.HeaderName)));
         }
 
         // ---- Modules: each registers its services, options and hosted services after SQLFlow's own, so it may extend or

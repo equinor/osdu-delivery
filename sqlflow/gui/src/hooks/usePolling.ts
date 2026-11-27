@@ -1,24 +1,11 @@
 import { useSyncExternalStore } from "react";
 import { rateLimitPausedUntil, subscribeRateLimit } from "../api/client";
 
-/**
- * The polling cadence for live views on a poll-only API with a 120/min budget:
- * - while the server has rate limited us, polling stops entirely until the pause lapses;
- * - a hidden tab polls at most every 30s (nobody is watching; keep the budget for visible tabs);
- * - otherwise the page's base interval applies.
- * Pass the result as TanStack Query's refetchInterval.
- */
-export function pollingInterval(baseMs: number): () => number | false {
-  return () => {
-    if (rateLimitPausedUntil() !== null) {
-      return false;
-    }
+// A page polls by giving its query a refetchInterval, and nothing more: the page's polling gate (api/pollingGate.ts) holds
+// every poll while the control plane has the GUI paused for calling too often, while the browser tab is hidden, or while an
+// editor's tab is behind another, and reads again what went stale once it opens.
 
-    return document.visibilityState === "hidden" ? Math.max(baseMs * 6, 30_000) : baseMs;
-  };
-}
-
-/** Reactive view of the rate-limit pause, for the "rate limited, resuming shortly" banner. */
+/** Reactive view of the rate-limit pause, for the "rate limited, resuming shortly" banner: when it ends, or null. */
 export function useRateLimitPause(): number | null {
   return useSyncExternalStore(
     (onStoreChange) => subscribeRateLimit(() => onStoreChange()),

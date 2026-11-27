@@ -3932,12 +3932,57 @@
       ]
     },
     {
+      "id": "delivery-concept-template-versions",
+      "corpus": "reference",
+      "path": "concepts/template-versions.md",
+      "title": "Comparing template versions: what changed between two versions of a kind, and what moving a mapping takes",
+      "type": "concept",
+      "summary": "Compare two versions of an OSDU kind from any releases, and take a report of what moving a mapping from one to the other breaks, synced mappings included.",
+      "keywords": [
+        "compare versions",
+        "compare templates",
+        "template version",
+        "schema version",
+        "breaking change",
+        "additive change",
+        "wording change",
+        "move a mapping",
+        "upgrade a mapping",
+        "newer version of a kind",
+        "migration report",
+        "what breaks",
+        "report",
+        "copy as markdown",
+        "shared schema",
+        "browse osdu"
+      ],
+      "related": [
+        "delivery-concept-templates",
+        "delivery-flow-mapping",
+        "delivery-cli-check",
+        "delivery-concept-preflight",
+        "delivery-cli-template",
+        "delivery-guide-writing-a-mapping",
+        "delivery-concept-api"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateChangeAdvice.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateMoveReport.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/MappingMove.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.Compare.cs",
+        "osdu/gui/src/features/delivery/TemplateCompareSheet.tsx",
+        "osdu/gui/src/features/delivery/TemplateCompareReport.tsx"
+      ]
+    },
+    {
       "id": "delivery-concept-templates",
       "corpus": "reference",
       "path": "concepts/templates.md",
       "title": "Templates: OSDU schemas a repository's template folders hold, settled for each document by the folders on its path",
       "type": "concept",
-      "summary": "Templates as files of a repository's template folders: what the sync records, how a document's template is settled, downloading one, comparing versions.",
+      "summary": "Templates as files of a repository's template folders: what the sync records, how a document's template is settled, and downloading one.",
       "keywords": [
         "template",
         "template folder",
@@ -3951,8 +3996,6 @@
         "import",
         "pin",
         "template variables",
-        "compare versions",
-        "breaking change",
         "kind",
         "custom template",
         "template of one's own",
@@ -3982,7 +4025,8 @@
         "delivery-flow-mapping-parent",
         "delivery-flow-mapping-child",
         "delivery-guide-linked-records",
-        "delivery-cli-template-register"
+        "delivery-cli-template-register",
+        "delivery-concept-template-versions"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
@@ -3991,7 +4035,6 @@
         "osdu/src/SqlFlow.Delivery/Templates/TemplateSource.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateSources.cs",
         "osdu/src/SqlFlow.Delivery/Templates/OsduDataDefinitions.cs",
-        "osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplatePath.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
         "osdu/src/SqlFlow.Delivery/Templates/CustomTemplates.cs",

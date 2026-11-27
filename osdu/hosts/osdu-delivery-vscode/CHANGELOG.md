@@ -5,6 +5,14 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.6]
 
+### Templates
+
+- **A report on moving to another version of a kind.** Compare versions on the Templates page has a **Report** that
+  copies as Markdown or saves as Markdown or JSON what moving from one version to the other takes: what breaks, what each
+  synced mapping of the kind has to change, and what a mapping may now use. The MCP server's
+  `delivery_osdu_schema_compare` returns the same report ([comparing template
+  versions](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/template-versions.md#the-report)).
+
 ### Lineage
 
 - **The lineage graph's bar is one row.** The bar holds the search, the scope, how much is drawn and **What moved**.
@@ -37,6 +45,18 @@ product's own changes are in the [repository's change log](https://github.com/Ta
   match, and keeps the partition's totals. It used to look a record up on the Records page instead, which **Find a
   Record** and the Home page still do
   ([the Delivery page](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/gui-ledger.md#delivery)).
+
+### Pages left open
+
+- **A page behind another tab asks for nothing.** A page you keep open behind another tab, and the side bar while it is
+  closed, no longer polls the control plane: it reads what went stale as soon as it is in front again. Several pages left
+  open no longer add up past the calls a minute a person is allowed
+  ([the side bar and the pages](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/guides/vscode.md#the-side-bar-and-the-pages)).
+- **A page refused for calling too often comes back by itself.** A page the control plane refused with a 429 waits as
+  long as it is told, then reads again what was refused, where it used to show "HTTP 429" until it was closed. The
+  Delivery page reads every flow's counts in one call, and a flow whose document does not parse says **Not counted** and
+  why on its card ([rate
+  limiting](https://github.com/TahirRiaz/osdu-delivery/blob/main/sqlflow/docs/reference/concepts/control-plane.md#health-probes-and-rate-limiting)).
 
 ### Dimensions
 

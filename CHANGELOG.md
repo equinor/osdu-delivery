@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every delivery flow's counts in one call.** `GET /api/v1/delivery/flows/stats?partition=` answers each flow's counts
+  as a whole and in the partition named, and says why for a flow that cannot be counted; the Delivery page and the home
+  page read it in place of a call or two per flow. A flow whose document does not parse shows **Not counted** with why on
+  its card, first among the flows that need someone, and the home page counts the rest and says how many it left out,
+  where both used to wait on that flow forever ([the delivery API](osdu/docs/reference/concepts/api.md#flows-and-records)).
+- **A report on moving to another version of a kind.** Compare versions on the Templates page's Browse OSDU tab has a
+  **Report** that copies as Markdown or saves as Markdown or JSON what moving from one version to the other takes: what
+  breaks, what each synced mapping of the kind has to change (what it writes that changed, and what the newer version
+  requires that it would leave empty), and what a mapping may now use, each change with what to do about it.
+  `GET /api/v1/delivery/templates/osdu/compare/report` serves it, and the MCP server's `delivery_osdu_schema_compare`
+  returns it ([comparing template versions](osdu/docs/reference/concepts/template-versions.md#the-report)).
 - **The lineage graph shows what moved.** **What moved** in the graph's bar turns the graph into a view of what happened
   on it: every card leads with what its node did in the day looked at (the files that arrived, the rows a flow read and
   changed, what landed in a table, the records a delivery flow delivered) and charts it over the window, and every line
@@ -1387,6 +1398,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- **A page refused for calling too often comes back by itself.** When the control plane refused the GUI with a 429,
+  the page stopped polling for good and showed "HTTP 429" until it was reloaded, and with a dozen delivery flows Home
+  and the Delivery page asked for more than the 120 calls a minute a person is allowed. A 429 now says how long its
+  window has left (`Retry-After`, which a GUI on another origin can read) and why; the GUI waits exactly that long,
+  shows **Rate limited** in the status bar, asks nothing meanwhile, then reads again what went stale and what was
+  refused. A live trace refused for good says "not live" and why instead of asking every two seconds, and a page of the
+  VS Code extension kept behind another tab asks nothing until it is shown
+  ([rate limiting](sqlflow/docs/reference/concepts/control-plane.md#health-probes-and-rate-limiting)).
 - A file collection's file on Azure is read once however many parts it goes in, where a file in Azure Storage was read from its start for
   every part, and each part is sent again by itself when the store fails it ([large files](osdu/docs/reference/flow/large-files.md)).
 - An upload to an Azure account in a DNS zone (`*.blob.storage.azure.net`) carries the blob type Azure requires, as one to `*.blob.core.*` always did.

@@ -1,4 +1,6 @@
 import { runtimeConfig } from "../config/runtime";
+import { followStream, type StreamOutcome } from "./followStream";
+import { createRateLimitPause, type RateLimitListener } from "./rateLimit";
 
 /** An RFC 7807 problem from the API, with the correlation id support needs to find the server log line. */
 export class ApiError extends Error {
@@ -90,41 +92,62 @@ function addModuleHeaders(headers: Record<string, string>): void {
   }
 }
 
-// ---- Rate-limit pause (the 120/min budget) --------------------------------------------------------------------------
+// ---- Rate-limit pause (the control plane's per-caller window) --------------------------------------------------------
 
-type RateLimitListener = (pausedUntilMs: number | null) => void;
+/**
+ * The page's one pause for calling too often (rateLimit.ts): every 429 any call is answered starts or moves it, for as long
+ * as its Retry-After says, and the polling gate (queryClient.ts) holds every poll while it lasts.
+ */
+const rateLimit = createRateLimitPause({
+  now: () => Date.now(),
+  setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms),
+  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
+});
 
-let pausedUntilMs: number | null = null;
-const rateLimitListeners = new Set<RateLimitListener>();
-
-/** Polling queries consult this: while paused, refetch intervals back off so the budget can recover. */
+/** When the pause for calling too often ends, in epoch milliseconds; null while none holds. */
 export function rateLimitPausedUntil(): number | null {
-  if (pausedUntilMs !== null && Date.now() >= pausedUntilMs) {
-    pausedUntilMs = null;
-  }
-
-  return pausedUntilMs;
+  return rateLimit.pausedUntil();
 }
 
+/** Hears the pause start, move and end (null). */
 export function subscribeRateLimit(listener: RateLimitListener): () => void {
-  rateLimitListeners.add(listener);
-  return () => rateLimitListeners.delete(listener);
+  return rateLimit.subscribe(listener);
 }
 
-function pauseForRateLimit(retryAfterSeconds: number | null): void {
-  const pauseMs = (retryAfterSeconds ?? 30) * 1000;
-  pausedUntilMs = Date.now() + pauseMs;
-  for (const listener of rateLimitListeners) {
-    listener(pausedUntilMs);
-  }
-  window.setTimeout(() => {
-    if (pausedUntilMs !== null && Date.now() >= pausedUntilMs) {
-      pausedUntilMs = null;
-      for (const listener of rateLimitListeners) {
-        listener(null);
-      }
+/** Resolves once no pause for calling too often holds (at once when none does), or when `signal` aborts. */
+export function rateLimitLifted(signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted || rateLimit.pausedUntil() === null) {
+      resolve();
+      return;
     }
-  }, pauseMs + 50);
+
+    const done = () => {
+      stop();
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const stop = rateLimit.subscribe((until) => {
+      if (until === null) {
+        done();
+      }
+    });
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
+ * What every call does with its answer before reading it: a 401 to a signed-in call ends the session, and a 429 pauses
+ * the page for as long as its Retry-After says (rateLimit.ts).
+ */
+function noteAnswer(response: Response, signedIn: boolean): void {
+  if (response.status === 401 && signedIn && currentToken) {
+    onUnauthorized?.();
+  }
+
+  if (response.status === 429) {
+    rateLimit.pause(response.headers.get("Retry-After"));
+  }
 }
 
 // ---- Requests ------------------------------------------------------------------------------------------------------------
@@ -180,15 +203,7 @@ async function request<T>(options: RequestOptions): Promise<T> {
       "The API did not answer; check that the control plane is running and CORS allows this origin.", null);
   }
 
-  if (response.status === 401 && !options.anonymous && currentToken) {
-    onUnauthorized?.();
-  }
-
-  if (response.status === 429) {
-    const retryAfter = response.headers.get("Retry-After");
-    pauseForRateLimit(retryAfter ? Number.parseInt(retryAfter, 10) || null : null);
-  }
-
+  noteAnswer(response, !options.anonymous);
   if (!response.ok) {
     throw await toApiError(response);
   }
@@ -263,15 +278,7 @@ async function getRaw(path: string, accept: string, query: QueryParams | undefin
   }
 
   const response = await transport(url, { method: "GET", headers, signal: signal ?? null });
-  if (response.status === 401 && currentToken) {
-    onUnauthorized?.();
-  }
-
-  if (response.status === 429) {
-    const retryAfter = response.headers.get("Retry-After");
-    pauseForRateLimit(retryAfter ? Number.parseInt(retryAfter, 10) || null : null);
-  }
-
+  noteAnswer(response, true);
   if (!response.ok) {
     throw await toApiError(response);
   }
@@ -290,8 +297,9 @@ export interface SseFrame {
 /**
  * Opens an authenticated SSE stream and invokes `onFrame` for every frame until the server closes it or the
  * signal aborts. Built on fetch (not EventSource) so the bearer token travels in the Authorization header like
- * every other call; the caller owns reconnect policy. Heartbeat comments are consumed silently. Resolves when
- * the server ends the stream; rejects with an AbortError on cancellation and an ApiError on a failed handshake.
+ * every other call, and a 429 pauses the page as any other call's does; the caller owns reconnect policy
+ * (followStream.ts). Heartbeat comments are consumed silently. Resolves when the server ends the stream; rejects with
+ * an AbortError on cancellation and an ApiError on a failed handshake.
  * An action stream (the chat assistant's answer) POSTs a JSON body via `init`; plain tails default to GET.
  */
 export async function streamSse(
@@ -327,10 +335,7 @@ export async function streamSse(
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     signal,
   });
-  if (response.status === 401 && currentToken) {
-    onUnauthorized?.();
-  }
-
+  noteAnswer(response, true);
   if (!response.ok) {
     throw await toApiError(response);
   }
@@ -367,6 +372,35 @@ export async function streamSse(
       }
     }
   }
+}
+
+/**
+ * Follows a live stream (a run's trace, a run group, an activity's trace) until the server sends its end, `signal` aborts,
+ * or a refusal says asking again cannot help, connecting again as followStream.ts rules: after a wait that grows while
+ * connecting keeps failing, and after the page's pause when it was refused for calling too often. `attempt` opens the
+ * stream once (streamSse) and reads it until it closes, answering true when the end frame came.
+ */
+export function followLiveStream(
+  attempt: (signal: AbortSignal, onOpen: () => void) => Promise<boolean>,
+  signal: AbortSignal,
+  connected: (open: boolean) => void,
+): Promise<StreamOutcome> {
+  return followStream({
+    attempt,
+    connected,
+    // A call that never reached the control plane is an ApiError of status 0: no status answered it.
+    statusOf: (error) => (isApiError(error) && error.status > 0 ? error.status : null),
+    pauseEnded: rateLimitLifted,
+    sleep: (ms, aborted) => new Promise<void>((resolve) => {
+      const done = () => {
+        globalThis.clearTimeout(timer);
+        aborted.removeEventListener("abort", done);
+        resolve();
+      };
+      const timer = globalThis.setTimeout(done, ms);
+      aborted.addEventListener("abort", done, { once: true });
+    }),
+  }, signal);
 }
 
 /** Parses one raw SSE frame; returns null for comment-only frames (heartbeats). */
@@ -420,13 +454,7 @@ export async function postBinary<T>(
   }
 
   const response = await transport(url, { method: "POST", headers, body, signal: signal ?? null });
-  if (response.status === 401 && currentToken) {
-    onUnauthorized?.();
-  }
-  if (response.status === 429) {
-    const retryAfter = response.headers.get("Retry-After");
-    pauseForRateLimit(retryAfter ? Number.parseInt(retryAfter, 10) || null : null);
-  }
+  noteAnswer(response, true);
   if (!response.ok) {
     throw await toApiError(response);
   }

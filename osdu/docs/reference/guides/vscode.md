@@ -172,7 +172,10 @@ sign-in: a flow with its records, issues, submissions and preview, a run with it
 schedules, templates, the cache, a record's history, and the estate's [reports](../../../../sqlflow/docs/reference/concepts/reports.md). A strip over the page goes back and forward through what the tab has
 shown, reads the page again, carries the partition every delivery page is read in, and opens the same page in your
 browser when `sqlflow.guiUrl` is set. A page already open is brought forward rather than opened twice, and the tabs open
-when the editor closes come back on the pages they showed.
+when the editor closes come back on the pages they showed. A page behind another tab, and the side bar while it is
+closed, ask the control plane nothing until they are in front again, when they read what went stale: pages left open
+spend none of the calls a minute you are allowed
+([rate limiting](../../../../sqlflow/docs/reference/concepts/control-plane.md#health-probes-and-rate-limiting)).
 
 | Command | Opens |
 | --- | --- |

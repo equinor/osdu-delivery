@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CircleAlert, Loader2, Radio, RotateCcw } from "lucide-react";
+import { CircleAlert, Loader2, Radio, RotateCcw, Unplug } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ import { RunStartedByLine } from "../../components/RunStartedBy";
 import { RunStatusBadge } from "../../components/StatusBadge";
 import { TruncatedText } from "../../components/TruncatedText";
 import { useRunDock } from "./RunDockContext";
-import { pollingInterval } from "../../hooks/usePolling";
 import { useTabTitle } from "../../layout/workbench/TabsContext";
 import { useRunGroupStream } from "./useRunGroupStream";
 
@@ -114,18 +113,21 @@ function CountPills({ counts }: { counts: RunGroupCounts }) {
   );
 }
 
-/** The live/reconnecting pill next to the streaming member table. */
-function StreamStateBadge({ connected }: { connected: boolean }) {
+/** The live/reconnecting pill next to the streaming member table; "not live", with why on hover, once the stream was refused for good. */
+function StreamStateBadge({ connected, refused }: { connected: boolean; refused: string | null }) {
   return (
     <span
       data-testid="group-stream-state"
+      title={refused ?? undefined}
       className={cn(
         "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
-        connected ? "bg-success/12 text-success" : "bg-warning/15 text-warning",
+        refused !== null ? "bg-muted text-muted-foreground" : connected ? "bg-success/12 text-success" : "bg-warning/15 text-warning",
       )}
     >
-      {connected ? <Radio className="size-3.5 shrink-0" /> : <Loader2 className="size-3.5 shrink-0 animate-spin" />}
-      {connected ? "live" : "reconnecting"}
+      {refused !== null
+        ? <Unplug className="size-3.5 shrink-0" />
+        : connected ? <Radio className="size-3.5 shrink-0" /> : <Loader2 className="size-3.5 shrink-0 animate-spin" />}
+      {refused !== null ? "not live" : connected ? "live" : "reconnecting"}
     </span>
   );
 }
@@ -156,7 +158,7 @@ function RunGroupContent({ groupId }: { groupId: string }) {
         return false;
       }
 
-      return pollingInterval(3000)();
+      return 3000;
     },
   });
   // The group's scope label: its batch label in batch mode, its anchor flow's name in node mode.
@@ -172,7 +174,7 @@ function RunGroupContent({ groupId }: { groupId: string }) {
     void queryClient.invalidateQueries({ queryKey: ["run-groups", groupId] });
     void queryClient.invalidateQueries({ queryKey: ["runs", "group", groupId] });
   }, [queryClient, groupId]);
-  const { members: liveMembers, connected: streamConnected } = useRunGroupStream(groupId, live, refreshGroup);
+  const { members: liveMembers, connected: streamConnected, refused: streamRefused } = useRunGroupStream(groupId, live, refreshGroup);
 
   // The failures themselves, so a fire that went wrong says WHY at the top instead of leaving an operator to open
   // members one by one looking for the red one. While the group streams, the live members already carry the error
@@ -370,9 +372,11 @@ function RunGroupContent({ groupId }: { groupId: string }) {
         ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <StreamStateBadge connected={streamConnected} />
+              <StreamStateBadge connected={streamConnected} refused={streamRefused} />
               <span className="text-[13px] text-muted-foreground">
-                {streamConnected
+                {streamRefused !== null
+                  ? `The live stream was refused (${streamRefused}); the members show as last read.`
+                  : streamConnected
                   ? "Streaming member status and actions as the group executes."
                   : "Connection lost; resuming the stream."}
               </span>

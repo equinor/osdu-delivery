@@ -30,7 +30,6 @@ import { Page } from "../../components/Page";
 import { PageHeader } from "../../components/PageHeader";
 import { RelativeTime } from "../../components/RelativeTime";
 import { RunStatusBadge } from "../../components/StatusBadge";
-import { pollingInterval } from "../../hooks/usePolling";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { formatDurationSeconds } from "../../lib/time";
 import { useThemeMode } from "../../theme/ThemeModeContext";
@@ -125,14 +124,14 @@ export default function InsightsPage() {
   const flowsQuery = useQuery({
     queryKey: ["insights", "flows", days],
     queryFn: () => insightsApi.flows({ days, limit: 200 }),
-    refetchInterval: pollingInterval(60000),
+    refetchInterval: 60000,
   });
   // The GUI reads the full form (SQL inline, deep list) and discloses progressively; the compact default
   // exists for context-limited clients like the MCP tools.
   const recommendationsQuery = useQuery({
     queryKey: ["insights", "recommendations", days],
     queryFn: () => insightsApi.recommendations({ days, limit: 100, includeSql: true }),
-    refetchInterval: pollingInterval(60000),
+    refetchInterval: 60000,
   });
 
   // Chart ink comes off the same custom properties as the rest of the app (DESIGN.md 3.4): one series, one

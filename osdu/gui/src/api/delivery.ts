@@ -33,7 +33,8 @@ import type {
   DeliveryDimensionRunBuild, DeliveryDimensionValueDetail, DeliveryDimensionValuePage,
 } from "./delivery/dimensions";
 import type {
-  DeliveryAccessCheck, DeliveryFlowScope, DeliveryFlowStats, DeliveryInterface, DeliveryPartition, DeliveryProbeResult,
+  DeliveryAccessCheck, DeliveryFlowCounts, DeliveryFlowScope, DeliveryFlowStats, DeliveryInterface, DeliveryPartition,
+  DeliveryProbeResult,
 } from "./delivery/flows";
 import type {
   DeliveryAdoptRequest, DeliveryAdoptResult, DeliveryFlowRedeliverRequest, DeliveryIssueAdoptResult,
@@ -70,7 +71,7 @@ import type {
 } from "./delivery/submissions";
 import type {
   DeliveryOsduComparison, DeliveryOsduReleases, DeliveryOsduSchemaFile, DeliveryOsduSchemaIndex, DeliveryOsduSync,
-  DeliveryTemplate, DeliveryTemplateDetail, DeliveryTemplateResolution,
+  DeliveryTemplate, DeliveryTemplateDetail, DeliveryTemplateResolution, TemplateMoveReportFormat,
 } from "./delivery/templates";
 import type {
   DeliverySourceSql, DeliveryValueCheckRequest, DeliveryValueProof, DeliveryValueProofRequest,
@@ -159,6 +160,12 @@ export const deliveryApi = {
    */
   stats: (pipelineId: string, scope?: DeliveryFlowScope) =>
     get<DeliveryFlowStats>(`/api/v1/delivery/flows/${pipelineId}/stats`, scopeQuery(scope)),
+  /**
+   * Every delivery flow's counts in one call: each as a whole, and in `partition` where the flow names it among others, with
+   * why for a flow that cannot be counted. What a page showing every flow polls, in place of a call or two per flow.
+   */
+  flowCounts: (partition: string | null) =>
+    get<DeliveryFlowCounts[]>("/api/v1/delivery/flows/stats", partition ? { partition } : {}),
   /**
    * Every interface of a source, in the order a run takes them, each with its route and counts: in `partition`, or for a
    * flow that names its partitions and no partition given, in every partition, each row naming its own.
@@ -356,6 +363,18 @@ export const deliveryApi = {
       toRelease: to.release,
       toKind: to.kind,
     }),
+  /**
+   * The report on moving from one version of a kind to the other, as the text of the format asked for: what breaks, what each
+   * synced mapping of the kind has to change, and what a mapping may now use. Nothing is kept on the control plane.
+   */
+  osduCompareReport: (from: { release: string; kind: string }, to: { release: string; kind: string }, format: TemplateMoveReportFormat) =>
+    getText(`/api/v1/delivery/templates/osdu/compare/report?${new URLSearchParams({
+      fromRelease: from.release,
+      fromKind: from.kind,
+      toRelease: to.release,
+      toKind: to.kind,
+      format,
+    }).toString()}`),
   /** The repositories the mapping builder offers, with their git source and delivery flows. */
   builderRepos: () => get<DeliveryBuilderRepo[]>("/api/v1/delivery/mapping-builder/repos"),
   /** The partition caches the mapping builder offers, with the flows filling each, their current version and their types. */

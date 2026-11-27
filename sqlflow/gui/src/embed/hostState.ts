@@ -1,10 +1,12 @@
 // What a hosted page knows from its host (protocol.ts), kept where React reads it: who is signed in and where the
 // control plane is, the text of the documents a page watches, whether the side bar shows the person's environments, and
 // the mode of the host's own theme. Each is a small store read with useSyncExternalStore, so a message from the host
-// re-renders exactly what reads it, and nothing here sets state from an effect.
+// re-renders exactly what reads it, and nothing here sets state from an effect. Whether the surface is shown goes to the
+// page's polling gate (api/queryClient.ts).
 
 import { useEffect, useSyncExternalStore } from "react";
 import { useLocation } from "react-router-dom";
+import { setSurfaceShown } from "../api/queryClient";
 import { pageHost } from "./hostBridge";
 import {
   PROTOCOL_VERSION,
@@ -96,6 +98,9 @@ export function connectHost(): Promise<HostStart> {
         }
         case "showEnvironments":
           environmentsShown.set({ mode: "list" });
+          return;
+        case "shown":
+          setSurfaceShown(message.shown === true);
           return;
         default:
           return;

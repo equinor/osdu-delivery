@@ -30,6 +30,7 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { StatePill } from "@/components/StatusBadge";
 import { HeadClippedText } from "./HeadClippedText";
+import { TemplateCompareReport } from "./TemplateCompareReport";
 import { condenseDiff, diffList, diffText, type DiffPart } from "./textDiff";
 import { entityName, kindStem, roleLabel, splitPath } from "./templateFormat";
 import { ProblemView, TaskProgress } from "./TemplateSheet";
@@ -505,7 +506,8 @@ interface TemplateCompareSheetProps {
  * Two versions of an OSDU kind compared, each picked from any release of the OSDU data definitions: a verdict first (no
  * change, or how many breaking, additive and wording changes), then every variable that differs, grouped by what it means
  * for a mapping of the older version, with each changed field's edit marked in place, and the two schema files side by
- * side exactly as the repository publishes them.
+ * side exactly as the repository publishes them. Its Report copies or saves what moving from one to the other takes, the
+ * synced mappings of the kind included.
  */
 export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetProps) {
   const stem = kindStem(start.to.kind);
@@ -612,6 +614,13 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
               onChange={setTo}
               testId="templates-compare-to"
             />
+            <div className="ml-auto">
+              <TemplateCompareReport
+                from={{ release: from.release, kind: left.kind ?? from.kind }}
+                to={{ release: to.release, kind: right.kind ?? to.kind }}
+                disabled={comparison.data === undefined}
+              />
+            </div>
           </div>
 
           {fromVersion !== null && toVersion !== null && (

@@ -59,6 +59,7 @@ public static partial class DeliveryEndpoints
 
         // How the explorer reaches each partition of OSDU.
         delivery.MapDeliveryExplorerReadEndpoints();
+        delivery.MapGet("/flows/stats", ListStatsAsync).WithName("ListDeliveryFlowStats");
         delivery.MapGet("/flows/{pipelineId:guid}/stats", GetStatsAsync).WithName("GetDeliveryFlowStats");
         delivery.MapGet("/flows/{pipelineId:guid}/interfaces", ListInterfacesAsync).WithName("ListDeliveryInterfaces");
         delivery.MapGet("/flows/{pipelineId:guid}/records", ListRecordsAsync).WithName("ListDeliveryRecords");

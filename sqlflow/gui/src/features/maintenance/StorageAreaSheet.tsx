@@ -11,7 +11,6 @@ import { isApiError } from "../../api/client";
 import { maintenanceApi } from "../../api/endpoints";
 import type { StorageArea, StorageCleanup } from "../../api/types";
 import { RichTooltip } from "../../components/RichTooltip";
-import { pollingInterval } from "../../hooks/usePolling";
 import { allNavItems } from "../../layout/nav";
 import { STORAGE_KEY, cleanupsKey } from "./storageQueries";
 import { VerdictGlyph, VerdictMark, dateText, dateTimeText } from "./storagePresentation";
@@ -132,7 +131,7 @@ function AreaBody({ area, automaticCleanup, cleanupIntervalSeconds, admin, onCle
     queryKey: cleanupsKey(area.id),
     queryFn: () => maintenanceApi.cleanups(area.id, 20),
     enabled: retention !== null,
-    refetchInterval: (q) => (q.state.data?.some((c) => c.running) === true ? 2_000 : pollingInterval(60_000)()),
+    refetchInterval: (q) => (q.state.data?.some((c) => c.running) === true ? 2_000 : 60_000),
   });
 
   const removeLimit = useMutation({

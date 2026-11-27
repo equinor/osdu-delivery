@@ -17,28 +17,29 @@ import { RepositorySyncControl } from "./RepositorySyncControl";
 
 /**
  * Every delivery flow with what it has delivered in the workbench's partition: the "uploaded versus not" view. Each card
- * leads with its verdict, and once every flow's counts have answered, the flows that need someone come first (failed, then
- * held, then drifted), then the ones still delivering, then the delivered. A flow that delivers only to other partitions
- * is listed last, dimmed, with where it delivers, and left out of the totals. The header's filter narrows the cards to the
- * flows whose card shows every word typed; the totals stay the partition's.
+ * leads with its verdict, and once the counts have answered, the flows that need someone come first (a flow that cannot
+ * be counted, with why, then failed, held and drifted), then the ones still delivering, then the delivered. A flow that
+ * delivers only to other partitions is listed last, dimmed, with where it delivers, and left out of the totals. The
+ * header's filter narrows the cards to the flows whose card shows every word typed; the totals stay the partition's.
  */
 export default function DeliveryOverviewPage() {
-  const { flows, pipelines, active, stats, elsewhere, totals, counted } = useDeliveryTotals();
+  const { flows, counts, pipelines, active, stats, problems, elsewhere, totals, counted, uncounted } = useDeliveryTotals();
   const [filter, setFilter] = useState("");
-  const verdicts = stats.map((query, index) => (query?.data === undefined || elsewhere[index] ? null : flowVerdict(query.data)));
-  // Sorted once every count has answered, so cards do not move while the answers come in; afterwards a card moves only
-  // when its verdict does.
+  const verdicts = stats.map((s, index) => (s === undefined || elsewhere[index] ? null : flowVerdict(s)));
+  // Sorted once the counts have answered, so cards do not move while the answer comes in; afterwards a card moves only
+  // when its verdict does. A flow that cannot be counted needs someone before any other.
   const order = counted
-    ? attentionOrder(verdicts.map((verdict) => verdict?.rank ?? null), elsewhere)
+    ? attentionOrder(verdicts.map((verdict, index) => (problems[index] !== null ? -1 : verdict?.rank ?? null)), elsewhere)
     : pipelines.map((_, index) => index);
   const here = pipelines.length - elsewhere.filter(Boolean).length;
-  const needing = verdicts.filter((verdict) => verdict !== null && (verdict.tone === "destructive" || verdict.tone === "warning")).length;
+  const needing = uncounted
+    + verdicts.filter((verdict) => verdict !== null && (verdict.tone === "destructive" || verdict.tone === "warning")).length;
 
   // What each card shows of its flow, read in the cards' order, so a match keeps its place among them.
   const searched = filter.trim();
   const shown = matchingFlows(order.map((index) => {
     const pipeline = pipelines[index]!;
-    const partitions = deliversTo(stats[index]?.data) ?? [];
+    const partitions = deliversTo(stats[index]) ?? [];
     return {
       index,
       name: pipeline.name,
@@ -46,7 +47,7 @@ export default function DeliveryOverviewPage() {
       batch: pipeline.batch !== null && pipeline.batch !== "default" ? pipeline.batch : null,
       active: pipeline.active,
       partitions,
-      headline: elsewhere[index] ? elsewhereLine(partitions, active) : verdicts[index]?.headline ?? null,
+      headline: elsewhere[index] ? elsewhereLine(partitions, active) : verdicts[index]?.headline ?? problems[index]?.title ?? null,
     };
   }), searched).map((flow) => flow.index);
 
@@ -78,6 +79,11 @@ export default function DeliveryOverviewPage() {
         )}
       />
       <OrphanedLedgersNotice partition={active} />
+      {counts.isError && counts.data === undefined && (
+        isApiError(counts.error)
+          ? <CorrelationError error={counts.error} />
+          : <p className="text-[13px] text-destructive">{String(counts.error)}</p>
+      )}
       {flows.data === undefined ? (
         <Skeleton className="h-40 w-full rounded-lg" />
       ) : pipelines.length === 0 ? (
@@ -113,7 +119,8 @@ export default function DeliveryOverviewPage() {
                 <FlowCard
                   key={pipeline.id}
                   pipeline={pipeline}
-                  stats={stats[index]?.data}
+                  stats={stats[index]}
+                  problem={problems[index] ?? null}
                   active={active}
                   elsewhere={elsewhere[index] ?? false}
                 />

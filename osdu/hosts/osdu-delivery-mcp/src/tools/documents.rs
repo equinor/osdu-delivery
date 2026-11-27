@@ -396,11 +396,11 @@ versions use delivery_osdu_schema_compare. Reading writes nothing."
     }
 
     #[tool(
-        description = "Compare two versions of an OSDU kind from the data definitions: what a mapping has to change to \
-move from one to the other. Returns how many variable changes are breaking, additive or wording only, and every \
-variable that differs (added, removed or changed) with the field that moved and what it means for a mapping. Use it \
-for 'what breaks if we move WellLog from 1.4.0 to 1.5.0', 'is this upgrade additive'. Kinds and versions per release \
-come from delivery_osdu_schemas(release)."
+        description = "Compare two versions of an OSDU kind from the data definitions: what moving a mapping from one to \
+the other takes. Returns counts of breaking, additive and wording changes; every synced mapping of the kind with its \
+state and what it has to change; and every variable that differs, with what it asks of a mapping. Use it for 'what \
+breaks if we move WellLog from 1.4.0 to 1.5.0', 'which of our mappings need changing'. Kinds per release come from \
+delivery_osdu_schemas(release)."
     )]
     async fn delivery_osdu_schema_compare(&self, Parameters(i): Parameters<OsduCompareInput>) -> String {
         let query = Query::new()
@@ -411,26 +411,11 @@ come from delivery_osdu_schemas(release)."
         if query.pairs().len() != 4 {
             return refuse("fromRelease, fromKind, toRelease and toKind are all required.");
         }
-        match self.ctx.read("/api/v1/delivery/templates/osdu/compare", query.pairs()).await {
-            Ok(mut comparison) => {
-                // The two published files ride along whole, which is the diff a person reads in the GUI; here the
-                // variable changes are the answer, and the files would only crowd them out.
-                for side in ["from", "to"] {
-                    if let Some(map) = comparison.get_mut(side).and_then(Value::as_object_mut) {
-                        map.remove("fileText");
-                    }
-                }
-                if let Some(files) = comparison.get_mut("referencedFiles").and_then(Value::as_array_mut) {
-                    for file in files {
-                        if let Some(map) = file.as_object_mut() {
-                            map.remove("fromText");
-                            map.remove("toText");
-                        }
-                    }
-                }
-                json_str(&comparison)
-            }
-            Err(error) => refuse(format!("{error:#}")),
-        }
+
+        // The report on the move, which the GUI's Report copies: the comparison's changes with what each asks of a
+        // mapping, and every synced mapping of the kind set against the newer version. It carries no file's text, which is
+        // the diff a person reads in the GUI and would only crowd the changes out here.
+        let query = query.text("format", Some("json".to_string()));
+        self.ctx.get("/api/v1/delivery/templates/osdu/compare/report", query.pairs()).await
     }
 }

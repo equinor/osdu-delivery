@@ -3,14 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { CircleCheck, Clock3, Loader2, TriangleAlert, User } from "lucide-react";
 import { runApi } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
-import { pollingInterval, useRateLimitPause } from "../../hooks/usePolling";
+import { useRateLimitPause } from "../../hooks/usePolling";
 
 /** One page-1 probe per state: the PagedResult total is the count, the items are discarded. */
 function useRunCount(status: "running" | "queued"): number | undefined {
   const { data } = useQuery({
     queryKey: ["status-bar", "runs", status],
     queryFn: () => runApi.list({ status, pageSize: 1 }),
-    refetchInterval: pollingInterval(15_000),
+    refetchInterval: 15_000,
     refetchOnWindowFocus: false,
   });
   return data?.total;

@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { runApi } from "@/api/endpoints";
 import type { RunSummary } from "@/api/types";
-import { pollingInterval } from "@/hooks/usePolling";
-import { moved, runsUnderWay, signatures, underWay } from "./followRunsState";
+import { countsDue, moved, runsUnderWay, signatures, underWay } from "./followRunsState";
 
 /** The query key of the probe, which an action that queues a run asks again at once so the page shows the run. */
 export const FOLLOW_RUNS_KEY = "delivery-run-follow";
+
+/**
+ * The query key every delivery flow's counts are read under, in one call (useDeliveryTotals), followed by the partition
+ * they are counted in: what the Delivery page's cards and the home page's totals show.
+ */
+export const FLOW_COUNTS_KEY = ["delivery", "flow-counts"] as const;
 
 /**
  * How many of one flow's newest runs the probe reads: the run asked for last, and enough beside it that the parts a
@@ -22,10 +27,11 @@ function readsFlow(query: Query, pipelineId: string): boolean {
 /**
  * Keeps a page's delivery views in step with the runs of the flows it shows, on an API that is polled rather than pushed.
  * One probe reads the newest runs of one flow (`pipelineId`) or the newest run of every delivery flow (null), the run
- * board's own listing, every five seconds, and every three while a run is queued or running. While a flow's run is under
- * way, its counts and submissions are read again at each probe, so they move with the run; when one of a flow's runs
- * starts, moves on or ends, every delivery view of that flow is read again at once. A page then shows what a run did within
- * seconds of it, not at its own next poll, and asks for no more than the probe while nothing runs.
+ * board's own listing, every five seconds, and every three while a run is queued or running. When one of a flow's runs
+ * starts, moves on or ends, every delivery view of that flow, and every flow's counts, are read again at once. While a
+ * flow's run is under way, its counts and submissions (and every flow's counts) are read again whenever they have grown
+ * older than the running cadence (countsDue), so they move with the run while the probe asks for them no oftener than
+ * that. A page then shows what a run did within seconds of it, and asks for no more than the probe while nothing runs.
  *
  * It answers the runs under way, newest first, which a flow's page shows above its tabs' content (RunsUnderWay).
  */
@@ -38,7 +44,7 @@ export function useFollowDeliveryRuns(pipelineId: string | null, enabled = true)
       ? runApi.list({ flowKind: "delivery", latest: true, pageSize: 200 })
       : runApi.list({ pipelineId, pageSize: FLOW_RUNS_READ })),
     enabled,
-    refetchInterval: (query) => pollingInterval((query.state.data?.items ?? []).some(underWay) ? 3000 : 5000)(),
+    refetchInterval: (query) => ((query.state.data?.items ?? []).some(underWay) ? 3000 : 5000),
   });
 
   useEffect(() => {
@@ -54,11 +60,26 @@ export function useFollowDeliveryRuns(pipelineId: string | null, enabled = true)
       void queryClient.invalidateQueries({ predicate: (query) => readsFlow(query, flow) });
     }
 
-    for (const flow of new Set(runsUnderWay(items).map((run) => run.pipelineId))) {
-      if (!changed.has(flow)) {
-        void queryClient.invalidateQueries({ queryKey: ["delivery", "stats", flow] });
-        void queryClient.invalidateQueries({ queryKey: ["delivery", "submissions", flow] });
-      }
+    if (changed.size > 0) {
+      void queryClient.invalidateQueries({ queryKey: FLOW_COUNTS_KEY });
+    }
+
+    const running = [...new Set(runsUnderWay(items).map((run) => run.pipelineId))].filter((flow) => !changed.has(flow));
+    if (running.length === 0) {
+      return;
+    }
+
+    // Only what has grown older than the running cadence is read again, so a probe every three seconds asks for each count
+    // no oftener than that, whichever of the probe, a page's own poll or an action read it last.
+    const clock = Date.now();
+    const due = (query: Query) => countsDue(query.state.dataUpdatedAt, clock);
+    for (const flow of running) {
+      void queryClient.invalidateQueries({ queryKey: ["delivery", "stats", flow], predicate: due });
+      void queryClient.invalidateQueries({ queryKey: ["delivery", "submissions", flow], predicate: due });
+    }
+
+    if (changed.size === 0) {
+      void queryClient.invalidateQueries({ queryKey: FLOW_COUNTS_KEY, predicate: due });
     }
   }, [runs.data, queryClient]);
 

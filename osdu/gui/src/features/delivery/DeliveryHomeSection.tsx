@@ -13,13 +13,19 @@ import { Count, DeliveryBar } from "./DeliveryCounts";
 import { useDeliveryTotals } from "./deliveryTotals";
 import { FindRecordForm } from "./FindRecordForm";
 
+/** Why the section has nothing to show: the call that failed, with its correlation id when the API gave one. */
+function Failure({ error }: { error: unknown }) {
+  return isApiError(error) ? <CorrelationError error={error} /> : <p className="text-[13px] text-destructive">{String(error)}</p>;
+}
+
 /**
  * What the delivery flows hold in the workbench's partition, on the home page: how much of it is delivered, the records
  * by where they stand, and the ways into them (a record found by any key, the Delivery page). The counts are the Delivery
- * page's, added up the same way (useDeliveryTotals), so the two never disagree.
+ * page's, added up the same way (useDeliveryTotals), so the two never disagree; a flow whose counts cannot be read is left
+ * out of them and said to be, and the Delivery page says why.
  */
 export function DeliveryHomeSection() {
-  const { flows, pipelines, active, elsewhere, totals, counted } = useDeliveryTotals();
+  const { flows, counts, pipelines, active, elsewhere, totals, counted, uncounted } = useDeliveryTotals();
   const here = pipelines.filter((_, index) => !elsewhere[index]).length;
   const share = totals.total === 0 ? 0 : Math.floor((totals.delivered / totals.total) * 100);
 
@@ -45,8 +51,8 @@ export function DeliveryHomeSection() {
       testId="home-delivery"
     >
       <Card className="gap-4 rounded-lg p-4">
-        {flows.isError ? (
-          isApiError(flows.error) ? <CorrelationError error={flows.error} /> : <p className="text-[13px] text-destructive">{String(flows.error)}</p>
+        {flows.isError || (counts.isError && counts.data === undefined) ? (
+          <Failure error={flows.isError ? flows.error : counts.error} />
         ) : flows.data === undefined || (pipelines.length > 0 && !counted) ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-7 w-72" />
@@ -71,6 +77,11 @@ export function DeliveryHomeSection() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {`${here} delivery flow${here === 1 ? "" : "s"}`}
+                {uncounted > 0 && (
+                  <Link to="/delivery" className="text-destructive hover:underline" data-testid="home-delivery-uncounted">
+                    {`, ${uncounted} not counted`}
+                  </Link>
+                )}
                 {totals.lastDeliveredUtc !== null && (
                   <>
                     {", last delivery "}

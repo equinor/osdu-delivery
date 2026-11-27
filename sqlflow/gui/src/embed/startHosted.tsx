@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { isApiError, setApiTransport } from "../api/client";
+import { setApiTransport } from "../api/client";
+import { createQueryClient } from "../api/queryClient";
 import { HostedAuthProvider } from "../auth/AuthContext";
 import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -28,24 +29,6 @@ const NO_CONTROL_PLANE = "http://control-plane.invalid";
 
 /** The surface a hosted entry draws, which the host design reads to stand on the right ground (host-design.css). */
 export type HostedSurface = "page" | "side-bar";
-
-function createQueryClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        // As in a browser tab (bootstrap.tsx): a 4xx answer is the answer, anything else gets two more tries.
-        retry: (failureCount, error) => {
-          if (isApiError(error) && error.status >= 400 && error.status < 500) {
-            return false;
-          }
-
-          return failureCount < 2;
-        },
-        staleTime: 5_000,
-      },
-    },
-  });
-}
 
 /** What a hosted entry gives besides its modules. */
 export interface HostedOptions {

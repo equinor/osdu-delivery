@@ -2,7 +2,6 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { type CSSProperties, type ReactNode, useEffect } from "react";
 import type { PagedResult } from "../api/types";
 import { isApiError } from "../api/client";
-import { pollingInterval } from "../hooks/usePolling";
 import { useTablePaging } from "../hooks/useTablePaging";
 import { CorrelationError } from "./CorrelationError";
 import { DataTable, type Column, type RowSelection, type TableGrouping } from "./DataTable";
@@ -54,7 +53,7 @@ export function PagedTable<T>({
     queryKey: [...queryKey, page, pageSize],
     queryFn: () => fetchPage(page + 1, pageSize),
     placeholderData: keepPreviousData,
-    refetchInterval: pollMs ? pollingInterval(pollMs) : undefined,
+    refetchInterval: pollMs,
   });
 
   // The page a caller acts on in bulk: reported after render, so a parent can hold the rows it is showing (to

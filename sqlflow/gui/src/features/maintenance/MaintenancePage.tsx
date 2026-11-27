@@ -19,7 +19,6 @@ import { PageHeader } from "../../components/PageHeader";
 import { RichTooltip } from "../../components/RichTooltip";
 import { SearchInput } from "../../components/SearchInput";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
-import { pollingInterval } from "../../hooks/usePolling";
 import { tableContainer, useScrollFit } from "../../hooks/useScrollFit";
 import { STORAGE_KEY } from "./storageQueries";
 import { CleanupSheet } from "./CleanupSheet";
@@ -242,7 +241,7 @@ export default function MaintenancePage() {
     queryKey: STORAGE_KEY,
     queryFn: () => maintenanceApi.storage(),
     // While a cleanup runs the page follows it closely; otherwise the sizes are measured again every minute.
-    refetchInterval: (q) => (q.state.data?.areas.some((a) => a.running) === true ? 3_000 : pollingInterval(60_000)()),
+    refetchInterval: (q) => (q.state.data?.areas.some((a) => a.running) === true ? 3_000 : 60_000),
   });
   const report = query.data;
   const verdictFilter = verdictOrder.find((v) => v === filter) ?? null;

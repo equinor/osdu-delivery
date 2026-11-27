@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Check, CheckCircle2, CircleAlert, Copy, Download, Eraser, Loader2, Maximize2, OctagonAlert, Radio, TriangleAlert,
+  Check, CheckCircle2, CircleAlert, Copy, Download, Eraser, Loader2, Maximize2, OctagonAlert, Radio, TriangleAlert, Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -52,8 +52,24 @@ function fmtTime(value: string | null): string {
   return value ? parseUtc(value).toISOString().slice(11, 23) : "-";
 }
 
-/** The live/complete/failed pill for a trace panel header. */
-function StatusPill({ connected, ended, failed }: { connected: boolean; ended: boolean; failed: boolean }) {
+/**
+ * The live/complete/failed pill for a trace panel header; "not live", with why on hover, once the live stream was refused
+ * for good (the run is gone, or no longer this person's to read): the lines shown stay, and none follow.
+ */
+function StatusPill({ connected, ended, failed, refused }: { connected: boolean; ended: boolean; failed: boolean; refused: string | null }) {
+  if (refused !== null && !ended) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium leading-4 text-muted-foreground"
+        title={refused}
+        data-testid="trace-not-live"
+      >
+        <Unplug className="size-3.5 shrink-0" />
+        not live
+      </span>
+    );
+  }
+
   if (ended) {
     return (
       <span
@@ -303,6 +319,7 @@ function TraceRow({ line, separated }: { line: TraceLine; separated: boolean }) 
 export function TraceLog({
   lines,
   connected,
+  refused = null,
   ended,
   failed,
   currentGroup,
@@ -314,6 +331,8 @@ export function TraceLog({
 }: {
   lines: TraceLine[];
   connected: boolean;
+  /** Why the live stream stopped for good, when it did (the hooks' `refused`): the pill says "not live" with it. */
+  refused?: string | null;
   ended: boolean;
   failed: boolean;
   actions?: ReactNode;
@@ -472,7 +491,7 @@ export function TraceLog({
             disabled={visible.length === 0}
             data-testid="trace-clear"
           />
-          <StatusPill connected={connected} ended={ended} failed={failed} />
+          <StatusPill connected={connected} ended={ended} failed={failed} refused={refused} />
         </div>
       </div>
 

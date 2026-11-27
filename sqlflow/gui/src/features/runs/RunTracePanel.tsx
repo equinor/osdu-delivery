@@ -6,7 +6,6 @@ import { TRACE_HEADER_ACTION, TraceLog, type TraceLine } from "@/components/Trac
 import { downloadFileName } from "@/lib/download";
 import { runApi } from "../../api/endpoints";
 import type { RunTraceEntry } from "../../api/types";
-import { pollingInterval } from "../../hooks/usePolling";
 import { useRunTraceStream } from "./useRunTraceStream";
 
 /** The most trace entries a run's panel loads at rest: a run's trace is bounded, and Copy trace and Download always
@@ -53,7 +52,7 @@ export function RunTracePanel({ runId }: { runId: string }) {
         return false;
       }
 
-      return pollingInterval(3000)();
+      return 3000;
     },
   });
 
@@ -64,7 +63,7 @@ export function RunTracePanel({ runId }: { runId: string }) {
     void queryClient.invalidateQueries({ queryKey: ["runs", runId] });
   }, [queryClient, runId]);
 
-  const { entries: liveEntries, connected } = useRunTraceStream(runId, live, refresh);
+  const { entries: liveEntries, connected, refused } = useRunTraceStream(runId, live, refresh);
 
   // At rest (or before the run has loaded), the authoritative trace comes from the paged endpoint.
   const atRestQuery = useQuery({
@@ -85,6 +84,7 @@ export function RunTracePanel({ runId }: { runId: string }) {
     <TraceLog
       lines={lines}
       connected={connected}
+      refused={refused}
       ended={ended}
       failed={failed}
       text={() => runApi.traceText(runId)}

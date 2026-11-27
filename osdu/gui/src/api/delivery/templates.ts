@@ -196,6 +196,9 @@ export interface DeliveryOsduReferencedFile {
   toText: string | null;
 }
 
+/** The formats the report on moving from one version of a kind to another is taken in: Markdown to read or paste, JSON for a tool. */
+export type TemplateMoveReportFormat = "md" | "json";
+
 /** Two versions of a kind from the OSDU data definitions, compared as files and variable by variable. */
 export interface DeliveryOsduComparison {
   from: DeliveryOsduComparisonSide;

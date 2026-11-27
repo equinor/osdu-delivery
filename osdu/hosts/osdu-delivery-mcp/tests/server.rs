@@ -614,6 +614,7 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("getting started first delivery", &["delivery-guide-getting-started"]),
     ("one source delivers several kinds", &["delivery-flow-interfaces", "delivery-guide-multi-kind-source"]),
     ("download an osdu schema as a template file", &["delivery-cli-template", "delivery-concept-templates"]),
+    ("what breaks if we move a mapping to a newer version of its kind", &["delivery-concept-template-versions"]),
     ("register a custom schema with osdu", &["delivery-cli-template-register"]),
     ("my custom kind records say schema not found", &["delivery-cli-template-register", "delivery-concept-templates"]),
     ("register a partition", &["delivery-cli-partition", "delivery-concept-partitions"]),
@@ -1255,16 +1256,22 @@ async fn a_template_is_narrowed_to_the_variables_asked_about() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_schema_comparison_returns_the_changes_and_not_the_files() {
+async fn a_schema_comparison_returns_the_report_on_moving_each_synced_mapping() {
+    let report = "/api/v1/delivery/templates/osdu/compare/report";
     let estate = Estate::start(vec![(
-        "GET /api/v1/delivery/templates/osdu/compare",
+        "GET /api/v1/delivery/templates/osdu/compare/report",
         200,
         json!({
-            "from": { "kind": "osdu:wks:work-product-component--WellLog:1.4.0", "fileText": "{ a very long schema }" },
-            "to": { "kind": "osdu:wks:work-product-component--WellLog:1.5.0", "fileText": "{ another very long schema }" },
-            "breaking": 1, "additive": 3, "wording": 0,
+            "kind": "osdu:wks:work-product-component--WellLog",
+            "from": { "kind": "osdu:wks:work-product-component--WellLog:1.4.0", "release": "0.27" },
+            "to": { "kind": "osdu:wks:work-product-component--WellLog:1.5.0", "release": "0.28" },
+            "counts": { "breaking": 1, "additive": 3, "wording": 0, "unchanged": 80 },
+            "mappings": [{
+                "repository": "welldb", "mapping": "WellLog@1.4.0", "state": "NeedsChanges",
+                "findings": [{ "path": "osdu.data.Curves[].CurveID", "change": "Changed", "note": "Its type is number, was string." }]
+            }],
             "changes": [{ "path": "osdu.data.Curves[].CurveID", "change": "Changed", "impact": "Breaking" }],
-            "referencedFiles": [{ "name": "AbstractCommonResources", "fromText": "long", "toText": "longer" }]
+            "sharedSchemas": { "same": 4, "differ": [{ "name": "AbstractCommonResources" }] }
         }),
     )])
     .await;
@@ -1276,10 +1283,13 @@ async fn a_schema_comparison_returns_the_changes_and_not_the_files() {
             json!({ "fromRelease": "0.27", "fromKind": "osdu:wks:work-product-component--WellLog:1.4.0", "toRelease": "0.28", "toKind": "osdu:wks:work-product-component--WellLog:1.5.0" }),
         )
         .await;
-    assert_eq!(comparison["breaking"], json!(1));
+    assert_eq!(comparison["counts"]["breaking"], json!(1));
     assert_eq!(comparison["changes"][0]["impact"], json!("Breaking"));
-    assert!(!comparison.to_string().contains("long schema") && !comparison.to_string().contains("longer"));
-    assert_eq!(comparison["referencedFiles"][0]["name"], json!("AbstractCommonResources"));
+    assert_eq!(comparison["mappings"][0]["state"], json!("NeedsChanges"));
+    assert_eq!(comparison["mappings"][0]["findings"][0]["path"], json!("osdu.data.Curves[].CurveID"));
+
+    // The report is asked for as JSON, the format a tool reads.
+    assert!(estate.only("GET", report).query.ends_with("&format=json"), "{}", estate.only("GET", report).query);
 }
 
 // ---- The cache, as metadata --------------------------------------------------------------------------------------------

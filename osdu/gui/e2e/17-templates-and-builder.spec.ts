@@ -261,6 +261,8 @@ test.describe.serial("templates and the mapping builder", () => {
     const releases = /\/api\/v1\/delivery\/templates\/osdu\/releases$/;
     const schemas = /\/api\/v1\/delivery\/templates\/osdu\/schemas(\?|$)/;
     const compare = /\/api\/v1\/delivery\/templates\/osdu\/compare(\?|$)/;
+    const report = /\/api\/v1\/delivery\/templates\/osdu\/compare\/report(\?|$)/;
+    const REPORT = "# Moving Wellbore from 1.0.0 to 1.3.0\n\n**1 breaking, 1 additive, 1 wording**; 40 variables unchanged.\n";
     const OLDER_KIND = "osdu:wks:master-data--Wellbore:1.0.0";
     const side = (kind: string, path: string, templateVersion: string, fileText: string) => ({
       kind, release: RELEASE, path, webUrl: `${DATA_DEFINITIONS}/-/blob/v0.30.0/Generated/${path}`, status: "PUBLISHED", templateVersion, fileText,
@@ -294,6 +296,7 @@ test.describe.serial("templates and the mapping builder", () => {
       ],
     };
     const compared: URL[] = [];
+    const reported: URL[] = [];
     await adminPage.route(releases, (route) => route.fulfill({ json: { syncedUtc: "2026-09-13T10:00:00Z", releases: [RELEASE, { ...RELEASE, name: "v0.29.1", commit: "0".repeat(40), local: false }] } }));
     await adminPage.route(schemas, (route) => route.fulfill({
       json: {
@@ -307,6 +310,13 @@ test.describe.serial("templates and the mapping builder", () => {
     await adminPage.route(compare, (route) => {
       compared.push(new URL(route.request().url()));
       return route.fulfill({ json: comparison });
+    });
+    await adminPage.route(report, (route) => {
+      const url = new URL(route.request().url());
+      reported.push(url);
+      return url.searchParams.get("format") === "json"
+        ? route.fulfill({ json: { kind: "osdu:wks:master-data--Wellbore", mappings: [] } })
+        : route.fulfill({ body: REPORT, contentType: "text/markdown; charset=utf-8" });
     });
 
     try {
@@ -372,6 +382,31 @@ test.describe.serial("templates and the mapping builder", () => {
       await expect(sheet.getByTestId("templates-compare-files-original")).toContainText("abstract/AbstractFacility.1.0.0.json");
       await expect(sheet.getByTestId("templates-compare-to-link")).toHaveAttribute("href", `${DATA_DEFINITIONS}/-/blob/v0.30.0/Generated/abstract/AbstractFacility.1.1.0.json`);
 
+      // The report says what moving from one version to the other takes, the synced mappings of the kind included: copied
+      // as Markdown, or saved in either format under the name the control plane gives the file.
+      await sheet.getByTestId("templates-compare-report").click();
+      await expect(adminPage.getByTestId("templates-compare-report-about")).toHaveText(/^Moving from 1\.0\.0 to 1\.3\.0: what breaks, what each synced mapping/);
+      const [markdown] = await Promise.all([adminPage.waitForEvent("download"), adminPage.getByTestId("templates-compare-report-md").click()]);
+      expect(markdown.suggestedFilename()).toBe("Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.md");
+      expect(readFileSync(await markdown.path(), "utf8")).toBe(REPORT);
+      await sheet.getByTestId("templates-compare-report").click();
+      const [json] = await Promise.all([adminPage.waitForEvent("download"), adminPage.getByTestId("templates-compare-report-json").click()]);
+      expect(json.suggestedFilename()).toBe("Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.json");
+      expect(JSON.parse(readFileSync(await json.path(), "utf8"))).toEqual({ kind: "osdu:wks:master-data--Wellbore", mappings: [] });
+      // The browser writes the machine's own clipboard, so what it held is put back after; Windows gives text back on CRLF.
+      await adminPage.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      const held = await adminPage.evaluate(() => navigator.clipboard.readText().catch(() => ""));
+      try {
+        await sheet.getByTestId("templates-compare-report").click();
+        await adminPage.getByTestId("templates-compare-report-copy").click();
+        await expect(adminPage.getByText("The report is on the clipboard, as Markdown.")).toBeVisible();
+        expect((await adminPage.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n")).toBe(REPORT);
+      } finally {
+        await adminPage.evaluate((text) => navigator.clipboard.writeText(text), held);
+      }
+      expect(reported.map((url) => url.searchParams.get("format"))).toEqual(["md", "json", "md"]);
+      expect([reported[0].searchParams.get("fromKind"), reported[0].searchParams.get("toKind")]).toEqual([OLDER_KIND, WELLBORE_KIND]);
+
       const first = compared[0];
       expect([first.searchParams.get("fromKind"), first.searchParams.get("toKind")]).toEqual([OLDER_KIND, WELLBORE_KIND]);
       expect([first.searchParams.get("fromRelease"), first.searchParams.get("toRelease")]).toEqual(["v0.30.0", "v0.30.0"]);
@@ -383,6 +418,7 @@ test.describe.serial("templates and the mapping builder", () => {
       await adminPage.unroute(releases);
       await adminPage.unroute(schemas);
       await adminPage.unroute(compare);
+      await adminPage.unroute(report);
     }
   });
 

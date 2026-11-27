@@ -38,3 +38,15 @@ export function moved(before: ReadonlyMap<string, string>, now: ReadonlyMap<stri
 export function runsUnderWay<T extends FollowedRun>(runs: readonly T[]): T[] {
   return runs.filter(underWay);
 }
+
+/**
+ * How old a flow's counts may grow while one of its runs is under way before the probe reads them again: the counts move
+ * with the run often enough to watch, and a page following several running flows asks for them no oftener than this. A run
+ * that starts, moves on or ends has its flow's views read again at once, whatever their age.
+ */
+export const RUNNING_COUNTS_MS = 10_000;
+
+/** Whether what was last read at `updatedAtMs` (0 when never) is old enough at `nowMs` to read again while a run is under way. */
+export function countsDue(updatedAtMs: number, nowMs: number): boolean {
+  return nowMs - updatedAtMs >= RUNNING_COUNTS_MS;
+}

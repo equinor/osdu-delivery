@@ -754,6 +754,125 @@ public sealed class DeliveryTemplateApiTests
         Assert.Equal(1, handler.Archives);
     }
 
+    [Fact]
+    public async Task A_report_on_moving_to_another_version_says_what_each_synced_mapping_of_the_kind_has_to_change()
+    {
+        var cs = OsduTestServer.Require();
+        await ProvisionAsync(cs);
+        using var handler = new DataDefinitionsHandler();
+        using var http = new HttpClient(handler, disposeHandler: false);
+        using var cache = new TemporaryDirectory();
+        var definitions = new OsduDataDefinitions(
+            () => http, OsduDataDefinitions.DefaultApiUrl, OsduDataDefinitions.DefaultWebUrl, cache.Path, Timeout.InfiniteTimeSpan, TimeSpan.FromMinutes(1), TimeProvider.System);
+        await using var factory = Factory(cs).WithServices(services => services.AddSingleton(definitions));
+        using var client = factory.CreateClient();
+        var reader = await TokenAsync(client, "read");
+
+        const string OlderKind = "osdu:wks:master-data--Wellbore:1.0.0";
+        var compare = $"fromRelease=v0.30.0&fromKind={Uri.EscapeDataString(OlderKind)}&toRelease=v0.30.0&toKind={Uri.EscapeDataString(WellboreKind)}";
+
+        // A repository whose template folder holds the older version as the release publishes it, and a mapping of that kind
+        // which writes the Name the newer version removed; names no other test uses, since the suites share one database.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var repoName = "cp_tplmove_" + suffix;
+        var repoId = FlowIdentity.FromName(repoName);
+        var mappingName = "WellboreMove" + suffix;
+        var root = Samples.NewTempDirectory();
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "mappings"));
+        using (var older = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/file?release=v0.30.0&kind={Uri.EscapeDataString(OlderKind)}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, older.StatusCode);
+            await File.WriteAllTextAsync(Path.Combine(root, "templates", "wellbore.json"), await older.Content.ReadAsStringAsync());
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(root, "mappings", $"{mappingName}@1.0.0.yaml"), $$"""
+            documentType: mapping
+            name: {{mappingName}}
+            version: 1.0.0
+            template:
+              kind: {{OlderKind}}
+            dataset:
+              system: test
+              key: [name]
+            parameters:
+              dataPartition: { required: true }
+            record:
+              acl:
+                owners: [owners@x]
+                viewers: [viewers@x]
+              legal:
+                legaltags: [tag]
+                otherRelevantDataCountries: [US]
+              data:
+                Name: { $from: name }
+            """);
+        var now = DateTime.UtcNow;
+        try
+        {
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                db.Repos.Add(new CatalogRepo { Id = repoId, Name = repoName, RootPath = root, FirstSeenUtc = now, LastSyncUtc = now });
+                await db.SaveChangesAsync();
+            }
+
+            await SyncAsync(cs, repoId, root);
+
+            // As Markdown, a file to save: the verdict, then the mapping and what it has to change.
+            using (var markdown = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=md"))
+            {
+                var text = await markdown.Content.ReadAsStringAsync();
+                Assert.True(markdown.StatusCode == HttpStatusCode.OK, text);
+                Assert.Equal("text/markdown", markdown.Content.Headers.ContentType?.MediaType);
+                Assert.Equal("attachment", markdown.Content.Headers.ContentDisposition?.DispositionType);
+                Assert.Equal(
+                    "Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.md",
+                    markdown.Content.Headers.ContentDisposition?.FileNameStar ?? markdown.Content.Headers.ContentDisposition?.FileName);
+                Assert.StartsWith("# Moving Wellbore from 1.0.0 to 1.3.0\n", text, StringComparison.Ordinal);
+                Assert.Contains("**1 breaking, 1 additive, 0 wording**", text, StringComparison.Ordinal);
+                Assert.Contains($"### `{mappingName}@1.0.0`: needs changes", text, StringComparison.Ordinal);
+                Assert.Contains($"`mappings/{mappingName}@1.0.0.yaml` in {repoName}, pins `{OlderKind}`", text, StringComparison.Ordinal);
+                Assert.Contains("- `osdu.data.Name`: removed; it was `string`. Remove what writes it: the newer version has no such property.", text, StringComparison.Ordinal);
+                Assert.Contains("- `osdu.data.FacilityName`: added: `string`. A mapping may fill it.", text, StringComparison.Ordinal);
+            }
+
+            // As JSON, the same findings for a tool.
+            using (var json = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, json.StatusCode);
+                Assert.Equal("application/json", json.Content.Headers.ContentType?.MediaType);
+                var report = JsonNode.Parse(await json.Content.ReadAsStringAsync())!;
+                Assert.Equal("osdu:wks:master-data--Wellbore", (string?)report["kind"]);
+                var moved = report["mappings"]!.AsArray().Single(m => (string?)m!["repository"] == repoName)!;
+                Assert.Equal(("NeedsChanges", $"{mappingName}@1.0.0"), ((string?)moved["state"], (string?)moved["mapping"]));
+                var finding = Assert.Single(moved["findings"]!.AsArray())!;
+                Assert.Equal(("osdu.data.Name", "Removed"), ((string?)finding["path"], (string?)finding["change"]));
+            }
+
+            await RefusedAsync(client, reader, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=html", HttpStatusCode.BadRequest, "not one of json, md");
+            await RefusedAsync(client, reader, "/api/v1/delivery/templates/osdu/compare/report?format=md&fromKind=Wellbore&toKind=Wellbore", HttpStatusCode.BadRequest, "authority:source:entityType:version");
+            using (var anonymous = await client.GetAsync(new Uri($"/api/v1/delivery/templates/osdu/compare/report?{compare}", UriKind.Relative)))
+            {
+                Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+            }
+        }
+        finally
+        {
+            await using (var db = SampleEstate.Context(cs))
+            {
+                await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteDeleteAsync();
+                await db.DeliveryMappings.Where(m => m.RepoId == repoId).ExecuteDeleteAsync();
+            }
+
+            await using (var catalog = CatalogDatabase.Create(cs))
+            {
+                await catalog.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+            }
+
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     /// <summary>
     /// A repository as the sync would leave it: a tracked source, the sample templates in its template folder, one delivery
     /// flow that renders with the sample WellLog mapping and delivers to <paramref name="scope"/>, the cache definitions a

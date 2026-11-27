@@ -8,7 +8,7 @@
 import type { SavedEnvironment } from "./environments";
 
 /** The version of this contract. A host and a page of different versions do not talk: each is built with the other. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Who is signed in, as the host knows it. The credential itself never reaches the page. */
 export interface HostSession {
@@ -163,7 +163,14 @@ export type HostMessage =
   | { type: "document"; watched: WatchedDocument }
   | { type: "environmentAnswer"; id: number; answer: EnvironmentAnswer }
   /** Show the person's environments, as the host's own command asks. */
-  | { type: "showEnvironments" };
+  | { type: "showEnvironments" }
+  /**
+   * Whether the surface is in front of the person. An editor keeps a page alive behind another tab, where its document
+   * still counts as visible, so its host says when it is shown and when it is not, once the page listens and on every
+   * change. A hidden surface asks the control plane nothing of its own accord (api/pollingGate.ts) and reads again what
+   * went stale once it is shown.
+   */
+  | { type: "shown"; shown: boolean };
 
 /**
  * What a page may ask its host to do. A fixed list, so a page (and anything that got to run in one) can never name a

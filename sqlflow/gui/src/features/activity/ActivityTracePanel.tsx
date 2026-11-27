@@ -35,7 +35,7 @@ export function ActivityTracePanel({
   subject: string;
   onEnded?: () => void;
 }) {
-  const { entries, connected, ended } = useActivityTraceStream(kind, subject, onEnded);
+  const { entries, connected, ended, refused } = useActivityTraceStream(kind, subject, onEnded);
 
   const lines = useMemo<TraceLine[]>(
     () => entries.map((e) => ({
@@ -56,6 +56,7 @@ export function ActivityTracePanel({
     <TraceLog
       lines={lines}
       connected={connected}
+      refused={refused}
       ended={ended}
       failed={failed}
       currentGroup={latest?.activityId}

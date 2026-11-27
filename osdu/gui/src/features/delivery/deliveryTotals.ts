@@ -1,10 +1,11 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { PipelineSummary } from "@/api/types";
 import { fetchAllPipelines } from "@/features/pipelines/fetchAllPipelines";
-import { deliveryApi, type DeliveryFlowStats } from "../../api/delivery";
+import { deliveryApi, type DeliveryFlowCounts, type DeliveryFlowProblem, type DeliveryFlowStats } from "../../api/delivery";
 import { useActivePartition } from "./activePartition";
 import { restrictedFigure } from "./recordAccess";
-import { useFollowDeliveryRuns } from "./followRuns";
+import { FLOW_COUNTS_KEY, useFollowDeliveryRuns } from "./followRuns";
 
 /** What the delivery flows that deliver to the workbench's partition hold there, added up. */
 export interface DeliveryTotals {
@@ -43,47 +44,44 @@ const NONE: DeliveryTotals = {
   total: 0, delivered: 0, pending: 0, held: 0, failed: 0, drifted: 0, accessRestricted: 0, deleted: 0, deliveredLast24h: 0, lastDeliveredUtc: null,
 };
 
+/** How often every flow's counts are read for what no run does (a release, a removal); a run's own moves reach them sooner. */
+const COUNTS_POLL_MS = 15_000;
+
 /**
  * Every delivery flow with its counts in the workbench's partition, and their totals: the Delivery page's cards and the
  * home page's section read the same. A flow that names or serves the partition is counted in it, unless its whole counts
  * already are that partition's (a flow of one partition, or one whose partition is its header's); a flow that delivers
- * only elsewhere is listed as such and left out of the totals. The counts poll on their own for what no run does (a
- * release, a removal), and a run's outcome reaches them through its flow's newest run, within seconds of it.
+ * only elsewhere is listed as such and left out of the totals, and so is a flow whose counts could not be read, which says
+ * why (`problems`). Every flow's counts come in one call (GET /delivery/flows/stats), polled on their own for what no run
+ * does (a release, a removal); a run's outcome reaches them through its flow's newest run, within seconds of it.
  */
 export function useDeliveryTotals() {
   const flows = useQuery({
     queryKey: ["pipelines", "grouped", "", "delivery", ""],
     queryFn: () => fetchAllPipelines({ kind: "delivery" }),
   });
-  const pipelines: PipelineSummary[] = flows.data?.items ?? [];
+  const pipelines: PipelineSummary[] = useMemo(() => flows.data?.items ?? [], [flows.data]);
   const [active] = useActivePartition();
   useFollowDeliveryRuns(null, pipelines.length > 0);
-  const whole = useQueries({
-    queries: pipelines.map((pipeline) => ({
-      queryKey: ["delivery", "stats", pipeline.id],
-      queryFn: () => deliveryApi.stats(pipeline.id),
-      refetchInterval: 15000,
-    })),
+  const counts = useQuery({
+    queryKey: [...FLOW_COUNTS_KEY, active],
+    queryFn: () => deliveryApi.flowCounts(active),
+    enabled: pipelines.length > 0,
+    refetchInterval: COUNTS_POLL_MS,
   });
-  const inActive = useQueries({
-    queries: pipelines.map((pipeline, index) => {
-      const counted = whole[index]?.data;
-      return {
-        queryKey: ["delivery", "stats", pipeline.id, null, active],
-        queryFn: () => deliveryApi.stats(pipeline.id, { partition: active }),
-        enabled: active !== null && (counted?.partitions ?? []).includes(active) && counted?.partition !== active,
-        refetchInterval: 15000,
-      };
-    }),
-  });
-  const stats = pipelines.map((_, index) => (inActive[index]?.data !== undefined ? inActive[index] : whole[index]));
-  const elsewhere = pipelines.map((_, index) => {
-    const delivers = deliversTo(whole[index]?.data);
+
+  const entries = useMemo(() => {
+    const byFlow = new Map<string, DeliveryFlowCounts>((counts.data ?? []).map((entry) => [entry.pipelineId, entry]));
+    return pipelines.map((pipeline) => byFlow.get(pipeline.id));
+  }, [counts.data, pipelines]);
+  const stats: (DeliveryFlowStats | undefined)[] = entries.map((entry) => entry?.inPartition ?? entry?.stats ?? undefined);
+  const problems: (DeliveryFlowProblem | null)[] = entries.map((entry) => (entry !== undefined && entry.stats === null ? entry.problem ?? null : null));
+  const elsewhere = entries.map((entry) => {
+    const delivers = deliversTo(entry?.stats ?? undefined);
     return active !== null && delivers !== null && !delivers.includes(active);
   });
 
-  const totals = stats.reduce<DeliveryTotals>((acc, query, index) => {
-    const s = query?.data;
+  const totals = stats.reduce<DeliveryTotals>((acc, s, index) => {
     if (s === undefined || elsewhere[index]) {
       return acc;
     }
@@ -103,8 +101,10 @@ export function useDeliveryTotals() {
         : acc.lastDeliveredUtc,
     };
   }, NONE);
-  // Counted once every flow that delivers here has answered, so a total never grows as the answers come in.
-  const counted = flows.data !== undefined && stats.every((query, index) => elsewhere[index] || query?.data !== undefined);
+  // Every flow's counts answer at once, so a total never grows as they come in; a flow synced since they were read is
+  // counted at their next read.
+  const counted = flows.data !== undefined && counts.data !== undefined;
+  const uncounted = problems.filter((problem) => problem !== null).length;
 
-  return { flows, pipelines, active, stats, elsewhere, totals, counted };
+  return { flows, counts, pipelines, active, stats, problems, elsewhere, totals, counted, uncounted };
 }

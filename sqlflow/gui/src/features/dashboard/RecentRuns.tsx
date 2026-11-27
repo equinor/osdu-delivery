@@ -11,7 +11,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { FlowKindBadge } from "../../components/FlowKindBadge";
 import { RelativeTime } from "../../components/RelativeTime";
 import { RunStatusBadge } from "../../components/StatusBadge";
-import { pollingInterval } from "../../hooks/usePolling";
 
 /** How many runs the home page lists. */
 const RECENT = 8;
@@ -24,7 +23,7 @@ export function RecentRuns() {
   const runs = useQuery({
     queryKey: ["runs", "recent", RECENT],
     queryFn: () => runApi.list({ page: 1, pageSize: RECENT }),
-    refetchInterval: pollingInterval(10000),
+    refetchInterval: 10000,
   });
 
   return (

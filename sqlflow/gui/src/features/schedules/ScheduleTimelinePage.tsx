@@ -14,7 +14,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { Page } from "../../components/Page";
 import { PageHeader } from "../../components/PageHeader";
 import { SummaryStrip, type SummaryCell } from "../../components/SummaryStrip";
-import { pollingInterval } from "../../hooks/usePolling";
 import { formatDurationSeconds } from "../../lib/time";
 import { ScheduleTimelineChart } from "./ScheduleTimelineChart";
 import {
@@ -108,7 +107,7 @@ export default function ScheduleTimelinePage() {
   const schedulesQuery = useQuery({
     queryKey: ["schedule-timeline", "schedules"],
     queryFn: () => scheduleApi.list({ page: 1, pageSize: 200 }),
-    refetchInterval: pollingInterval(30000),
+    refetchInterval: 30000,
   });
 
   const runsQuery = useQuery({
@@ -119,7 +118,7 @@ export default function ScheduleTimelinePage() {
       const runs = await fetchRunsInWindow(new Date(fromMs).toISOString(), new Date(toMs).toISOString());
       return { runs, fromMs, toMs };
     },
-    refetchInterval: pollingInterval(30000),
+    refetchInterval: 30000,
   });
 
   const schedules = schedulesQuery.data?.items;

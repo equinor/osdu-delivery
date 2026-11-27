@@ -138,7 +138,7 @@ kind is read; copies holding the same schema are one entry.
 The schema OSDU holds is compared with the file by their [template versions](../concepts/templates.md#template-versions),
 the hash of the canonical form, since the service stores a schema re-serialised (members holding null dropped, keys
 reordered). When they differ, every property that differs is listed from OSDU's schema to the file's, with its impact
-(breaking, additive or wording, as [comparing versions](../concepts/templates.md#comparing-versions) rates them), or,
+(breaking, additive or wording, as [comparing template versions](../concepts/template-versions.md#the-verdict-and-the-changes) rates them), or,
 when no property differs, the JSON paths that do (an `x-osdu` key, a definition).
 
 A note under a kind says:

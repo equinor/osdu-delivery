@@ -22,7 +22,6 @@ import { CorrelationError } from "../../components/CorrelationError";
 import { EmptyState } from "../../components/EmptyState";
 import { KpiCard } from "../../components/KpiCard";
 import { Page } from "../../components/Page";
-import { pollingInterval } from "../../hooks/usePolling";
 import { moduleDashboardTiles, moduleHomeSections } from "../../modules/registry";
 import { useThemeMode } from "../../theme/ThemeModeContext";
 import { HomeHero } from "./HomeHero";
@@ -110,7 +109,7 @@ export default function DashboardPage() {
   const query = useQuery({
     queryKey: ["summary"],
     queryFn: summaryApi.get,
-    refetchInterval: pollingInterval(10000),
+    refetchInterval: 10000,
   });
 
   // Recharts needs literal color values, so the reserved status tokens (DESIGN.md 3.2) and the muted

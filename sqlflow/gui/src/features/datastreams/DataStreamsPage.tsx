@@ -21,7 +21,6 @@ import { PageHeader } from "../../components/PageHeader";
 import { RelativeTime } from "../../components/RelativeTime";
 import { RichTooltip } from "../../components/RichTooltip";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
-import { pollingInterval } from "../../hooks/usePolling";
 import { followDataPath } from "../lineage/graphUrl";
 import { StreamSparkline } from "./StreamSparkline";
 import { StreamStatusBadge, StreamStatusCounts } from "./StreamStatusBadge";
@@ -190,7 +189,7 @@ export default function DataStreamsPage() {
       includeUnscheduled,
       limit: 300,
     }),
-    refetchInterval: pollingInterval(120_000),
+    refetchInterval: 120_000,
   });
 
   /**

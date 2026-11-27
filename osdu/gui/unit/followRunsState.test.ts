@@ -3,7 +3,9 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { moved, runsUnderWay, signatures, underWay, type FollowedRun } from "../src/features/delivery/followRunsState.ts";
+import {
+  countsDue, moved, RUNNING_COUNTS_MS, runsUnderWay, signatures, underWay, type FollowedRun,
+} from "../src/features/delivery/followRunsState.ts";
 
 function run(runId: string, status: string, pipelineId = "flow-a"): FollowedRun {
   return { runId, pipelineId, status };
@@ -60,5 +62,18 @@ describe("runsUnderWay", () => {
 
   it("answers none while nothing runs", () => {
     assert.deepEqual(runsUnderWay([run("r1", "succeeded"), run("r0", "failed")]), []);
+  });
+});
+
+describe("countsDue", () => {
+  it("reads a running flow's counts again once they are as old as the cadence allows, and not before", () => {
+    const read = 1_000_000;
+    assert.equal(countsDue(read, read + RUNNING_COUNTS_MS - 1), false);
+    assert.equal(countsDue(read, read + RUNNING_COUNTS_MS), true);
+    assert.equal(countsDue(read, read + 60_000), true);
+  });
+
+  it("reads counts never read at all", () => {
+    assert.equal(countsDue(0, Date.now()), true);
   });
 });

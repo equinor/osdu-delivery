@@ -254,7 +254,7 @@ public sealed record DeliveryMappingOutlineResult(MappingOutline? Outline, int? 
 /// and laying out templates, browsing and downloading the OSDU data definitions (the public repository of OSDU schemas,
 /// which needs no credential), drafting and checking a mapping are reads; nothing here writes a template.
 /// </summary>
-public static class DeliveryTemplateEndpoints
+public static partial class DeliveryTemplateEndpoints
 {
     /// <summary>Repositories the builder lists at once.</summary>
     private const int MaxBuilderRepos = 200;
@@ -273,6 +273,7 @@ public static class DeliveryTemplateEndpoints
         delivery.MapGet("/templates/osdu/schema", GetOsduSchemaAsync).WithName("GetDeliveryOsduSchema");
         delivery.MapGet("/templates/osdu/file", GetOsduSchemaFileAsync).WithName("GetDeliveryOsduSchemaFile");
         delivery.MapGet("/templates/osdu/compare", CompareOsduSchemasAsync).WithName("CompareDeliveryOsduSchemas");
+        delivery.MapGet("/templates/osdu/compare/report", ReportOsduComparisonAsync).WithName("ReportDeliveryOsduComparison");
         delivery.MapGet("/mapping-builder/repos", ListBuilderReposAsync).WithName("ListDeliveryMappingBuilderRepos");
         delivery.MapGet("/mapping-builder/caches", ListBuilderCachesAsync).WithName("ListDeliveryMappingBuilderCaches");
         delivery.MapPost("/mapping-builder/draft", DraftMappingAsync).WithName("DraftDeliveryMapping");
@@ -565,87 +566,6 @@ public static class DeliveryTemplateEndpoints
         catch (DataDefinitionsException ex)
         {
             return Unavailable(ex);
-        }
-    }
-
-    private static async Task<Results<Ok<DeliveryOsduComparisonDto>, ProblemHttpResult>> CompareOsduSchemasAsync(
-        string? fromRelease, string? fromKind, string? toRelease, string? toKind, OsduDataDefinitions definitions, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(fromKind) || string.IsNullOrWhiteSpace(toKind)
-            || fromKind.Trim().Split(':').Length != 4 || toKind.Trim().Split(':').Length != 4)
-        {
-            return Problem("A comparison names both versions, fromKind and toKind, as authority:source:entityType:version.", StatusCodes.Status400BadRequest);
-        }
-
-        var from = fromKind.Trim();
-        var to = toKind.Trim();
-        if (!string.Equals(from[..from.LastIndexOf(':')], to[..to.LastIndexOf(':')], StringComparison.Ordinal))
-        {
-            return Problem($"A comparison is between versions of one kind; '{from}' and '{to}' are different kinds.", StatusCodes.Status400BadRequest);
-        }
-
-        try
-        {
-            var before = new ComparedSide(
-                await definitions.PublishedFileAsync(fromRelease, from, ct).ConfigureAwait(false),
-                await definitions.FetchAsync(fromRelease, from, ct).ConfigureAwait(false));
-            var after = new ComparedSide(
-                await definitions.PublishedFileAsync(toRelease, to, ct).ConfigureAwait(false),
-                await definitions.FetchAsync(toRelease, to, ct).ConfigureAwait(false));
-            var comparison = TemplateComparer.Compare(OsduTemplate.From(before.Bundled.Schema), OsduTemplate.From(after.Bundled.Schema));
-
-            // The shared schemas each version refers to, as published: a kind's own file can be the same in two releases
-            // while a schema it refers to changed under the same version, and that is where its template's changes come from.
-            var referenced = new List<DeliveryOsduReferencedFileDto>();
-            var sameReferenced = 0;
-            foreach (var pair in TemplateComparer.PairReferencedFiles(before.Bundled.Files, after.Bundled.Files))
-            {
-                var beforeText = pair.BeforePath is null ? null : await definitions.FileTextAsync(before.File.Release, pair.BeforePath, ct).ConfigureAwait(false);
-                var afterText = pair.AfterPath is null ? null : await definitions.FileTextAsync(after.File.Release, pair.AfterPath, ct).ConfigureAwait(false);
-                if (beforeText is not null && afterText is not null && TemplateComparer.SameContent(beforeText, afterText))
-                {
-                    sameReferenced++;
-                    continue;
-                }
-
-                referenced.Add(new DeliveryOsduReferencedFileDto(
-                    pair.Name,
-                    pair.BeforePath,
-                    pair.AfterPath,
-                    pair.BeforePath is null ? null : definitions.FileWebUrl(before.File.Release, pair.BeforePath),
-                    pair.AfterPath is null ? null : definitions.FileWebUrl(after.File.Release, pair.AfterPath),
-                    beforeText,
-                    afterText));
-            }
-
-            return TypedResults.Ok(new DeliveryOsduComparisonDto(
-                Side(definitions, before),
-                Side(definitions, after),
-                TemplateComparer.SameContent(before.File.Text, after.File.Text),
-                TemplateComparer.DifferOnlyInIdentifiers(before.File.Text, from, after.File.Text, to),
-                string.Equals(before.Bundled.Schema.Version, after.Bundled.Schema.Version, StringComparison.Ordinal),
-                comparison.Count(TemplateChangeImpact.Breaking),
-                comparison.Count(TemplateChangeImpact.Additive),
-                comparison.Count(TemplateChangeImpact.Wording),
-                comparison.Unchanged,
-                comparison.Changes.Select(c => new DeliveryTemplateVariableChangeDto(
-                    c.Path, c.Change.ToString(), c.Impact.ToString(), c.Role.ToString(),
-                    c.Fields.Select(f => new DeliveryTemplateFieldChangeDto(f.Field, f.Before, f.After, f.Impact.ToString())).ToList())).ToList(),
-                sameReferenced,
-                referenced));
-        }
-        catch (FlowValidationException ex)
-        {
-            return Problem(ex.Message, StatusCodes.Status400BadRequest);
-        }
-        catch (DataDefinitionsException ex)
-        {
-            return Unavailable(ex);
-        }
-        catch (DeliveryException ex)
-        {
-            // A release's file is there but is not a record schema a template can be laid out from.
-            return Problem(ex.Message, StatusCodes.Status422UnprocessableEntity, "Not a record schema");
         }
     }
 
@@ -1135,19 +1055,6 @@ public static class DeliveryTemplateEndpoints
 
     private static DeliveryOsduReleaseDto Release(OsduDataDefinitions definitions, DataDefinitionsRelease release)
         => new(release.Name, release.Commit, release.PublishedUtc, definitions.ReleaseWebUrl(release), definitions.IsLocal(release));
-
-    private static DeliveryOsduComparisonSideDto Side(OsduDataDefinitions definitions, ComparedSide side)
-        => new(
-            side.Bundled.Schema.Kind,
-            Release(definitions, side.File.Release),
-            side.File.Path,
-            definitions.FileWebUrl(side.File.Release, side.File.Path),
-            side.File.Status,
-            side.Bundled.Schema.Version,
-            side.File.Text);
-
-    /// <summary>A version as a comparison reads it: its file as published, and bundled as a template.</summary>
-    private sealed record ComparedSide(DataDefinitionsPublishedFile File, DataDefinitionsSchemaFile Bundled);
 
     /// <summary>
     /// The schema a preview was sent, as a template: taken as it is when it arrived bundled, or bundled with the

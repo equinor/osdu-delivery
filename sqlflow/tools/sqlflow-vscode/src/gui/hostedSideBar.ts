@@ -52,7 +52,11 @@ export class HostedSideBar implements vscode.WebviewViewProvider, vscode.Disposa
         });
         this.link?.dispose();
         this.link = link;
+        // A side bar the person has closed, or moved behind another view, asks the control plane nothing until shown.
+        link.setShown(view.visible);
+        const visibility = view.onDidChangeVisibility(() => link.setShown(view.visible));
         view.onDidDispose(() => {
+            visibility.dispose();
             link.dispose();
             if (this.link === link) {
                 this.link = undefined;

@@ -75,6 +75,8 @@ export class HostedLink implements vscode.Disposable {
     private readonly watches = new Map<string, vscode.Disposable>();
     private readonly subscriptions: vscode.Disposable[] = [];
     private ready = false;
+    /** Whether the surface is in front of the person, as the editor last said: told to the page once it listens. */
+    private shown = true;
 
     constructor(webview: vscode.Webview, around: HostedSurroundings, hooks: LinkHooks) {
         this.webview = webview;
@@ -126,6 +128,17 @@ export class HostedLink implements vscode.Disposable {
         return this.ready;
     }
 
+    /**
+     * Tells the page whether it is in front of the person (protocol.ts, `shown`): a page kept alive behind another tab, or a
+     * side bar that is closed, asks the control plane nothing of its own accord until it is shown again.
+     */
+    setShown(shown: boolean): void {
+        if (this.shown !== shown) {
+            this.shown = shown;
+            this.post({ type: 'shown', shown });
+        }
+    }
+
     /** Says something to the page. Nothing is said before the page has said it listens. */
     post(message: HostMessage): void {
         if (this.ready) {
@@ -143,6 +156,7 @@ export class HostedLink implements vscode.Disposable {
     private async start(): Promise<void> {
         if (this.ready) {
             this.post({ type: 'start', start: await this.around.session.start() });
+            this.post({ type: 'shown', shown: this.shown });
             this.hooks.started?.();
         }
     }
