@@ -542,11 +542,11 @@ versions use delivery_osdu_schema_compare. Reading writes nothing."
     }
 
     #[tool(
-        description = "Compare two versions of an OSDU kind from the data definitions: what moving a mapping from one to \
-the other takes. Returns counts of breaking, additive and wording changes; every synced mapping of the kind with its \
-state and what it has to change; and every variable that differs, with what it asks of a mapping. Use it for 'what \
-breaks if we move WellLog from 1.4.0 to 1.5.0', 'which of our mappings need changing'. Kinds per release come from \
-delivery_osdu_schemas(release)."
+        description = "Compare two versions of an OSDU kind from the data definitions, read against what the synced mappings \
+of the kind write. Returns impact counts and how many changes are significant, minor or unused; each synced \
+mapping's state and findings (to change, deprecated, changed, may fill) with their lines; and every variable that \
+differs, with its weight and the mappings using it. Use it for 'what impact does moving WellLog from 1.4.0 to 1.5.0 \
+have', 'which changes are significant'. Kinds per release come from delivery_osdu_schemas(release)."
     )]
     async fn delivery_osdu_schema_compare(&self, Parameters(i): Parameters<OsduCompareInput>) -> String {
         let query = Query::new()

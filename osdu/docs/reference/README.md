@@ -23,6 +23,8 @@ osdu/docs/reference/
   concepts/<slug>.md     how the extension works: the ledger, record lifecycle, submissions, change detection, templates,
                          the partition cache, partitions, protocols, removal and reversal, lineage, the GUI, the API, ...
   guides/<slug>.md       task-oriented walkthroughs
+  architecture/          the C4 model (c4-model.yaml) and what tools/c4/render.py draws from it: README.md, the start
+                         page; a page per view with its SVG, dark and light (-light.svg); the deck, dark and light
   tables/<table>.md      one page per table of the osdu schema (type table): every column, key and index, checked
                          against the model by DatabaseTablePagesTests; concepts/database.md lists them all
 osdu/docs/wiki/          why it is this way and how the pieces fit, in SQLFlow's wiki format (index.md, log.md,

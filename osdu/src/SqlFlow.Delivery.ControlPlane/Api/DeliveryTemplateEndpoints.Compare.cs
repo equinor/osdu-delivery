@@ -15,8 +15,8 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 
 /// <summary>
 /// Two versions of a kind from the OSDU data definitions compared (osdu/docs/reference/concepts/template-versions.md): variable
-/// by variable and as their files are published, and as a report on moving a mapping from one to the other, which sets every
-/// synced mapping of the kind against the newer version. Both read the same comparison.
+/// by variable and as their files are published, every change weighed against what the synced mappings of the kind write,
+/// and as a report on moving a mapping from one to the other. Both read the same comparison and the same mappings.
 /// </summary>
 public static partial class DeliveryTemplateEndpoints
 {
@@ -26,8 +26,22 @@ public static partial class DeliveryTemplateEndpoints
     /// <summary>The status the repository sync gives a mapping document that loads.</summary>
     private const string ValidMapping = "valid";
 
+    /// <summary>
+    /// Two versions of a kind compared, every change weighed against the synced mappings a report weighs
+    /// (<see cref="TemplateMoveReport.Weighing"/>): how much it weighs for them, and which of them use what it changes.
+    /// </summary>
     private static async Task<Results<Ok<DeliveryOsduComparisonDto>, ProblemHttpResult>> CompareOsduSchemasAsync(
-        string? fromRelease, string? fromKind, string? toRelease, string? toKind, OsduDataDefinitions definitions, CancellationToken ct)
+        string? fromRelease,
+        string? fromKind,
+        string? toRelease,
+        string? toKind,
+        OsduDataDefinitions definitions,
+        OsduDbContext osdu,
+        CatalogDbContext db,
+        IRepositoryFolders folders,
+        DeliveryDocumentLoader documents,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var (compared, problem) = await CompareAsync(fromRelease, fromKind, toRelease, toKind, definitions, ct).ConfigureAwait(false);
         if (compared is null)
@@ -35,6 +49,9 @@ public static partial class DeliveryTemplateEndpoints
             return problem!;
         }
 
+        var report = await ReportOfAsync(compared, definitions, osdu, db, folders, documents, time, ct).ConfigureAwait(false);
+        var weighing = report.Weighing();
+        var weighed = report.WeighedChanges();
         var comparison = compared.Comparison;
         return TypedResults.Ok(new DeliveryOsduComparisonDto(
             Side(definitions, compared.Before),
@@ -46,17 +63,22 @@ public static partial class DeliveryTemplateEndpoints
             comparison.Count(TemplateChangeImpact.Additive),
             comparison.Count(TemplateChangeImpact.Wording),
             comparison.Unchanged,
-            comparison.Changes.Select(c => new DeliveryTemplateVariableChangeDto(
-                c.Path, c.Change.ToString(), c.Impact.ToString(), c.Role.ToString(),
-                c.Fields.Select(f => new DeliveryTemplateFieldChangeDto(f.Field, f.Before, f.After, f.Impact.ToString())).ToList())).ToList(),
+            weighed.Select(entry => new DeliveryTemplateVariableChangeDto(
+                entry.Change.Path, entry.Change.Change.ToString(), entry.Change.Impact.ToString(), entry.Change.Role.ToString(),
+                entry.Change.Fields.Select(f => new DeliveryTemplateFieldChangeDto(f.Field, f.Before, f.After, f.Impact.ToString())).ToList(),
+                entry.Change.Fields.Any(TemplateChangeAdvice.Deprecates),
+                weighing.Count == 0 ? null : entry.Weight.ToString(),
+                weighing.Count == 0 ? null : entry.UsedBy)).ToList(),
             compared.SameShared,
-            compared.Shared));
+            compared.Shared,
+            weighing.Select(report.NameOf).ToList()));
     }
 
     /// <summary>
     /// The report on moving from one version of a kind to another (<see cref="TemplateMoveReport"/>), as a file to save in the
     /// format asked for: the comparison <see cref="CompareOsduSchemasAsync"/> answers, with every synced mapping of the kind set
-    /// against the newer version. Nothing is rendered, no cache is read and nothing is kept.
+    /// against the newer version and every change weighed against what those mappings write. Nothing is rendered, no cache is
+    /// read and nothing is kept.
     /// </summary>
     private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> ReportOsduComparisonAsync(
         string? fromRelease,
@@ -74,7 +96,7 @@ public static partial class DeliveryTemplateEndpoints
     {
         if (TemplateMoveReport.FormatOf(format) is not { } chosen)
         {
-            return Problem($"format '{format}' is not one of json, md.", StatusCodes.Status400BadRequest, "Unknown report format");
+            return Problem($"format '{format}' is not one of json, md, html.", StatusCodes.Status400BadRequest, "Unknown report format");
         }
 
         var (compared, problem) = await CompareAsync(fromRelease, fromKind, toRelease, toKind, definitions, ct).ConfigureAwait(false);
@@ -83,8 +105,27 @@ public static partial class DeliveryTemplateEndpoints
             return problem!;
         }
 
+        var report = await ReportOfAsync(compared, definitions, osdu, db, folders, documents, time, ct).ConfigureAwait(false);
+        var (mediaType, _) = TemplateMoveReport.Describe(chosen);
+        return TypedResults.File(Encoding.UTF8.GetBytes(report.Render(chosen)), mediaType, report.FileName(chosen));
+    }
+
+    /// <summary>
+    /// The report on two versions compared: the comparison, with every synced mapping of the kind set against the newer
+    /// version. The comparison the sheet reads and the report it takes are both this one, so the two never weigh a change apart.
+    /// </summary>
+    private static async Task<TemplateMoveReport> ReportOfAsync(
+        ComparedVersions compared,
+        OsduDataDefinitions definitions,
+        OsduDbContext osdu,
+        CatalogDbContext db,
+        IRepositoryFolders folders,
+        DeliveryDocumentLoader documents,
+        TimeProvider time,
+        CancellationToken ct)
+    {
         var mappings = await MappingMovesAsync(OsduTemplate.From(compared.After.Bundled.Schema), osdu, db, folders, documents, ct).ConfigureAwait(false);
-        var report = new TemplateMoveReport(
+        return new TemplateMoveReport(
             MoveSide(definitions, compared.Before),
             MoveSide(definitions, compared.After),
             compared.SameFile,
@@ -94,8 +135,6 @@ public static partial class DeliveryTemplateEndpoints
             compared.Shared.Select(f => new TemplateMoveSharedSchema(f.Name, f.FromPath, f.ToPath, f.FromWebUrl, f.ToWebUrl)).ToList(),
             mappings,
             time.GetUtcNow().UtcDateTime);
-        var (mediaType, _) = TemplateMoveReport.Describe(chosen);
-        return TypedResults.File(Encoding.UTF8.GetBytes(report.Render(chosen)), mediaType, report.FileName(chosen));
     }
 
     /// <summary>
@@ -218,8 +257,9 @@ public static partial class DeliveryTemplateEndpoints
     }
 
     /// <summary>
-    /// One synced mapping set against <paramref name="target"/>. A document its last sync found invalid, one that no longer
-    /// loads, and one whose template cannot be read are listed with why, as not checked.
+    /// One synced mapping set against <paramref name="target"/>, read against the document its repository's last sync kept,
+    /// which gives each finding its line. A document its last sync found invalid, one that no longer loads, and one whose
+    /// template cannot be read are listed with why, as not checked.
     /// </summary>
     private static async Task<TemplateMoveMapping> MoveAsync(
         DeliveryMapping row, string repository, SyncedTemplates templates, OsduTemplate target, DeliveryDocumentLoader documents, CancellationToken ct)
@@ -250,7 +290,7 @@ public static partial class DeliveryTemplateEndpoints
         }
 
         return new TemplateMoveMapping(
-            repository, row.Reference, row.RelativePath, mapping.Template.Kind, mapping.Template.Version, MappingMoves.Check(mapping, OsduTemplate.From(schema), target));
+            repository, row.Reference, row.RelativePath, mapping.Template.Kind, mapping.Template.Version, MappingMoves.Check(mapping, OsduTemplate.From(schema), target, row.Yaml));
     }
 
     private static DeliveryOsduComparisonSideDto Side(OsduDataDefinitions definitions, ComparedSide side)

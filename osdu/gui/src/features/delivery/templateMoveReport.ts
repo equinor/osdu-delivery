@@ -30,7 +30,25 @@ export function reportFileParts(from: ReportSide, to: ReportSide): string[] {
 
 /** What a report says it is about, before it is taken: the move, and what the report tells of it. */
 export function reportAbout(from: ReportSide, to: ReportSide): string {
-  return `Moving from ${schemaVersion(from.kind)} to ${schemaVersion(to.kind)}: what breaks, what each synced mapping of this kind has to change, and what a mapping may now use.`;
+  return `Moving from ${schemaVersion(from.kind)} to ${schemaVersion(to.kind)}, read against what each synced mapping of this kind writes: which changes are significant, what each mapping has to change, and what no mapping uses.`;
+}
+
+/** How much a change weighs for the synced mappings, as the comparison says it. */
+export type ChangeWeight = "Significant" | "Minor" | "Unused";
+
+/** The weights, heaviest first, as the sheet lists them. */
+export const WEIGHTS: readonly ChangeWeight[] = ["Significant", "Minor", "Unused"];
+
+/** How many changes there are of each weight; a change no mapping was weighed against counts as none of them. */
+export function weightCounts(changes: readonly { weight: ChangeWeight | null }[]): Record<ChangeWeight, number> {
+  const counts: Record<ChangeWeight, number> = { Significant: 0, Minor: 0, Unused: 0 };
+  for (const change of changes) {
+    if (change.weight !== null) {
+      counts[change.weight] += 1;
+    }
+  }
+
+  return counts;
 }
 
 /**

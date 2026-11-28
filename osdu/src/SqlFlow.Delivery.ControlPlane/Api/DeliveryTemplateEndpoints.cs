@@ -116,8 +116,23 @@ public sealed record DeliveryOsduComparisonSideDto(
 /// <summary>A field of a variable that differs between the versions, its value in each, and what the difference means for a mapping.</summary>
 public sealed record DeliveryTemplateFieldChangeDto(string Field, string? Before, string? After, string Impact);
 
-/// <summary>A variable that differs between the versions: <c>Added</c>, <c>Removed</c> or <c>Changed</c>, and <c>Breaking</c>, <c>Additive</c> or <c>Wording</c>.</summary>
-public sealed record DeliveryTemplateVariableChangeDto(string Path, string Change, string Impact, string Role, IReadOnlyList<DeliveryTemplateFieldChangeDto> Fields);
+/// <summary>
+/// A variable that differs between the versions: <c>Added</c>, <c>Removed</c> or <c>Changed</c>, and <c>Breaking</c>,
+/// <c>Additive</c> or <c>Wording</c>. <c>Deprecates</c> is true when its description now marks it deprecated, as OSDU writes a
+/// deprecation. <c>Weight</c> is how much it weighs for the synced mappings (<c>Significant</c>, <c>Minor</c> or
+/// <c>Unused</c>, <see cref="SqlFlow.Delivery.Templates.TemplateChangeWeight"/>), and <c>UsedBy</c> the mappings that use
+/// what it changes, as a report names them; both are null when no synced mapping moves from another version, so none is
+/// weighed.
+/// </summary>
+public sealed record DeliveryTemplateVariableChangeDto(
+    string Path,
+    string Change,
+    string Impact,
+    string Role,
+    IReadOnlyList<DeliveryTemplateFieldChangeDto> Fields,
+    bool Deprecates = false,
+    string? Weight = null,
+    IReadOnlyList<string>? UsedBy = null);
 
 /// <summary>
 /// A shared schema file the two versions refer to whose published text differs: its name without the version, and its path,
@@ -128,13 +143,14 @@ public sealed record DeliveryOsduReferencedFileDto(string Name, string? FromPath
 /// <summary>
 /// Two versions of a kind from the OSDU data definitions compared: whether the published files are the same, or differ
 /// only in their own version identifiers, whether they hold the same template version, how many variable changes of each
-/// impact there are, every variable that differs, and the shared schema files they refer to that differ, with how many
-/// are the same.
+/// impact there are, every variable that differs weighed against what the synced mappings write, the shared schema files
+/// they refer to that differ, with how many are the same, and the synced mappings the changes are weighed against
+/// (<c>WeighedMappings</c>: those of the kind that move from another version, as a report names them; empty when none does).
 /// </summary>
 public sealed record DeliveryOsduComparisonDto(
     DeliveryOsduComparisonSideDto From, DeliveryOsduComparisonSideDto To, bool SameFile, bool OnlyIdentifiersDiffer, bool SameTemplate,
     int Breaking, int Additive, int Wording, int Unchanged, IReadOnlyList<DeliveryTemplateVariableChangeDto> Changes,
-    int SameReferencedFiles, IReadOnlyList<DeliveryOsduReferencedFileDto> ReferencedFiles);
+    int SameReferencedFiles, IReadOnlyList<DeliveryOsduReferencedFileDto> ReferencedFiles, IReadOnlyList<string> WeighedMappings);
 
 /// <summary>A schema to lay out as a template, nothing kept.</summary>
 /// <remarks>

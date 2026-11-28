@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="title desc" font-family="&#x27;Segoe UI&#x27;, &#x27;Helvetica Neue&#x27;, Helvetica, Arial, sans-serif">
+<title id="title">OSDU Delivery: Component diagram for the compute node</title>
+<desc id="desc">A node takes its work outbound from the control plane, so it runs next to the data; rows flow left to right into OSDU and the ledger.</desc>
+<defs><marker id="arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,1 L12,6 L0,11 z" fill="#475569"/></marker><symbol id="i-azure-key-vault" viewBox="0 0 18 18"><defs><radialGradient id="azure-key-vault-fb114c93-7c16-4540-899a-0796041629e6" cx="9" cy="9" r="8.5" gradientUnits="userSpaceOnUse"><stop offset="0.18" stop-color="#5ea0ef" /><stop offset="0.56" stop-color="#5c9fee" /><stop offset="0.69" stop-color="#559ced" /><stop offset="0.78" stop-color="#4a97e9" /><stop offset="0.86" stop-color="#3990e4" /><stop offset="0.93" stop-color="#2387de" /><stop offset="0.99" stop-color="#087bd6" /><stop offset="1" stop-color="#0078d4" /></radialGradient><radialGradient id="azure-key-vault-ec478bd3-5b38-4e7f-b661-11f355578bff" cx="38.95" cy="182.07" r="9.88" gradientTransform="translate(-28.71 -163.24) scale(0.94 0.94)" gradientUnits="userSpaceOnUse"><stop offset="0.27" stop-color="#ffd70f" /><stop offset="0.49" stop-color="#ffcb12" /><stop offset="0.88" stop-color="#feac19" /><stop offset="1" stop-color="#fea11b" /></radialGradient></defs><path id="azure-key-vault-aacf8311-a317-400f-b613-74bd00da5ce3" d="M9,.5A8.5,8.5,0,1,0,17.5,9,8.51,8.51,0,0,0,9,.5ZM9,16.34A7.34,7.34,0,1,1,16.34,9,7.34,7.34,0,0,1,9,16.34Z" fill="url(#azure-key-vault-fb114c93-7c16-4540-899a-0796041629e6)" /><circle cx="9" cy="9" r="7.34" fill="#fff" /><g><path id="azure-key-vault-bd983c41-db73-40ec-a4f4-da1213fc9924" d="M13.44,7.33a1.84,1.84,0,0,0,0-2.59h0L10.29,1.58a1.83,1.83,0,0,0-2.58,0h0L4.56,4.74a1.84,1.84,0,0,0,0,2.59L7.18,10a.51.51,0,0,1,.15.36v4.88a.63.63,0,0,0,.18.44l1.2,1.2a.41.41,0,0,0,.58,0l1.16-1.16h0l.68-.68a.25.25,0,0,0,0-.34l-.49-.49a.27.27,0,0,1,0-.37l.49-.49a.25.25,0,0,0,0-.34l-.49-.49a.27.27,0,0,1,0-.37l.49-.49a.25.25,0,0,0,0-.34l-.68-.69v-.25ZM9,2.35A1,1,0,0,1,9,4.42,1,1,0,1,1,9,2.35Z" fill="url(#azure-key-vault-ec478bd3-5b38-4e7f-b661-11f355578bff)" /><path id="azure-key-vault-ad2e7e44-9bfd-4775-8bf4-8ef26a544921" d="M8.18,15.3h0a.23.23,0,0,0,.38-.17v-4a.24.24,0,0,0-.11-.2h0a.22.22,0,0,0-.34.2v4A.28.28,0,0,0,8.18,15.3Z" fill="#ff9300" opacity="0.75" /><rect id="azure-key-vault-a996fbff-3936-4b24-b407-369336c143ba" x="6.48" y="5.79" width="5.17" height="0.61" rx="0.28" fill="#ff9300" opacity="0.75" /><rect id="azure-key-vault-bb12d31c-3352-4a18-87dd-a169a4a8721d" x="6.48" y="6.78" width="5.17" height="0.61" rx="0.28" fill="#ff9300" opacity="0.75" /></g></symbol><symbol id="i-azure-sql-database" viewBox="0 0 18 18"><defs><linearGradient id="azure-sql-database-ef16bf9d-a8b6-4181-b6cd-66fc5203f956" x1="2.59" y1="10.16" x2="15.41" y2="10.16" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#005ba1" /><stop offset="0.07" stop-color="#0060a9" /><stop offset="0.36" stop-color="#0071c8" /><stop offset="0.52" stop-color="#0078d4" /><stop offset="0.64" stop-color="#0074cd" /><stop offset="0.82" stop-color="#006abb" /><stop offset="1" stop-color="#005ba1" /></linearGradient><radialGradient id="azure-sql-database-bf3846c3-4d74-4743-ab9a-f334c248bd92" cx="9.36" cy="10.57" r="7.07" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f2f2f2" /><stop offset="0.58" stop-color="#eee" /><stop offset="1" stop-color="#e6e6e6" /></radialGradient></defs><path d="M9,5.14c-3.54,0-6.41-1-6.41-2.32V15.18c0,1.27,2.82,2.3,6.32,2.32H9c3.54,0,6.41-1,6.41-2.32V2.82C15.41,4.11,12.54,5.14,9,5.14Z" fill="url(#azure-sql-database-ef16bf9d-a8b6-4181-b6cd-66fc5203f956)" /><path d="M15.41,2.82c0,1.29-2.87,2.32-6.41,2.32s-6.41-1-6.41-2.32S5.46.5,9,.5s6.41,1,6.41,2.32" fill="#e8e8e8" /><path d="M13.92,2.63c0,.82-2.21,1.48-4.92,1.48S4.08,3.45,4.08,2.63,6.29,1.16,9,1.16s4.92.66,4.92,1.47" fill="#50e6ff" /><path d="M9,3a11.55,11.55,0,0,0-3.89.57A11.42,11.42,0,0,0,9,4.11a11.15,11.15,0,0,0,3.89-.58A11.84,11.84,0,0,0,9,3Z" fill="#198ab3" /><path d="M12.9,11.4V8H12v4.13h2.46V11.4ZM5.76,9.73a1.83,1.83,0,0,1-.51-.31.44.44,0,0,1-.12-.32.34.34,0,0,1,.15-.3.68.68,0,0,1,.42-.12,1.62,1.62,0,0,1,1,.29V8.11a2.58,2.58,0,0,0-1-.16,1.64,1.64,0,0,0-1.09.34,1.08,1.08,0,0,0-.42.89c0,.51.32.91,1,1.21a2.88,2.88,0,0,1,.62.36.42.42,0,0,1,.15.32.38.38,0,0,1-.16.31.81.81,0,0,1-.45.11,1.66,1.66,0,0,1-1.09-.42V12a2.17,2.17,0,0,0,1.07.24,1.88,1.88,0,0,0,1.18-.33A1.08,1.08,0,0,0,6.84,11a1.05,1.05,0,0,0-.25-.7A2.42,2.42,0,0,0,5.76,9.73ZM11,11.32a2.34,2.34,0,0,0,.33-1.26A2.32,2.32,0,0,0,11,9a1.81,1.81,0,0,0-.7-.75,2,2,0,0,0-1-.26,2.11,2.11,0,0,0-1.08.27A1.86,1.86,0,0,0,7.49,9a2.46,2.46,0,0,0-.26,1.14,2.26,2.26,0,0,0,.24,1,1.76,1.76,0,0,0,.69.74,2.06,2.06,0,0,0,1,.3l.86,1h1.21L10,12.08A1.79,1.79,0,0,0,11,11.32ZM10,11.07a.94.94,0,0,1-.76.35.92.92,0,0,1-.76-.36,1.52,1.52,0,0,1-.29-1,1.53,1.53,0,0,1,.29-1,1,1,0,0,1,.78-.37.87.87,0,0,1,.75.37,1.62,1.62,0,0,1,.27,1A1.46,1.46,0,0,1,10,11.07Z" fill="url(#azure-sql-database-bf3846c3-4d74-4743-ab9a-f334c248bd92)" /></symbol><symbol id="i-azure-storage-account" viewBox="0 0 18 18"><defs><linearGradient id="azure-storage-account-ad4c4f96-09aa-4f91-ba10-5cb8ad530f74" x1="9" y1="15.83" x2="9" y2="5.79" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b3b3b3" /><stop offset="0.26" stop-color="#c1c1c1" /><stop offset="1" stop-color="#e6e6e6" /></linearGradient></defs><path d="M.5,5.79h17a0,0,0,0,1,0,0v9.48a.57.57,0,0,1-.57.57H1.07a.57.57,0,0,1-.57-.57V5.79A0,0,0,0,1,.5,5.79Z" fill="url(#azure-storage-account-ad4c4f96-09aa-4f91-ba10-5cb8ad530f74)" /><path d="M1.07,2.17H16.93a.57.57,0,0,1,.57.57V5.79a0,0,0,0,1,0,0H.5a0,0,0,0,1,0,0V2.73A.57.57,0,0,1,1.07,2.17Z" fill="#37c2b1" /><path d="M2.81,6.89H15.18a.27.27,0,0,1,.26.27v1.4a.27.27,0,0,1-.26.27H2.81a.27.27,0,0,1-.26-.27V7.16A.27.27,0,0,1,2.81,6.89Z" fill="#fff" /><path d="M2.82,9.68H15.19a.27.27,0,0,1,.26.27v1.41a.27.27,0,0,1-.26.27H2.82a.27.27,0,0,1-.26-.27V10A.27.27,0,0,1,2.82,9.68Z" fill="#37c2b1" /><path d="M2.82,12.5H15.19a.27.27,0,0,1,.26.27v1.41a.27.27,0,0,1-.26.27H2.82a.27.27,0,0,1-.26-.27V12.77A.27.27,0,0,1,2.82,12.5Z" fill="#258277" /></symbol><symbol id="i-lucide-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol><symbol id="i-lucide-boxes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/><path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/><path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/><path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/></symbol><symbol id="i-lucide-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol><symbol id="i-lucide-file-json" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></symbol><symbol id="i-lucide-file-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="M13.3 16.3 15 18"/></symbol><symbol id="i-lucide-git-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></symbol><symbol id="i-lucide-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></symbol><symbol id="i-lucide-scroll-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></symbol><symbol id="i-lucide-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol><symbol id="i-lucide-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol><symbol id="i-lucide-workflow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></symbol></defs>
+<rect width="1600" height="900" fill="#FFFFFF"/>
+<rect x="48" y="34" width="170.0" height="22" rx="11" fill="#E8F1FB"/>
+<text x="133.0" y="49.5" font-size="11.5" fill="#1168BD" font-weight="bold" text-anchor="middle">C4 LEVEL 3 · COMPONENTS</text>
+<text x="48.0" y="92.0" font-size="28" fill="#0F172A" font-weight="600" text-anchor="start">Component diagram for the compute node</text>
+<text x="48.0" y="120.0" font-size="15" fill="#475569" font-weight="normal" text-anchor="start">A node takes its work outbound from the control plane, so it runs next to the data; rows flow left to right into OSDU and the ledger.</text>
+<rect x="172.0" y="272.0" width="1180.0" height="456.0" rx="16" fill="#F7FAFD" stroke="#7C8A99" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="1336.0" y="296.0" font-size="14.5" fill="#0F172A" font-weight="bold" text-anchor="end">Compute node</text>
+<text x="1336.0" y="312.0" font-size="11.5" fill="#64748B" font-weight="normal" text-anchor="end">[Container: .NET 9 worker]</text>
+<polyline points="235.0,284.0 235.0,223.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="395.0,284.0 395.0,223.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="460.0,284.0 460.0,250.0 600.0,250.0 600.0,223.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="370.0,376.0 370.0,438.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="490.0,330.0 640.0,330.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="270.0,495.0 187.0,495.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="300.0,552.0 300.0,670.0 187.0,670.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="670.0,376.0 670.0,438.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="530.0,552.0 530.0,702.0 187.0,702.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="700.0,495.0 800.0,495.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1130.0,376.0 1130.0,438.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1000.0,495.0 1100.0,495.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1300.0,495.0 1400.0,495.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="635.0,552.0 635.0,617.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1200.0,552.0 1200.0,617.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="950.0,703.0 950.0,748.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<a href="control-plane-light.svg" xlink:href="control-plane-light.svg">
+<g><title>Control plane: SQLFlow&#x27;s control plane (.NET 9) with DeliveryControlPlaneModule: the REST API (the delivery API under /api/v1/delivery), identity and tokens, the managed git sync, schedules, the run queue and dispatcher, the node protocol, the chat assistant, and the module&#x27;s background services. It decides what runs and owns the state; it runs no flow itself.</title>
+<rect x="80.0" y="137.0" width="200.0" height="86.0" rx="12" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="92.0" y="154.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-server" xlink:href="#i-lucide-server" x="96.0" y="158.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="128.0" y="167.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Control plane</text>
+<text x="128.0" y="182.4" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: ASP.NET Core]</text>
+<text x="128.0" y="203.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Decides what runs.</text>
+<rect x="196.7" y="128.0" width="75.3" height="18" rx="9" fill="#FFFFFF" stroke="#1168BD" stroke-width="1"/>
+<text x="234.4" y="140.6" font-size="10.5" fill="#1168BD" font-weight="bold" text-anchor="middle">view inside ›</text>
+</g>
+</a>
+<g><title>Estate repository: The estate as YAML and JSON files in git: flows, mappings, templates, cache definitions, schedules, assertions and AI contexts. A run executes the commit the control plane last synced, never a working copy.</title>
+<rect x="300.0" y="137.0" width="200.0" height="86.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="312.0" y="154.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-git-branch" xlink:href="#i-lucide-git-branch" x="316.0" y="158.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="348.0" y="167.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Estate repository</text>
+<text x="348.0" y="182.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System: GitHub]</text>
+<text x="348.0" y="203.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">The estate&#x27;s documents.</text>
+</g>
+<g><title>Key Vault: osdu-kv-&lt;suffix&gt;, RBAC only. Terraform writes the connection strings (no credential in them); the setup script generates the JWT signing key, the first admin&#x27;s password and the node token when missing; a person puts in each partition&#x27;s client secret and the GitHub App&#x27;s key.</title>
+<rect x="540.0" y="137.0" width="200.0" height="86.0" rx="12" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.2"/>
+<rect x="552.0" y="154.0" width="26.0" height="26.0" rx="6.2" fill="#F1F5F9"/>
+<use href="#i-azure-key-vault" xlink:href="#i-azure-key-vault" x="556.0" y="158.0" width="18.0" height="18.0" color="#334155" style="color:#334155"/>
+<text x="588.0" y="167.2" font-size="15.0" fill="#0F172A" font-weight="bold" text-anchor="start">Key Vault</text>
+<text x="588.0" y="182.4" font-size="11.0" fill="#475569" font-weight="normal" text-anchor="start">[Infrastructure Node: RBAC]</text>
+<text x="588.0" y="203.4" font-size="12.0" fill="#475569" font-weight="normal" text-anchor="start">Secrets by reference.</text>
+</g>
+<g><title>Node runtime: SQLFlow&#x27;s worker verb with the module installed: polls the control plane with its node token, takes runs and node tasks into its slots (four by default), checks out the commit each run is pinned to, resolves ${env:...} and ${keyvault:...} references with its own identity, and drains running work before it stops.</title>
+<rect x="190.0" y="284.0" width="300.0" height="92.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="202.0" y="296.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-cpu" xlink:href="#i-lucide-cpu" x="206.0" y="300.5" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="238.0" y="309.8" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Node runtime</text>
+<text x="238.0" y="324.9" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: SQLFlow worker]</text>
+<text x="238.0" y="345.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Polls, runs four at once, resolves references,</text>
+<text x="238.0" y="360.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">drains.</text>
+</g>
+<g><title>OSDU executors: One executor per OSDU flow kind (delivery, retrieval, cache, assertion, dimension, inventory, removal, download) behind SQLFlow&#x27;s DocumentExecutor. A delivery run plans into a submission and work batches, then drains them under leases; a large one fans out a part per 1,000 rows, on up to eight nodes.</title>
+<rect x="640.0" y="284.0" width="520.0" height="92.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="652.0" y="304.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-boxes" xlink:href="#i-lucide-boxes" x="656.0" y="308.0" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="688.0" y="317.2" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">OSDU executors</text>
+<text x="688.0" y="332.4" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: SqlFlow.Delivery engine]</text>
+<text x="688.0" y="353.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">The eight OSDU kinds; plans and drains deliveries.</text>
+</g>
+<g><title>Landing storage: A storage account with a hierarchical namespace and shared keys off, container landing. Every run is given its location as LANDING_URL (abfss://landing@&lt;account&gt;.dfs.core.windows.net): the source files the file flows land, the bulk payload files deliveries send, and work batch files when a flow writes them there.</title>
+<path d="M25.0,431.0 L75.6,431.0 L87.6,441.0 L177.0,441.0 Q187.0,441.0 187.0,451.0 L187.0,549.0 Q187.0,559.0 177.0,559.0 L27.0,559.0 Q17.0,559.0 17.0,549.0 L17.0,439.0 Q17.0,431.0 25.0,431.0 Z" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="29.0" y="450.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-storage-account" xlink:href="#i-azure-storage-account" x="33.0" y="454.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="65.0" y="463.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Landing</text>
+<text x="65.0" y="482.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">storage</text>
+<text x="65.0" y="497.4" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: ADLS</text>
+<text x="65.0" y="511.4" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Gen2]</text>
+<text x="65.0" y="532.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Source and bulk</text>
+<text x="65.0" y="547.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">files.</text>
+</g>
+<g><title>SQLFlow engine: SQLFlow&#x27;s own flows, unchanged: a file flow lands the source files into a pre table as text with FileName_DW and RowNumber_DW and refreshes its typed view; an ing flow upserts the view into a keyed ingestion table and stamps UpdatedDate_DW on every row it changes.</title>
+<rect x="270.0" y="438.0" width="200.0" height="114.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="282.0" y="461.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-workflow" xlink:href="#i-lucide-workflow" x="286.0" y="465.5" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="318.0" y="474.8" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">SQLFlow engine</text>
+<text x="318.0" y="489.9" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: SQLFlow flows]</text>
+<text x="318.0" y="510.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">File flows land files; ing</text>
+<text x="318.0" y="525.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">flows upsert keyed tables.</text>
+</g>
+<g><title>Intake: Reads the rows of the ingestion table and its children whose UpdatedDate_DW moved since the last run (with a short overlap), has each one rendered, and compares its hash with what the ledger last delivered: unchanged records are skipped, changed ones planned into work batches.</title>
+<rect x="500.0" y="438.0" width="200.0" height="114.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="512.0" y="447.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-file-search" xlink:href="#i-lucide-file-search" x="516.0" y="451.0" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="548.0" y="460.2" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Intake</text>
+<text x="548.0" y="475.4" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component:</text>
+<text x="548.0" y="489.4" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">SubmissionIntake]</text>
+<text x="548.0" y="510.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Reads changed rows;</text>
+<text x="548.0" y="525.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">keeps what renders</text>
+<text x="548.0" y="540.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">differently.</text>
+</g>
+<g><title>Renderer: Renders a row through the mapping the flow pins (Name@version), against the template that mapping pins and the version of the partition&#x27;s cache it reads from the catalog, and mints the record&#x27;s id from the delivery key, so the same row always becomes the same record.</title>
+<rect x="800.0" y="438.0" width="200.0" height="114.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="812.0" y="454.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-file-json" xlink:href="#i-lucide-file-json" x="816.0" y="458.5" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="848.0" y="467.8" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Renderer</text>
+<text x="848.0" y="482.9" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: Mapping</text>
+<text x="848.0" y="496.9" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">engine]</text>
+<text x="848.0" y="517.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Row to record: pinned</text>
+<text x="848.0" y="532.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">mapping, template, cache.</text>
+</g>
+<g><title>Routes: The protocol of each route: the storage service&#x27;s batched writes, signed-URL file uploads, dataset registration, manifest ingestion through the workflow service, a DDMS&#x27;s records and bulk data, workflow runs, the Production DDMS, and ETP 1.2 to the Reservoir DDMS. Legal tags are checked before a run; retries, rate limits and correlation ids on every call; OSDU tokens by client credentials.</title>
+<rect x="1100.0" y="438.0" width="200.0" height="114.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="1112.0" y="447.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-send" xlink:href="#i-lucide-send" x="1116.0" y="451.0" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="1148.0" y="460.2" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Routes</text>
+<text x="1148.0" y="475.4" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: HTTP and ETP</text>
+<text x="1148.0" y="489.4" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">clients]</text>
+<text x="1148.0" y="510.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">storage, file, manifest,</text>
+<text x="1148.0" y="525.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">ddms, workflow, etp,</text>
+<text x="1148.0" y="540.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">more.</text>
+</g>
+<g><title>OSDU data platform: A data partition&#x27;s core services (Storage, Search, Schema, Legal, File, Dataset, Workflow, Entitlements) and its domain data management services (Wellbore, Reservoir over ETP, Production), which hold the delivered records and their bulk data.</title>
+<rect x="1400.0" y="433.0" width="170.0" height="124.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="1412.0" y="445.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-layers" xlink:href="#i-lucide-layers" x="1416.0" y="449.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="1448.0" y="458.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">OSDU data</text>
+<text x="1448.0" y="477.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">platform</text>
+<text x="1448.0" y="492.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System:</text>
+<text x="1448.0" y="506.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">OSDU APIs]</text>
+<text x="1448.0" y="527.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">Where the records</text>
+<text x="1448.0" y="542.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">land.</text>
+</g>
+<g><title>Ingestion database: OsduData: the pre tables a file flow lands its files into, the keyed ingestion tables an ing flow upserts (stamping UpdatedDate_DW) and a delivery flow reads incrementally, and the tables dimension flows build. Snapshot isolation must be on.</title>
+<path d="M17.0,633.0 A85.0,9.0 0 0 1 187.0,633.0 L187.0,747.0 A85.0,9.0 0 0 1 17.0,747.0 Z" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<path d="M17.0,633.0 A85.0,9.0 0 0 0 187.0,633.0" fill="none" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="29.0" y="656.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-sql-database" xlink:href="#i-azure-sql-database" x="33.0" y="660.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="65.0" y="669.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Ingestion</text>
+<text x="65.0" y="688.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">database</text>
+<text x="65.0" y="703.5" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: Azure SQL]</text>
+<text x="65.0" y="724.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Pre and keyed</text>
+<text x="65.0" y="739.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">tables.</text>
+</g>
+<g><title>Ledger: The only path to the ledger: submissions, records with their source file and row, render context and OSDU id and version, one append-only attempt per try, the audit trail, leases that let nodes share a submission, and the minted ids an unfinished delivery is undone by.</title>
+<rect x="570.0" y="617.0" width="760.0" height="86.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="582.0" y="634.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-scroll-text" xlink:href="#i-lucide-scroll-text" x="586.0" y="638.0" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="618.0" y="647.2" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Ledger</text>
+<text x="618.0" y="662.5" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: SqlFlow.Delivery.Ledger]</text>
+<text x="618.0" y="683.4" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Submissions, records, attempts, activities, leases.</text>
+</g>
+<g><title>Catalog database: OsduDelivery: SQLFlow&#x27;s catalog (pipelines, runs, schedules, lineage, users, conversations) and, beside it, the osdu schema with its own migrations: the ledger, the audit trail, cache versions, the index of the repository&#x27;s templates, partitions and the central configuration.</title>
+<path d="M830.0,757.0 A120.0,9.0 0 0 1 1070.0,757.0 L1070.0,827.0 A120.0,9.0 0 0 1 830.0,827.0 Z" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<path d="M830.0,757.0 A120.0,9.0 0 0 0 1070.0,757.0" fill="none" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="842.0" y="775.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-sql-database" xlink:href="#i-azure-sql-database" x="846.0" y="779.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="878.0" y="788.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Catalog database</text>
+<text x="878.0" y="803.5" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: Azure SQL]</text>
+<text x="878.0" y="824.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">The catalog and the ledger.</text>
+</g>
+<rect x="182.1" y="236.0" width="105.9" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="235.0" y="251.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Polls for runs</text>
+<text x="235.0" y="265.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[HTTPS, node token]</text>
+<rect x="349.1" y="228.5" width="91.8" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="395.0" y="243.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Checks out the</text>
+<text x="395.0" y="258.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">pinned commit</text>
+<text x="395.0" y="272.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Git, GitHub App]</text>
+<rect x="480.1" y="225.0" width="99.7" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="530.0" y="240.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Resolves</text>
+<text x="530.0" y="255.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">references</text>
+<text x="530.0" y="269.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Managed identity]</text>
+<rect x="330.3" y="396.5" width="79.3" height="28.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="370.0" y="411.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Runs pre, ing</text>
+<rect x="519.2" y="312.0" width="91.7" height="36.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="565.0" y="327.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Runs the OSDU</text>
+<text x="565.0" y="342.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">kinds</text>
+<rect x="193.5" y="477.5" width="70.1" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="228.5" y="492.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Reads files</text>
+<text x="228.5" y="506.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[ADLS Gen2]</text>
+<rect x="257.4" y="593.5" width="85.1" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="300.0" y="608.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Lands, upserts</text>
+<text x="300.0" y="622.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<rect x="651.2" y="396.5" width="37.6" height="28.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="670.0" y="411.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Plans</text>
+<rect x="313.3" y="677.0" width="90.3" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="358.5" y="692.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Reads changed</text>
+<text x="358.5" y="707.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">rows</text>
+<text x="358.5" y="721.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<rect x="709.7" y="477.0" width="80.5" height="36.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="750.0" y="492.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Renders each</text>
+<text x="750.0" y="507.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">row</text>
+<rect x="1086.1" y="396.5" width="87.7" height="28.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1130.0" y="411.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Drains batches</text>
+<rect x="1007.6" y="477.0" width="84.7" height="36.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1050.0" y="492.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Documents to</text>
+<text x="1050.0" y="507.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">send</text>
+<rect x="1310.6" y="470.0" width="78.8" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1350.0" y="485.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Sends, reads</text>
+<text x="1350.0" y="500.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">back</text>
+<text x="1350.0" y="514.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[REST, ETP 1.2]</text>
+<rect x="588.7" y="566.5" width="92.7" height="36.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="635.0" y="581.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Records, render</text>
+<text x="635.0" y="596.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">context</text>
+<rect x="1142.2" y="574.0" width="115.5" height="28.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1200.0" y="589.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">One attempt per try</text>
+<rect x="928.1" y="708.0" width="43.7" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="950.0" y="723.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Writes</text>
+<text x="950.0" y="737.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<line x1="48" y1="846.0" x2="1552" y2="846.0" stroke="#E2E8F0"/>
+<rect x="48.0" y="857.0" width="22" height="16" rx="4" fill="#2F7CC7" stroke="#2869AA"/>
+<text x="78.0" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Container</text>
+<rect x="151.6" y="857.0" width="22" height="16" rx="4" fill="#9CC8F2" stroke="#6FA9DF"/>
+<text x="181.6" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Component</text>
+<rect x="266.4" y="857.0" width="22" height="16" rx="4" fill="#6B7280" stroke="#5B626E"/>
+<text x="296.4" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">External software system</text>
+<rect x="448.7" y="857.0" width="22" height="16" rx="4" fill="#FFFFFF" stroke="#94A3B8"/>
+<text x="478.7" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Infrastructure node</text>
+<path d="M604.2,860.0 A9,3 0 0 1 622.2,860.0 L622.2,871.0 A9,3 0 0 1 604.2,871.0 Z" fill="none" stroke="#334155" stroke-width="1.3"/>
+<path d="M604.2,860.0 A9,3 0 0 0 622.2,860.0" fill="none" stroke="#334155" stroke-width="1.3"/>
+<text x="632.2" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Database</text>
+<path d="M704.4,857.0 h7 l3,3 h10 v13 h-20 z" fill="none" stroke="#334155" stroke-width="1.3" stroke-linejoin="round"/>
+<text x="733.4" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">File store</text>
+<rect x="805.3" y="856.0" width="18" height="18" rx="4.5" fill="#FFFFFF" stroke="#CBD5E1"/>
+<use href="#i-lucide-box" xlink:href="#i-lucide-box" x="808.3" y="859.0" width="12" height="12" color="#334155" style="color:#334155"/>
+<text x="833.3" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Icon: what it is, or its Azure service</text>
+<rect x="1034.4" y="857.0" width="26" height="16" rx="8" fill="#FFFFFF" stroke="#1168BD"/>
+<path d="M1044.4,861.0 l4,4 l-4,4" fill="none" stroke="#1168BD" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1066.4" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Has a view of its inside</text>
+<rect x="1208.1" y="857.0" width="22" height="16" rx="4" fill="#F7FAFD" stroke="#7C8A99" stroke-dasharray="4 3"/>
+<text x="1238.1" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Boundary</text>
+<line x1="48.0" y1="887.0" x2="68.0" y2="887.0" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="78.0" y="891.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Relationship: what it does [technology]</text>
+</svg>

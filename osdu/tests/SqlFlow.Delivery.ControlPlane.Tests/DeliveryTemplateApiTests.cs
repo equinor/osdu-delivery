@@ -722,6 +722,10 @@ public sealed class DeliveryTemplateApiTests
         var added = Assert.Single(comparison.Changes, c => c.Path == "osdu.data.FacilityName");
         Assert.Equal(("Added", "Additive"), (added.Change, added.Impact));
         Assert.Equal((1, 1, 0), (comparison.Breaking, comparison.Additive, comparison.Wording));
+        Assert.False(removed.Deprecates);
+
+        // Each change is weighed against the synced mappings that move from another version, when there are any.
+        Assert.All(comparison.Changes, c => Assert.Equal(comparison.WeighedMappings.Count == 0, c.Weight is null && c.UsedBy is null));
 
         // Both versions refer to the same access control list schema, which is the same in both, so no shared schema differs.
         Assert.Equal(1, comparison.SameReferencedFiles);
@@ -818,6 +822,15 @@ public sealed class DeliveryTemplateApiTests
 
             await SyncAsync(cs, repoId, root);
 
+            // The comparison the sheet reads weighs each change against what the mapping writes: the Name it writes, which the
+            // newer version removed, is significant; the new FacilityName touches nothing it writes.
+            var weighed = await ReadAsync<DeliveryOsduComparisonDto>(await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/compare?{compare}"));
+            Assert.Contains($"{mappingName}@1.0.0", weighed.WeighedMappings);
+            var name = Assert.Single(weighed.Changes, c => c.Path == "osdu.data.Name");
+            Assert.Equal("Significant", name.Weight);
+            Assert.Contains($"{mappingName}@1.0.0", name.UsedBy!);
+            Assert.DoesNotContain($"{mappingName}@1.0.0", Assert.Single(weighed.Changes, c => c.Path == "osdu.data.FacilityName").UsedBy!);
+
             // As Markdown, a file to save: the verdict, then the mapping and what it has to change.
             using (var markdown = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=md"))
             {
@@ -829,11 +842,27 @@ public sealed class DeliveryTemplateApiTests
                     "Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.md",
                     markdown.Content.Headers.ContentDisposition?.FileNameStar ?? markdown.Content.Headers.ContentDisposition?.FileName);
                 Assert.StartsWith("# Moving Wellbore from 1.0.0 to 1.3.0\n", text, StringComparison.Ordinal);
-                Assert.Contains("**1 breaking, 1 additive, 0 wording**", text, StringComparison.Ordinal);
+                Assert.Contains("Between the two versions: **1 breaking, 1 additive, 0 wording**", text, StringComparison.Ordinal);
                 Assert.Contains($"### `{mappingName}@1.0.0`: needs changes", text, StringComparison.Ordinal);
                 Assert.Contains($"`mappings/{mappingName}@1.0.0.yaml` in {repoName}, pins `{OlderKind}`", text, StringComparison.Ordinal);
-                Assert.Contains("- `osdu.data.Name`: removed; it was `string`. Remove what writes it: the newer version has no such property.", text, StringComparison.Ordinal);
-                Assert.Contains("- `osdu.data.FacilityName`: added: `string`. A mapping may fill it.", text, StringComparison.Ordinal);
+                Assert.Contains("| `osdu.data.Name` | 19 | `dataset.name` | removed; it was `string`. Remove what writes it: the newer version has no such property. |", text, StringComparison.Ordinal);
+                Assert.Contains("- `osdu.data.FacilityName`: added: `string`.", text, StringComparison.Ordinal);
+                Assert.Contains("## Significant changes (", text, StringComparison.Ordinal);
+                Assert.Contains("- `osdu.data.Name`: removed; it was `string` (breaking in the schema). Used by ", text, StringComparison.Ordinal);
+            }
+
+            // As HTML, a page to read, print or send, which needs nothing else.
+            using (var page = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=html"))
+            {
+                var text = await page.Content.ReadAsStringAsync();
+                Assert.True(page.StatusCode == HttpStatusCode.OK, text);
+                Assert.Equal("text/html", page.Content.Headers.ContentType?.MediaType);
+                Assert.Equal("attachment", page.Content.Headers.ContentDisposition?.DispositionType);
+                Assert.Equal(
+                    "Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.html",
+                    page.Content.Headers.ContentDisposition?.FileNameStar ?? page.Content.Headers.ContentDisposition?.FileName);
+                Assert.StartsWith("<!doctype html>", text, StringComparison.Ordinal);
+                Assert.Contains($"<code>{mappingName}@1.0.0</code>", text, StringComparison.Ordinal);
             }
 
             // As JSON, the same findings for a tool.
@@ -845,11 +874,13 @@ public sealed class DeliveryTemplateApiTests
                 Assert.Equal("osdu:wks:master-data--Wellbore", (string?)report["kind"]);
                 var moved = report["mappings"]!.AsArray().Single(m => (string?)m!["repository"] == repoName)!;
                 Assert.Equal(("NeedsChanges", $"{mappingName}@1.0.0"), ((string?)moved["state"], (string?)moved["mapping"]));
-                var finding = Assert.Single(moved["findings"]!.AsArray())!;
-                Assert.Equal(("osdu.data.Name", "Removed"), ((string?)finding["path"], (string?)finding["change"]));
+                var finding = Assert.Single(moved["findings"]!.AsArray(), f => (string?)f!["kind"] == "MustChange")!;
+                Assert.Equal(("osdu.data.Name", "Removed", 19, "dataset.name"), ((string?)finding["path"], (string?)finding["change"], (int)finding["line"]!, (string?)finding["reads"]));
+                var removedName = report["changes"]!.AsArray().Single(c => (string?)c!["path"] == "osdu.data.Name")!;
+                Assert.Equal("Significant", (string?)removedName["weight"]);
             }
 
-            await RefusedAsync(client, reader, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=html", HttpStatusCode.BadRequest, "not one of json, md");
+            await RefusedAsync(client, reader, $"/api/v1/delivery/templates/osdu/compare/report?{compare}&format=pdf", HttpStatusCode.BadRequest, "not one of json, md, html");
             await RefusedAsync(client, reader, "/api/v1/delivery/templates/osdu/compare/report?format=md&fromKind=Wellbore&toKind=Wellbore", HttpStatusCode.BadRequest, "authority:source:entityType:version");
             using (var anonymous = await client.GetAsync(new Uri($"/api/v1/delivery/templates/osdu/compare/report?{compare}", UriKind.Relative)))
             {

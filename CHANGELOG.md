@@ -49,12 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page read it in place of a call or two per flow. A flow whose document does not parse shows **Not counted** with why on
   its card, first among the flows that need someone, and the home page counts the rest and says how many it left out,
   where both used to wait on that flow forever ([the delivery API](osdu/docs/reference/concepts/api.md#flows-and-records)).
-- **A report on moving to another version of a kind.** Compare versions on the Templates page's Browse OSDU tab has a
-  **Report** that copies as Markdown or saves as Markdown or JSON what moving from one version to the other takes: what
-  breaks, what each synced mapping of the kind has to change (what it writes that changed, and what the newer version
-  requires that it would leave empty), and what a mapping may now use, each change with what to do about it.
-  `GET /api/v1/delivery/templates/osdu/compare/report` serves it, and the MCP server's `delivery_osdu_schema_compare`
-  returns it ([comparing template versions](osdu/docs/reference/concepts/template-versions.md#the-report)).
+- **A report on moving to another version of a kind, read against the mappings that would move.** Compare versions on
+  the Templates page's Browse OSDU tab weighs every change against what the synced mappings of the kind write: a change
+  is significant when it asks something of one (it breaks what the mapping writes, requires what it may leave out, or
+  deprecates what it writes, as OSDU marks a deprecation), minor when it touches what one writes and asks nothing, and
+  not in use when no synced mapping writes what it changes. The sheet lists the significant changes first and folds
+  away the rest. Its **Report** copies as Markdown or saves as an HTML page, Markdown or JSON: which changes are
+  significant, and for each mapping what it has to change, what it writes that is deprecated (with what replaces it) or
+  changed without breaking it, and what it may now fill, each with the line of its document and how it fills the
+  property. `GET /api/v1/delivery/templates/osdu/compare` carries each change's weight and the mappings that use it,
+  `GET /api/v1/delivery/templates/osdu/compare/report` serves the report (`format` `html`, `md` or `json`), and the MCP
+  server's `delivery_osdu_schema_compare` returns it ([comparing template
+  versions](osdu/docs/reference/concepts/template-versions.md#the-report)).
 - **The lineage graph shows what moved.** **What moved** in the graph's bar turns the graph into a view of what happened
   on it: every card leads with what its node did in the day looked at (the files that arrived, the rows a flow read and
   changed, what landed in a table, the records a delivery flow delivered) and charts it over the window, and every line

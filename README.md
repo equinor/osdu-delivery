@@ -82,6 +82,8 @@ engineers, for extending the framework, or both.
 - [Mapping transformations](osdu/docs/reference/flow/mapping-transformations.md): every function, modifier and lookup
 - [Deployment](osdu/docs/reference/guides/deployment.md): Docker Compose, Kubernetes, Azure Bicep, Terraform and Radix
 - [Architecture](osdu/docs/reference/concepts/architecture.md): the components, the databases and how they fit
+- [Architecture diagrams](osdu/docs/reference/architecture/README.md): the C4 model, from the system context to the Azure
+  deployment, with the paths a record, a question and a commit take; also as a deck
 - [Wiki](osdu/docs/wiki/index.md): why it is this way
 
 ## Status

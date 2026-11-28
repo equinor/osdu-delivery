@@ -12,6 +12,9 @@ public static class TemplateChangeAdvice
     /// <summary>The field of a change that says whether the variable is required.</summary>
     public const string RequiredField = "required";
 
+    /// <summary>The field of a change that holds the variable's description, where OSDU writes a deprecation (<see cref="TemplateDeprecation"/>).</summary>
+    public const string DescriptionField = "description";
+
     private const string Yes = "yes";
 
     /// <summary>
@@ -27,9 +30,24 @@ public static class TemplateChangeAdvice
         {
             TemplateVariableChangeKind.Removed => $"removed; it was {Described(change, removed: true, quote)}{who}",
             TemplateVariableChangeKind.Added => $"added: {Described(change, removed: false, quote)}{who}",
-            _ => $"changed: {string.Join(", ", change.Fields.Select(f => Label(f.Field)))}{who}",
+            _ => $"changed: {string.Join(", ", change.Fields.Select(FieldLabel))}{who}",
         };
     }
+
+    /// <summary>The field a change is said to differ in, a description that deprecates or restores its property said so.</summary>
+    private static string FieldLabel(TemplateFieldChange field)
+        => field.Field != DescriptionField ? Label(field.Field) : Deprecates(field) ? "description, now deprecated" : Restores(field) ? "description, no longer deprecated" : field.Field;
+
+    /// <summary>Whether a field change is a description that now marks its variable deprecated, where it did not before.</summary>
+    public static bool Deprecates(TemplateFieldChange field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        return field.Field == DescriptionField && TemplateDeprecation.IsDeprecated(field.After) && !TemplateDeprecation.IsDeprecated(field.Before);
+    }
+
+    /// <summary>Whether a field change is a description that no longer marks its variable deprecated.</summary>
+    private static bool Restores(TemplateFieldChange field)
+        => field.Field == DescriptionField && TemplateDeprecation.IsDeprecated(field.Before) && !TemplateDeprecation.IsDeprecated(field.After);
 
     /// <summary>
     /// What a mapping does about a variable that was added or removed; null for a changed one, whose fields each say it
@@ -92,9 +110,13 @@ public static class TemplateChangeAdvice
             RequiredField => after == RequiredField ? "It is now required: fill it on every record." : "It is no longer required.",
             "relationships" => Relationships(before, after, quote),
             "title" => $"Its title is {Value(after, "none")}, was {Value(before, "none")}.",
-            "description" => before is null
-                ? "It now has a description."
-                : after is null ? "It no longer has a description." : "Its description reads differently.",
+            DescriptionField => Deprecates(field)
+                ? "It is now deprecated: OSDU still accepts it, and its description says what replaces it."
+                : Restores(field)
+                    ? "It is no longer deprecated."
+                    : before is null
+                        ? "It now has a description."
+                        : after is null ? "It no longer has a description." : "Its description reads differently.",
             _ => $"Its {field.Field} is {Value(after, "none")}, was {Value(before, "none")}.",
         };
 

@@ -263,7 +263,9 @@ test.describe.serial("templates and the mapping builder", () => {
     const compare = /\/api\/v1\/delivery\/templates\/osdu\/compare(\?|$)/;
     const report = /\/api\/v1\/delivery\/templates\/osdu\/compare\/report(\?|$)/;
     const REPORT = "# Moving Wellbore from 1.0.0 to 1.3.0\n\n**1 breaking, 1 additive, 1 wording**; 40 variables unchanged.\n";
+    const PAGE = "<!doctype html>\n<html lang=\"en\"><head><title>Moving Wellbore from 1.0.0 to 1.3.0</title></head><body></body></html>\n";
     const OLDER_KIND = "osdu:wks:master-data--Wellbore:1.0.0";
+    const MAPPING = "WellboreMove@1.0.0";
     const side = (kind: string, path: string, templateVersion: string, fileText: string) => ({
       kind, release: RELEASE, path, webUrl: `${DATA_DEFINITIONS}/-/blob/v0.30.0/Generated/${path}`, status: "PUBLISHED", templateVersion, fileText,
     });
@@ -277,11 +279,23 @@ test.describe.serial("templates and the mapping builder", () => {
       additive: 1,
       wording: 1,
       unchanged: 40,
+      // Weighed against the one synced mapping moving from 1.0.0, which writes Name and Depth: the removed Name asks a change
+      // of it, Depth only reads differently, and nothing it writes holds the new FacilityName.
       changes: [
-        { path: "osdu.data.Name", change: "Removed", impact: "Breaking", role: "Mapping", fields: [{ field: "type", before: "string", after: null, impact: "Breaking" }] },
-        { path: "osdu.data.FacilityName", change: "Added", impact: "Additive", role: "Mapping", fields: [{ field: "type", before: null, after: "string", impact: "Additive" }] },
-        { path: "osdu.data.Depth", change: "Changed", impact: "Wording", role: "Mapping", fields: [{ field: "description", before: "Depth.", after: "Measured depth.", impact: "Wording" }] },
+        {
+          path: "osdu.data.Name", change: "Removed", impact: "Breaking", role: "Mapping", fields: [{ field: "type", before: "string", after: null, impact: "Breaking" }],
+          deprecates: false, weight: "Significant", usedBy: [MAPPING],
+        },
+        {
+          path: "osdu.data.FacilityName", change: "Added", impact: "Additive", role: "Mapping", fields: [{ field: "type", before: null, after: "string", impact: "Additive" }],
+          deprecates: false, weight: "Unused", usedBy: [],
+        },
+        {
+          path: "osdu.data.Depth", change: "Changed", impact: "Wording", role: "Mapping", fields: [{ field: "description", before: "Depth.", after: "Measured depth.", impact: "Wording" }],
+          deprecates: false, weight: "Minor", usedBy: [MAPPING],
+        },
       ],
+      weighedMappings: [MAPPING],
       sameReferencedFiles: 3,
       referencedFiles: [
         {
@@ -314,9 +328,12 @@ test.describe.serial("templates and the mapping builder", () => {
     await adminPage.route(report, (route) => {
       const url = new URL(route.request().url());
       reported.push(url);
-      return url.searchParams.get("format") === "json"
+      const format = url.searchParams.get("format");
+      return format === "json"
         ? route.fulfill({ json: { kind: "osdu:wks:master-data--Wellbore", mappings: [] } })
-        : route.fulfill({ body: REPORT, contentType: "text/markdown; charset=utf-8" });
+        : format === "html"
+          ? route.fulfill({ body: PAGE, contentType: "text/html; charset=utf-8" })
+          : route.fulfill({ body: REPORT, contentType: "text/markdown; charset=utf-8" });
     });
 
     try {
@@ -338,22 +355,24 @@ test.describe.serial("templates and the mapping builder", () => {
       await expect(sheet.getByTestId("templates-compare-comparing"))
         .toHaveText(/^Comparing schema versions 1\.0\.0 and 1\.3\.0, both from release v[\d.]+\.$/);
 
-      // The verdict first, then every variable that differs, with what it means for a mapping of the older version.
+      // The verdict first, then every variable that differs, weighed against what the synced mapping writes: the significant
+      // changes first, then the minor ones, and what no synced mapping uses folded away.
       await expect(sheet.getByTestId("templates-compare-count-breaking")).toHaveText("1 breaking", { timeout: 15_000 });
       await expect(sheet.getByTestId("templates-compare-count-additive")).toHaveText("1 additive");
       await expect(sheet.getByTestId("templates-compare-count-wording")).toHaveText("1 wording");
-      // The list opens with the impact headings open and every variable folded; a variable opens onto its fields.
+      // The list opens with the significant and minor headings open and every variable folded; a variable opens onto its fields.
       const changeRows = sheet.getByTestId("templates-compare-change-row");
-      await expect(changeRows).toHaveCount(3);
-      await expect(sheet.getByTestId("templates-compare-group-breaking").getByTestId("templates-compare-change-osdu.data.Name")).toHaveText("Removed");
+      await expect(changeRows).toHaveCount(2);
+      await expect(sheet.getByTestId("templates-compare-group-significant").getByTestId("templates-compare-change-osdu.data.Name")).toHaveText("Removed");
+      await expect(sheet.getByTestId("templates-compare-group-minor").getByTestId("templates-compare-change-osdu.data.Depth")).toHaveText("Changed");
       await expect(sheet.getByTestId("templates-compare-field-osdu.data.Name-type")).toHaveCount(0);
       await sheet.getByTestId("templates-compare-change-toggle-osdu.data.Name").click();
       await expect(sheet.getByTestId("templates-compare-field-osdu.data.Name-type")).toBeVisible();
-      await sheet.getByTestId("templates-compare-group-toggle-breaking").click();
-      await expect(changeRows).toHaveCount(2);
+      await sheet.getByTestId("templates-compare-group-toggle-significant").click();
+      await expect(changeRows).toHaveCount(1);
       await sheet.getByTestId("templates-compare-expand-all").click();
       await expect(sheet.getByTestId("templates-compare-expand-all")).toHaveText("Collapse all");
-      await expect(sheet.getByTestId("templates-compare-group-additive").getByTestId("templates-compare-change-osdu.data.FacilityName")).toHaveText("Added");
+      await expect(sheet.getByTestId("templates-compare-group-unused").getByTestId("templates-compare-change-osdu.data.FacilityName")).toHaveText("Added");
 
       // What changed is marked in place: the words a description lost, and the words it gained.
       const depthDescription = sheet.getByTestId("templates-compare-field-osdu.data.Depth-description");
@@ -365,8 +384,21 @@ test.describe.serial("templates and the mapping builder", () => {
       await expect(sheet.getByTestId("templates-compare-impact-filter-wording")).toContainText("1");
       await sheet.getByTestId("templates-compare-impact-filter-breaking").click();
       await expect(changeRows).toHaveCount(1);
-      await expect(sheet.getByTestId("templates-compare-group-wording")).toHaveCount(0);
+      await expect(sheet.getByTestId("templates-compare-group-minor")).toHaveCount(0);
       await sheet.getByTestId("templates-compare-impact-filter-all").click();
+      await expect(changeRows).toHaveCount(3);
+
+      // Each change is weighed against what the synced mapping writes: how many are significant, minor or not in use, and a
+      // filter to the ones that matter. With one mapping weighed, a change does not name it again.
+      await expect(sheet.getByTestId("templates-compare-weighed")).toContainText(`Read against what ${MAPPING} writes:`);
+      await expect(sheet.getByTestId("templates-compare-weighed-significant")).toHaveText("1 significant");
+      await expect(sheet.getByTestId("templates-compare-weighed-minor")).toHaveText("1 minor");
+      await expect(sheet.getByTestId("templates-compare-weighed-unused")).toHaveText("1 not in use");
+      await expect(sheet.getByTestId("templates-compare-used-by-osdu.data.Name")).toHaveCount(0);
+      await sheet.getByTestId("templates-compare-weight-filter-significant").click();
+      await expect(changeRows).toHaveCount(1);
+      await expect(sheet.getByTestId("templates-compare-impact-filter-all")).toContainText("1");
+      await sheet.getByTestId("templates-compare-weight-filter-all").click();
       await expect(changeRows).toHaveCount(3);
 
       // The files as the releases publish them, side by side.
@@ -382,10 +414,11 @@ test.describe.serial("templates and the mapping builder", () => {
       await expect(sheet.getByTestId("templates-compare-files-original")).toContainText("abstract/AbstractFacility.1.0.0.json");
       await expect(sheet.getByTestId("templates-compare-to-link")).toHaveAttribute("href", `${DATA_DEFINITIONS}/-/blob/v0.30.0/Generated/abstract/AbstractFacility.1.1.0.json`);
 
-      // The report says what moving from one version to the other takes, the synced mappings of the kind included: copied
-      // as Markdown, or saved in either format under the name the control plane gives the file.
+      // The report says what moving from one version to the other takes, read against the synced mappings of the kind:
+      // copied as Markdown, or saved as a page, Markdown or JSON under the name the control plane gives the file.
       await sheet.getByTestId("templates-compare-report").click();
-      await expect(adminPage.getByTestId("templates-compare-report-about")).toHaveText(/^Moving from 1\.0\.0 to 1\.3\.0: what breaks, what each synced mapping/);
+      await expect(adminPage.getByTestId("templates-compare-report-about"))
+        .toHaveText(/^Moving from 1\.0\.0 to 1\.3\.0, read against what each synced mapping of this kind writes: which changes are significant/);
       const [markdown] = await Promise.all([adminPage.waitForEvent("download"), adminPage.getByTestId("templates-compare-report-md").click()]);
       expect(markdown.suggestedFilename()).toBe("Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.md");
       expect(readFileSync(await markdown.path(), "utf8")).toBe(REPORT);
@@ -393,6 +426,10 @@ test.describe.serial("templates and the mapping builder", () => {
       const [json] = await Promise.all([adminPage.waitForEvent("download"), adminPage.getByTestId("templates-compare-report-json").click()]);
       expect(json.suggestedFilename()).toBe("Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.json");
       expect(JSON.parse(readFileSync(await json.path(), "utf8"))).toEqual({ kind: "osdu:wks:master-data--Wellbore", mappings: [] });
+      await sheet.getByTestId("templates-compare-report").click();
+      const [page] = await Promise.all([adminPage.waitForEvent("download"), adminPage.getByTestId("templates-compare-report-html").click()]);
+      expect(page.suggestedFilename()).toBe("Wellbore-1.0.0-v0.30.0-to-1.3.0-v0.30.0-report.html");
+      expect(readFileSync(await page.path(), "utf8")).toBe(PAGE);
       // The browser writes the machine's own clipboard, so what it held is put back after; Windows gives text back on CRLF.
       await adminPage.context().grantPermissions(["clipboard-read", "clipboard-write"]);
       const held = await adminPage.evaluate(() => navigator.clipboard.readText().catch(() => ""));
@@ -404,7 +441,7 @@ test.describe.serial("templates and the mapping builder", () => {
       } finally {
         await adminPage.evaluate((text) => navigator.clipboard.writeText(text), held);
       }
-      expect(reported.map((url) => url.searchParams.get("format"))).toEqual(["md", "json", "md"]);
+      expect(reported.map((url) => url.searchParams.get("format"))).toEqual(["md", "json", "html", "md"]);
       expect([reported[0].searchParams.get("fromKind"), reported[0].searchParams.get("toKind")]).toEqual([OLDER_KIND, WELLBORE_KIND]);
 
       const first = compared[0];

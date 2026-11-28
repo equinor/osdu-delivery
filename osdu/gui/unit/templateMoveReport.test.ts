@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { copyPending, reportAbout, reportFileParts } from "../src/features/delivery/templateMoveReport.ts";
+import { copyPending, reportAbout, reportFileParts, weightCounts } from "../src/features/delivery/templateMoveReport.ts";
 
 const FROM = { release: "v0.29.0", kind: "osdu:wks:master-data--Wellbore:1.0.0" };
 const TO = { release: "v0.30.0", kind: "osdu:wks:master-data--Wellbore:1.3.0" };
@@ -18,7 +18,21 @@ describe("a report's name", () => {
   });
 
   it("says the move it is about before it is taken", () => {
-    assert.match(reportAbout(FROM, TO), /^Moving from 1\.0\.0 to 1\.3\.0: what breaks, what each synced mapping/);
+    assert.match(reportAbout(FROM, TO), /^Moving from 1\.0\.0 to 1\.3\.0, read against what each synced mapping of this kind writes: which changes are significant/);
+  });
+});
+
+describe("a change's weight", () => {
+  const changes = [
+    { path: "a", weight: "Unused" as const },
+    { path: "b", weight: "Significant" as const },
+    { path: "c", weight: "Minor" as const },
+    { path: "d", weight: "Significant" as const },
+    { path: "e", weight: null },
+  ];
+
+  it("is counted per weight, a change nothing was weighed against counting as none", () => {
+    assert.deepEqual(weightCounts(changes), { Significant: 2, Minor: 1, Unused: 1 });
   });
 });
 

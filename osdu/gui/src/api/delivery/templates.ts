@@ -164,6 +164,13 @@ export interface DeliveryTemplateFieldChange {
   impact: DeliveryTemplateChangeImpact;
 }
 
+/**
+ * How much a change weighs for the synced mappings of the kind, read against what their documents write: significant when it
+ * asks something of one (a change it has to make, or a deprecation of what it writes), minor when it touches what one writes
+ * and asks nothing, unused when no synced mapping writes what it changes.
+ */
+export type DeliveryTemplateChangeWeight = "Significant" | "Minor" | "Unused";
+
 /** A variable that differs between two versions of a template. */
 export interface DeliveryTemplateVariableChange {
   path: string;
@@ -171,6 +178,12 @@ export interface DeliveryTemplateVariableChange {
   impact: DeliveryTemplateChangeImpact;
   role: DeliveryTemplateRole;
   fields: DeliveryTemplateFieldChange[];
+  /** Its description now marks it deprecated, as OSDU writes a deprecation. */
+  deprecates: boolean;
+  /** How much it weighs for the synced mappings; null when no synced mapping moves from another version. */
+  weight: DeliveryTemplateChangeWeight | null;
+  /** The synced mappings that use what it changes; null when none is weighed. */
+  usedBy: string[] | null;
 }
 
 /** One side of a comparison: a kind's version in a release, its status there, the template version it saves as, and its file as published. */
@@ -196,8 +209,8 @@ export interface DeliveryOsduReferencedFile {
   toText: string | null;
 }
 
-/** The formats the report on moving from one version of a kind to another is taken in: Markdown to read or paste, JSON for a tool. */
-export type TemplateMoveReportFormat = "md" | "json";
+/** The formats the report on moving from one version of a kind to another is taken in: a page to read, Markdown to paste, JSON for a tool. */
+export type TemplateMoveReportFormat = "html" | "md" | "json";
 
 /** Two versions of a kind from the OSDU data definitions, compared as files and variable by variable. */
 export interface DeliveryOsduComparison {
@@ -216,4 +229,6 @@ export interface DeliveryOsduComparison {
   sameReferencedFiles: number;
   /** The shared schema files that differ, or that only one version refers to. */
   referencedFiles: DeliveryOsduReferencedFile[];
+  /** The synced mappings of the kind that move from another version, which every change is weighed against. */
+  weighedMappings: string[];
 }

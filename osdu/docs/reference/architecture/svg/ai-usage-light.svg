@@ -1,0 +1,228 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="title desc" font-family="&#x27;Segoe UI&#x27;, &#x27;Helvetica Neue&#x27;, Helvetica, Arial, sans-serif">
+<title id="title">OSDU Delivery: Container diagram for OSDU Delivery, every path to an AI model</title>
+<desc id="desc">Only people&#x27;s questions reach a model: no flow, mapping, render or delivery calls one, and every assistant follows the MCP server&#x27;s rules.</desc>
+<defs><marker id="arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,1 L12,6 L0,11 z" fill="#475569"/></marker><symbol id="i-azure-ai-foundry" viewBox="0 0 18 18"><defs><linearGradient id="azure-ai-foundry-uuid-05876c72-8f26-40da-996e-a488172ec072" x1="-603.563" y1="-218.378" x2="-606.6" y2="-206.22" gradientTransform="translate(617.126 -205.758) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#712575" /><stop offset=".09" stop-color="#9a2884" /><stop offset=".18" stop-color="#bf2c92" /><stop offset=".27" stop-color="#da2e9c" /><stop offset=".34" stop-color="#eb30a2" /><stop offset=".4" stop-color="#f131a5" /><stop offset=".5" stop-color="#ec30a3" /><stop offset=".61" stop-color="#df2f9e" /><stop offset=".72" stop-color="#c92d96" /><stop offset=".83" stop-color="#aa2a8a" /><stop offset=".95" stop-color="#83267c" /><stop offset="1" stop-color="#712575" /></linearGradient><linearGradient id="azure-ai-foundry-uuid-c4a2f627-d730-447e-9152-62009c64c361" x1="-602.412" y1="-206.025" x2="-602.412" y2="-223.175" gradientTransform="translate(617.126 -205.758) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#da7ed0" /><stop offset=".08" stop-color="#b17bd5" /><stop offset=".19" stop-color="#8778db" /><stop offset=".3" stop-color="#6276e1" /><stop offset=".41" stop-color="#4574e5" /><stop offset=".54" stop-color="#2e72e8" /><stop offset=".67" stop-color="#1d71eb" /><stop offset=".81" stop-color="#1471ec" /><stop offset="1" stop-color="#1171ed" /></linearGradient><linearGradient id="azure-ai-foundry-uuid-5a4cf215-4932-4f12-8af1-1b6833df259c" x1="-603.438" y1="-206.414" x2="-614.807" y2="-224.644" gradientTransform="translate(617.126 -205.758) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#da7ed0" /><stop offset=".05" stop-color="#b77bd4" /><stop offset=".11" stop-color="#9079da" /><stop offset=".18" stop-color="#6e77df" /><stop offset=".25" stop-color="#5175e3" /><stop offset=".33" stop-color="#3973e7" /><stop offset=".42" stop-color="#2772e9" /><stop offset=".54" stop-color="#1a71eb" /><stop offset=".68" stop-color="#1371ec" /><stop offset="1" stop-color="#1171ed" /></linearGradient></defs><path d="m12.061.012c.534,0,1.008.401,1.178.984s1.166,4.19,1.166,4.19v7.166h-3.607l.073-12.352h1.19v.012Z" fill="url(#azure-ai-foundry-uuid-05876c72-8f26-40da-996e-a488172ec072)" fill-rule="evenodd" stroke-width="0" /><path d="m17.356,5.611c0-.255-.206-.449-.449-.449h-2.126c-1.494,0-2.709,1.215-2.709,2.709v4.494h2.575c1.494,0,2.709-1.215,2.709-2.709v-4.045Z" fill="url(#azure-ai-foundry-uuid-c4a2f627-d730-447e-9152-62009c64c361)" stroke-width="0" /><path d="m12.061.012c-.413,0-.741.328-.741.741l-.073,13.64c0,1.992-1.615,3.607-3.607,3.607H1.093c-.316,0-.522-.304-.425-.595L5.915,2.429C6.425.984,7.785.012,9.316.012h2.757-.012Z" fill="url(#azure-ai-foundry-uuid-5a4cf215-4932-4f12-8af1-1b6833df259c)" fill-rule="evenodd" stroke-width="0" /></symbol><symbol id="i-azure-sql-database" viewBox="0 0 18 18"><defs><linearGradient id="azure-sql-database-ef16bf9d-a8b6-4181-b6cd-66fc5203f956" x1="2.59" y1="10.16" x2="15.41" y2="10.16" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#005ba1" /><stop offset="0.07" stop-color="#0060a9" /><stop offset="0.36" stop-color="#0071c8" /><stop offset="0.52" stop-color="#0078d4" /><stop offset="0.64" stop-color="#0074cd" /><stop offset="0.82" stop-color="#006abb" /><stop offset="1" stop-color="#005ba1" /></linearGradient><radialGradient id="azure-sql-database-bf3846c3-4d74-4743-ab9a-f334c248bd92" cx="9.36" cy="10.57" r="7.07" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f2f2f2" /><stop offset="0.58" stop-color="#eee" /><stop offset="1" stop-color="#e6e6e6" /></radialGradient></defs><path d="M9,5.14c-3.54,0-6.41-1-6.41-2.32V15.18c0,1.27,2.82,2.3,6.32,2.32H9c3.54,0,6.41-1,6.41-2.32V2.82C15.41,4.11,12.54,5.14,9,5.14Z" fill="url(#azure-sql-database-ef16bf9d-a8b6-4181-b6cd-66fc5203f956)" /><path d="M15.41,2.82c0,1.29-2.87,2.32-6.41,2.32s-6.41-1-6.41-2.32S5.46.5,9,.5s6.41,1,6.41,2.32" fill="#e8e8e8" /><path d="M13.92,2.63c0,.82-2.21,1.48-4.92,1.48S4.08,3.45,4.08,2.63,6.29,1.16,9,1.16s4.92.66,4.92,1.47" fill="#50e6ff" /><path d="M9,3a11.55,11.55,0,0,0-3.89.57A11.42,11.42,0,0,0,9,4.11a11.15,11.15,0,0,0,3.89-.58A11.84,11.84,0,0,0,9,3Z" fill="#198ab3" /><path d="M12.9,11.4V8H12v4.13h2.46V11.4ZM5.76,9.73a1.83,1.83,0,0,1-.51-.31.44.44,0,0,1-.12-.32.34.34,0,0,1,.15-.3.68.68,0,0,1,.42-.12,1.62,1.62,0,0,1,1,.29V8.11a2.58,2.58,0,0,0-1-.16,1.64,1.64,0,0,0-1.09.34,1.08,1.08,0,0,0-.42.89c0,.51.32.91,1,1.21a2.88,2.88,0,0,1,.62.36.42.42,0,0,1,.15.32.38.38,0,0,1-.16.31.81.81,0,0,1-.45.11,1.66,1.66,0,0,1-1.09-.42V12a2.17,2.17,0,0,0,1.07.24,1.88,1.88,0,0,0,1.18-.33A1.08,1.08,0,0,0,6.84,11a1.05,1.05,0,0,0-.25-.7A2.42,2.42,0,0,0,5.76,9.73ZM11,11.32a2.34,2.34,0,0,0,.33-1.26A2.32,2.32,0,0,0,11,9a1.81,1.81,0,0,0-.7-.75,2,2,0,0,0-1-.26,2.11,2.11,0,0,0-1.08.27A1.86,1.86,0,0,0,7.49,9a2.46,2.46,0,0,0-.26,1.14,2.26,2.26,0,0,0,.24,1,1.76,1.76,0,0,0,.69.74,2.06,2.06,0,0,0,1,.3l.86,1h1.21L10,12.08A1.79,1.79,0,0,0,11,11.32ZM10,11.07a.94.94,0,0,1-.76.35.92.92,0,0,1-.76-.36,1.52,1.52,0,0,1-.29-1,1.53,1.53,0,0,1,.29-1,1,1,0,0,1,.78-.37.87.87,0,0,1,.75.37,1.62,1.62,0,0,1,.27,1A1.46,1.46,0,0,1,10,11.07Z" fill="url(#azure-sql-database-bf3846c3-4d74-4743-ab9a-f334c248bd92)" /></symbol><symbol id="i-lucide-bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol><symbol id="i-lucide-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol><symbol id="i-lucide-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol><symbol id="i-lucide-layout-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol><symbol id="i-lucide-message-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></symbol><symbol id="i-lucide-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol><symbol id="i-lucide-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol></defs>
+<rect width="1600" height="900" fill="#FFFFFF"/>
+<rect x="48" y="34" width="141.9" height="22" rx="11" fill="#E8F1FB"/>
+<text x="118.9" y="49.5" font-size="11.5" fill="#1168BD" font-weight="bold" text-anchor="middle">C4 LEVEL 2 · AI USAGE</text>
+<text x="48.0" y="92.0" font-size="28" fill="#0F172A" font-weight="600" text-anchor="start">Container diagram for OSDU Delivery, every path to an AI model</text>
+<text x="48.0" y="120.0" font-size="15" fill="#475569" font-weight="normal" text-anchor="start">Only people&#x27;s questions reach a model: no flow, mapping, render or delivery calls one, and every assistant follows the MCP server&#x27;s rules.</text>
+<rect x="115.0" y="295.0" width="1175.0" height="500.0" rx="16" fill="#F7FAFD" stroke="#7C8A99" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="131.0" y="769.0" font-size="14.5" fill="#0F172A" font-weight="bold" text-anchor="start">OSDU Delivery</text>
+<text x="131.0" y="785.0" font-size="11.5" fill="#64748B" font-weight="normal" text-anchor="start">[Software System]</text>
+<polyline points="250.0,232.0 250.0,315.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1350.0,185.0 1270.0,185.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="365.0,365.0 610.0,365.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="637.5,315.0 637.5,230.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<polyline points="807.5,315.0 807.5,230.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="910.0,230.0 910.0,272.0 1070.0,272.0 1070.0,317.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1190.0,230.0 1190.0,317.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1360.0,365.0 1270.0,365.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<polyline points="1030.0,365.0 910.0,365.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="660.0,415.0 660.0,565.0 550.0,565.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="895.0,415.0 895.0,515.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1000.0,615.0 1000.0,686.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g><title>Data operator: Triggers and watches runs, follows a record from its source file and row to the OSDU id and version it landed as, releases, redelivers or removes records, reads assertion reports and asks the assistant.</title>
+<circle cx="250.0" cy="146.7" r="18.7" fill="#08427B" stroke="#073763" stroke-width="1.2"/>
+<rect x="155.0" y="157.0" width="190.0" height="75.0" rx="25.0" fill="#08427B" stroke="#073763" stroke-width="1.2"/>
+<text x="250.0" y="181.8" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="middle">Data operator</text>
+<text x="250.0" y="197.0" font-size="11.0" fill="#D6E4F5" font-weight="normal" text-anchor="middle">[Person]</text>
+<text x="250.0" y="217.9" font-size="12.0" fill="#D6E4F5" font-weight="normal" text-anchor="middle">Operates the deliveries.</text>
+</g>
+<g><title>Anthropic API: Always Anthropic, whatever the assistant&#x27;s provider: synonym expansion of a ! question (find_similar_questions) and the questions a repository sync generates for report visuals. Both stay off without an Anthropic key.</title>
+<rect x="455.0" y="140.0" width="210.0" height="90.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="467.0" y="152.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-sparkles" xlink:href="#i-lucide-sparkles" x="471.0" y="156.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="503.0" y="165.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Anthropic API</text>
+<text x="503.0" y="180.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System: Messages</text>
+<text x="503.0" y="194.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">API]</text>
+<text x="503.0" y="215.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">Only with a key.</text>
+<rect x="632.3" y="131.0" width="24.7" height="18" rx="9" fill="#F5A524"/>
+<text x="644.6" y="143.6" font-size="10.5" fill="#3A2500" font-weight="bold" text-anchor="middle">AI</text>
+</g>
+<g><title>AI model provider: The chat model behind the GUI assistant and Explain: a Foundry deployment (gpt-5.1 in the shipped environments), or OpenAI or Anthropic by setting, plus an optional transcription deployment for voice. Off on a fresh deployment; no flow, mapping, render or delivery ever calls a model.</title>
+<rect x="705.0" y="140.0" width="230.0" height="90.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="717.0" y="152.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-ai-foundry" xlink:href="#i-azure-ai-foundry" x="721.0" y="156.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="753.0" y="165.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">AI model provider</text>
+<text x="753.0" y="180.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System: Azure AI</text>
+<text x="753.0" y="194.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">Foundry]</text>
+<text x="753.0" y="215.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">Answers questions.</text>
+<rect x="902.3" y="131.0" width="24.7" height="18" rx="9" fill="#F5A524"/>
+<text x="914.6" y="143.6" font-size="10.5" fill="#3A2500" font-weight="bold" text-anchor="middle">AI</text>
+</g>
+<g><title>AI coding assistants: An assistant a person runs (Claude Code, the VS Code chat, Cursor, Codex). It calls the MCP server with the person&#x27;s own token, so it can do what that person can do, and what it does is recorded as theirs.</title>
+<rect x="1030.0" y="140.0" width="240.0" height="90.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="1042.0" y="159.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-bot" xlink:href="#i-lucide-bot" x="1046.0" y="163.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="1078.0" y="172.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">AI coding assistants</text>
+<text x="1078.0" y="187.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System]</text>
+<text x="1078.0" y="208.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">A person&#x27;s own assistant.</text>
+<rect x="1237.3" y="131.0" width="24.7" height="18" rx="9" fill="#F5A524"/>
+<text x="1249.6" y="143.6" font-size="10.5" fill="#3A2500" font-weight="bold" text-anchor="middle">AI</text>
+</g>
+<g><title>Pipeline developer: Writes the estate&#x27;s flows, mappings, templates, schedules, assertions and AI contexts in VS Code, checks and previews them against the synced estate, and pushes them to the estate repository.</title>
+<circle cx="1445.0" cy="146.7" r="18.7" fill="#08427B" stroke="#073763" stroke-width="1.2"/>
+<rect x="1350.0" y="157.0" width="190.0" height="75.0" rx="25.0" fill="#08427B" stroke="#073763" stroke-width="1.2"/>
+<text x="1445.0" y="181.8" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="middle">Pipeline developer</text>
+<text x="1445.0" y="197.0" font-size="11.0" fill="#D6E4F5" font-weight="normal" text-anchor="middle">[Person]</text>
+<text x="1445.0" y="217.9" font-size="12.0" fill="#D6E4F5" font-weight="normal" text-anchor="middle">Builds the pipelines.</text>
+</g>
+<g><title>Workbench GUI: SQLFlow&#x27;s workbench with the module&#x27;s pages registered through the GUI module contract: pipelines and runs, lineage, the ledger and its records, the explorer of what OSDU holds, assertions, dimensions, inventories, templates, caches and the chat assistant. A static single-page app served by nginx; it calls the control plane&#x27;s API.</title>
+<rect x="135.0" y="315.0" width="230.0" height="100.0" rx="6" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<path d="M135.0,329.0 L365.0,329.0" stroke="#E1EEFA" stroke-opacity="0.55" stroke-width="1"/>
+<circle cx="148.0" cy="322.0" r="3" fill="#E1EEFA" fill-opacity="0.8"/>
+<circle cx="159.0" cy="322.0" r="3" fill="#E1EEFA" fill-opacity="0.8"/>
+<circle cx="170.0" cy="322.0" r="3" fill="#E1EEFA" fill-opacity="0.8"/>
+<rect x="147.0" y="338.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-layout-dashboard" xlink:href="#i-lucide-layout-dashboard" x="151.0" y="342.5" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="183.0" y="351.8" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Workbench GUI</text>
+<text x="183.0" y="366.9" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: React on nginx]</text>
+<text x="183.0" y="387.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Runs, lineage, the ledger, the</text>
+<text x="183.0" y="402.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">explorer, the assistant.</text>
+</g>
+<a href="control-plane-light.svg" xlink:href="control-plane-light.svg">
+<g><title>Control plane: SQLFlow&#x27;s control plane (.NET 9) with DeliveryControlPlaneModule: the REST API (the delivery API under /api/v1/delivery), identity and tokens, the managed git sync, schedules, the run queue and dispatcher, the node protocol, the chat assistant, and the module&#x27;s background services. It decides what runs and owns the state; it runs no flow itself.</title>
+<rect x="610.0" y="315.0" width="300.0" height="100.0" rx="12" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="622.0" y="331.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-server" xlink:href="#i-lucide-server" x="626.0" y="335.5" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="658.0" y="344.8" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Control plane</text>
+<text x="658.0" y="359.9" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: ASP.NET Core]</text>
+<text x="658.0" y="380.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">API, sign-in, sync, schedules, run queue, node</text>
+<text x="658.0" y="395.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">protocol.</text>
+<rect x="826.7" y="306.0" width="75.3" height="18" rx="9" fill="#FFFFFF" stroke="#1168BD" stroke-width="1"/>
+<text x="864.4" y="318.6" font-size="10.5" fill="#1168BD" font-weight="bold" text-anchor="middle">view inside ›</text>
+</g>
+</a>
+<a href="mcp-server-light.svg" xlink:href="mcp-server-light.svg">
+<g><title>MCP server: osdu-delivery-mcp, a Model Context Protocol server: SQLFlow&#x27;s server composed with the delivery module. Every assistant reads its instructions; it answers from metadata, and from data only for a ! question through a read-only query over what an approved AI context opens. It holds no credential: it forwards each caller&#x27;s token.</title>
+<rect x="1030.0" y="317.0" width="240.0" height="96.0" rx="12" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="1042.0" y="331.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-bot" xlink:href="#i-lucide-bot" x="1046.0" y="335.5" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="1078.0" y="344.8" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">MCP server</text>
+<text x="1078.0" y="359.9" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: Rust]</text>
+<text x="1078.0" y="380.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">The assistant&#x27;s rules and tools:</text>
+<text x="1078.0" y="395.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">metadata, docs, ! queries.</text>
+<rect x="1237.3" y="308.0" width="24.7" height="18" rx="9" fill="#F5A524"/>
+<text x="1249.6" y="320.6" font-size="10.5" fill="#3A2500" font-weight="bold" text-anchor="middle">AI</text>
+<rect x="1157.0" y="308.0" width="75.3" height="18" rx="9" fill="#FFFFFF" stroke="#1168BD" stroke-width="1"/>
+<text x="1194.7" y="320.6" font-size="10.5" fill="#1168BD" font-weight="bold" text-anchor="middle">view inside ›</text>
+</g>
+</a>
+<g><title>Slack assistant: SQLFlow&#x27;s Slack bot (Socket Mode). It answers through the same gateways and MCP server, under the same fence as the GUI chat, and marks every answer as AI-generated. No template of this product deploys it.</title>
+<rect x="1360.0" y="320.0" width="200.0" height="90.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="1372.0" y="332.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-message-square" xlink:href="#i-lucide-message-square" x="1376.0" y="336.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="1408.0" y="345.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Slack assistant</text>
+<text x="1408.0" y="360.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System:</text>
+<text x="1408.0" y="374.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">SqlFlow.SlackBot]</text>
+<text x="1408.0" y="395.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">Not deployed by default.</text>
+<rect x="1527.3" y="311.0" width="24.7" height="18" rx="9" fill="#F5A524"/>
+<text x="1539.6" y="323.6" font-size="10.5" fill="#3A2500" font-weight="bold" text-anchor="middle">AI</text>
+</g>
+<g><title>Catalog database: OsduDelivery: SQLFlow&#x27;s catalog (pipelines, runs, schedules, lineage, users, conversations) and, beside it, the osdu schema with its own migrations: the ledger, the audit trail, cache versions, the index of the repository&#x27;s templates, partitions and the central configuration.</title>
+<path d="M310.0,525.0 A120.0,9.0 0 0 1 550.0,525.0 L550.0,605.0 A120.0,9.0 0 0 1 310.0,605.0 Z" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<path d="M310.0,525.0 A120.0,9.0 0 0 0 550.0,525.0" fill="none" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="322.0" y="548.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-sql-database" xlink:href="#i-azure-sql-database" x="326.0" y="552.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="358.0" y="561.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Catalog database</text>
+<text x="358.0" y="576.5" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: Azure SQL]</text>
+<text x="358.0" y="597.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">The catalog and the ledger.</text>
+</g>
+<a href="compute-node-light.svg" xlink:href="compute-node-light.svg">
+<g><title>Compute node: SqlFlow.Delivery.Worker.Host: SQLFlow&#x27;s worker with the module installed. It takes its work outbound from the control plane, so it can sit next to the data, and reads and writes the ledger in the osdu schema through the catalog&#x27;s connection.</title>
+<rect x="880.0" y="515.0" width="240.0" height="100.0" rx="12" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="892.0" y="531.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-cpu" xlink:href="#i-lucide-cpu" x="896.0" y="535.5" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="928.0" y="544.8" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Compute node</text>
+<text x="928.0" y="560.0" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: .NET 9 worker]</text>
+<text x="928.0" y="580.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Pulls runs; executes the file, ing</text>
+<text x="928.0" y="595.9" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">and eight OSDU kinds.</text>
+<rect x="1036.7" y="506.0" width="75.3" height="18" rx="9" fill="#FFFFFF" stroke="#1168BD" stroke-width="1"/>
+<text x="1074.4" y="518.6" font-size="10.5" fill="#1168BD" font-weight="bold" text-anchor="middle">view inside ›</text>
+</g>
+</a>
+<g><title>Ingestion database: OsduData: the pre tables a file flow lands its files into, the keyed ingestion tables an ing flow upserts (stamping UpdatedDate_DW) and a delivery flow reads incrementally, and the tables dimension flows build. Snapshot isolation must be on.</title>
+<path d="M880.0,695.0 A120.0,9.0 0 0 1 1120.0,695.0 L1120.0,775.0 A120.0,9.0 0 0 1 880.0,775.0 Z" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<path d="M880.0,695.0 A120.0,9.0 0 0 0 1120.0,695.0" fill="none" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="892.0" y="718.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-sql-database" xlink:href="#i-azure-sql-database" x="896.0" y="722.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="928.0" y="731.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Ingestion database</text>
+<text x="928.0" y="746.5" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: Azure SQL]</text>
+<text x="928.0" y="767.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">Pre and keyed tables.</text>
+</g>
+<rect x="189.3" y="248.5" width="121.3" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="250.0" y="263.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Asks, explains a view,</text>
+<text x="250.0" y="278.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">speaks</text>
+<text x="250.0" y="292.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[HTTPS]</text>
+<rect x="1272.8" y="167.5" width="74.4" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1310.0" y="182.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Asks</text>
+<text x="1310.0" y="196.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[In the editor]</text>
+<rect x="431.8" y="347.5" width="111.3" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="487.5" y="362.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Sends the question</text>
+<text x="487.5" y="376.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Chat API, HTTPS]</text>
+<rect x="587.9" y="247.5" width="99.1" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="637.5" y="262.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Synonyms, visual</text>
+<text x="637.5" y="277.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">questions</text>
+<text x="637.5" y="291.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Messages API]</text>
+<rect x="742.2" y="240.5" width="130.6" height="64.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="807.5" y="255.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Question, history, MCP</text>
+<text x="807.5" y="270.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">server as tool</text>
+<text x="807.5" y="284.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Responses API, managed</text>
+<text x="807.5" y="298.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">identity]</text>
+<rect x="941.8" y="247.0" width="96.4" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="990.0" y="262.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Calls tools, run&#x27;s</text>
+<text x="990.0" y="277.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">token</text>
+<text x="990.0" y="291.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[MCP over HTTPS]</text>
+<rect x="1143.9" y="248.5" width="92.2" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1190.0" y="263.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Calls tools, own</text>
+<text x="1190.0" y="278.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">token</text>
+<text x="1190.0" y="292.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[MCP over stdio]</text>
+<rect x="1283.1" y="347.5" width="63.9" height="35.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1315.0" y="362.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Calls tools</text>
+<text x="1315.0" y="376.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[MCP]</text>
+<rect x="930.9" y="340.0" width="78.1" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="970.0" y="355.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Metadata; !</text>
+<text x="970.0" y="370.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">queries</text>
+<text x="970.0" y="384.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[JSON/HTTPS]</text>
+<rect x="597.4" y="465.0" width="125.3" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="660.0" y="480.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Keeps chats, contexts,</text>
+<text x="660.0" y="495.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">answers</text>
+<text x="660.0" y="509.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<rect x="832.5" y="440.0" width="125.0" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="895.0" y="455.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Queues the read-only</text>
+<text x="895.0" y="470.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">SELECT</text>
+<text x="895.0" y="484.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Compute task]</text>
+<rect x="927.2" y="625.5" width="145.6" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<text x="1000.0" y="640.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Runs it: 200 rows, at most</text>
+<text x="1000.0" y="655.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">5,000</text>
+<text x="1000.0" y="669.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<line x1="48" y1="846.0" x2="1552" y2="846.0" stroke="#E2E8F0"/>
+<circle cx="59.0" cy="860.0" r="4" fill="#08427B"/><rect x="51.0" y="864.0" width="16" height="9" rx="4" fill="#08427B"/>
+<text x="78.0" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Person</text>
+<rect x="135.6" y="857.0" width="22" height="16" rx="4" fill="#2F7CC7" stroke="#2869AA"/>
+<text x="165.6" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Container</text>
+<rect x="239.2" y="857.0" width="22" height="16" rx="4" fill="#6B7280" stroke="#5B626E"/>
+<text x="269.2" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">External software system</text>
+<path d="M423.5,860.0 A9,3 0 0 1 441.5,860.0 L441.5,871.0 A9,3 0 0 1 423.5,871.0 Z" fill="none" stroke="#334155" stroke-width="1.3"/>
+<path d="M423.5,860.0 A9,3 0 0 0 441.5,860.0" fill="none" stroke="#334155" stroke-width="1.3"/>
+<text x="451.5" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Database</text>
+<rect x="523.8" y="857.0" width="20" height="16" rx="2.5" fill="none" stroke="#334155" stroke-width="1.3"/>
+<path d="M523.8,862.0 h20" stroke="#334155" stroke-width="1.1"/>
+<text x="552.8" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Web application</text>
+<rect x="662.6" y="856.0" width="18" height="18" rx="4.5" fill="#FFFFFF" stroke="#CBD5E1"/>
+<use href="#i-lucide-box" xlink:href="#i-lucide-box" x="665.6" y="859.0" width="12" height="12" color="#334155" style="color:#334155"/>
+<text x="690.6" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Icon: what it is, or its Azure service</text>
+<rect x="893.7" y="857.0" width="22" height="16" rx="8" fill="#F5A524"/>
+<text x="904.7" y="868.6" font-size="9.5" fill="#3A2500" font-weight="bold" text-anchor="middle">AI</text>
+<text x="923.7" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Calls or serves an AI model</text>
+<rect x="1085.9" y="857.0" width="26" height="16" rx="8" fill="#FFFFFF" stroke="#1168BD"/>
+<path d="M1095.9,861.0 l4,4 l-4,4" fill="none" stroke="#1168BD" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1117.9" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Has a view of its inside</text>
+<rect x="1259.7" y="857.0" width="22" height="16" rx="4" fill="#F7FAFD" stroke="#7C8A99" stroke-dasharray="4 3"/>
+<text x="1289.7" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Boundary</text>
+<line x1="48.0" y1="887.0" x2="68.0" y2="887.0" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="78.0" y="891.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Relationship: what it does [technology]</text>
+<line x1="305.2" y1="887.0" x2="325.2" y2="887.0" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+<text x="335.2" y="891.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Optional, or on request</text>
+</svg>

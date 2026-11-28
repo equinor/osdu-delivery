@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="title desc" font-family="&#x27;Segoe UI&#x27;, &#x27;Helvetica Neue&#x27;, Helvetica, Arial, sans-serif">
+<title id="title">OSDU Delivery: Dynamic diagram: a commit becomes the runs that execute it</title>
+<desc id="desc">Nothing runs from a working copy: a run executes the commit the control plane synced, checked out on the node with a token the GitHub App mints for that repository alone.</desc>
+<defs><marker id="arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,1 L12,6 L0,11 z" fill="#475569"/></marker><symbol id="i-azure-key-vault" viewBox="0 0 18 18"><defs><radialGradient id="azure-key-vault-fb114c93-7c16-4540-899a-0796041629e6" cx="9" cy="9" r="8.5" gradientUnits="userSpaceOnUse"><stop offset="0.18" stop-color="#5ea0ef" /><stop offset="0.56" stop-color="#5c9fee" /><stop offset="0.69" stop-color="#559ced" /><stop offset="0.78" stop-color="#4a97e9" /><stop offset="0.86" stop-color="#3990e4" /><stop offset="0.93" stop-color="#2387de" /><stop offset="0.99" stop-color="#087bd6" /><stop offset="1" stop-color="#0078d4" /></radialGradient><radialGradient id="azure-key-vault-ec478bd3-5b38-4e7f-b661-11f355578bff" cx="38.95" cy="182.07" r="9.88" gradientTransform="translate(-28.71 -163.24) scale(0.94 0.94)" gradientUnits="userSpaceOnUse"><stop offset="0.27" stop-color="#ffd70f" /><stop offset="0.49" stop-color="#ffcb12" /><stop offset="0.88" stop-color="#feac19" /><stop offset="1" stop-color="#fea11b" /></radialGradient></defs><path id="azure-key-vault-aacf8311-a317-400f-b613-74bd00da5ce3" d="M9,.5A8.5,8.5,0,1,0,17.5,9,8.51,8.51,0,0,0,9,.5ZM9,16.34A7.34,7.34,0,1,1,16.34,9,7.34,7.34,0,0,1,9,16.34Z" fill="url(#azure-key-vault-fb114c93-7c16-4540-899a-0796041629e6)" /><circle cx="9" cy="9" r="7.34" fill="#fff" /><g><path id="azure-key-vault-bd983c41-db73-40ec-a4f4-da1213fc9924" d="M13.44,7.33a1.84,1.84,0,0,0,0-2.59h0L10.29,1.58a1.83,1.83,0,0,0-2.58,0h0L4.56,4.74a1.84,1.84,0,0,0,0,2.59L7.18,10a.51.51,0,0,1,.15.36v4.88a.63.63,0,0,0,.18.44l1.2,1.2a.41.41,0,0,0,.58,0l1.16-1.16h0l.68-.68a.25.25,0,0,0,0-.34l-.49-.49a.27.27,0,0,1,0-.37l.49-.49a.25.25,0,0,0,0-.34l-.49-.49a.27.27,0,0,1,0-.37l.49-.49a.25.25,0,0,0,0-.34l-.68-.69v-.25ZM9,2.35A1,1,0,0,1,9,4.42,1,1,0,1,1,9,2.35Z" fill="url(#azure-key-vault-ec478bd3-5b38-4e7f-b661-11f355578bff)" /><path id="azure-key-vault-ad2e7e44-9bfd-4775-8bf4-8ef26a544921" d="M8.18,15.3h0a.23.23,0,0,0,.38-.17v-4a.24.24,0,0,0-.11-.2h0a.22.22,0,0,0-.34.2v4A.28.28,0,0,0,8.18,15.3Z" fill="#ff9300" opacity="0.75" /><rect id="azure-key-vault-a996fbff-3936-4b24-b407-369336c143ba" x="6.48" y="5.79" width="5.17" height="0.61" rx="0.28" fill="#ff9300" opacity="0.75" /><rect id="azure-key-vault-bb12d31c-3352-4a18-87dd-a169a4a8721d" x="6.48" y="6.78" width="5.17" height="0.61" rx="0.28" fill="#ff9300" opacity="0.75" /></g></symbol><symbol id="i-azure-sql-database" viewBox="0 0 18 18"><defs><linearGradient id="azure-sql-database-ef16bf9d-a8b6-4181-b6cd-66fc5203f956" x1="2.59" y1="10.16" x2="15.41" y2="10.16" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#005ba1" /><stop offset="0.07" stop-color="#0060a9" /><stop offset="0.36" stop-color="#0071c8" /><stop offset="0.52" stop-color="#0078d4" /><stop offset="0.64" stop-color="#0074cd" /><stop offset="0.82" stop-color="#006abb" /><stop offset="1" stop-color="#005ba1" /></linearGradient><radialGradient id="azure-sql-database-bf3846c3-4d74-4743-ab9a-f334c248bd92" cx="9.36" cy="10.57" r="7.07" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f2f2f2" /><stop offset="0.58" stop-color="#eee" /><stop offset="1" stop-color="#e6e6e6" /></radialGradient></defs><path d="M9,5.14c-3.54,0-6.41-1-6.41-2.32V15.18c0,1.27,2.82,2.3,6.32,2.32H9c3.54,0,6.41-1,6.41-2.32V2.82C15.41,4.11,12.54,5.14,9,5.14Z" fill="url(#azure-sql-database-ef16bf9d-a8b6-4181-b6cd-66fc5203f956)" /><path d="M15.41,2.82c0,1.29-2.87,2.32-6.41,2.32s-6.41-1-6.41-2.32S5.46.5,9,.5s6.41,1,6.41,2.32" fill="#e8e8e8" /><path d="M13.92,2.63c0,.82-2.21,1.48-4.92,1.48S4.08,3.45,4.08,2.63,6.29,1.16,9,1.16s4.92.66,4.92,1.47" fill="#50e6ff" /><path d="M9,3a11.55,11.55,0,0,0-3.89.57A11.42,11.42,0,0,0,9,4.11a11.15,11.15,0,0,0,3.89-.58A11.84,11.84,0,0,0,9,3Z" fill="#198ab3" /><path d="M12.9,11.4V8H12v4.13h2.46V11.4ZM5.76,9.73a1.83,1.83,0,0,1-.51-.31.44.44,0,0,1-.12-.32.34.34,0,0,1,.15-.3.68.68,0,0,1,.42-.12,1.62,1.62,0,0,1,1,.29V8.11a2.58,2.58,0,0,0-1-.16,1.64,1.64,0,0,0-1.09.34,1.08,1.08,0,0,0-.42.89c0,.51.32.91,1,1.21a2.88,2.88,0,0,1,.62.36.42.42,0,0,1,.15.32.38.38,0,0,1-.16.31.81.81,0,0,1-.45.11,1.66,1.66,0,0,1-1.09-.42V12a2.17,2.17,0,0,0,1.07.24,1.88,1.88,0,0,0,1.18-.33A1.08,1.08,0,0,0,6.84,11a1.05,1.05,0,0,0-.25-.7A2.42,2.42,0,0,0,5.76,9.73ZM11,11.32a2.34,2.34,0,0,0,.33-1.26A2.32,2.32,0,0,0,11,9a1.81,1.81,0,0,0-.7-.75,2,2,0,0,0-1-.26,2.11,2.11,0,0,0-1.08.27A1.86,1.86,0,0,0,7.49,9a2.46,2.46,0,0,0-.26,1.14,2.26,2.26,0,0,0,.24,1,1.76,1.76,0,0,0,.69.74,2.06,2.06,0,0,0,1,.3l.86,1h1.21L10,12.08A1.79,1.79,0,0,0,11,11.32ZM10,11.07a.94.94,0,0,1-.76.35.92.92,0,0,1-.76-.36,1.52,1.52,0,0,1-.29-1,1.53,1.53,0,0,1,.29-1,1,1,0,0,1,.78-.37.87.87,0,0,1,.75.37,1.62,1.62,0,0,1,.27,1A1.46,1.46,0,0,1,10,11.07Z" fill="url(#azure-sql-database-bf3846c3-4d74-4743-ab9a-f334c248bd92)" /></symbol><symbol id="i-lucide-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol><symbol id="i-lucide-calendar-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 14v2.2l1.6 1"/><path d="M16 2v3"/><path d="M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338"/><path d="M3 9h5.859"/><path d="M8 2v3"/><circle cx="16" cy="16" r="6"/></symbol><symbol id="i-lucide-code-xml" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></symbol><symbol id="i-lucide-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol><symbol id="i-lucide-git-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></symbol><symbol id="i-lucide-refresh-cw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol><symbol id="i-lucide-workflow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></symbol></defs>
+<rect width="1600" height="900" fill="#FFFFFF"/>
+<rect x="48" y="34" width="121.4" height="22" rx="11" fill="#E8F1FB"/>
+<text x="108.7" y="49.5" font-size="11.5" fill="#1168BD" font-weight="bold" text-anchor="middle">C4 DYNAMIC · GIT</text>
+<text x="48.0" y="92.0" font-size="28" fill="#0F172A" font-weight="600" text-anchor="start">Dynamic diagram: a commit becomes the runs that execute it</text>
+<text x="48.0" y="120.0" font-size="15" fill="#475569" font-weight="normal" text-anchor="start">Nothing runs from a working copy: a run executes the commit the control plane synced, checked out on the node with a token the GitHub App mints for that</text>
+<text x="48.0" y="140.0" font-size="15" fill="#475569" font-weight="normal" text-anchor="start">repository alone.</text>
+<rect x="864.0" y="472.0" width="687.0" height="154.0" rx="16" fill="none" stroke="#A3AFBC" stroke-width="1.4" stroke-dasharray="3 4"/>
+<text x="880.0" y="494.0" font-size="13.5" fill="#334155" font-weight="bold" text-anchor="start">Control plane</text>
+<text x="974.2" y="494.0" font-size="11.5" fill="#64748B" font-weight="normal" text-anchor="start">[Container]</text>
+<polyline points="130.0,350.0 130.0,510.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="220.0,290.0 440.0,290.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="560.0,338.0 560.0,510.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="680.0,560.0 880.0,560.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1000.0,510.0 1000.0,338.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="880.0,525.0 720.0,525.0 720.0,425.0 640.0,425.0 640.0,338.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1000.0,610.0 1000.0,742.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1120.0,560.0 1305.0,560.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1420.0,610.0 1420.0,785.0 1120.0,785.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="360.0,742.0 360.0,415.0 500.0,415.0 500.0,338.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g><title>Pipeline developer: Writes the estate&#x27;s flows, mappings, templates, schedules, assertions and AI contexts in VS Code, checks and previews them against the synced estate, and pushes them to the estate repository.</title>
+<circle cx="130.0" cy="251.6" r="21.6" fill="#08427B" stroke="#073763" stroke-width="1.2"/>
+<rect x="40.0" y="263.5" width="180.0" height="86.5" rx="28.8" fill="#08427B" stroke="#073763" stroke-width="1.2"/>
+<text x="130.0" y="294.0" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="middle">Pipeline developer</text>
+<text x="130.0" y="309.2" font-size="11.0" fill="#D6E4F5" font-weight="normal" text-anchor="middle">[Person]</text>
+<text x="130.0" y="330.1" font-size="12.0" fill="#D6E4F5" font-weight="normal" text-anchor="middle">Builds the pipelines.</text>
+</g>
+<g><title>Estate repository: The estate as YAML and JSON files in git: flows, mappings, templates, cache definitions, schedules, assertions and AI contexts. A run executes the commit the control plane last synced, never a working copy.</title>
+<rect x="440.0" y="242.0" width="240.0" height="96.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="452.0" y="264.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-git-branch" xlink:href="#i-lucide-git-branch" x="456.0" y="268.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="488.0" y="277.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Estate repository</text>
+<text x="488.0" y="292.4" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System: GitHub]</text>
+<text x="488.0" y="313.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">The estate&#x27;s documents.</text>
+</g>
+<g><title>Key Vault: osdu-kv-&lt;suffix&gt;, RBAC only. Terraform writes the connection strings (no credential in them); the setup script generates the JWT signing key, the first admin&#x27;s password and the node token when missing; a person puts in each partition&#x27;s client secret and the GitHub App&#x27;s key.</title>
+<rect x="880.0" y="242.0" width="240.0" height="96.0" rx="12" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.2"/>
+<rect x="892.0" y="264.0" width="26.0" height="26.0" rx="6.2" fill="#F1F5F9"/>
+<use href="#i-azure-key-vault" xlink:href="#i-azure-key-vault" x="896.0" y="268.0" width="18.0" height="18.0" color="#334155" style="color:#334155"/>
+<text x="928.0" y="277.2" font-size="15.0" fill="#0F172A" font-weight="bold" text-anchor="start">Key Vault</text>
+<text x="928.0" y="292.4" font-size="11.0" fill="#475569" font-weight="normal" text-anchor="start">[Infrastructure Node: RBAC]</text>
+<text x="928.0" y="313.4" font-size="12.0" fill="#475569" font-weight="normal" text-anchor="start">Secrets by reference.</text>
+</g>
+<g><title>VS Code extension: Makes the editor the place a pipeline is developed: the GUI&#x27;s pages in tabs, completion and checks for every flow, mapping and template, a mapping&#x27;s preview from the open file, and one sign-in it shares with the command line and the MCP server.</title>
+<rect x="20.0" y="510.0" width="220.0" height="100.0" rx="12" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="32.0" y="519.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-code-xml" xlink:href="#i-lucide-code-xml" x="36.0" y="523.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="68.0" y="532.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">VS Code extension</text>
+<text x="68.0" y="547.5" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: TypeScript]</text>
+<text x="68.0" y="568.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">GUI pages in the editor;</text>
+<text x="68.0" y="583.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">checks and previews</text>
+<text x="68.0" y="598.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">documents.</text>
+</g>
+<g><title>GitHub Actions: A job proves who it is with the OpenID Connect token GitHub mints for it, for the audience the control plane names, and makes trigger requests: sync this repository at this commit, then fire these schedules. Nothing secret is stored.</title>
+<rect x="440.0" y="510.0" width="240.0" height="100.0" rx="12" fill="#6B7280" stroke="#5B626E" stroke-width="1.2"/>
+<rect x="452.0" y="519.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-workflow" xlink:href="#i-lucide-workflow" x="456.0" y="523.0" width="18.0" height="18.0" color="#4B5563" style="color:#4B5563"/>
+<text x="488.0" y="532.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">GitHub Actions</text>
+<text x="488.0" y="547.5" font-size="11.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">[Software System: OIDC]</text>
+<text x="488.0" y="568.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">The estate&#x27;s workflow: after a</text>
+<text x="488.0" y="583.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">merge, syncs the environment</text>
+<text x="488.0" y="598.4" font-size="12.0" fill="#E5E7EB" font-weight="normal" text-anchor="start">and fires its schedules.</text>
+</g>
+<g><title>Repository sync: The managed git sync: reads the commit a trigger names, the branch&#x27;s tip on a person&#x27;s request, or every interval when auto sync is on; validates every document; writes the catalog&#x27;s rows and, through DeliveryCatalogSync, the module&#x27;s mappings, cache definitions and interfaces; recomputes lineage. It only moves forward.</title>
+<rect x="880.0" y="510.0" width="240.0" height="100.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="892.0" y="526.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-refresh-cw" xlink:href="#i-lucide-refresh-cw" x="896.0" y="530.5" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="928.0" y="539.8" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Repository sync</text>
+<text x="928.0" y="555.0" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: SQLFlow catalog sync]</text>
+<text x="928.0" y="575.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Reads a commit, checks it,</text>
+<text x="928.0" y="590.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">projects it into the catalog.</text>
+</g>
+<g><title>Scheduler: Fires the schedules the estate declares (in order within a schedule), queues runs each pinned to the commit last synced, splits a large delivery into parts on nodes of their own, and dispatches under a lease, which is why the control plane runs as one replica.</title>
+<rect x="1305.0" y="510.0" width="230.0" height="100.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="1317.0" y="526.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-calendar-clock" xlink:href="#i-lucide-calendar-clock" x="1321.0" y="530.5" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="1353.0" y="539.8" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Scheduler</text>
+<text x="1353.0" y="555.0" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: Hosted services]</text>
+<text x="1353.0" y="575.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Fires schedules, queues pinned</text>
+<text x="1353.0" y="590.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">runs, dispatches them.</text>
+</g>
+<g><title>Node runtime: SQLFlow&#x27;s worker verb with the module installed: polls the control plane with its node token, takes runs and node tasks into its slots (four by default), checks out the commit each run is pinned to, resolves ${env:...} and ${keyvault:...} references with its own identity, and drains running work before it stops.</title>
+<rect x="240.0" y="742.0" width="240.0" height="86.0" rx="12" fill="#9CC8F2" stroke="#6FA9DF" stroke-width="1.2"/>
+<rect x="252.0" y="751.5" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-lucide-cpu" xlink:href="#i-lucide-cpu" x="256.0" y="755.5" width="18.0" height="18.0" color="#1F5F9E" style="color:#1F5F9E"/>
+<text x="288.0" y="764.8" font-size="15.0" fill="#0B2540" font-weight="bold" text-anchor="start">Node runtime</text>
+<text x="288.0" y="780.0" font-size="11.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">[Component: SQLFlow worker]</text>
+<text x="288.0" y="800.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">Polls, runs four at once, resolves</text>
+<text x="288.0" y="815.9" font-size="12.0" fill="#1E3A5F" font-weight="normal" text-anchor="start">references, drains.</text>
+</g>
+<g><title>Catalog database: OsduDelivery: SQLFlow&#x27;s catalog (pipelines, runs, schedules, lineage, users, conversations) and, beside it, the osdu schema with its own migrations: the ledger, the audit trail, cache versions, the index of the repository&#x27;s templates, partitions and the central configuration.</title>
+<path d="M880.0,751.0 A120.0,9.0 0 0 1 1120.0,751.0 L1120.0,819.0 A120.0,9.0 0 0 1 880.0,819.0 Z" fill="#2F7CC7" stroke="#2869AA" stroke-width="1.2"/>
+<path d="M880.0,751.0 A120.0,9.0 0 0 0 1120.0,751.0" fill="none" stroke="#2869AA" stroke-width="1.2"/>
+<rect x="892.0" y="768.0" width="26.0" height="26.0" rx="6.2" fill="#FFFFFF"/>
+<use href="#i-azure-sql-database" xlink:href="#i-azure-sql-database" x="896.0" y="772.0" width="18.0" height="18.0" color="#2869AA" style="color:#2869AA"/>
+<text x="928.0" y="781.2" font-size="15.0" fill="#FFFFFF" font-weight="bold" text-anchor="start">Catalog database</text>
+<text x="928.0" y="796.5" font-size="11.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">[Container: Azure SQL]</text>
+<text x="928.0" y="817.4" font-size="12.0" fill="#E1EEFA" font-weight="normal" text-anchor="start">The catalog and the ledger.</text>
+</g>
+<rect x="54.0" y="405.0" width="151.9" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="70.0" cy="419.0" r="11" fill="#0F172A"/>
+<text x="70.0" y="423.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">1</text>
+<text x="143.0" y="420.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Writes and checks the</text>
+<text x="143.0" y="435.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">documents</text>
+<text x="143.0" y="449.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[VS Code]</text>
+<rect x="282.0" y="265.0" width="96.0" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="298.0" cy="279.0" r="11" fill="#0F172A"/>
+<text x="298.0" y="283.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">2</text>
+<text x="343.0" y="280.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Pushes and</text>
+<text x="343.0" y="295.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">merges</text>
+<text x="343.0" y="309.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Git]</text>
+<rect x="514.9" y="356.0" width="90.1" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="530.9" cy="370.0" r="11" fill="#0F172A"/>
+<text x="530.9" y="374.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">3</text>
+<text x="573.0" y="371.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Starts the</text>
+<text x="573.0" y="386.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">workflow</text>
+<text x="573.0" y="400.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[On merge]</text>
+<rect x="683.4" y="527.5" width="193.3" height="65.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="699.4" cy="541.5" r="11" fill="#0F172A"/>
+<text x="699.4" y="545.8" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">4</text>
+<text x="793.0" y="542.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Proves itself with GitHub&#x27;s</text>
+<text x="793.0" y="557.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">OIDC token; asks for a sync at</text>
+<text x="793.0" y="572.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">this commit</text>
+<text x="793.0" y="586.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Trigger request]</text>
+<rect x="935.7" y="399.0" width="128.7" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="951.7" cy="413.0" r="11" fill="#0F172A"/>
+<text x="951.7" y="417.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">5</text>
+<text x="1013.0" y="414.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Reads the GitHub</text>
+<text x="1013.0" y="429.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">App&#x27;s key</text>
+<text x="1013.0" y="443.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Managed identity]</text>
+<rect x="637.1" y="442.5" width="165.7" height="65.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="653.1" cy="456.5" r="11" fill="#0F172A"/>
+<text x="653.1" y="460.8" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">6</text>
+<text x="733.0" y="457.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Mints a token for this</text>
+<text x="733.0" y="472.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">repository alone; fetches</text>
+<text x="733.0" y="487.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">the commit</text>
+<text x="733.0" y="501.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Git over HTTPS]</text>
+<rect x="895.5" y="643.5" width="208.9" height="65.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="911.5" cy="657.5" r="11" fill="#0F172A"/>
+<text x="911.5" y="661.8" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">7</text>
+<text x="1013.0" y="658.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Validates every document; writes</text>
+<text x="1013.0" y="673.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">the catalog, osdu read models,</text>
+<text x="1013.0" y="688.5" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">lineage</text>
+<text x="1013.0" y="702.5" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<rect x="1148.7" y="542.0" width="127.6" height="36.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="1164.7" cy="556.0" r="11" fill="#0F172A"/>
+<text x="1164.7" y="560.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">8</text>
+<text x="1225.5" y="557.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Fires the trigger&#x27;s</text>
+<text x="1225.5" y="572.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">schedules</text>
+<rect x="1191.5" y="760.0" width="157.0" height="50.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="1207.5" cy="774.0" r="11" fill="#0F172A"/>
+<text x="1207.5" y="778.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">9</text>
+<text x="1283.0" y="775.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Queues runs pinned to</text>
+<text x="1283.0" y="790.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">the commit</text>
+<text x="1283.0" y="804.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[SQL]</text>
+<rect x="283.5" y="546.0" width="153.0" height="65.0" rx="5" fill="#FFFFFF" fill-opacity="0.94"/>
+<circle cx="299.5" cy="560.0" r="11" fill="#0F172A"/>
+<text x="299.5" y="564.3" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">10</text>
+<text x="373.0" y="561.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">Mints its own token;</text>
+<text x="373.0" y="576.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">checks out the pinned</text>
+<text x="373.0" y="591.0" font-size="12.0" fill="#0F172A" font-weight="normal" text-anchor="middle">commit</text>
+<text x="373.0" y="605.0" font-size="11.0" fill="#64748B" font-weight="normal" text-anchor="middle" font-style="italic">[Git over HTTPS]</text>
+<line x1="48" y1="846.0" x2="1552" y2="846.0" stroke="#E2E8F0"/>
+<circle cx="59.0" cy="860.0" r="4" fill="#08427B"/><rect x="51.0" y="864.0" width="16" height="9" rx="4" fill="#08427B"/>
+<text x="78.0" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Person</text>
+<rect x="135.6" y="857.0" width="22" height="16" rx="4" fill="#2F7CC7" stroke="#2869AA"/>
+<text x="165.6" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Container</text>
+<rect x="239.2" y="857.0" width="22" height="16" rx="4" fill="#9CC8F2" stroke="#6FA9DF"/>
+<text x="269.2" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Component</text>
+<rect x="354.0" y="857.0" width="22" height="16" rx="4" fill="#6B7280" stroke="#5B626E"/>
+<text x="384.0" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">External software system</text>
+<rect x="536.4" y="857.0" width="22" height="16" rx="4" fill="#FFFFFF" stroke="#94A3B8"/>
+<text x="566.4" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Infrastructure node</text>
+<path d="M691.8,860.0 A9,3 0 0 1 709.8,860.0 L709.8,871.0 A9,3 0 0 1 691.8,871.0 Z" fill="none" stroke="#334155" stroke-width="1.3"/>
+<path d="M691.8,860.0 A9,3 0 0 0 709.8,860.0" fill="none" stroke="#334155" stroke-width="1.3"/>
+<text x="719.8" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Database</text>
+<rect x="793.0" y="856.0" width="18" height="18" rx="4.5" fill="#FFFFFF" stroke="#CBD5E1"/>
+<use href="#i-lucide-box" xlink:href="#i-lucide-box" x="796.0" y="859.0" width="12" height="12" color="#334155" style="color:#334155"/>
+<text x="821.0" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Icon: what it is, or its Azure service</text>
+<rect x="1024.1" y="857.0" width="22" height="16" rx="4" fill="none" stroke="#A3AFBC" stroke-dasharray="2 3"/>
+<text x="1054.1" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Group</text>
+<line x1="1109.4" y1="865.0" x2="1129.4" y2="865.0" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="1139.4" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Relationship: what it does [technology]</text>
+<circle cx="1377.6" cy="865.0" r="9" fill="#0F172A"/>
+<text x="1377.6" y="869.0" font-size="10.5" fill="#FFFFFF" font-weight="bold" text-anchor="middle">1</text>
+<text x="1396.6" y="869.3" font-size="12" fill="#334155" font-weight="normal" text-anchor="start">Step, in order</text>
+</svg>

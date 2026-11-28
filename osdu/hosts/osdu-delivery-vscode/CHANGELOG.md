@@ -5,6 +5,15 @@ product's own changes are in the [repository's change log](https://github.com/Ta
 
 ## [1.0.8]
 
+### Templates
+
+- **Comparing two versions of a kind says which changes matter to your mappings.** Compare versions weighs every change
+  against what the synced mappings of the kind write: the significant ones (what a mapping has to change, or what it
+  writes that the newer version deprecates) come first, the minor ones after, and the changes no mapping uses are folded
+  away. Its **Report** also saves as an HTML page to read, print or send, and says for each mapping what the move means,
+  line by line of its document ([comparing template
+  versions](https://github.com/TahirRiaz/osdu-delivery/blob/main/osdu/docs/reference/concepts/template-versions.md)).
+
 ### Lineage
 
 - **A trace's side and reach are glyphs on the canvas.** While a node is traced, the canvas's control in its lower left

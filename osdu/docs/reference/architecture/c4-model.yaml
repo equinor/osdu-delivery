@@ -1,0 +1,1028 @@
+# The C4 model of OSDU Delivery: every element once, and the views that place them.
+#
+# Render the diagrams (dark, and light as <view>-light.svg), the pages beside this file and the two decks with:
+#   python tools/c4/render.py osdu/docs/reference/architecture/c4-model.yaml
+# Each view places its elements by their centre on a 1600 x 900 canvas: [x, y] or [x, y, width, height]. Relationships
+# route orthogonally between the boxes they join, or along the sides and waypoints they name (tools/c4/README.md).
+
+product: OSDU Delivery
+svgDir: svg
+deck:
+  file: osdu-delivery-c4.pptx
+  kicker: ARCHITECTURE IN THE C4 MODEL
+  title: OSDU Delivery
+  subtitle: "How it is built and run: the people and systems around it, its containers and their components, the paths a record, a question and a commit take, and its deployment on Azure."
+  note: "Every slide is drawn from one model, osdu/docs/reference/architecture/c4-model.yaml, as are the diagrams in the repository. Click an element marked 'view inside' to zoom in; every slide links back to the map of views."
+footer: "OSDU Delivery, powered by SQLFlow"
+pages:
+  frontmatter: true
+  dir: .
+  index: README.md
+indexTitle: "OSDU Delivery in the C4 model"
+indexShort: Architecture diagrams
+indexDescription: "Each view answers one question, from the product's place among people and systems down to the components inside each container, how a record, a question and a commit move, and how it is deployed."
+indexPage:
+  title: "Architecture diagrams: OSDU Delivery in the C4 model"
+  intro: |
+    OSDU Delivery drawn in the [C4 model](https://c4model.com): who uses it and what it relies on, the containers it runs
+    as, the components inside the three that hold its logic, how a record, a question and a commit move through them,
+    and what the Terraform in `osdu/deploy/terraform` creates on Azure. Start with the system context and read down the
+    list. On every page, the line on top leads to the start, the views it zooms out of and the views it zooms into; the
+    line at its foot leads to the view before and after it here.
+
+    Every diagram follows the [C4 notation checklist](https://c4model.com/diagrams/checklist): a title naming its type
+    and scope, every element with its name, its type and technology and what it does, every line with what it does and
+    how, and a key to every colour, shape, icon, border and line style it uses. The diagrams are dark; each page links
+    its light version, and the deck comes in both. How the module meets SQLFlow underneath is
+    [the architecture page](../concepts/architecture.md).
+  seeAlso:
+    - {title: "Architecture: the OSDU module on SQLFlow", path: osdu/docs/reference/concepts/architecture.md}
+    - {title: "AI in OSDU Delivery", path: osdu/docs/reference/concepts/ai-features.md}
+    - {title: Deploying OSDU Delivery, path: osdu/docs/reference/guides/deployment.md}
+columns: [Context, Containers, Components, Dynamic, Deployment]
+
+elements:
+  # ------------------------------------------------------------------------------------------------- people ---
+  developer:
+    kind: person
+    name: Pipeline developer
+    description: Writes the estate's flows, mappings and templates, previews what they render, and pushes them.
+    brief: Builds the pipelines.
+    detail: Writes the estate's flows, mappings, templates, schedules, assertions and AI contexts in VS Code, checks and previews them against the synced estate, and pushes them to the estate repository.
+    ref: osdu/docs/reference/guides/vscode.md
+  operator:
+    kind: person
+    name: Data operator
+    description: Runs and watches deliveries, follows a record from its source row to OSDU, and acts on it.
+    brief: Operates the deliveries.
+    detail: Triggers and watches runs, follows a record from its source file and row to the OSDU id and version it landed as, releases, redelivers or removes records, reads assertion reports and asks the assistant.
+    ref: osdu/docs/reference/concepts/gui.md
+  admin:
+    kind: person
+    name: Administrator
+    description: Registers OSDU partitions, sets the central configuration and approves AI contexts.
+    brief: Configures the estate.
+    detail: Registers and describes OSDU partitions, sets the central configuration every run resolves with, approves AI contexts, manages users and sets retention on the Maintenance page.
+    ref: osdu/docs/reference/concepts/authentication-and-identity.md
+
+  # ------------------------------------------------------------------------------------------- the product ---
+  osdu_delivery:
+    kind: system
+    name: OSDU Delivery
+    icon: lucide:send
+    description: Publishes subsurface records into an OSDU platform and keeps a ledger that traces each one to its source row, its rendering and every attempt.
+    detail: "SQLFlow with the OSDU module installed: SQLFlow lands and keys the source data; the module renders each row through its mapping, delivers it to OSDU and keeps the ledger, from which every delivered record can be reconstructed."
+    ref: osdu/docs/reference/concepts/overview.md
+    zoom: containers
+
+  # ------------------------------------------------------------------------------------------ external systems ---
+  sources:
+    kind: external
+    name: Source systems
+    icon: lucide:files
+    description: Upstream applications and jobs that drop subsurface data as files, or hold it in databases.
+    brief: Drop source data as files.
+    detail: Where the data starts. Upstream applications and jobs drop files (CSV, JSON, Parquet, LAS and others) into the landing storage, or hold the data in a database a flow reads.
+    ref: osdu/docs/reference/guides/getting-started.md
+  osdu:
+    kind: external
+    name: OSDU data platform
+    tech: OSDU APIs
+    icon: lucide:layers
+    description: "The target partition: its core services and the domain data management services (DDMS) that hold records and bulk data."
+    brief: Where the records land.
+    detail: "A data partition's core services (Storage, Search, Schema, Legal, File, Dataset, Workflow, Entitlements) and its domain data management services (Wellbore, Reservoir over ETP, Production), which hold the delivered records and their bulk data."
+    ref: osdu/docs/reference/concepts/protocols.md
+  repo:
+    kind: external
+    name: Estate repository
+    tech: GitHub
+    icon: lucide:git-branch
+    description: "The estate as files: flows, mappings, templates, schedules and AI contexts. What runs is the commit last synced."
+    brief: The estate's documents.
+    detail: "The estate as YAML and JSON files in git: flows, mappings, templates, cache definitions, schedules, assertions and AI contexts. A run executes the commit the control plane last synced, never a working copy."
+    ref: osdu/docs/reference/flow/repository.md
+  entra:
+    kind: external
+    name: Microsoft Entra ID
+    icon: lucide:shield-check
+    description: Signs people in through the app role SqlFlow.User, and issues the tokens the services reach Azure and OSDU with.
+    brief: Signs people in.
+    detail: "Signs people in to the GUI, the editor and the command line (OpenID Connect) through the app registration's one role, SqlFlow.User, with assignment required, and issues the managed identity and client-credential tokens (OAuth 2.0) the services use for Azure and OSDU."
+    ref: osdu/docs/reference/concepts/authentication-and-identity.md
+  ai_provider:
+    kind: external
+    name: AI model provider
+    tech: Azure AI Foundry
+    icon: azure:ai-foundry
+    tags: [ai]
+    description: "Answers the assistant's questions: gpt-5.1 on Azure AI Foundry by default, or OpenAI or Anthropic. No flow calls it."
+    brief: Answers questions.
+    detail: "The chat model behind the GUI assistant and Explain: a Foundry deployment (gpt-5.1 in the shipped environments), or OpenAI or Anthropic by setting, plus an optional transcription deployment for voice. Off on a fresh deployment; no flow, mapping, render or delivery ever calls a model."
+    ref: osdu/docs/reference/concepts/ai-features.md
+  ai_clients:
+    kind: external
+    name: AI coding assistants
+    icon: lucide:bot
+    tags: [ai]
+    description: "Claude Code, the VS Code chat, Cursor or Codex: a person's own assistant, reading the estate with their sign-in."
+    brief: A person's own assistant.
+    detail: "An assistant a person runs (Claude Code, the VS Code chat, Cursor, Codex). It calls the MCP server with the person's own token, so it can do what that person can do, and what it does is recorded as theirs."
+    ref: osdu/docs/reference/guides/mcp.md
+  anthropic:
+    kind: external
+    name: Anthropic API
+    tech: Messages API
+    icon: lucide:sparkles
+    tags: [ai]
+    description: "Only with an Anthropic key: a question's synonyms, and questions for report visuals."
+    brief: Only with a key.
+    detail: "Always Anthropic, whatever the assistant's provider: synonym expansion of a ! question (find_similar_questions) and the questions a repository sync generates for report visuals. Both stay off without an Anthropic key."
+    ref: osdu/docs/reference/concepts/ai-features.md
+  slack:
+    kind: external
+    name: Slack assistant
+    tech: SqlFlow.SlackBot
+    icon: lucide:message-square
+    tags: [ai]
+    description: "SQLFlow's Slack bot, through the same MCP server; no template here deploys it."
+    brief: Not deployed by default.
+    detail: "SQLFlow's Slack bot (Socket Mode). It answers through the same gateways and MCP server, under the same fence as the GUI chat, and marks every answer as AI-generated. No template of this product deploys it."
+    ref: osdu/docs/reference/concepts/ai-features.md
+  github_actions:
+    kind: external
+    name: GitHub Actions
+    tech: OIDC
+    icon: lucide:workflow
+    description: "The estate's workflow: after a merge, syncs the environment and fires its schedules."
+    brief: Runs after a merge.
+    detail: "A job proves who it is with the OpenID Connect token GitHub mints for it, for the audience the control plane names, and makes trigger requests: sync this repository at this commit, then fire these schedules. Nothing secret is stored."
+    ref: sqlflow/docs/reference/concepts/external-triggers.md
+
+  # ---------------------------------------------------------------------------------------------- containers ---
+  gui:
+    kind: container
+    name: Workbench GUI
+    tech: React on nginx
+    shape: browser
+    icon: lucide:layout-dashboard
+    description: "Runs, lineage, the ledger, the explorer, the assistant."
+    brief: The pages people work in.
+    detail: "SQLFlow's workbench with the module's pages registered through the GUI module contract: pipelines and runs, lineage, the ledger and its records, the explorer of what OSDU holds, assertions, dimensions, inventories, templates, caches and the chat assistant. A static single-page app served by nginx; it calls the control plane's API."
+    ref: osdu/docs/reference/concepts/gui.md
+  vscode:
+    kind: container
+    name: VS Code extension
+    tech: TypeScript
+    icon: lucide:code-xml
+    description: "GUI pages in the editor; checks and previews documents."
+    brief: Pages and checks in the editor.
+    detail: "Makes the editor the place a pipeline is developed: the GUI's pages in tabs, completion and checks for every flow, mapping and template, a mapping's preview from the open file, and one sign-in it shares with the command line and the MCP server."
+    ref: osdu/docs/reference/guides/vscode.md
+  cli:
+    kind: container
+    name: sqlflow CLI
+    tech: .NET 9
+    shape: terminal
+    icon: lucide:square-terminal
+    description: "SQLFlow's verbs and the OSDU verbs: check, preview, values."
+    brief: Checks, previews, drives.
+    detail: "The sqlflow command line (SqlFlow.Delivery.Cli.Host): every SQLFlow verb plus the OSDU verbs (check, preview, values, records, config, partition, cache, template and more). It checks and previews the working copy, drives the control plane, and can run a flow locally through the same executors a node uses."
+    ref: osdu/docs/reference/cli/check.md
+  mcp:
+    kind: container
+    name: MCP server
+    tech: Rust
+    icon: lucide:bot
+    tags: [ai]
+    description: "The assistant's rules and tools: metadata, docs, ! queries."
+    brief: The assistant's tools.
+    detail: "osdu-delivery-mcp, a Model Context Protocol server: SQLFlow's server composed with the delivery module. Every assistant reads its instructions; it answers from metadata, and from data only for a ! question through a read-only query over what an approved AI context opens. It holds no credential: it forwards each caller's token."
+    ref: osdu/docs/reference/guides/mcp.md
+    zoom: mcp-server
+  cp:
+    kind: container
+    name: Control plane
+    tech: ASP.NET Core
+    icon: lucide:server
+    description: "API, sign-in, sync, schedules, run queue, node protocol."
+    brief: Decides what runs.
+    detail: "SQLFlow's control plane (.NET 9) with DeliveryControlPlaneModule: the REST API (the delivery API under /api/v1/delivery), identity and tokens, the managed git sync, schedules, the run queue and dispatcher, the node protocol, the chat assistant, and the module's background services. It decides what runs and owns the state; it runs no flow itself."
+    ref: osdu/docs/reference/concepts/control-plane.md
+    zoom: control-plane
+  node:
+    kind: container
+    name: Compute node
+    tech: .NET 9 worker
+    icon: lucide:cpu
+    description: "Pulls runs; executes the file, ing and eight OSDU kinds."
+    brief: Executes the flows.
+    detail: "SqlFlow.Delivery.Worker.Host: SQLFlow's worker with the module installed. It takes its work outbound from the control plane, so it can sit next to the data, and reads and writes the ledger in the osdu schema through the catalog's connection."
+    ref: osdu/docs/reference/cli/worker.md
+    zoom: compute-node
+  catalog:
+    kind: container
+    name: Catalog database
+    tech: Azure SQL
+    shape: cylinder
+    icon: azure:sql-database
+    description: "OsduDelivery: SQLFlow's catalog and the osdu schema."
+    brief: The catalog and the ledger.
+    detail: "OsduDelivery: SQLFlow's catalog (pipelines, runs, schedules, lineage, users, conversations) and, beside it, the osdu schema with its own migrations: the ledger, the audit trail, cache versions, the index of the repository's templates, partitions and the central configuration."
+    ref: osdu/docs/reference/concepts/database.md
+  data:
+    kind: container
+    name: Ingestion database
+    tech: Azure SQL
+    shape: cylinder
+    icon: azure:sql-database
+    description: "OsduData: pre tables, and the keyed tables to deliver."
+    brief: Pre and keyed tables.
+    detail: "OsduData: the pre tables a file flow lands its files into, the keyed ingestion tables an ing flow upserts (stamping UpdatedDate_DW) and a delivery flow reads incrementally, and the tables dimension flows build. Snapshot isolation must be on."
+    ref: osdu/docs/reference/concepts/architecture.md
+  landing:
+    kind: container
+    name: Landing storage
+    tech: ADLS Gen2
+    shape: folder
+    icon: azure:storage-account
+    description: "Source files, bulk files to send, work batches."
+    brief: Source and bulk files.
+    detail: "A storage account with a hierarchical namespace and shared keys off, container landing. Every run is given its location as LANDING_URL (abfss://landing@<account>.dfs.core.windows.net): the source files the file flows land, the bulk payload files deliveries send, and work batch files when a flow writes them there."
+    ref: osdu/docs/reference/guides/deployment.md
+
+  # ------------------------------------------------------------------------------- control plane components ---
+  cp_api:
+    kind: component
+    name: REST API
+    tech: ASP.NET Core minimal APIs
+    icon: lucide:route
+    description: "/api/v1 and /api/v1/delivery; every call signed in."
+    detail: "SQLFlow's routes (pipelines, runs, schedules, lineage, repositories, users, chat) and the module's under /api/v1/delivery. Every call is authenticated: Entra single sign-on, local login, the device grant, personal access tokens, node tokens and an assistant run's delegated token. read, operate and author admit any signed-in user; admin checks the scope."
+    ref: osdu/docs/reference/concepts/api.md
+  cp_nodeproto:
+    kind: component
+    name: Node protocol
+    tech: HTTPS polling
+    icon: lucide:network
+    description: "Nodes poll for runs and report; KEDA reads its target."
+    detail: "/api/v1/node: a node with a node-scope token polls for work, fetches the flow version its run is pinned to, streams progress and posts results. /api/v1/node/scale-target answers KEDA with max(demand, the pool's floor, a manual setting) plus busy nodes, so a pool never shrinks under work."
+    ref: sqlflow/docs/reference/cli/worker.md
+  cp_sched:
+    kind: component
+    name: Scheduler
+    tech: Hosted services
+    icon: lucide:calendar-clock
+    description: "Fires schedules, queues pinned runs, dispatches them."
+    detail: "Fires the schedules the estate declares (in order within a schedule), queues runs each pinned to the commit last synced, splits a large delivery into parts on nodes of their own, and dispatches under a lease, which is why the control plane runs as one replica."
+    ref: sqlflow/docs/reference/concepts/control-plane.md
+  cp_sync:
+    kind: component
+    name: Repository sync
+    tech: SQLFlow catalog sync
+    icon: lucide:refresh-cw
+    description: "Reads a commit, checks it, projects it into the catalog."
+    detail: "The managed git sync: reads the commit a trigger names, the branch's tip on a person's request, or every interval when auto sync is on; validates every document; writes the catalog's rows and, through DeliveryCatalogSync, the module's mappings, cache definitions and interfaces; recomputes lineage. It only moves forward."
+    ref: sqlflow/docs/reference/concepts/repository-auto-sync.md
+  cp_direct:
+    kind: component
+    name: Direct operations
+    tech: DeliveryOperations
+    icon: lucide:eye
+    description: "Previews, read-backs, the explorer, target probes."
+    detail: "Run in the control plane's process while the request waits: a mapping's preview, a record read back from OSDU, its source rows, a scope's values, the explorer's reads of what OSDU holds, and a probe of a flow's target. A read writes no activity; a probe is recorded."
+    ref: osdu/docs/reference/concepts/control-plane.md
+  cp_ai:
+    kind: component
+    name: Assistant
+    tech: SqlFlow.Assistant
+    icon: lucide:sparkles
+    tags: [ai]
+    description: "Chat runs with a delegated token; guards ! queries."
+    detail: "The assistant gateway and the AI context guard: runs each chat or Explain question under a token delegated for that run, with the MCP server as the model's tool, and opens to a ! question only the columns approved AI contexts name."
+    ref: osdu/docs/reference/concepts/ai-features.md
+    zoom: ai-usage
+  cp_assist:
+    kind: component
+    name: Assistant gateway
+    tech: SqlFlow.Assistant
+    icon: lucide:sparkles
+    tags: [ai]
+    description: "Runs a question: delegated token, model, MCP as tool."
+    detail: "Runs each chat or Explain question under a token delegated from the person for that run alone (its timeout plus 60 seconds, no admin or node scope), sends the model the MCP server's instructions and the conversation with the MCP server as its tool, streams the answer and keeps the conversation."
+    ref: osdu/docs/reference/concepts/ai-features.md
+  cp_aictx:
+    kind: component
+    name: AI context guard
+    tech: ColumnPolicyGuard
+    icon: lucide:shield
+    tags: [ai]
+    description: "Opens only approved columns; plans read-only queries."
+    detail: "Holds the AI contexts an administrator approved and the saved answers. prepare_query and run_query: one read-only SELECT over the columns the approved contexts open, checked on prepare and on run, redeemed by a single-use plan token that lives 15 minutes, run on a node as a compute task."
+    ref: osdu/docs/reference/guides/mcp.md
+  cp_hosted:
+    kind: component
+    name: Hosted services
+    tech: Start-up and background
+    icon: lucide:history
+    description: "Reconciles the configuration at start; caches, probes."
+    detail: "At every start, one ordered, repeatable pass: catalog then osdu migrations, the initial admin, the node credential, repositories, partitions, run values and triggers (GET /api/v1/bootstrap). Then the module's services: cache rollout and warm-up, the scheduled target probe, the OSDU data definitions copy, duplicate-check sweeps, ledger moves of renamed flows."
+    ref: osdu/docs/reference/concepts/control-plane.md
+
+  # -------------------------------------------------------------------------------- compute node components ---
+  n_runtime:
+    kind: component
+    name: Node runtime
+    tech: SQLFlow worker
+    icon: lucide:cpu
+    description: "Polls, runs four at once, resolves references, drains."
+    detail: "SQLFlow's worker verb with the module installed: polls the control plane with its node token, takes runs and node tasks into its slots (four by default), checks out the commit each run is pinned to, resolves ${env:...} and ${keyvault:...} references with its own identity, and drains running work before it stops."
+    ref: osdu/docs/reference/cli/worker.md
+  n_sqlflow:
+    kind: component
+    name: SQLFlow engine
+    tech: SQLFlow flows
+    icon: lucide:workflow
+    description: "File flows land files; ing flows upsert keyed tables."
+    detail: "SQLFlow's own flows, unchanged: a file flow lands the source files into a pre table as text with FileName_DW and RowNumber_DW and refreshes its typed view; an ing flow upserts the view into a keyed ingestion table and stamps UpdatedDate_DW on every row it changes."
+    ref: osdu/docs/reference/concepts/overview.md
+  n_exec:
+    kind: component
+    name: OSDU executors
+    tech: SqlFlow.Delivery engine
+    icon: lucide:boxes
+    description: "The eight OSDU kinds; plans and drains deliveries."
+    detail: "One executor per OSDU flow kind (delivery, retrieval, cache, assertion, dimension, inventory, removal, download) behind SQLFlow's DocumentExecutor. A delivery run plans into a submission and work batches, then drains them under leases; a large one fans out a part per 1,000 rows, on up to eight nodes."
+    ref: osdu/docs/reference/flow/overview.md
+  n_intake:
+    kind: component
+    name: Intake
+    tech: SubmissionIntake
+    icon: lucide:file-search
+    description: "Reads changed rows; keeps what renders differently."
+    detail: "Reads the rows of the ingestion table and its children whose UpdatedDate_DW moved since the last run (with a short overlap), has each one rendered, and compares its hash with what the ledger last delivered: unchanged records are skipped, changed ones planned into work batches."
+    ref: osdu/docs/reference/concepts/change-detection.md
+  n_render:
+    kind: component
+    name: Renderer
+    tech: Mapping engine
+    icon: lucide:file-json
+    description: "Row to record: pinned mapping, template, cache."
+    detail: "Renders a row through the mapping the flow pins (Name@version), against the template that mapping pins and the version of the partition's cache it reads from the catalog, and mints the record's id from the delivery key, so the same row always becomes the same record."
+    ref: osdu/docs/reference/flow/mapping.md
+  n_routes:
+    kind: component
+    name: Routes
+    tech: HTTP and ETP clients
+    icon: lucide:send
+    description: "storage, file, manifest, ddms, workflow, etp, more."
+    detail: "The protocol of each route: the storage service's batched writes, signed-URL file uploads, dataset registration, manifest ingestion through the workflow service, a DDMS's records and bulk data, workflow runs, the Production DDMS, and ETP 1.2 to the Reservoir DDMS. Legal tags are checked before a run; retries, rate limits and correlation ids on every call; OSDU tokens by client credentials."
+    ref: osdu/docs/reference/flow/routes.md
+  n_ledger:
+    kind: component
+    name: Ledger
+    tech: SqlFlow.Delivery.Ledger
+    icon: lucide:scroll-text
+    description: "Submissions, records, attempts, activities, leases."
+    detail: "The only path to the ledger: submissions, records with their source file and row, render context and OSDU id and version, one append-only attempt per try, the audit trail, leases that let nodes share a submission, and the minted ids an unfinished delivery is undone by."
+    ref: osdu/docs/reference/concepts/ledger.md
+
+  # ----------------------------------------------------------------------------------- MCP server components ---
+  m_transport:
+    kind: component
+    name: Transports
+    tech: stdio and streamable HTTP
+    icon: lucide:plug
+    description: "stdio for an editor; HTTP on /mcp with a bearer."
+    detail: "stdio, started by the editor with the person's stored sign-in; or osdu-delivery-mcp http, streamable HTTP on /mcp, where every request carries Authorization: Bearer, checked with GET /api/v1/me before any tool runs. Over HTTP it holds no credential of its own."
+    ref: osdu/docs/reference/guides/mcp.md
+  m_instructions:
+    kind: component
+    name: Instructions
+    tech: Rules and modes
+    icon: lucide:book-marked
+    description: "One set of rules; estate mode, or data mode after !data."
+    detail: "The rules every client reads at initialize: what ! means, how follow-ups are answered, where a person acts. Estate mode holds the metadata tools; data mode, entered by !data or a bare !, holds only the semantic layer, stored questions and query tools; !exit returns. A session refuses the other mode's tools."
+    ref: osdu/docs/reference/guides/mcp.md
+  m_estate:
+    kind: component
+    name: Estate tools
+    tech: delivery_* and SQLFlow tools
+    icon: lucide:list-tree
+    description: "30 delivery_* tools and SQLFlow's: metadata only."
+    detail: "A record's custody state, OSDU id and version, attempts and errors, source file and row, who acted and when; flows, mappings, templates, caches, assertions, dimensions; counts and health. Never a record's content, a source row, cached values or a dimension's values. Seven SQLFlow tools that profile data are withheld."
+    ref: osdu/docs/reference/guides/mcp.md
+  m_data:
+    kind: component
+    name: Data tools
+    tech: Semantic layer, queries
+    icon: lucide:database-zap
+    description: "Approved AI contexts, stored questions, query tools."
+    detail: "get_semantic_layer and its search, find_similar_questions with the grounding to answer from, prepare_query (shown to the person), run_query with its plan token, auto_run_trusted_match for a saved answer a person confirmed, and confirm_question for a verdict."
+    ref: osdu/docs/reference/guides/mcp.md
+  m_docs:
+    kind: component
+    name: Docs index
+    tech: Embedded manifest
+    icon: lucide:library
+    description: "This reference and the wiki, compiled in, searchable."
+    detail: "build.rs embeds every page the manifest lists, OSDU Delivery's reference and wiki and SQLFlow's, so search_docs, get_doc and related_docs answer without the network; the key census teaches the flow language."
+    ref: osdu/docs/reference/README.md
+
+  # ------------------------------------------------------------------------------------- deployment: Azure ---
+  acr:
+    kind: infra
+    name: Container registry
+    tech: Azure Container Registry
+    icon: azure:container-registry
+    description: "The four images, tagged with the commit."
+    detail: "Created by hand once per environment, read by the Terraform; every app pulls its image with AcrPull."
+    ref: osdu/deploy/README.md
+  vault:
+    kind: infra
+    name: Key Vault
+    tech: RBAC
+    icon: azure:key-vault
+    description: "Every secret a ${keyvault:...} reference names."
+    brief: Secrets by reference.
+    detail: "osdu-kv-<suffix>, RBAC only. Terraform writes the connection strings (no credential in them); the setup script generates the JWT signing key, the first admin's password and the node token when missing; a person puts in each partition's client secret and the GitHub App's key."
+    ref: osdu/deploy/README.md
+  logs:
+    kind: infra
+    name: Log Analytics
+    tech: osdu-delivery-logs
+    icon: azure:log-analytics
+    description: "The apps' logs, kept 30 days."
+    ref: osdu/deploy/README.md
+  identities:
+    kind: infra
+    name: Managed identities
+    tech: User-assigned
+    icon: azure:managed-identity
+    description: "One per app and one for setup; no secrets for Azure."
+    detail: "osdu-delivery-control-plane-id, -worker-id, -gui-id and -mcp-id, and osdu-delivery-setup, which no app runs as. Each app reaches SQL, the vault, the storage and the model keylessly with its own identity."
+    ref: osdu/deploy/README.md
+  scripts:
+    kind: infra
+    name: Setup scripts
+    tech: Deployment scripts
+    icon: azure:container-instances
+    description: "Setup-Estate.ps1: missing secrets, database users."
+    detail: "Two AzurePowerShell deployment scripts, run as the setup identity on every apply: one generates the secrets the vault lacks, the other creates the apps' database users and grants."
+    ref: osdu/deploy/README.md
+  foundry:
+    kind: infra
+    name: AI Foundry
+    tech: AIServices S0
+    icon: azure:ai-foundry
+    tags: [ai]
+    description: "gpt-5.1, GlobalStandard, 30K tokens a minute."
+    detail: "Created only when ai_foundry_name is set: an AIServices account, the project osdu-delivery and a model deployment (gpt-5.1 in the shipped environments), with an optional transcription deployment. Where prompts are processed follows the SKU: GlobalStandard, DataZoneStandard (EU or US) or Standard (the account's region)."
+    ref: osdu/docs/reference/concepts/ai-features.md
+  entra_app:
+    kind: infra
+    name: App registration
+    tech: Entra ID, SPA
+    icon: azure:app-registration
+    description: "One role, SqlFlow.User; assignment required."
+    detail: "OSDU Delivery: a single-page app registration whose redirect URI is the GUI's address, with one app role, SqlFlow.User, and assignment required, so nobody signs in until a group or person is assigned."
+    ref: osdu/docs/reference/concepts/authentication-and-identity.md
+
+views:
+  # ================================================================================================ LEVEL 1 ===
+  - id: system-context
+    short: System context
+    column: 0
+    tag: "C4 LEVEL 1 · SYSTEM CONTEXT"
+    title: System Context diagram for OSDU Delivery
+    teaser: Who uses OSDU Delivery, where its data comes from and goes, and what it relies on.
+    description: "Source data comes in on the left and leaves as OSDU records on the right; the people who build and run the estate are above, the systems it relies on below."
+    page:
+      id: delivery-c4-system-context
+      summary: "OSDU Delivery in its surroundings: the people who build, run and administer an estate, the source systems, the OSDU platform and what it relies on."
+      keywords: [c4 model, system context, architecture diagram, external systems, actors, osdu platform]
+      related: [delivery-concept-overview, delivery-c4-containers]
+      sourceRefs: [osdu/hosts/SqlFlow.Delivery.ControlPlane.Host/Program.cs, osdu/deploy/terraform/main.tf]
+    elements:
+      repo: [175, 245, 255, 165]
+      developer: [520, 248, 220, 170]
+      operator: [800, 248, 220, 170]
+      admin: [1080, 248, 220, 170]
+      ai_clients: [1420, 245, 260, 165]
+      sources: [175, 545, 255, 165]
+      osdu_delivery: [800, 515, 440, 190]
+      osdu: [1420, 545, 260, 165]
+      entra: [560, 760, 300, 150]
+      ai_provider: [1060, 760, 330, 150]
+    relationships:
+      - {from: developer, to: repo, label: Pushes commits, tech: Git, width: 92}
+      - {from: developer, to: osdu_delivery, label: "Previews, checks and runs pipelines", tech: "VS Code, sqlflow", width: 150}
+      - {from: operator, to: osdu_delivery, label: "Operates deliveries, follows records", tech: Web browser, width: 150}
+      - {from: admin, to: osdu_delivery, label: "Registers partitions, approves AI contexts", tech: Web browser, width: 150}
+      - {from: osdu_delivery, to: repo, label: Syncs the estate's documents, tech: "Git over HTTPS", width: 130, exit: [left, -75], entry: [bottom, 0], route: hv}
+      - {from: sources, to: osdu_delivery, label: Drop source files, tech: "ADLS Gen2", width: 150}
+      - {from: osdu_delivery, to: osdu, label: "Publishes records and bulk data, reads them back", tech: "REST over HTTPS, ETP 1.2", width: 170}
+      - {from: ai_clients, to: osdu_delivery, label: Asks about the estate, tech: "MCP over stdio or HTTPS", width: 150, exit: [bottom, -95], entry: [right, -65], route: vh}
+      - {from: osdu_delivery, to: entra, label: "Signs people in, gets tokens", tech: "OIDC, OAuth 2.0", width: 130}
+      - {from: osdu_delivery, to: ai_provider, label: Sends questions, tech: Responses API, width: 96, shift: -58}
+      - {from: ai_provider, to: osdu_delivery, label: Calls tools, tech: MCP over HTTPS, width: 96, shift: 50}
+    notes: |
+      The relationships name what crosses the boundary, not every call: the [containers view](containers.md) shows which part
+      of OSDU Delivery makes each one. The AI model provider is off on a fresh deployment, and no flow, mapping, render or
+      delivery calls it ([AI in OSDU Delivery](../concepts/ai-features.md)).
+
+  # ================================================================================================ LEVEL 2 ===
+  - id: containers
+    short: Containers
+    column: 1
+    up: system-context
+    tag: "C4 LEVEL 2 · CONTAINERS"
+    title: Container diagram for OSDU Delivery
+    teaser: The nine deployable parts, what each runs, and how they reach each other and the systems around them.
+    description: "Every container and what it reaches; a source file enters at the bottom left and leaves as an OSDU record on the right."
+    compact: true
+    brief: [developer, operator, admin, ai_clients, ai_provider, repo, sources, osdu]
+    page:
+      id: delivery-c4-containers
+      summary: "The containers of OSDU Delivery: the GUI, the VS Code extension, the CLI, the MCP server, the control plane, the compute nodes and the three stores."
+      keywords: [c4 model, container diagram, control plane, compute node, mcp server, catalog database, ingestion database]
+      related: [delivery-c4-system-context, delivery-concept-architecture]
+      sourceRefs: [osdu/hosts/SqlFlow.Delivery.ControlPlane.Host/Program.cs, osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs, osdu/hosts/SqlFlow.Delivery.Cli.Host/Program.cs, osdu/hosts/osdu-delivery-mcp/src/lib.rs, osdu/hosts/osdu-delivery-vscode/package.json]
+    elements:
+      developer: [400, 180, 180, 104]
+      operator: [650, 180, 180, 104]
+      admin: [850, 180, 180, 104]
+      ai_clients: [1110, 185, 240, 90]
+      vscode: [400, 320, 230, 100]
+      gui: [730, 320, 230, 100]
+      mcp: [1060, 320, 230, 96]
+      cli: [400, 485, 230, 100]
+      cp: [730, 485, 230, 100]
+      ai_provider: [1440, 485, 240, 96]
+      repo: [115, 630, 190, 96]
+      node: [730, 628, 230, 100]
+      catalog: [1060, 628, 230, 104]
+      osdu: [1440, 702, 240, 96]
+      sources: [115, 775, 190, 96]
+      landing: [400, 777, 230, 100]
+      data: [730, 777, 230, 104]
+    boundaries:
+      - {label: OSDU Delivery, type: Software System, rect: [263, 250, 934, 585], labelAt: bottom-right}
+    relationships:
+      - {from: developer, to: vscode, label: Writes and previews, tech: VS Code, width: 110}
+      - {from: operator, to: gui, label: Operates, tech: HTTPS, width: 90}
+      - {from: admin, to: gui, label: Configures, tech: HTTPS, width: 90}
+      - {from: ai_clients, to: mcp, label: Asks, tech: MCP, width: 90}
+      - {from: vscode, to: cli, label: Runs verbs, tech: Process, width: 80, exit: [bottom, -45], entry: [top, -45]}
+      - {from: vscode, to: cp, label: "Opens pages, syncs", tech: JSON/HTTPS, width: 120, exit: [bottom, 70], entry: [top, -80], via: [[470, 402], [650, 402]]}
+      - {from: cli, to: cp, label: "Signs in, triggers", tech: JSON/HTTPS, width: 84}
+      - {from: gui, to: cp, label: Calls the API, tech: JSON/HTTPS, width: 92}
+      - {from: mcp, to: cp, label: Reads metadata, tech: "Caller's token", width: 110, exit: [bottom, -80], entry: [top, 80], via: [[980, 402], [810, 402]]}
+      - {from: cp, to: ai_provider, label: Sends questions, tech: Responses API, width: 130, exit: [right, -20], entry: [left, -20]}
+      - {from: ai_provider, to: mcp, label: Calls tools, tech: MCP over HTTPS, width: 120, exit: [top, -40], entry: [right, 0], route: vh}
+      - {from: cp, to: catalog, label: Reads and writes, tech: SQL, width: 110, exit: [right, 25], entry: [top, 0], route: hv, t: 0.4}
+      - {from: cp, to: repo, label: Syncs commits, tech: Git over HTTPS, width: 120, exit: [bottom, -80], entry: [top, 0], via: [[650, 557], [115, 557]]}
+      - {from: node, to: cp, label: Pulls runs, tech: HTTPS, width: 84}
+      - {from: node, to: catalog, label: Writes the ledger, tech: SQL, width: 84}
+      - {from: node, to: landing, label: Reads files, tech: ADLS Gen2, width: 110, exit: [left, 20], entry: [top, 0], route: hv}
+      - {from: node, to: data, label: Lands and reads rows, tech: SQL, width: 120, exit: [bottom, -30], entry: [top, -30]}
+      - {from: node, to: osdu, label: Delivers records, tech: "REST, ETP 1.2", width: 120, exit: [bottom, 70], entry: [left, 0], route: vh, t: 0.75}
+      - {from: sources, to: landing, label: Drop files, tech: ADLS, width: 70}
+    notes: |
+      Sign-in runs through Microsoft Entra ID for the GUI, the editor and the command line, and the control plane and the
+      nodes reach Azure with managed identities: both are drawn in the [deployment view](deployment-azure.md). The
+      control plane also reads OSDU itself, for the explorer, a record read back and a target probe, and reads the
+      ingestion database for previews ([control plane components](control-plane.md)). A node checks out the commit its run
+      is pinned to ([git integration](git-integration.md)).
+
+  - id: ai-usage
+    short: AI paths
+    column: 1
+    up: containers
+    tag: "C4 LEVEL 2 · AI USAGE"
+    title: Container diagram for OSDU Delivery, every path to an AI model
+    teaser: Every place a model is called, what it is sent, and the fences around it.
+    description: "Only people's questions reach a model: no flow, mapping, render or delivery calls one, and every assistant follows the MCP server's rules."
+    compact: true
+    brief: [developer, operator, ai_clients, anthropic, ai_provider, slack, catalog, data]
+    page:
+      id: delivery-c4-ai-usage
+      summary: "Every path from OSDU Delivery to an AI model: the GUI assistant, Explain, voice, the MCP server, coding assistants, Slack and Anthropic, with their fences."
+      keywords: [c4 model, ai usage, assistant, mcp server, ai context, azure ai foundry, eu ai act]
+      related: [delivery-concept-ai-features, delivery-concept-eu-ai-act, delivery-c4-mcp-server]
+      sourceRefs: [sqlflow/src/SqlFlow.Assistant/ResponsesApiGateway.cs, sqlflow/src/SqlFlow.Assistant/AnthropicGateway.cs, osdu/hosts/osdu-delivery-mcp/src/lib.rs, osdu/deploy/terraform/modules/ai-foundry/main.tf]
+    elements:
+      operator: [250, 180, 190, 104]
+      anthropic: [560, 185, 210, 90]
+      ai_provider: [820, 185, 230, 90]
+      ai_clients: [1150, 185, 240, 90]
+      developer: [1445, 180, 190, 104]
+      gui: [250, 365, 230, 100]
+      cp: [760, 365, 300, 100]
+      mcp: [1150, 365, 240, 96]
+      slack: [1460, 365, 200, 90]
+      catalog: [430, 565, 240, 98]
+      node: [1000, 565, 240, 100]
+      data: [1000, 735, 240, 98]
+    boundaries:
+      - {label: OSDU Delivery, type: Software System, rect: [115, 295, 1175, 500], labelAt: bottom-left}
+    relationships:
+      - {from: operator, to: gui, label: "Asks, explains a view, speaks", tech: HTTPS, width: 150}
+      - {from: developer, to: ai_clients, label: Asks, tech: In the editor, width: 70}
+      - {from: gui, to: cp, label: Sends the question, tech: "Chat API, HTTPS", width: 130}
+      - {from: cp, to: anthropic, label: "Synonyms, visual questions", tech: Messages API, width: 120, dashed: true}
+      - {from: cp, to: ai_provider, label: "Question, history, MCP server as tool", tech: "Responses API, managed identity", width: 150}
+      - {from: ai_provider, to: mcp, label: "Calls tools, run's token", tech: MCP over HTTPS, width: 110, exit: [bottom, 90], entry: [top, -80], via: [[910, 272], [1070, 272]]}
+      - {from: ai_clients, to: mcp, label: "Calls tools, own token", tech: MCP over stdio, width: 110, exit: [bottom, 40], entry: [top, 40]}
+      - {from: slack, to: mcp, label: Calls tools, tech: MCP, width: 70, dashed: true}
+      - {from: mcp, to: cp, label: "Metadata; ! queries", tech: "JSON/HTTPS", width: 100}
+      - {from: cp, to: catalog, label: "Keeps chats, contexts, answers", tech: SQL, width: 130, exit: [bottom, -100], entry: [right, 0], route: vh}
+      - {from: cp, to: node, label: Queues the read-only SELECT, tech: Compute task, width: 120}
+      - {from: node, to: data, label: "Runs it: 200 rows, at most 5,000", tech: SQL, width: 150}
+    notes: |
+      The switches, all off on a fresh deployment: `ControlPlane:Assistant:Enabled` (the GUI assistant and Explain),
+      `ControlPlane:AiContext:Enabled` (`!` questions and every query a model writes) and
+      `ControlPlane:AiContext:AutoRun:Enabled` (a saved answer run without a click). The Terraform turns the assistant on
+      when the MCP server and a Foundry model are both set, and leaves `ai_context_enabled` false.
+
+      In estate mode a model is sent metadata only: a record's content, a source row, cached values and a dimension's
+      values never reach it, and Explain is off on every view of record content. In data mode it is sent the approved
+      contexts' tables, columns and descriptions and the rows a query returns. A chat run's token is refused on every route
+      not opened to the assistant, so no chat or Slack run writes to OSDU, the ledger, a mapping or a repository. Every
+      answer is marked with the model that wrote it ([EU AI Act compatibility](../concepts/eu-ai-act.md)).
+
+  # ================================================================================================ LEVEL 3 ===
+  - id: control-plane
+    short: Control plane
+    column: 2
+    up: containers
+    tag: "C4 LEVEL 3 · COMPONENTS"
+    title: Component diagram for the control plane
+    teaser: "Inside the control plane: the API, the node protocol, the scheduler, the sync, direct operations and the assistant."
+    description: "The control plane decides what runs and owns the state, and runs no flow itself: its callers are above, the nodes on the right, what it reads and writes below."
+    compact: true
+    brief: [gui, vscode, cli, mcp, node, entra, osdu, data, ai_provider, repo, catalog, vault]
+    page:
+      id: delivery-c4-control-plane
+      summary: "The components of the control plane: REST API, node protocol, scheduler, repository sync, direct operations, assistant and the hosted services."
+      keywords: [c4 model, component diagram, control plane, node protocol, repository sync, scheduler, reconcile]
+      related: [delivery-c4-containers, delivery-concept-control-plane]
+      sourceRefs: [osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs, osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs, osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs, osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs]
+    elements:
+      gui: [155, 180, 210, 86]
+      vscode: [385, 180, 210, 86]
+      cli: [615, 180, 210, 86]
+      mcp: [845, 180, 210, 86]
+      entra: [1075, 180, 200, 86]
+      node: [1330, 180, 230, 86]
+      cp_api: [505, 330, 910, 86]
+      cp_nodeproto: [1330, 330, 230, 86]
+      cp_direct: [190, 500, 300, 100]
+      cp_ai: [570, 500, 210, 100]
+      cp_sync: [795, 500, 210, 100]
+      cp_sched: [1330, 500, 230, 100]
+      cp_hosted: [1330, 660, 230, 100]
+      osdu: [125, 795, 210, 86]
+      data: [345, 795, 210, 86]
+      ai_provider: [570, 795, 210, 86]
+      repo: [795, 795, 210, 86]
+      catalog: [1040, 795, 220, 86]
+      vault: [1460, 795, 200, 86]
+    boundaries:
+      - {label: Control plane, type: "Container: ASP.NET Core", rect: [30, 270, 1430, 450], labelAt: [322, 686]}
+    relationships:
+      - {from: gui, to: cp_api, label: Calls, tech: JSON/HTTPS, width: 80}
+      - {from: vscode, to: cp_api, label: Calls, tech: JSON/HTTPS, width: 80}
+      - {from: cli, to: cp_api, label: Calls, tech: JSON/HTTPS, width: 80}
+      - {from: mcp, to: cp_api, label: Calls, tech: "Caller's token", width: 90}
+      - {from: node, to: cp_nodeproto, label: "Polls, reports", tech: "HTTPS, node token", width: 110}
+      - {from: cp_api, to: entra, label: Validates sign-ins, tech: OIDC, width: 100, exit: [right, -15], entry: [bottom, 0], route: hv}
+      - {from: cp_api, to: cp_direct, label: Runs reads, width: 90}
+      - {from: cp_api, to: cp_ai, label: Runs questions, width: 100}
+      - {from: cp_api, to: cp_sync, label: Syncs on request, width: 100}
+      - {from: cp_api, to: cp_sched, label: Queues runs, width: 80, exit: [right, 20], entry: [left, -20], route: hvh, mid: 1150}
+      - {from: cp_nodeproto, to: cp_sched, label: Takes queued runs, width: 110}
+      - {from: cp_direct, to: osdu, label: "Reads records, probes", tech: REST, width: 110, exit: [bottom, -75], entry: [top, -5]}
+      - {from: cp_direct, to: data, label: Reads source rows, tech: SQL, width: 100, exit: [bottom, 90], entry: [top, -35]}
+      - {from: cp_ai, to: ai_provider, label: Asks the model, tech: Responses API, width: 100}
+      - {from: cp_sync, to: repo, label: Fetches the commit, tech: "Git, GitHub App", width: 110}
+      - {from: cp_sync, to: catalog, label: "Writes rows, lineage", tech: SQL, width: 100, exit: [right, 25], entry: [top, -70], route: hv}
+      - {from: cp_sched, to: catalog, label: "Queues, pins runs", tech: SQL, width: 90, exit: [left, 30], entry: [top, 50], route: hv}
+      - {from: cp_hosted, to: catalog, label: "Migrates, rolls caches out", tech: SQL, width: 110, exit: [bottom, -80], entry: [right, 0], route: vh}
+      - {from: cp_hosted, to: vault, label: Resolves references, tech: Managed identity, width: 110, exit: [bottom, 80], entry: [top, -45]}
+    notes: |
+      The control plane runs as one replica, because the dispatcher hands runs out under a lease. The module's background
+      services run beside SQLFlow's: the cache update rollout (`Osdu:CacheRollout`) and warm-up (`Osdu:CacheWarmup`), both
+      on by default, the scheduled target probe (`Osdu:TargetProbe`, off by default), the OSDU data definitions copy the
+      Templates page browses, the duplicate-check sweep and the ledger moves of renamed flows. Every run of an OSDU kind it
+      queues carries the central configuration, so a flow's `${env:NAME}` resolves from one place before it falls back to
+      the node. The assistant's two components are drawn in the [AI usage view](ai-usage.md) and the
+      [question](question.md) it answers.
+
+  - id: compute-node
+    short: Compute node
+    column: 2
+    up: containers
+    tag: "C4 LEVEL 3 · COMPONENTS"
+    title: Component diagram for the compute node
+    teaser: "Inside a node: how a run lands files, keys rows, renders records, sends them and writes the ledger."
+    description: "A node takes its work outbound from the control plane, so it runs next to the data; rows flow left to right into OSDU and the ledger."
+    compact: true
+    brief: [cp, repo, vault, landing, data, catalog, osdu]
+    page:
+      id: delivery-c4-compute-node
+      summary: "The components of a compute node: runtime, SQLFlow's flow engine, the OSDU executors, intake and change detection, renderer, routes and the ledger."
+      keywords: [c4 model, component diagram, compute node, worker, renderer, routes, ledger, change detection]
+      related: [delivery-c4-containers, delivery-concept-ledger, delivery-concept-submissions]
+      sourceRefs: [osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs, osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs, osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs, osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs, osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs, osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs]
+    elements:
+      cp: [180, 180, 200, 86]
+      repo: [400, 180, 200, 86]
+      vault: [640, 180, 200, 86]
+      n_runtime: [340, 330, 300, 92]
+      n_exec: [900, 330, 520, 92]
+      landing: [102, 495, 170, 128]
+      n_sqlflow: [370, 495, 200, 114]
+      n_intake: [600, 495, 200, 114]
+      n_render: [900, 495, 200, 114]
+      n_routes: [1200, 495, 200, 114]
+      osdu: [1485, 495, 170, 124]
+      data: [102, 690, 170, 132]
+      n_ledger: [950, 660, 760, 86]
+      catalog: [950, 792, 240, 88]
+    boundaries:
+      - {label: Compute node, type: "Container: .NET 9 worker", rect: [172, 272, 1180, 456], labelAt: top-right}
+    relationships:
+      - {from: n_runtime, to: cp, label: Polls for runs, tech: "HTTPS, node token", width: 100}
+      - {from: n_runtime, to: repo, label: Checks out the pinned commit, tech: "Git, GitHub App", width: 110}
+      - {from: n_runtime, to: vault, label: Resolves references, tech: Managed identity, width: 100, exit: [top, 120], entry: [bottom, -40], via: [[460, 250], [600, 250]]}
+      - {from: n_runtime, to: n_sqlflow, label: "Runs pre, ing", width: 80}
+      - {from: n_runtime, to: n_exec, label: Runs the OSDU kinds, width: 110}
+      - {from: n_sqlflow, to: landing, label: Reads files, tech: ADLS Gen2, width: 75}
+      - {from: n_sqlflow, to: data, label: "Lands, upserts", tech: SQL, width: 90, exit: [bottom, -70], entry: [right, -20], route: vh}
+      - {from: n_exec, to: n_intake, label: Plans, width: 60}
+      - {from: n_intake, to: data, label: Reads changed rows, tech: SQL, width: 100, exit: [bottom, -70], entry: [right, 12], route: vh}
+      - {from: n_intake, to: n_render, label: Renders each row, width: 85}
+      - {from: n_exec, to: n_routes, label: Drains batches, width: 80}
+      - {from: n_render, to: n_routes, label: Documents to send, width: 85}
+      - {from: n_routes, to: osdu, label: "Sends, reads back", tech: "REST, ETP 1.2", width: 85}
+      - {from: n_intake, to: n_ledger, label: "Records, render context", width: 120}
+      - {from: n_routes, to: n_ledger, label: One attempt per try, width: 110}
+      - {from: n_ledger, to: catalog, label: Writes, tech: SQL, width: 70}
+    notes: |
+      A node holds only its identity, the catalog's connection (`SQLFLOW_CATALOG_DB`, for the ledger in the osdu schema)
+      and its node token; every value a run reads (the ingestion database, the OSDU endpoint, the landing storage) is handed
+      to the run by the control plane and resolved on the node. A node without `SQLFLOW_CATALOG_DB`, or over an osdu schema
+      that is missing, behind or ahead of the build, refuses to start. The renderer reads the partition's cache from the
+      catalog; the routes get OSDU tokens by client credentials from the partition's token endpoint.
+
+  - id: mcp-server
+    short: MCP server
+    column: 2
+    up: containers
+    tag: "C4 LEVEL 3 · COMPONENTS"
+    title: Component diagram for the MCP server
+    teaser: "Inside the MCP server: two transports, one set of rules, estate and data tools, the documentation."
+    description: "Every assistant reads the same rules and tools; the server holds no credential and calls only the control plane, with the caller's token."
+    compact: true
+    brief: [ai_clients, ai_provider, cp, slack]
+    page:
+      id: delivery-c4-mcp-server
+      summary: "The components of the MCP server: its transports, the instructions and modes, the estate tools, the data tools and the documentation index."
+      keywords: [c4 model, component diagram, mcp server, model context protocol, assistant tools, data mode, estate mode]
+      related: [delivery-c4-ai-usage, delivery-guide-mcp]
+      sourceRefs: [osdu/hosts/osdu-delivery-mcp/src/lib.rs, osdu/hosts/osdu-delivery-mcp/src/instructions.rs, osdu/hosts/osdu-delivery-mcp/src/docs.rs, osdu/hosts/osdu-delivery-mcp/src/support.rs]
+    elements:
+      ai_clients: [330, 195, 240, 90]
+      ai_provider: [760, 195, 240, 90]
+      slack: [1190, 195, 240, 90]
+      m_transport: [760, 370, 1000, 90]
+      m_instructions: [350, 545, 240, 100]
+      m_estate: [630, 545, 240, 100]
+      m_data: [910, 545, 240, 100]
+      m_docs: [1190, 545, 240, 100]
+      cp: [760, 765, 320, 90]
+    boundaries:
+      - {label: MCP server, type: "Container: Rust", rect: [200, 295, 1120, 370], labelAt: bottom-left}
+    relationships:
+      - {from: ai_clients, to: m_transport, label: Connects, tech: stdio, width: 80}
+      - {from: ai_provider, to: m_transport, label: Connects, tech: "HTTPS, run token", width: 110}
+      - {from: slack, to: m_transport, label: Connects, tech: HTTPS, width: 80, dashed: true}
+      - {from: m_transport, to: m_instructions, label: Serves at start, width: 90}
+      - {from: m_transport, to: m_estate, label: Estate mode, width: 80}
+      - {from: m_transport, to: m_data, label: Data mode, width: 80}
+      - {from: m_transport, to: m_docs, label: Either mode, width: 80}
+      - {from: m_estate, to: cp, label: Reads metadata, tech: "JSON/HTTPS, caller's token", width: 120}
+      - {from: m_data, to: cp, label: "prepare_query, run_query", tech: JSON/HTTPS, width: 120}
+    notes: |
+      Over HTTP every request to `/mcp` carries `Authorization: Bearer`, checked with the control plane's `GET /api/v1/me`
+      before any tool runs, and forwarded with every call, so the control plane authorizes it as it authorizes the GUI; a
+      missing bearer never falls back to a stored one. No `delivery_*` tool returns a record's content, a source row, cached
+      values or a dimension's values, or removes records from OSDU. `WITHHELD` in `src/lib.rs` keeps out seven SQLFlow tools
+      that profile, sample or probe a datasource, and the tests fail when SQLFlow adds a tool not yet offered or withheld.
+
+  # ================================================================================================= DYNAMIC ===
+  - id: record-delivery
+    short: A record delivered
+    column: 3
+    up: containers
+    tag: "C4 DYNAMIC · DATA"
+    title: "Dynamic diagram: a source row becomes an OSDU record"
+    teaser: "One record's path, numbered: from a dropped file to the OSDU id and version the ledger keeps."
+    description: "The three flows of the chain, land, key and deliver, each a run of its own on a node, and what the ledger keeps at every step."
+    compact: true
+    brief: [sources, operator]
+    page:
+      id: delivery-c4-record-delivery
+      summary: "Numbered, the path a source row takes to OSDU: a file flow lands it, an ing flow keys it, a delivery flow renders, sends and records it."
+      keywords: [c4 model, dynamic diagram, delivery flow, record lifecycle, ledger, change detection, pre flow, ing flow]
+      related: [delivery-concept-overview, delivery-concept-ledger, delivery-concept-record-lifecycle]
+      sourceRefs: [osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Deliver.cs, osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs, osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs]
+    elements:
+      sources: [140, 250, 210, 96]
+      landing: [140, 478, 210, 100]
+      cp: [560, 250, 240, 100]
+      node: [560, 478, 340, 110]
+      data: [420, 785, 220, 104]
+      catalog: [740, 785, 260, 104]
+      osdu: [1440, 478, 220, 130]
+      gui: [1010, 250, 240, 100]
+      operator: [1440, 250, 190, 120]
+    relationships:
+      - {n: 1, from: sources, to: landing, label: Drops a file, tech: ADLS Gen2, width: 90, explain: "A source system drops a file into the landing storage, under the folder a file flow reads."}
+      - {n: 2, from: cp, to: node, label: "Hands out the runs, pinned to the synced commit", tech: Node protocol, width: 160, explain: "A schedule fires (or a person triggers) the pipeline; the control plane queues its runs in lineage order, each pinned to the commit last synced, and a node takes the file flow's run."}
+      - {n: 3, from: node, to: landing, label: Reads the new files, tech: ADLS Gen2, width: 100, explain: "The file flow reads the new files from the landing storage."}
+      - {n: 4, from: node, to: data, label: "Lands pre rows; ing upserts the keyed table", tech: SQL, width: 100, exit: [bottom, -140], entry: [top, 0], t: 0.25, explain: "It lands them into the pre table as text with FileName_DW and RowNumber_DW; the ing flow, a run of its own, upserts the typed view into the keyed ingestion table and stamps UpdatedDate_DW."}
+      - {n: 5, from: node, to: data, label: Reads the rows changed since the watermark, tech: SQL, width: 100, exit: [bottom, -60], entry: [top, 80], t: 0.75, explain: "The delivery flow's run reads the rows (and child rows) whose UpdatedDate_DW moved since its last run, under snapshot isolation."}
+      - {n: 6, from: node, to: catalog, label: "Renders with the pinned mapping and cache; compares with the ledger", tech: SQL, width: 100, exit: [bottom, 70], entry: [top, -110], t: 0.25, explain: "Each row renders through the pinned mapping, its template and the partition's cache version read from the catalog; its hash is compared with what the ledger last delivered, and only what renders differently is planned."}
+      - {n: 7, from: node, to: osdu, label: "Checks legal tags; sends the record and its bulk data", tech: "REST, ETP 1.2", width: 200, exit: [right, -25], entry: [left, -25], explain: "The route checks the legal tags, then sends the record (and its files or bulk data) to OSDU under its deterministic id, retrying what may succeed later."}
+      - {n: 8, from: node, to: catalog, label: "Writes the attempt: OSDU id, version, outcome", tech: SQL, width: 100, exit: [bottom, 150], entry: [top, -30], t: 0.75, explain: "Every try is one append-only attempt in the ledger: the document hash it sent, what each step answered, the OSDU id and version, the outcome and any error."}
+      - {n: 9, from: operator, to: gui, label: Follows the record to its source row, tech: HTTPS, width: 140, explain: "An operator finds the record by key, OSDU id or source file, and the ledger shows its source file and row, the mapping and cache version that rendered it, every attempt and every action taken."}
+      - {n: 10, from: gui, to: cp, label: Reads the ledger, tech: JSON/HTTPS, width: 110, explain: "The GUI reads it through the delivery API; every count it shows is counted from the ledger's records."}
+    notes: |
+      Steps 2 to 8 are three runs of three flows (`-01-pre`, `-02-ing`, `-03-delivery`), each with its own log and failure,
+      ordered by lineage. A delivery run plans into a submission and work batches, then drains them under leases; a large
+      one fans out a part per 1,000 rows on up to eight nodes. `plan` stops after step 6; `verify` reads delivered records
+      back and records `match`, `drifted` or `missing` ([submissions](../concepts/submissions.md)).
+
+  - id: question
+    short: A question answered
+    column: 3
+    up: ai-usage
+    tag: "C4 DYNAMIC · AI"
+    title: "Dynamic diagram: a ! question answered from approved data"
+    teaser: "A data question, numbered: delegated token, model, MCP tools, the column guard, a node's read-only query."
+    description: "A ! question in the GUI chat, from the person's words to the rows that answer it. The model never holds a credential, and the run's token reaches only the assistant's routes."
+    compact: true
+    brief: [operator, ai_provider, catalog, data]
+    page:
+      id: delivery-c4-question
+      summary: "Numbered, how a ! question in the GUI chat is answered: a delegated run token, the model, the MCP tools, the column guard, and a read-only query on a node."
+      keywords: [c4 model, dynamic diagram, assistant, data mode, ai context, prepare_query, delegated token]
+      related: [delivery-c4-ai-usage, delivery-concept-ai-features, delivery-guide-mcp]
+      sourceRefs: [sqlflow/src/SqlFlow.Assistant/ResponsesApiGateway.cs, osdu/hosts/osdu-delivery-mcp/src/lib.rs]
+    elements:
+      operator: [110, 290, 170, 120]
+      gui: [420, 290, 230, 100]
+      cp_assist: [420, 560, 230, 100]
+      ai_provider: [760, 290, 230, 96]
+      mcp: [1200, 290, 230, 96]
+      cp_aictx: [1200, 560, 230, 100]
+      node: [820, 560, 230, 100]
+      data: [820, 785, 230, 96]
+      catalog: [1200, 785, 230, 96]
+    relationships:
+      - {n: 1, from: operator, to: gui, label: Asks a ! question, tech: Chat, width: 80, explain: "A person starts data mode with ! (or !data) and asks, for example !which wellbores have a gamma ray log?; follow-ups stay in data mode until !exit."}
+      - {n: 2, from: gui, to: cp_assist, label: Sends the question, tech: JSON/HTTPS, width: 100, shift: -45, t: 0.3, explain: "The control plane delegates a token from the person for this run alone: their id, no admin or node scope, refused on every route not opened to the assistant."}
+      - {n: 3, from: cp_assist, to: ai_provider, label: "Question, history, the MCP server as tool with the run's token", tech: Responses API, width: 150, exit: [right, -30], entry: [bottom, -80], route: hv, explain: "The gateway sends the model the MCP server's instructions, the last 20 messages and the question, with the MCP server as its tool and the run's token in the tool's header."}
+      - {n: 4, from: ai_provider, to: mcp, label: "find_similar_questions, prepare_query", tech: MCP over HTTPS, width: 150, explain: "The model calls the server's data-mode tools: stored questions close to this one, with the semantic layer to answer from, and prepare_query with the SQL it composed."}
+      - {n: 5, from: mcp, to: cp_aictx, label: "Checks the token, forwards the call", tech: "JSON/HTTPS, run token", width: 140, explain: "The server checks the bearer with GET /api/v1/me and forwards the call with it."}
+      - {n: 6, from: cp_aictx, to: catalog, label: "Checks every column against approved AI contexts", tech: SQL, width: 160, explain: "ColumnPolicyGuard refuses a column no approved context opens, and only one read-only SELECT is planned; the plan token is single-use and lives 15 minutes."}
+      - {n: 7, from: cp_aictx, to: node, label: "On the person's Run, queues the query", tech: Compute task, width: 130, explain: "The GUI shows the query; the person's click on Run redeems the plan token (run_query). A saved answer a person confirmed may run without a click: 50 rows, 5 seconds."}
+      - {n: 8, from: node, to: data, label: "Runs the SELECT: 200 rows, at most 5,000", tech: SQL, width: 150, explain: "A node runs the SELECT against the ingestion database and returns the rows to the control plane."}
+      - {n: 9, from: cp_assist, to: gui, label: "Streams the answer, marked AI-generated", tech: JSON/HTTPS, width: 130, shift: 45, t: 0.3, explain: "The answer streams back marked with the model that wrote it; the conversation is kept in the catalog, and only the person's Yes, Not quite or No records a verdict."}
+    notes: |
+      An editor's assistant takes the same path from step 4 on, with the person's own token instead of a delegated one, so
+      it can do what the person can do. Without `!` the conversation is in estate mode, and the model is sent metadata only:
+      the ledger's bookkeeping and the module's definitions, never a record's content or a source row.
+
+  - id: git-integration
+    short: A commit synced
+    column: 3
+    up: containers
+    tag: "C4 DYNAMIC · GIT"
+    title: "Dynamic diagram: a commit becomes the runs that execute it"
+    teaser: "Git, numbered: push, a trigger proved by GitHub's token, the App's short-lived tokens, the sync, the pinned checkout."
+    description: "Nothing runs from a working copy: a run executes the commit the control plane synced, checked out on the node with a token the GitHub App mints for that repository alone."
+    compact: true
+    brief: [developer, repo, vault, catalog]
+    page:
+      id: delivery-c4-git-integration
+      summary: "Numbered, how a commit reaches the runs: push, an external trigger proved by GitHub's OIDC token, a sync with the GitHub App, and the node's pinned checkout."
+      keywords: [c4 model, dynamic diagram, git integration, github app, repository sync, external trigger, pinned commit]
+      related: [delivery-c4-containers, delivery-flow-repository]
+      sourceRefs: [osdu/deploy/terraform/main.tf, osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs]
+    elements:
+      developer: [130, 290, 180, 120]
+      repo: [560, 290, 240, 96]
+      vault: [1000, 290, 240, 96]
+      vscode: [130, 560, 220, 100]
+      github_actions: [560, 560, 240, 100]
+      cp_sync: [1000, 560, 240, 100]
+      cp_sched: [1420, 560, 230, 100]
+      n_runtime: [360, 785, 240, 86]
+      catalog: [1000, 785, 240, 86]
+    boundaries:
+      - {label: Control plane, type: Container, style: group, members: [cp_sync, cp_sched], pad: 16, top: 38}
+    relationships:
+      - {n: 1, from: developer, to: vscode, label: Writes and checks the documents, tech: VS Code, width: 120, explain: "The developer edits flows, mappings and templates with the language engine's checks, and previews a mapping from the open file."}
+      - {n: 2, from: developer, to: repo, label: Pushes and merges, tech: Git, width: 90, explain: "A pull request merges into the branch the environment syncs."}
+      - {n: 3, from: repo, to: github_actions, label: Starts the workflow, tech: On merge, width: 100, t: 0.25, explain: "The estate repository's workflow starts after the merge."}
+      - {n: 4, from: github_actions, to: cp_sync, label: "Proves itself with GitHub's OIDC token; asks for a sync at this commit", tech: Trigger request, width: 160, explain: "The job exchanges the OIDC token GitHub minted for it, for the control plane's URL as audience, for a short-lived credential (nothing secret is stored), and makes a trigger request: sync this repository at this commit, then fire these schedules."}
+      - {n: 5, from: cp_sync, to: vault, label: Reads the GitHub App's key, tech: Managed identity, width: 120, explain: "The sync reads the GitHub App's private key from the vault with the control plane's own identity."}
+      - {n: 6, from: cp_sync, to: repo, label: "Mints a token for this repository alone; fetches the commit", tech: Git over HTTPS, width: 150, exit: [left, -35], entry: [bottom, 80], via: [[720, 525], [720, 425], [640, 425]], seg: 1, explain: "It mints a short-lived installation token for that one repository and fetches the commit; a sync only moves forward, never to a commit the held one already contains."}
+      - {n: 7, from: cp_sync, to: catalog, label: "Validates every document; writes the catalog, osdu read models, lineage", tech: SQL, width: 180, explain: "Every document is validated; the catalog's rows, the module's mappings, cache definitions and interfaces, and the lineage are written in the catalog's transaction."}
+      - {n: 8, from: cp_sync, to: cp_sched, label: Fires the trigger's schedules, width: 100, explain: "Once the sync has committed, the schedules the trigger names fire."}
+      - {n: 9, from: cp_sched, to: catalog, label: Queues runs pinned to the commit, tech: SQL, width: 130, exit: [bottom, 0], entry: [right, 0], route: vh, explain: "Each run is queued pinned to the commit just synced, and nodes take them over the node protocol."}
+      - {n: 10, from: n_runtime, to: repo, label: "Mints its own token; checks out the pinned commit", tech: Git over HTTPS, width: 140, exit: [top, 0], entry: [bottom, -60], via: [[360, 415], [500, 415]], explain: "The node that takes a run mints its own installation token with its own identity and checks out exactly the commit the run is pinned to."}
+    notes: |
+      With auto sync on, the control plane also syncs the tip of the branch every interval; several environments behind one
+      repository turn it off, so a merge reaches each one only when its own trigger, gated by its GitHub environment's
+      reviewers, asks ([automatic sync](../../../../sqlflow/docs/reference/concepts/repository-auto-sync.md)). A person can
+      sync from the GUI, the editor or `sqlflow repos sync`; the GUI first confirms the commit it holds. Without a GitHub
+      App, a repository names a fine-grained token kept in the vault. The product's own repository builds and deploys
+      through `.github/workflows/ci.yml` and `deploy.yml` with an OIDC identity per GitHub environment
+      ([deployment](../guides/deployment.md)).
+
+  # ============================================================================================== DEPLOYMENT ===
+  - id: deployment-azure
+    short: Azure deployment
+    column: 4
+    up: containers
+    tag: "C4 DEPLOYMENT · AZURE"
+    title: Deployment diagram for OSDU Delivery on Azure Container Apps
+    teaser: "What osdu/deploy/terraform creates: four container apps, Azure SQL, ADLS, Key Vault, AI Foundry, identities."
+    description: "One resource group per environment, as osdu/deploy/terraform declares it; every app reaches Azure with its own managed identity."
+    compact: true
+    brief: [osdu]
+    page:
+      id: delivery-c4-deployment-azure
+      summary: "The Azure deployment the Terraform creates: four container apps, Azure SQL with two databases, ADLS Gen2, Key Vault, AI Foundry, identities and their grants."
+      keywords: [c4 model, deployment diagram, azure container apps, terraform, azure sql, key vault, managed identity, keda]
+      related: [delivery-c4-containers, delivery-guide-deployment]
+      sourceRefs: [osdu/deploy/terraform/main.tf, osdu/deploy/terraform/modules/worker/main.tf, osdu/deploy/terraform/modules/mcp/main.tf, osdu/deploy/terraform/modules/ai-foundry/main.tf, osdu/deploy/terraform/modules/entra-app/main.tf]
+    elements:
+      mcp: {at: [145, 305], size: [190, 100], desc: "/mcp; optional.", badge: "1 replica"}
+      gui: {at: [430, 305], size: [190, 100], desc: "The SPA on nginx.", badge: "1 to 3"}
+      cp: {at: [715, 305], size: [190, 100], desc: "Ingress 8080; 0.5 vCPU, 1 GiB.", badge: "1 replica"}
+      node: {at: [715, 470], size: [190, 100], desc: "No ingress; 1 vCPU, 2 GiB.", badge: "0 to 10"}
+      catalog: {at: [200, 745], size: [200, 90], desc: "OsduDelivery, S1."}
+      data: {at: [430, 745], size: [200, 90], desc: "OsduData, S1."}
+      landing: {at: [690, 745], size: [200, 90], desc: "Container landing."}
+      foundry: [1000, 305, 210, 100]
+      vault: [1000, 470, 210, 100]
+      logs: [1000, 745, 210, 100]
+      identities: [1250, 305, 210, 100]
+      acr: [1250, 470, 210, 100]
+      scripts: [1250, 745, 210, 100]
+      entra_app: [1470, 305, 180, 120]
+      osdu: [1470, 575, 180, 120]
+    boundaries:
+      - {label: "Resource group", type: "One per environment", style: node, icon: "azure:resource-group", rect: [25, 140, 1340, 698]}
+      - {label: "osdu-delivery-env", type: "Container Apps environment, Consumption", style: node, icon: "azure:container-apps-environment", rect: [40, 195, 785, 345]}
+      - {label: "Azure SQL server", type: "Entra-only, TLS 1.2", style: node, icon: "azure:sql-server", rect: [55, 590, 495, 238]}
+      - {label: "Storage account", type: "ADLS Gen2", style: node, icon: "azure:storage-account", rect: [575, 590, 235, 238]}
+    relationships:
+      - {from: gui, to: cp, label: Calls the API, tech: "HTTPS, CORS", width: 80}
+      - {from: node, to: cp, label: Polls, tech: "HTTPS, node token", width: 90}
+      - {from: cp, to: catalog, label: db_owner, tech: "TDS, managed identity", width: 90, exit: [bottom, -60], entry: [top, 50], via: [[655, 390], [250, 390]], t: 0.3}
+      - {from: node, to: catalog, label: osdu schema only, tech: TDS, width: 90, exit: [left, -25], entry: [top, 85], route: hv, t: 0.7}
+      - {from: node, to: data, label: "Read, write, DDL", tech: TDS, width: 90, exit: [left, 25], entry: [top, 0], route: hv}
+      - {from: node, to: landing, label: Blob Data Contributor, tech: ABFS, width: 100, exit: [bottom, 60], entry: [top, 85]}
+      - {from: cp, to: foundry, label: OpenAI User, tech: MI, width: 70}
+      - {from: node, to: vault, label: Secrets User, tech: MI, width: 70}
+      - {from: node, to: osdu, label: Delivers, tech: "HTTPS, client credentials", width: 110, exit: [bottom, 80], entry: [left, 0], via: [[795, 575]], t: 0.55}
+    notes: |
+      **The apps.** `osdu-delivery-control-plane`: external ingress on 8080, exactly one replica (0.5 vCPU, 1 GiB), the
+      worker off inside it. `osdu-delivery-worker`: no ingress at all, 0 to 10 replicas (1 vCPU, 2 GiB) on KEDA's
+      metrics-api rule against `/api/v1/node/scale-target`, 600 seconds to finish a run on scale-in. `osdu-delivery-gui`:
+      nginx serving the single-page app, 1 to 3 replicas on 200 concurrent requests. `osdu-delivery-mcp`: optional
+      (`mcp_enabled`), exactly one replica, since MCP sessions live in its memory. The GUI is its own origin; the control
+      plane allows it by CORS. A node reaches the control plane at its external address. The control plane reads the vault
+      too (Key Vault Secrets User), and every app writes its logs to Log Analytics through the environment.
+
+      **Who may reach what.** The grants the Terraform and its setup script give:
+
+      | Identity | Grants |
+      | --- | --- |
+      | Setup (`osdu-delivery-setup`) | Key Vault Secrets Officer; the SQL server's Entra administrator. No app runs as it |
+      | Control plane | Key Vault Secrets User, AcrPull, Storage Blob Data Reader on the landing account, `db_owner` on `OsduDelivery`, `db_datareader` on `OsduData`, Cognitive Services User (and OpenAI User with the assistant on) |
+      | Worker | Key Vault Secrets User, AcrPull, Storage Blob Data Contributor, on `OsduDelivery` the `osdu` schema only (select, insert, update, delete, execute, alter, references, create table and view), on `OsduData` `db_ddladmin`, `db_datareader` and `db_datawriter`, Cognitive Services User |
+      | GUI, MCP server | AcrPull |
+      | The estate's SQL administrators | `db_owner` on every database |
+
+      **Networking.** The SQL server takes Entra authentication only and allows Azure services (0.0.0.0), since the
+      consumption plan has no fixed outbound address; to close it, run the environment in a VNet
+      (`infrastructure_subnet_id`) and reach SQL over a private endpoint. The landing account has shared keys off. Created
+      by hand once: the resource group, the registry and the Terraform state account. Put in the vault by hand: each
+      partition's client secret and the GitHub App's key.

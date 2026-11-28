@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeftRight, ArrowRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, CircleCheck, CirclePlus, Minus, PencilLine, Plus,
-  TriangleAlert, Type, type LucideIcon,
+  Archive, ArrowLeftRight, ArrowRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleDot,
+  CirclePlus, Minus, PencilLine, Plus, TriangleAlert, Type, type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -31,6 +31,7 @@ import { SearchInput } from "@/components/SearchInput";
 import { StatePill } from "@/components/StatusBadge";
 import { HeadClippedText } from "./HeadClippedText";
 import { TemplateCompareReport } from "./TemplateCompareReport";
+import { weightCounts, WEIGHTS, type ChangeWeight } from "./templateMoveReport";
 import { condenseDiff, diffList, diffText, type DiffPart } from "./textDiff";
 import { entityName, kindStem, roleLabel, splitPath } from "./templateFormat";
 import { ProblemView, TaskProgress } from "./TemplateSheet";
@@ -73,10 +74,37 @@ const IMPACT_VISUAL: Record<DeliveryTemplateChangeImpact, { tone: "destructive" 
 
 const IMPACTS: readonly DeliveryTemplateChangeImpact[] = ["Breaking", "Additive", "Wording"];
 
+/**
+ * How much a change weighs for the synced mappings of the kind, read against what their documents write. Significant is the
+ * one that needs someone, so it is the one in a warning tone; the others stay quiet.
+ */
+const WEIGHT_VISUAL: Record<ChangeWeight, { tone: "warning" | "muted"; icon: LucideIcon; label: string; hint: string }> = {
+  Significant: {
+    tone: "warning",
+    icon: CircleAlert,
+    label: "Significant",
+    hint: "It asks something of a synced mapping that writes what it changes: the mapping has to change for it, or what it writes is deprecated.",
+  },
+  Minor: {
+    tone: "muted",
+    icon: CircleDot,
+    label: "Minor",
+    hint: "It touches what a synced mapping writes and asks nothing of it: how it reads, a rule relaxed, more kinds it may point to.",
+  },
+  Unused: {
+    tone: "muted",
+    icon: Circle,
+    label: "Not in use",
+    hint: "No synced mapping writes what it changes, so it has the least impact: it matters only to a mapping that starts to use it.",
+  },
+};
+
 /** The impact filter's value for every change. */
 const ALL = "All";
 type ImpactFilter = typeof ALL | DeliveryTemplateChangeImpact;
 const IMPACT_FILTERS: readonly ImpactFilter[] = [ALL, ...IMPACTS];
+type WeightFilter = typeof ALL | ChangeWeight;
+const WEIGHT_FILTERS: readonly WeightFilter[] = [ALL, ...WEIGHTS];
 
 /** The file picker's value for the kind's own schema file; a shared schema is picked by its name. */
 const KIND_FILE = "kind";
@@ -338,13 +366,15 @@ interface ChangeCardProps {
   change: DeliveryTemplateVariableChange;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Whether to name the mappings that use what it changes: when several are weighed, so it is not plain which. */
+  showUsedBy: boolean;
 }
 
 /**
  * A variable that differs: its path and what happened to it, opening onto each field that changed with its edit marked.
  * Folded, the header names the fields that changed, so a scan down the list still says what moved.
  */
-function ChangeCard({ change, open, onOpenChange }: ChangeCardProps) {
+function ChangeCard({ change, open, onOpenChange, showUsedBy }: ChangeCardProps) {
   const { parent, leaf } = splitPath(change.path);
   const writer = roleLabel(change.role);
   const fields = useMemo(() => [...change.fields].sort((a, b) => IMPACT_RANK[a.impact] - IMPACT_RANK[b.impact]), [change.fields]);
@@ -359,13 +389,33 @@ function ChangeCard({ change, open, onOpenChange }: ChangeCardProps) {
           data-testid={`templates-compare-change-toggle-${change.path}`}
         >
           <Chevron />
-          <span className="flex min-w-0 font-mono text-[12px]">
+          <span className={cn("flex min-w-0 font-mono text-[12px]", change.weight === "Unused" && "text-muted-foreground")}>
             <HeadClippedText head={parent} body={leaf} title="Variable" />
           </span>
           <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">
             {open ? "" : fields.map((field) => FIELD_LABELS[field.field] ?? field.field).join(" · ")}
           </span>
           {writer !== null && <span className="shrink-0 text-[11px] text-muted-foreground">{writer}</span>}
+          {showUsedBy && change.usedBy !== null && change.usedBy.length > 0 && (
+            <RichTooltip title="Used by" body={change.usedBy.join(", ")}>
+              <span className="max-w-48 shrink-0 truncate font-mono text-[11px] text-muted-foreground" data-testid={`templates-compare-used-by-${change.path}`}>
+                {change.usedBy.length === 1 ? change.usedBy[0] : `${change.usedBy.length} mappings`}
+              </span>
+            </RichTooltip>
+          )}
+          {change.deprecates && (
+            <RichTooltip title="Deprecated" body="Its description now marks it deprecated, as OSDU writes a deprecation: still accepted, and the description says what replaces it.">
+              <span className="shrink-0">
+                {/* Loud only where a synced mapping writes what it deprecates; elsewhere it is something to know, not to act on. */}
+                <StatePill
+                  tone={change.weight === null || change.weight === "Significant" ? "warning" : "muted"}
+                  label="Deprecated"
+                  icon={Archive}
+                  testId={`templates-compare-deprecated-${change.path}`}
+                />
+              </span>
+            </RichTooltip>
+          )}
           <StatePill
             tone={CHANGE_VISUAL[change.change].tone}
             label={change.change}
@@ -405,31 +455,52 @@ function ChangeCard({ change, open, onOpenChange }: ChangeCardProps) {
   );
 }
 
-interface ImpactGroupProps {
-  impact: DeliveryTemplateChangeImpact;
+/** What changes are listed under: an impact, or how much they weigh for the synced mappings, with what that means. */
+interface GroupHeading {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  text: string;
+  hint: string;
+}
+
+const impactHeading = (impact: DeliveryTemplateChangeImpact): GroupHeading => ({
+  key: impact, label: impact, icon: IMPACT_VISUAL[impact].icon, text: IMPACT_VISUAL[impact].text, hint: IMPACT_VISUAL[impact].hint,
+});
+
+const weightHeading = (weight: ChangeWeight): GroupHeading => ({
+  key: weight,
+  label: WEIGHT_VISUAL[weight].label,
+  icon: WEIGHT_VISUAL[weight].icon,
+  text: weight === "Significant" ? "text-warning" : "text-muted-foreground",
+  hint: WEIGHT_VISUAL[weight].hint,
+});
+
+interface ChangeGroupProps {
+  heading: GroupHeading;
   changes: DeliveryTemplateVariableChange[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   openCards: ReadonlySet<string>;
   onCardOpenChange: (path: string, open: boolean) => void;
+  showUsedBy: boolean;
 }
 
-/** The changes of one impact under a heading that says what that impact means for a mapping of the older version. */
-function ImpactGroup({ impact, changes, open, onOpenChange, openCards, onCardOpenChange }: ImpactGroupProps) {
-  const visual = IMPACT_VISUAL[impact];
+/** Changes under a heading that says what they mean: for a mapping of the older version, or for the synced mappings. */
+function ChangeGroup({ heading, changes, open, onOpenChange, openCards, onCardOpenChange, showUsedBy }: ChangeGroupProps) {
   return (
     <Collapsible open={open} onOpenChange={onOpenChange} asChild>
-      <section className="flex min-w-0 flex-col gap-2" data-testid={`templates-compare-group-${impact.toLowerCase()}`}>
+      <section className="flex min-w-0 flex-col gap-2" data-testid={`templates-compare-group-${heading.key.toLowerCase()}`}>
         <h3 className="min-w-0">
           <CollapsibleTrigger
             className="group -mx-1 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1 py-1 text-left hover:bg-accent/50"
-            data-testid={`templates-compare-group-toggle-${impact.toLowerCase()}`}
+            data-testid={`templates-compare-group-toggle-${heading.key.toLowerCase()}`}
           >
             <Chevron />
-            <visual.icon className={cn("size-4 shrink-0", visual.text)} aria-hidden />
-            <span className="text-[13px] font-medium">{impact}</span>
+            <heading.icon className={cn("size-4 shrink-0", heading.text)} aria-hidden />
+            <span className="text-[13px] font-medium">{heading.label}</span>
             <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{changes.length.toLocaleString()}</span>
-            <span className="text-xs font-normal text-muted-foreground">{visual.hint}</span>
+            <span className="text-xs font-normal text-muted-foreground">{heading.hint}</span>
           </CollapsibleTrigger>
         </h3>
         <CollapsibleContent asChild>
@@ -440,6 +511,7 @@ function ImpactGroup({ impact, changes, open, onOpenChange, openCards, onCardOpe
                 change={change}
                 open={openCards.has(change.path)}
                 onOpenChange={(next) => onCardOpenChange(change.path, next)}
+                showUsedBy={showUsedBy}
               />
             ))}
           </ol>
@@ -497,6 +569,54 @@ function Verdict({ data }: { data: DeliveryOsduComparison }) {
   );
 }
 
+/**
+ * What the changes mean for the synced mappings of the kind: read against what the mappings moving from another version
+ * write, how many are significant, minor, or touch nothing any of them uses. With none to weigh against, it says so.
+ */
+function Weighed({ data }: { data: DeliveryOsduComparison }) {
+  if (data.changes.length === 0) {
+    return null;
+  }
+
+  const names = data.weighedMappings;
+  if (names.length === 0) {
+    return (
+      <p className="text-[13px] text-muted-foreground" data-testid="templates-compare-weighed">
+        No synced mapping of this kind moves from another version, so no change is weighed against what a mapping writes.
+      </p>
+    );
+  }
+
+  const counts = weightCounts(data.changes);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[13px]" data-testid="templates-compare-weighed">
+      <span className="text-muted-foreground">
+        {"Read against what "}
+        {names.length === 1 ? (
+          <span className="font-mono text-[12px] text-foreground">{names[0]}</span>
+        ) : (
+          <RichTooltip title="Synced mappings moving to this version" body={names.join(", ")}>
+            <span className="text-foreground underline decoration-dotted underline-offset-2">{`${names.length} synced mappings`}</span>
+          </RichTooltip>
+        )}
+        {names.length === 1 ? " writes:" : " write:"}
+      </span>
+      {WEIGHTS.map((weight) => (
+        <RichTooltip key={weight} title={WEIGHT_VISUAL[weight].label} body={WEIGHT_VISUAL[weight].hint}>
+          <span>
+            <StatePill
+              tone={counts[weight] === 0 ? "muted" : WEIGHT_VISUAL[weight].tone}
+              label={`${counts[weight].toLocaleString()} ${WEIGHT_VISUAL[weight].label.toLowerCase()}`}
+              icon={WEIGHT_VISUAL[weight].icon}
+              testId={`templates-compare-weighed-${weight.toLowerCase()}`}
+            />
+          </span>
+        </RichTooltip>
+      ))}
+    </div>
+  );
+}
+
 interface TemplateCompareSheetProps {
   start: CompareStart;
   onClose: () => void;
@@ -515,6 +635,7 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
   const [to, setTo] = useState<CompareSide>(start.to);
   const [filter, setFilter] = useState("");
   const [impact, setImpact] = useState<ImpactFilter>(ALL);
+  const [weight, setWeight] = useState<WeightFilter>(ALL);
   const [pickedFile, setPickedFile] = useState(KIND_FILE);
 
   const releases = useQuery({
@@ -529,37 +650,55 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
     queryKey: ["delivery", "osdu-definitions", "compare", from.release, left.kind, to.release, right.kind],
     queryFn: () => deliveryApi.osduCompare({ release: from.release, kind: left.kind! }, { release: to.release, kind: right.kind! }),
     enabled: left.kind !== null && right.kind !== null,
-    staleTime: Infinity,
+    // The versions never change, but the synced mappings each change is weighed against can, with a repository's sync.
+    staleTime: 60_000,
   });
 
-  // The path search narrows first, so each impact's count says how many of the searched changes it holds.
-  const searched = useMemo(() => {
+  // The path search narrows first, so each weight's count says how many of the searched changes it holds; the weight then
+  // narrows what each impact counts.
+  const pathMatched = useMemo(() => {
     const term = filter.trim().toLowerCase();
     const changes = comparison.data?.changes ?? [];
     return term === "" ? changes : changes.filter((change) => change.path.toLowerCase().includes(term));
   }, [comparison.data, filter]);
-
-  const groups = useMemo(
-    () => IMPACTS
-      .filter((candidate) => impact === ALL || candidate === impact)
-      .map((candidate) => ({ impact: candidate, changes: searched.filter((change) => change.impact === candidate) }))
-      .filter((group) => group.changes.length > 0),
-    [searched, impact],
+  const searched = useMemo(
+    () => (weight === ALL ? pathMatched : pathMatched.filter((change) => change.weight === weight)),
+    [pathMatched, weight],
   );
 
-  const countOf = (value: ImpactFilter) => (value === ALL ? searched.length : searched.filter((change) => change.impact === value).length);
+  // Read against synced mappings, the changes are listed by how much they weigh for them, the significant first, and each
+  // weight's changes by impact; with none to weigh against, by impact alone.
+  const weighed = (comparison.data?.weighedMappings.length ?? 0) > 0;
+  const groups = useMemo(() => {
+    const narrowed = impact === ALL ? searched : searched.filter((change) => change.impact === impact);
+    const listed = weighed
+      ? WEIGHTS.map((candidate) => ({
+          heading: weightHeading(candidate),
+          changes: narrowed
+            .filter((change) => change.weight === candidate)
+            .map((change, index) => ({ change, index }))
+            .sort((a, b) => IMPACT_RANK[a.change.impact] - IMPACT_RANK[b.change.impact] || a.index - b.index)
+            .map((entry) => entry.change),
+        }))
+      : IMPACTS.map((candidate) => ({ heading: impactHeading(candidate), changes: narrowed.filter((change) => change.impact === candidate) }));
+    return listed.filter((group) => group.changes.length > 0);
+  }, [searched, impact, weighed]);
 
-  // The list opens with the impact headings open and every variable folded; a variable opens onto its fields.
-  const [openGroups, setOpenGroups] = useState<ReadonlySet<DeliveryTemplateChangeImpact>>(() => new Set(IMPACTS));
+  const countOf = (value: ImpactFilter) => (value === ALL ? searched.length : searched.filter((change) => change.impact === value).length);
+  const weightCountOf = (value: WeightFilter) => (value === ALL ? pathMatched.length : pathMatched.filter((change) => change.weight === value).length);
+
+  // The list opens with its headings open, but for the changes no synced mapping uses, which weigh least, and with every
+  // variable folded; a variable opens onto its fields.
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set<string>([...IMPACTS, "Significant", "Minor"]));
   const [openCards, setOpenCards] = useState<ReadonlySet<string>>(() => new Set());
   const allOpen = groups.length > 0
-    && groups.every((group) => openGroups.has(group.impact) && group.changes.every((change) => openCards.has(change.path)));
+    && groups.every((group) => openGroups.has(group.heading.key) && group.changes.every((change) => openCards.has(change.path)));
   const toggleAll = () => {
     if (allOpen) {
       setOpenGroups(new Set());
       setOpenCards(new Set());
     } else {
-      setOpenGroups(new Set(groups.map((group) => group.impact)));
+      setOpenGroups(new Set(groups.map((group) => group.heading.key)));
       setOpenCards(new Set(groups.flatMap((group) => group.changes.map((change) => change.path))));
     }
   };
@@ -580,7 +719,7 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
           <SheetTitle className="pr-6 text-[15px]">{`Compare ${entityName(start.to.kind)} versions`}</SheetTitle>
           <SheetDescription>
             Two versions from the OSDU data definitions, each from any release, compared variable by variable and as the files
-            are published.
+            are published, each change weighed against what the synced mappings of the kind write.
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
@@ -645,6 +784,7 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
           {data !== undefined && (
             <>
               <Verdict data={data} />
+              <Weighed data={data} />
               <Tabs defaultValue="changes">
                 <TabsList data-testid="templates-compare-tabs">
                   <TabsTrigger value="changes" data-testid="templates-compare-tab-changes">Changes</TabsTrigger>
@@ -691,6 +831,42 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
                         );
                       })}
                     </ToggleGroup>
+                    {weighed && (
+                      <ToggleGroup
+                        type="single"
+                        variant="outline"
+                        size="sm"
+                        value={weight}
+                        onValueChange={(value) => {
+                          if (value !== "") {
+                            setWeight(value as WeightFilter);
+                          }
+                        }}
+                        aria-label="How much the change weighs for the synced mappings"
+                        data-testid="templates-compare-weight-filter"
+                      >
+                        {WEIGHT_FILTERS.map((value) => {
+                          const count = weightCountOf(value);
+                          const Icon = value === ALL ? null : WEIGHT_VISUAL[value].icon;
+                          return (
+                            <ToggleGroupItem
+                              key={value}
+                              value={value}
+                              // A weight with nothing to show cannot be picked, but the one already picked stays reachable.
+                              disabled={count === 0 && value !== weight}
+                              className="h-8 gap-1.5 text-[13px]"
+                              data-testid={`templates-compare-weight-filter-${value.toLowerCase()}`}
+                            >
+                              {Icon !== null && value !== ALL && (
+                                <Icon className={value === "Significant" ? "text-warning" : "text-muted-foreground"} aria-hidden />
+                              )}
+                              {value === ALL ? "Any weight" : WEIGHT_VISUAL[value].label}
+                              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{count.toLocaleString()}</span>
+                            </ToggleGroupItem>
+                          );
+                        })}
+                      </ToggleGroup>
+                    )}
                     <Button variant="outline" size="sm" className="h-8" onClick={toggleAll} disabled={groups.length === 0} data-testid="templates-compare-expand-all">
                       {allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
                       {allOpen ? "Collapse all" : "Expand all"}
@@ -706,14 +882,15 @@ export function TemplateCompareSheet({ start, onClose }: TemplateCompareSheetPro
                   ) : (
                     <div className="flex min-w-0 flex-col gap-5" data-testid="templates-compare-changes">
                       {groups.map((group) => (
-                        <ImpactGroup
-                          key={group.impact}
-                          impact={group.impact}
+                        <ChangeGroup
+                          key={group.heading.key}
+                          heading={group.heading}
                           changes={group.changes}
-                          open={openGroups.has(group.impact)}
-                          onOpenChange={(next) => setOpenGroups((current) => withKey(current, group.impact, next))}
+                          open={openGroups.has(group.heading.key)}
+                          onOpenChange={(next) => setOpenGroups((current) => withKey(current, group.heading.key, next))}
                           openCards={openCards}
                           onCardOpenChange={(path, next) => setOpenCards((current) => withKey(current, path, next))}
+                          showUsedBy={data.weighedMappings.length > 1}
                         />
                       ))}
                     </div>

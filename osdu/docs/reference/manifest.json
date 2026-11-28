@@ -3,6 +3,279 @@
   "product": "OSDU Delivery",
   "docs": [
     {
+      "id": "delivery-c4-ai-usage",
+      "corpus": "reference",
+      "path": "architecture/ai-usage.md",
+      "title": "Container diagram for OSDU Delivery, every path to an AI model",
+      "type": "concept",
+      "summary": "Every path from OSDU Delivery to an AI model: the GUI assistant, Explain, voice, the MCP server, coding assistants, Slack and Anthropic, with their fences.",
+      "keywords": [
+        "c4 model",
+        "ai usage",
+        "assistant",
+        "mcp server",
+        "ai context",
+        "azure ai foundry",
+        "eu ai act"
+      ],
+      "related": [
+        "delivery-concept-ai-features",
+        "delivery-concept-eu-ai-act",
+        "delivery-c4-mcp-server"
+      ],
+      "sourceRefs": [
+        "sqlflow/src/SqlFlow.Assistant/ResponsesApiGateway.cs",
+        "sqlflow/src/SqlFlow.Assistant/AnthropicGateway.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/lib.rs",
+        "osdu/deploy/terraform/modules/ai-foundry/main.tf"
+      ]
+    },
+    {
+      "id": "delivery-c4-compute-node",
+      "corpus": "reference",
+      "path": "architecture/compute-node.md",
+      "title": "Component diagram for the compute node",
+      "type": "concept",
+      "summary": "The components of a compute node: runtime, SQLFlow's flow engine, the OSDU executors, intake and change detection, renderer, routes and the ledger.",
+      "keywords": [
+        "c4 model",
+        "component diagram",
+        "compute node",
+        "worker",
+        "renderer",
+        "routes",
+        "ledger",
+        "change detection"
+      ],
+      "related": [
+        "delivery-c4-containers",
+        "delivery-concept-ledger",
+        "delivery-concept-submissions"
+      ],
+      "sourceRefs": [
+        "osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs"
+      ]
+    },
+    {
+      "id": "delivery-c4-containers",
+      "corpus": "reference",
+      "path": "architecture/containers.md",
+      "title": "Container diagram for OSDU Delivery",
+      "type": "concept",
+      "summary": "The containers of OSDU Delivery: the GUI, the VS Code extension, the CLI, the MCP server, the control plane, the compute nodes and the three stores.",
+      "keywords": [
+        "c4 model",
+        "container diagram",
+        "control plane",
+        "compute node",
+        "mcp server",
+        "catalog database",
+        "ingestion database"
+      ],
+      "related": [
+        "delivery-c4-system-context",
+        "delivery-concept-architecture"
+      ],
+      "sourceRefs": [
+        "osdu/hosts/SqlFlow.Delivery.ControlPlane.Host/Program.cs",
+        "osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs",
+        "osdu/hosts/SqlFlow.Delivery.Cli.Host/Program.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/lib.rs",
+        "osdu/hosts/osdu-delivery-vscode/package.json"
+      ]
+    },
+    {
+      "id": "delivery-c4-control-plane",
+      "corpus": "reference",
+      "path": "architecture/control-plane.md",
+      "title": "Component diagram for the control plane",
+      "type": "concept",
+      "summary": "The components of the control plane: REST API, node protocol, scheduler, repository sync, direct operations, assistant and the hosted services.",
+      "keywords": [
+        "c4 model",
+        "component diagram",
+        "control plane",
+        "node protocol",
+        "repository sync",
+        "scheduler",
+        "reconcile"
+      ],
+      "related": [
+        "delivery-c4-containers",
+        "delivery-concept-control-plane"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs"
+      ]
+    },
+    {
+      "id": "delivery-c4-deployment-azure",
+      "corpus": "reference",
+      "path": "architecture/deployment-azure.md",
+      "title": "Deployment diagram for OSDU Delivery on Azure Container Apps",
+      "type": "concept",
+      "summary": "The Azure deployment the Terraform creates: four container apps, Azure SQL with two databases, ADLS Gen2, Key Vault, AI Foundry, identities and their grants.",
+      "keywords": [
+        "c4 model",
+        "deployment diagram",
+        "azure container apps",
+        "terraform",
+        "azure sql",
+        "key vault",
+        "managed identity",
+        "keda"
+      ],
+      "related": [
+        "delivery-c4-containers",
+        "delivery-guide-deployment"
+      ],
+      "sourceRefs": [
+        "osdu/deploy/terraform/main.tf",
+        "osdu/deploy/terraform/modules/worker/main.tf",
+        "osdu/deploy/terraform/modules/mcp/main.tf",
+        "osdu/deploy/terraform/modules/ai-foundry/main.tf",
+        "osdu/deploy/terraform/modules/entra-app/main.tf"
+      ]
+    },
+    {
+      "id": "delivery-c4-git-integration",
+      "corpus": "reference",
+      "path": "architecture/git-integration.md",
+      "title": "Dynamic diagram: a commit becomes the runs that execute it",
+      "type": "concept",
+      "summary": "Numbered, how a commit reaches the runs: push, an external trigger proved by GitHub's OIDC token, a sync with the GitHub App, and the node's pinned checkout.",
+      "keywords": [
+        "c4 model",
+        "dynamic diagram",
+        "git integration",
+        "github app",
+        "repository sync",
+        "external trigger",
+        "pinned commit"
+      ],
+      "related": [
+        "delivery-c4-containers",
+        "delivery-flow-repository"
+      ],
+      "sourceRefs": [
+        "osdu/deploy/terraform/main.tf",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs"
+      ]
+    },
+    {
+      "id": "delivery-c4-mcp-server",
+      "corpus": "reference",
+      "path": "architecture/mcp-server.md",
+      "title": "Component diagram for the MCP server",
+      "type": "concept",
+      "summary": "The components of the MCP server: its transports, the instructions and modes, the estate tools, the data tools and the documentation index.",
+      "keywords": [
+        "c4 model",
+        "component diagram",
+        "mcp server",
+        "model context protocol",
+        "assistant tools",
+        "data mode",
+        "estate mode"
+      ],
+      "related": [
+        "delivery-c4-ai-usage",
+        "delivery-guide-mcp"
+      ],
+      "sourceRefs": [
+        "osdu/hosts/osdu-delivery-mcp/src/lib.rs",
+        "osdu/hosts/osdu-delivery-mcp/src/instructions.rs",
+        "osdu/hosts/osdu-delivery-mcp/src/docs.rs",
+        "osdu/hosts/osdu-delivery-mcp/src/support.rs"
+      ]
+    },
+    {
+      "id": "delivery-c4-question",
+      "corpus": "reference",
+      "path": "architecture/question.md",
+      "title": "Dynamic diagram: a ! question answered from approved data",
+      "type": "concept",
+      "summary": "Numbered, how a ! question in the GUI chat is answered: a delegated run token, the model, the MCP tools, the column guard, and a read-only query on a node.",
+      "keywords": [
+        "c4 model",
+        "dynamic diagram",
+        "assistant",
+        "data mode",
+        "ai context",
+        "prepare_query",
+        "delegated token"
+      ],
+      "related": [
+        "delivery-c4-ai-usage",
+        "delivery-concept-ai-features",
+        "delivery-guide-mcp"
+      ],
+      "sourceRefs": [
+        "sqlflow/src/SqlFlow.Assistant/ResponsesApiGateway.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/lib.rs"
+      ]
+    },
+    {
+      "id": "delivery-c4-record-delivery",
+      "corpus": "reference",
+      "path": "architecture/record-delivery.md",
+      "title": "Dynamic diagram: a source row becomes an OSDU record",
+      "type": "concept",
+      "summary": "Numbered, the path a source row takes to OSDU: a file flow lands it, an ing flow keys it, a delivery flow renders, sends and records it.",
+      "keywords": [
+        "c4 model",
+        "dynamic diagram",
+        "delivery flow",
+        "record lifecycle",
+        "ledger",
+        "change detection",
+        "pre flow",
+        "ing flow"
+      ],
+      "related": [
+        "delivery-concept-overview",
+        "delivery-concept-ledger",
+        "delivery-concept-record-lifecycle"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.Deliver.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs"
+      ]
+    },
+    {
+      "id": "delivery-c4-system-context",
+      "corpus": "reference",
+      "path": "architecture/system-context.md",
+      "title": "System Context diagram for OSDU Delivery",
+      "type": "concept",
+      "summary": "OSDU Delivery in its surroundings: the people who build, run and administer an estate, the source systems, the OSDU platform and what it relies on.",
+      "keywords": [
+        "c4 model",
+        "system context",
+        "architecture diagram",
+        "external systems",
+        "actors",
+        "osdu platform"
+      ],
+      "related": [
+        "delivery-concept-overview",
+        "delivery-c4-containers"
+      ],
+      "sourceRefs": [
+        "osdu/hosts/SqlFlow.Delivery.ControlPlane.Host/Program.cs",
+        "osdu/deploy/terraform/main.tf"
+      ]
+    },
+    {
       "id": "delivery-cli-assertions",
       "corpus": "reference",
       "path": "cli/assertions.md",
@@ -3976,7 +4249,7 @@
       "path": "concepts/template-versions.md",
       "title": "Comparing template versions: what changed between two versions of a kind, and what moving a mapping takes",
       "type": "concept",
-      "summary": "Compare two versions of an OSDU kind from any releases, and take a report of what moving a mapping from one to the other breaks, synced mappings included.",
+      "summary": "Compare two versions of an OSDU kind, each change weighed against what the synced mappings write, and take a report of what moving a mapping means.",
       "keywords": [
         "compare versions",
         "compare templates",
@@ -3985,12 +4258,17 @@
         "breaking change",
         "additive change",
         "wording change",
+        "significant change",
+        "minor change",
+        "in use",
+        "deprecated",
         "move a mapping",
         "upgrade a mapping",
         "newer version of a kind",
         "migration report",
         "what breaks",
         "report",
+        "html report",
         "copy as markdown",
         "shared schema",
         "browse osdu"
@@ -4002,12 +4280,15 @@
         "delivery-concept-preflight",
         "delivery-cli-template",
         "delivery-guide-writing-a-mapping",
-        "delivery-concept-api"
+        "delivery-concept-api",
+        "delivery-concept-mapping-overview"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateChangeAdvice.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateDeprecation.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateMoveReport.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateMoveReport.Html.cs",
         "osdu/src/SqlFlow.Delivery/Validation/MappingMove.cs",
         "osdu/src/SqlFlow.Delivery/Validation/MappingCoverage.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.Compare.cs",

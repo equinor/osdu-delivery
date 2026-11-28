@@ -11,14 +11,15 @@ import { problemText } from "./problemText";
 import { copyPending, reportAbout, reportFileParts, type ReportSide } from "./templateMoveReport";
 
 const DOWNLOADS: readonly { format: TemplateMoveReportFormat; label: string; hint: string; type: string }[] = [
+  { format: "html", label: "HTML", hint: "a page to read, print or send", type: "text/html" },
   { format: "md", label: "Markdown", hint: "to read, share or keep", type: "text/markdown" },
   { format: "json", label: "JSON", hint: "for a script or a tool", type: "application/json" },
 ];
 
 /**
- * The report on moving from one version of the kind to the other, copied as Markdown or saved as a file: what breaks, what
- * each synced mapping of the kind has to change, and what a mapping may now use. The control plane writes it, so it reads the
- * same however it is taken.
+ * The report on moving from one version of the kind to the other, copied as Markdown or saved as a page, Markdown or JSON,
+ * read against what each synced mapping of the kind writes: which changes are significant, what each mapping has to change,
+ * and what no mapping uses. The control plane writes it, so it reads the same however it is taken.
  */
 export function TemplateCompareReport({ from, to, disabled }: { from: ReportSide; to: ReportSide; disabled: boolean }) {
   const [busy, setBusy] = useState(false);
